@@ -1,0 +1,17 @@
+pluginManagement {
+    repositories {
+        mavenCentral()
+        jcenter()
+        gradlePluginPortal()
+    }
+    resolutionStrategy {
+        eachPlugin {
+            // ES not available in gradle plugin portal so hand code here
+            if(requested.id.namespace == "elasticsearch") {
+                useModule "org.elasticsearch.gradle:build-tools:${requested.version}"
+            }
+        }
+    }
+}
+
+rootProject.name = "opendistro-cross-cluster-replication"

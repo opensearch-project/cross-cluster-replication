@@ -1,0 +1,154 @@
+### Setup remote connection with security plugin
+PUT localhost:{{foll_port}}/_cluster/settings?pretty
+Authorization: Basic admin admin
+Content-Type: application/json
+
+
+{
+  "persistent": {
+    "cluster": {
+      "remote": {
+        "source": {
+          "seeds": [ "127.0.0.1:9300" ]
+        }
+      }
+    }
+  }
+}
+
+### Add a document to leader with security plugin
+PUT localhost:{{leader_port}}/customer/_doc/1?pretty
+Authorization: Basic admin admin
+Content-Type: application/json
+
+
+{
+  "name": "John Doe"
+}
+
+### request with security plugin
+PUT https://localhost:{{foll_port}}/_opendistro/_replication/customer/_start?pretty
+Authorization: Basic admin admin
+Content-Type: application/json
+
+
+{
+  "remote_cluster": "remote-cluster",
+  "remote_index": "remote-index"
+}
+
+### Setup remote connection
+PUT localhost:{{foll_port}}/_cluster/settings?pretty
+Content-Type: application/json
+
+
+{
+  "persistent": {
+    "cluster": {
+      "remote": {
+        "source": {
+          "seeds": [ "127.0.0.1:9300" ]
+        }
+      }
+    }
+  }
+}
+
+### Add a document to leader
+PUT localhost:{{leader_port}}/customer/_doc/1?pretty
+Content-Type: application/json
+
+
+{
+  "name": "John Doe",
+  "age": 21
+}
+
+### Create empty index
+PUT localhost:{{leader_port}}/customer
+Content-Type: application/json
+
+
+### flush index
+POST localhost:{{leader_port}}/_flush
+
+### Start replication
+PUT localhost:{{foll_port}}/_opendistro/_replication/customer/_start
+Content-Type: application/json
+
+
+{
+  "remote_cluster" : "source",
+  "remote_index": "customer"
+}
+
+### Add another document after replication started
+PUT localhost:{{leader_port}}/customer/_doc/2?pretty
+Content-Type: application/json
+
+
+{
+  "name": "Jane Doe"
+}
+
+### View leader data
+GET localhost:{{leader_port}}/customer/_search?pretty&q=*:*&seq_no_primary_term=true
+
+### View follower data all nodes
+GET localhost:{{foll_port}}/customer/_search?pretty&q=*:*&seq_no_primary_term=true
+
+### View follower data node-0
+GET localhost:{{foll_port}}/customer/_search?pretty&q=*:*&seq_no_primary_term=true&preference=_only_nodes:node-0
+
+### View follower data node-1
+GET localhost:{{foll_port}}/customer/_search?pretty&q=*:*&seq_no_primary_term=true&preference=_only_nodes:node-1
+
+### View follower data node-2
+GET localhost:{{foll_port}}/customer/_search?pretty&q=*:*&seq_no_primary_term=true&preference=_only_nodes:node-2
+
+### Show follower cluster nodes
+GET localhost:{{foll_port}}/_cat/nodes?v&h=name,p,ip,po,m,node.role
+
+### Show follower cluster shards
+GET localhost:{{foll_port}}/_cat/shards?v
+
+### Get leader retention lease info
+GET localhost:{{leader_port}}/customer/_stats/docs?pretty&level=shards
+
+### Show tasks
+GET localhost:{{foll_port}}/_tasks?actions=*replication*&detailed
+
+### Get follower metadata
+GET localhost:{{foll_port}}/_cluster/state/metadata
+
+### Leader shards info
+GET localhost:{{leader_port}}/_cat/shards?v&h=i,s,pr,node,globalCheckpoint,maxSeqNo,segmentsCount,docs
+
+### Follower shards info
+GET localhost:{{foll_port}}/_cat/shards?v&h=i,s,pr,node,globalCheckpoint,maxSeqNo,segmentsCount,docs
+
+### Update auto follow actions
+POST localhost:{{foll_port}}/_opendistro/_replication/_autofollow
+Content-Type: application/json
+
+{
+  "connection": "source",
+  "name": "test",
+  "pattern": "*customer*"
+}
+
+### Delete the auto follow pattern
+DELETE localhost:{{foll_port}}/_opendistro/_replication/_autofollow
+Content-Type: application/json
+
+{
+  "connection": "source",
+  "name": "test"
+}
+
+### Stop replication
+POST localhost:{{foll_port}}/_opendistro/_replication/customer/_stop
+Content-Type: application/json
+
+{
+}

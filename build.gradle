@@ -1,0 +1,206 @@
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.util.concurrent.Callable
+import org.elasticsearch.gradle.testclusters.TestClusterConfiguration
+import java.util.function.Predicate
+import java.util.concurrent.TimeUnit
+import java.util.stream.Collectors
+
+plugins {
+    id "elasticsearch.esplugin" version "7.10.2"
+    id 'org.jetbrains.kotlin.jvm' version "1.3.72"
+}
+
+group = "com.amazon.es"
+version = "${version}.0"
+
+ext.kotlin_version = '1.3.72'
+repositories {
+    mavenCentral()
+}
+
+apply plugin: 'elasticsearch.testclusters'
+apply plugin: 'elasticsearch.rest-test'
+
+dependencies {
+    // Elasticsearch nanny state marks all dependencies non-transitive forcing us to list them out.
+    compile "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
+    compile "org.jetbrains.kotlin:kotlin-stdlib-jdk7"
+    compile "org.jetbrains.kotlin:kotlin-stdlib"
+    compile "org.jetbrains.kotlin:kotlin-stdlib-common"
+    compile "org.jetbrains:annotations:13.0"
+    compile "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.3.5"
+
+    testImplementation "org.assertj:assertj-core:3.17.2"
+    testImplementation "org.elasticsearch.client:elasticsearch-rest-high-level-client:${versions.elasticsearch}"
+    testImplementation "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.3.5"
+}
+
+// Elasticsearch nanny state forces us to manually resolve all conflicts
+configurations.all {
+    if (it.state != Configuration.State.UNRESOLVED) return
+    resolutionStrategy {
+        force "org.jetbrains.kotlin:kotlin-stdlib:${kotlin_version}"
+        force "org.jetbrains.kotlin:kotlin-stdlib-common:${kotlin_version}"
+    }
+}
+
+compileKotlin {
+    kotlinOptions {
+        // This should be 11, but the ES logger usage checker tool doesn't like classes > 1.8
+        jvmTarget = "1.8"
+        freeCompilerArgs = ['-Xjsr305=strict'] // Handle Elasticsearch @Nullable annotation correctly
+    }
+}
+
+compileTestKotlin {
+    kotlinOptions {
+        jvmTarget = "1.8"
+        freeCompilerArgs = ['-Xjsr305=strict']
+    }
+}
+
+esplugin {
+    name = project.name
+    description = "Open Distro Cross Cluster Replication Plugin"
+    classname = "com.amazon.elasticsearch.replication.ReplicationPlugin"
+}
+
+ext {
+    licenseFile = rootProject.file('LICENSE')
+    noticeFile = rootProject.file('NOTICE')
+}
+
+javadoc.enabled = false
+licenseHeaders.enabled = false
+dependencyLicenses.enabled = false
+thirdPartyAudit.enabled = true
+validateNebulaPom.enabled = false
+loggerUsageCheck.enabled = false
+
+test {
+    systemProperty 'tests.security.manager', 'false'
+    if (System.getProperty("tests.debug") == "true") {
+        debug true
+        debugOptions {
+            port = 8000
+            suspend = false
+        }
+    }
+}
+
+// Setting RunTask.debug = true configures the JVM to use a debugger in listen mode (server=n,suspend=y).  This is a
+// pain for multi node clusters since the node startup fails if it can't connect to a debugger. So instead we manually
+// configure the debugger in attach mode (server=y) so that we can attach to a specific node after it has been started.
+static String getDebugJvmArgs(int debugPort) {
+    return " -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=${debugPort}"
+}
+
+def securityPluginFile = new Callable<RegularFile>() {
+        @Override
+        RegularFile call() throws Exception {
+            return new RegularFile() {
+                @Override
+                File getAsFile() {
+                    return fileTree("$projectDir/src/test/resources/security/plugin").getSingleFile()
+                }
+            }
+        }
+    }
+
+// TODO: Remove this once the integration test framework supports configuring and installing other plugins
+def isReleaseTask = "release" in gradle.startParameter.taskNames
+
+/*
+* TODO: Default to false as it needs extending RunTask for automation
+* If enabled, make sure to run initializeSecurityIndex task
+*/
+def securityEnabled = findProperty("security") == "true"
+
+File repo = file("$buildDir/testclusters/repo")
+def _numNodes = findProperty('numNodes') as Integer ?: 1
+testClusters {
+    leaderCluster {
+        plugin(project.tasks.bundlePlugin.archiveFile)
+        if(!isReleaseTask && securityEnabled) {
+            plugin(provider(securityPluginFile))
+            cliSetup("opendistro_security/install_demo_configuration.sh", "-y")
+        }
+        int debugPort = 5005
+        testDistribution = "INTEG_TEST"
+        if (_numNodes > 1) numberOfNodes = _numNodes
+        //numberOfNodes = 3
+        setting 'path.repo', repo.absolutePath
+        if(_numNodes == 1) jvmArgs "${-> getDebugJvmArgs(debugPort++)}"
+    }
+    followCluster {
+        testDistribution = "INTEG_TEST"
+        plugin(project.tasks.bundlePlugin.archiveFile)
+        if(!isReleaseTask && securityEnabled) {
+            plugin(provider(securityPluginFile))
+            cliSetup("opendistro_security/install_demo_configuration.sh", "-y")
+        }
+        int debugPort = 5010
+        if (_numNodes > 1) numberOfNodes = _numNodes
+        //numberOfNodes = 3
+        setting 'path.repo', repo.absolutePath
+        if(_numNodes == 1) jvmArgs "${-> getDebugJvmArgs(debugPort++)}"
+    }
+}
+
+integTest {
+    useCluster testClusters.leaderCluster
+    useCluster testClusters.followCluster
+    doFirst {
+        getClusters().forEach { cluster ->
+            systemProperty "tests.cluster.${cluster.name}.http_hosts", "${-> cluster.allHttpSocketURI.join(',')}"
+            systemProperty "tests.cluster.${cluster.name}.transport_hosts", "${-> cluster.allTransportPortURI.join(',')}"
+        }
+    }
+}
+
+run {
+    useCluster testClusters.leaderCluster
+    useCluster testClusters.followCluster
+    doFirst {
+        getClusters().forEach { cluster ->
+            LinkedHashMap<String, Predicate<TestClusterConfiguration>> waitConditions = new LinkedHashMap<>()
+            cluster.waitForConditions(waitConditions, System.currentTimeMillis(), 40, TimeUnit.SECONDS, cluster)
+            // Write unicast file manually - we could't wait on internal method(waitForAllConditions) as
+            // cluster health needs changes based on security plugin installation.
+            String unicastUris = cluster.nodes.stream().flatMap { node ->
+                node.getAllTransportPortURI().stream()
+            }.collect(Collectors.joining("\n"))
+            cluster.nodes.forEach{node ->
+                try {
+                    Files.write(node.getConfigDir().resolve("unicast_hosts.txt"), unicastUris.getBytes(StandardCharsets.UTF_8));
+                } catch (IOException e) {
+                    throw new java.io.UncheckedIOException("Failed to write unicast_hosts for " + this, e);
+                }
+            }
+            // TODO: Add health check and avoid wait for the cluster formation
+            cluster.waitForConditions(waitConditions, System.currentTimeMillis(), 40, TimeUnit.SECONDS, cluster)
+        }
+    }
+}
+
+task initializeSecurityIndex {
+    doLast {
+        exec {
+            executable "src/test/resources/security/scripts/SecurityAdminWrapper.sh"
+            args "${buildDir}"
+        }
+    }
+}
+
+testingConventions {
+    naming {
+        IT {
+            baseClass 'com.amazon.elasticsearch.replication.MultiClusterRestTestCase'
+        }
+    }
+}
+
+task release {
+    dependsOn 'build'
+}
