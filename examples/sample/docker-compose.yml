@@ -1,0 +1,85 @@
+#   Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
+#
+#   Licensed under the Apache License, Version 2.0 (the "License").
+#   You may not use this file except in compliance with the License.
+#   A copy of the License is located at
+#
+#       http://www.apache.org/licenses/LICENSE-2.0
+#
+#   or in the "license" file accompanying this file. This file is distributed
+#   on an "AS IS" BASIS, WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either
+#   express or implied. See the License for the specific language governing
+#   permissions and limitations under the License.
+
+version: '3'
+services:
+  odfe-leader1:
+    image: open-distro-for-es-with-replication
+    container_name: odfe-leader1
+    environment:
+      - cluster.name=odfe-leader
+      - node.name=odfe-leader1
+      - discovery.seed_hosts=odfe-leader1
+      - cluster.initial_master_nodes=odfe-leader1
+      - bootstrap.memory_lock=true # along with the memlock settings below, disables swapping
+      - opendistro_security.unsupported.inject_user.enabled=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m" # minimum and maximum Java heap size, recommend setting both to 50% of system RAM
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536 # maximum number of open files for the Elasticsearch user, set to at least 65536 on modern systems
+        hard: 65536
+    volumes:
+      - odfe-leader-data1:/usr/share/elasticsearch/data
+    ports:
+      - 9200:9200
+      - 9600:9600 # required for Performance Analyzer
+    networks:
+      odfe-net:
+        ipv4_address: 172.18.0.10
+  odfe-follower1:
+    image: open-distro-for-es-with-replication
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: odfe-follower1
+    environment:
+      - cluster.name=odfe-follower
+      - node.name=odfe-follower1
+      - discovery.seed_hosts=odfe-follower1
+      - cluster.initial_master_nodes=odfe-follower1
+      - opendistro_security.unsupported.inject_user.enabled=true
+      - bootstrap.memory_lock=true
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    ulimits:
+      memlock:
+        soft: -1
+        hard: -1
+      nofile:
+        soft: 65536
+        hard: 65536
+    volumes:
+      - odfe-follower-data1:/usr/share/elasticsearch/data
+    ports:
+      - 9201:9200
+      - 9601:9600 # required for Performance Analyzer
+    networks:
+      odfe-net:
+        ipv4_address: 172.18.0.20
+
+volumes:
+  odfe-leader-data1:
+  odfe-follower-data1:
+
+networks:
+  odfe-net:
+    driver: bridge
+    driver_opts:
+      com.docker.network.enable_ipv6: "false"
+    ipam:
+      driver: default
+      config:
+        - subnet: 172.18.0.0/16
+
