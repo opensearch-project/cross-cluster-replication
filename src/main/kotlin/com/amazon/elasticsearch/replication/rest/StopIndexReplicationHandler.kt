@@ -17,6 +17,7 @@ package com.amazon.elasticsearch.replication.rest
 
 import com.amazon.elasticsearch.replication.action.stop.StopIndexReplicationAction
 import com.amazon.elasticsearch.replication.action.stop.StopIndexReplicationRequest
+import org.apache.logging.log4j.LogManager
 import org.elasticsearch.client.node.NodeClient
 import org.elasticsearch.rest.BaseRestHandler
 import org.elasticsearch.rest.RestChannel
@@ -26,6 +27,10 @@ import org.elasticsearch.rest.action.RestToXContentListener
 import java.io.IOException
 
 class StopIndexReplicationHandler : BaseRestHandler() {
+
+    companion object {
+        private val log = LogManager.getLogger(StopIndexReplicationHandler::class.java)
+    }
 
     override fun routes(): List<RestHandler.Route> {
         return listOf(RestHandler.Route(RestRequest.Method.POST, "/_opendistro/_replication/{index}/_stop"))

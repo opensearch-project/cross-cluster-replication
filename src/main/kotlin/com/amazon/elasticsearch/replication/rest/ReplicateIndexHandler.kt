@@ -17,6 +17,7 @@ package com.amazon.elasticsearch.replication.rest
 
 import com.amazon.elasticsearch.replication.action.index.ReplicateIndexAction
 import com.amazon.elasticsearch.replication.action.index.ReplicateIndexRequest
+import org.apache.logging.log4j.LogManager
 import org.elasticsearch.client.node.NodeClient
 import org.elasticsearch.rest.BaseRestHandler
 import org.elasticsearch.rest.BaseRestHandler.RestChannelConsumer
@@ -27,6 +28,10 @@ import org.elasticsearch.rest.action.RestToXContentListener
 import java.io.IOException
 
 class ReplicateIndexHandler : BaseRestHandler() {
+
+    companion object {
+        private val log = LogManager.getLogger(ReplicateIndexHandler::class.java)
+    }
 
     override fun routes(): List<RestHandler.Route> {
         return listOf(RestHandler.Route(RestRequest.Method.PUT, "/_opendistro/_replication/{index}/_start"))

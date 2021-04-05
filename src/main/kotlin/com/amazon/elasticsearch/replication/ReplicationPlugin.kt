@@ -102,6 +102,9 @@ import java.util.Optional
 import java.util.function.Supplier
 import com.amazon.elasticsearch.replication.action.index.block.UpdateIndexBlockAction
 import com.amazon.elasticsearch.replication.action.index.block.TransportUpddateIndexBlockAction
+import com.amazon.elasticsearch.replication.action.status.IndexReplicationStatusAction
+import com.amazon.elasticsearch.replication.action.status.TransportIndexReplicationStatusAction
+import com.amazon.elasticsearch.replication.rest.ReplicationStatusHandler
 
 internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin, RepositoryPlugin, EnginePlugin {
 
@@ -142,7 +145,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             ActionHandler(UpdateAutoFollowPatternAction.INSTANCE, TransportUpdateAutoFollowPatternAction::class.java),
             ActionHandler(StopIndexReplicationAction.INSTANCE, TransportStopIndexReplicationAction::class.java),
             ActionHandler(UpdateIndexBlockAction.INSTANCE, TransportUpddateIndexBlockAction::class.java),
-            ActionHandler(ReleaseLeaderResourcesAction.INSTANCE, TransportReleaseLeaderResourcesAction::class.java)
+            ActionHandler(ReleaseLeaderResourcesAction.INSTANCE, TransportReleaseLeaderResourcesAction::class.java),
+            ActionHandler(IndexReplicationStatusAction.INSTANCE, TransportIndexReplicationStatusAction::class.java)
         )
     }
 
@@ -153,7 +157,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                                  nodesInCluster: Supplier<DiscoveryNodes>): List<RestHandler> {
         return listOf(ReplicateIndexHandler(),
             UpdateAutoFollowPatternsHandler(),
-            StopIndexReplicationHandler())
+            StopIndexReplicationHandler(),
+            ReplicationStatusHandler())
     }
 
     override fun getExecutorBuilders(settings: Settings): List<ExecutorBuilder<*>> {

@@ -25,6 +25,7 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
+import org.apache.logging.log4j.LogManager
 import org.apache.logging.log4j.Logger
 import org.elasticsearch.action.ActionListener
 import org.elasticsearch.client.Client
@@ -68,6 +69,7 @@ class RemoteClusterMultiChunkTransfer(val logger: Logger,
     }
 
     companion object {
+        private val log = LogManager.getLogger(RemoteClusterMultiChunkTransfer::class.java)
         const val RESTORE_SHARD_TEMP_FILE_PREFIX = "CLUSTER_REPO_TEMP_"
     }
 
