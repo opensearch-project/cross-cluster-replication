@@ -15,12 +15,12 @@
 
 package com.amazon.elasticsearch.replication.action.changes
 
-import com.amazon.elasticsearch.replication.action.repository.GetFileChunkAction
 import com.amazon.elasticsearch.replication.util.completeWith
 import com.amazon.elasticsearch.replication.util.coroutineContext
 import com.amazon.elasticsearch.replication.util.waitForGlobalCheckpoint
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
+import org.apache.logging.log4j.LogManager
 import org.elasticsearch.ElasticsearchTimeoutException
 import org.elasticsearch.action.ActionListener
 import org.elasticsearch.action.support.ActionFilters
@@ -55,6 +55,7 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
 
     companion object {
         val WAIT_FOR_NEW_OPS_TIMEOUT = TimeValue.timeValueMinutes(1)!!
+        private val log = LogManager.getLogger(TransportGetChangesAction::class.java)
     }
 
     override fun shardOperation(request: GetChangesRequest, shardId: ShardId): GetChangesResponse {

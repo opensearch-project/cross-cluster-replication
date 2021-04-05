@@ -114,6 +114,9 @@ import com.amazon.elasticsearch.replication.action.setup.TransportValidatePermis
 import com.amazon.elasticsearch.replication.action.setup.ValidatePermissionsAction
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadataStore
+import com.amazon.elasticsearch.replication.action.status.IndexReplicationStatusAction
+import com.amazon.elasticsearch.replication.action.status.TransportIndexReplicationStatusAction
+import com.amazon.elasticsearch.replication.rest.ReplicationStatusHandler
 
 internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin, RepositoryPlugin, EnginePlugin {
 
@@ -162,7 +165,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             ActionHandler(UpdateIndexBlockAction.INSTANCE, TransportUpddateIndexBlockAction::class.java),
             ActionHandler(ReleaseLeaderResourcesAction.INSTANCE, TransportReleaseLeaderResourcesAction::class.java),
             ActionHandler(ValidatePermissionsAction.INSTANCE, TransportValidatePermissionsAction::class.java),
-            ActionHandler(SetupChecksAction.INSTANCE, TransportSetupChecksAction::class.java)
+            ActionHandler(SetupChecksAction.INSTANCE, TransportSetupChecksAction::class.java),
+            ActionHandler(IndexReplicationStatusAction.INSTANCE, TransportIndexReplicationStatusAction::class.java)
         )
     }
 
@@ -175,7 +179,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             UpdateAutoFollowPatternsHandler(),
             PauseIndexReplicationHandler(),
             ResumeIndexReplicationHandler(),
-            StopIndexReplicationHandler())
+            StopIndexReplicationHandler(),
+            ReplicationStatusHandler())
     }
 
     override fun getExecutorBuilders(settings: Settings): List<ExecutorBuilder<*>> {
