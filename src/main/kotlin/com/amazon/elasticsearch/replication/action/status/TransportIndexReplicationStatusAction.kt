@@ -33,6 +33,7 @@ class TransportIndexReplicationStatusAction @Inject constructor(threadPool: Thre
         private val log = LogManager.getLogger(TransportIndexReplicationStatusAction::class.java)
     }
 
+    
     @Suppress("BlockingMethodInNonBlockingContext")
     override fun asyncShardOperation(request: IndexReplicationStatusRequest?, shardId: ShardId?, listener: ActionListener<StatusResponse>?) {
         val shards = clusterService.state().routingTable.indicesRouting().get((request?.indexName ?: null)).shards()
