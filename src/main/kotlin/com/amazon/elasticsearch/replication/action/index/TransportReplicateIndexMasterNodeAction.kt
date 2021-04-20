@@ -135,7 +135,7 @@ class TransportReplicateIndexMasterNodeAction @Inject constructor(transportServi
         submitClusterStateUpdateTask(updateReplicationStateDetailsRequest, UpdateReplicationStateDetailsTaskExecutor.INSTANCE
                 as ClusterStateTaskExecutor<AcknowledgedRequest<UpdateReplicationStateDetailsRequest>>,
                 clusterService,
-                "remove-replication-state-params")
+                "add-replication-state-params")
     }
 
     private suspend fun getRemoteIndexMetadata(remoteCluster: String, remoteIndex: String): IndexMetadata {
