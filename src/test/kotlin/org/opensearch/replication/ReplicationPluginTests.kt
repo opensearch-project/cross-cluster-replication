@@ -13,4 +13,12 @@
  *   permissions and limitations under the License.
  */
 
-rootProject.name = "opensearch-cross-cluster-replication"
+package org.opensearch.replication
+
+import org.opensearch.test.OpenSearchTestCase
+
+class ReplicationPluginTests : OpenSearchTestCase() {
+    fun testNothing() {
+        assertTrue("Write some tests!", true)
+    }
+}

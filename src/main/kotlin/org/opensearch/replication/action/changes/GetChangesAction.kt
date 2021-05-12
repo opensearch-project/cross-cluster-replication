@@ -13,4 +13,14 @@
  *   permissions and limitations under the License.
  */
 
-rootProject.name = "opensearch-cross-cluster-replication"
+package org.opensearch.replication.action.changes
+
+import org.opensearch.action.ActionType
+
+class GetChangesAction private constructor() : ActionType<GetChangesResponse>(NAME, ::GetChangesResponse) {
+
+    companion object {
+        const val NAME = "indices:data/read/opendistro/replication/changes"
+        val INSTANCE = GetChangesAction()
+    }
+}

@@ -13,4 +13,14 @@
  *   permissions and limitations under the License.
  */
 
-rootProject.name = "opensearch-cross-cluster-replication"
+package org.opensearch.replication.action.replay
+
+import org.opensearch.action.ActionType
+
+class ReplayChangesAction private constructor() : ActionType<ReplayChangesResponse>(NAME, ::ReplayChangesResponse) {
+
+    companion object {
+        const val NAME = "indices:data/write/opendistro/replication/changes"
+        val INSTANCE = ReplayChangesAction()
+    }
+}

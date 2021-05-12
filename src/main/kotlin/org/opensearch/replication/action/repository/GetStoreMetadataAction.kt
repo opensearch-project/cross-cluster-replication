@@ -13,4 +13,13 @@
  *   permissions and limitations under the License.
  */
 
-rootProject.name = "opensearch-cross-cluster-replication"
+package org.opensearch.replication.action.repository
+
+import org.opensearch.action.ActionType
+
+class GetStoreMetadataAction private constructor() : ActionType<GetStoreMetadataResponse>(NAME, ::GetStoreMetadataResponse) {
+    companion object {
+        const val NAME = "indices:data/read/opendistro/replication/file_metadata"
+        val INSTANCE = GetStoreMetadataAction()
+    }
+}

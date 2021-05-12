@@ -13,4 +13,15 @@
  *   permissions and limitations under the License.
  */
 
-rootProject.name = "opensearch-cross-cluster-replication"
+package org.opensearch.replication.action.autofollow
+
+import org.opensearch.action.ActionType
+import org.opensearch.action.support.master.AcknowledgedResponse
+
+class UpdateAutoFollowPatternAction : ActionType<AcknowledgedResponse>(NAME, ::AcknowledgedResponse) {
+
+    companion object {
+        const val NAME = "cluster:admin/opendistro/replication/autofollow/update"
+        val INSTANCE = UpdateAutoFollowPatternAction()
+    }
+}
