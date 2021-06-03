@@ -18,9 +18,12 @@ package com.amazon.elasticsearch.replication.util
 import kotlinx.coroutines.delay
 import org.apache.logging.log4j.Logger
 import org.elasticsearch.ElasticsearchException
+import org.elasticsearch.action.ActionListener
 import org.elasticsearch.action.ActionRequest
 import org.elasticsearch.action.ActionResponse
 import org.elasticsearch.action.ActionType
+import org.elasticsearch.action.index.IndexRequestBuilder
+import org.elasticsearch.action.index.IndexResponse
 import org.elasticsearch.client.Client
 import org.elasticsearch.cluster.service.ClusterService
 import org.elasticsearch.index.store.Store
@@ -53,7 +56,9 @@ fun <T>Client.executeUnderSecurityContext(clusterService: ClusterService,
     }
 }
 
-
+fun IndexRequestBuilder.execute(id: String, listener: ActionListener<IndexResponse>) {
+    execute(listener)
+}
 /**
  * Retries a given block of code.
  * Only specified error are retried
