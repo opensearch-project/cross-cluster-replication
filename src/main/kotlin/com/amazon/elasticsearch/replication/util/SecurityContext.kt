@@ -15,51 +15,78 @@
 
 package com.amazon.elasticsearch.replication.util
 
-import com.amazon.elasticsearch.replication.metadata.ReplicationMetadata
+import com.amazon.elasticsearch.replication.action.changes.GetChangesAction
+import com.amazon.elasticsearch.replication.action.index.ReplicateIndexAction
+import com.amazon.elasticsearch.replication.action.replay.ReplayChangesAction
+import com.amazon.elasticsearch.replication.action.repository.GetFileChunkAction
+import com.amazon.elasticsearch.replication.action.repository.GetStoreMetadataAction
+import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
+import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
+import com.amazon.elasticsearch.replication.metadata.store.ReplicationStoreMetadataType
+import com.amazon.opendistroforelasticsearch.commons.ConfigConstants
+import com.amazon.opendistroforelasticsearch.commons.authuser.User
 import org.apache.logging.log4j.LogManager
-import org.elasticsearch.cluster.ClusterState
+import org.elasticsearch.action.ActionRequest
+import org.elasticsearch.action.ActionResponse
+import org.elasticsearch.action.ActionType
 import org.elasticsearch.common.util.concurrent.ThreadContext
+import org.elasticsearch.transport.RemoteClusterAwareRequest
 
-interface SecurityContext {
+class SecurityContext {
     companion object {
-        const val INJECTED_USER = "injected_user"
-        const val OPENDISTRO_USER_INFO = "_opendistro_security_user_info"
-        const val OPENDISTRO_USER_INFO_DELIMITOR = "|"
-
         private val log = LogManager.getLogger(SecurityContext::class.java)
+        const val OPENDISTRO_SECURITY_USER = "_opendistro_security_user"
+        const val OPENDISTRO_SECURITY_ASSUME_ROLES = "opendistro_security_assume_roles"
 
-        fun fromSecurityThreadContext(threadContext: ThreadContext): String? {
-            // Directly return injected_user from the thread context if the user info is not set.
-            val userInfo = threadContext.getTransient<String?>(OPENDISTRO_USER_INFO) ?: return threadContext.getTransient(INJECTED_USER)
-            val usersAndRoles = userInfo.split(OPENDISTRO_USER_INFO_DELIMITOR)
-            var userName: String
-            var userBackendRoles = ""
-            if(usersAndRoles.isEmpty()) {
-                log.warn("Failed to parse security user info - $userInfo")
-                return null
-            }
-            userName = usersAndRoles[0]
-            if(usersAndRoles.size >= 2) {
-                userBackendRoles = usersAndRoles[1]
-            }
-            return "${userName}${OPENDISTRO_USER_INFO_DELIMITOR}${userBackendRoles}"
+        val ADMIN_USER = User("ccr_user", null, listOf("all_access"), null)
+
+        val ALL_TRANSIENTS = listOf(ConfigConstants.OPENDISTRO_SECURITY_INJECTED_ROLES,
+                ConfigConstants.INJECTED_USER, OPENDISTRO_SECURITY_USER)
+
+        val LEADER_USER_ACTIONS = listOf(GetChangesAction.NAME, GetFileChunkAction.NAME)
+        val FOLLOWER_USER_ACTIONS = listOf(ReplayChangesAction.NAME, ReplicateIndexAction.NAME)
+
+        fun fromSecurityThreadContext(threadContext: ThreadContext): User? {
+            val userInfo = threadContext.getTransient<String?>(ConfigConstants.OPENDISTRO_SECURITY_USER_INFO_THREAD_CONTEXT)
+            return User.parse(userInfo)
         }
 
-        fun fromClusterState(clusterState: ClusterState, remoteCluster: String, followerIndex: String): String? {
-            val replicationMetadata = clusterState.metadata.custom<ReplicationMetadata>(ReplicationMetadata.NAME)
-            return replicationMetadata?.securityContexts?.get(remoteCluster)?.get(followerIndex)
-        }
-
-        fun toThreadContext(threadContext: ThreadContext, injectedUser: String?) {
-            if(injectedUser != null) {
-                val userInfo = threadContext.getTransient<String?>(INJECTED_USER)
+        fun asUserInjection(threadContext: ThreadContext, userString: String?) {
+            if(userString != null) {
+                val userInfo = threadContext.getTransient<String?>(ConfigConstants.INJECTED_USER)
                 if (userInfo != null) {
                     log.warn("Injected user not empty in thread context $userInfo")
                 }
                 else {
-                    threadContext.putTransient(INJECTED_USER, injectedUser)
+                    threadContext.putTransient(ConfigConstants.INJECTED_USER, userString)
                 }
             }
+        }
+
+        fun asRolesInjection(threadContext: ThreadContext, role: String?) {
+            if(role != null) {
+                val rolesInj = threadContext.getTransient<String?>(ConfigConstants.OPENDISTRO_SECURITY_INJECTED_ROLES)
+                if(rolesInj != null) {
+                    log.warn("Injected roles not empty in thread context $rolesInj")
+                }
+                else {
+                    threadContext.putTransient(ConfigConstants.OPENDISTRO_SECURITY_INJECTED_ROLES, role)
+                }
+            }
+        }
+
+        fun setBasedOnActions(replMetadata: ReplicationMetadata?, action: String, threadContext: ThreadContext) {
+            if(replMetadata != null) {
+                if(LEADER_USER_ACTIONS.contains(action)) {
+                    asRolesInjection(threadContext, replMetadata.leaderContext.user?.toInjectedRoles())
+                    return
+                } else if(FOLLOWER_USER_ACTIONS.contains(action)) {
+                    asRolesInjection(threadContext, replMetadata.followerContext.user?.toInjectedRoles())
+                    return
+                }
+            }
+            // For all other requests - using admin
+            asRolesInjection(threadContext, ADMIN_USER.toInjectedRoles())
         }
     }
 }

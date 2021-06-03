@@ -17,7 +17,7 @@ package com.amazon.elasticsearch.replication.task.autofollow
 
 import com.amazon.elasticsearch.replication.action.index.ReplicateIndexAction
 import com.amazon.elasticsearch.replication.action.index.ReplicateIndexRequest
-import com.amazon.elasticsearch.replication.metadata.ReplicationMetadata
+import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.task.CrossClusterReplicationTask
 import com.amazon.elasticsearch.replication.task.ReplicationState
 import com.amazon.elasticsearch.replication.util.suspendExecute
@@ -40,14 +40,14 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
                      clusterService: ClusterService,
                      threadPool: ThreadPool,
                      client: Client,
+                     replicationMetadataManager: ReplicationMetadataManager,
                      val params: AutoFollowParams) :
     CrossClusterReplicationTask(id, type, action, description, parentTask, headers,
-                                executor, clusterService, threadPool, client) {
+                                executor, clusterService, threadPool, client, replicationMetadataManager) {
 
     override val remoteCluster = params.remoteCluster
     val patternName = params.patternName
-    override val followerIndexName: String = ReplicationMetadata.AUTOFOLLOW_SECURITY_CONTEXT_PATTERN_PREFIX +
-            params.patternName //Special case for auto follow
+    override val followerIndexName: String = params.patternName //Special case for auto follow
     override val log = Loggers.getLogger(javaClass, remoteCluster)
     private var trackingIndicesOnTheCluster = setOf<String>()
 
@@ -65,24 +65,15 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
 
     private suspend fun autoFollow() {
         log.debug("Checking $remoteCluster under pattern name $patternName for new indices to auto follow")
-        val replicationMetadata = clusterService.state().metadata.custom(ReplicationMetadata.NAME) ?: ReplicationMetadata.EMPTY
-        val entry = replicationMetadata.autoFollowPatterns[remoteCluster]?.get(patternName)
-        if (entry?.pattern == null) {
-            log.debug("No auto follow patterns setup for cluster $remoteCluster with pattern name $followerIndexName")
-            return
-        }
+        val entry = replicationMetadata.leaderContext.resource
 
         // Fetch remote indices matching auto follow pattern
         val remoteClient = client.getRemoteClusterClient(remoteCluster)
         val indexReq = GetIndexRequest().features(*emptyArray())
-                .indices(entry.pattern)
+                .indices(entry)
                 .indicesOptions(IndicesOptions.lenientExpandOpen())
-        val response = suspending(remoteClient.admin().indices()::getIndex)(indexReq)
+        val response = remoteClient.suspending(remoteClient.admin().indices()::getIndex, true)(indexReq)
         var remoteIndices = response.indices.asIterable()
-
-        val replicatedRemoteIndices = replicationMetadata.replicatedIndices
-            .getOrDefault(remoteCluster, emptyMap()).values
-        remoteIndices = remoteIndices.minus(replicatedRemoteIndices)
 
         var currentIndices = clusterService.state().metadata().concreteAllIndices.asIterable() // All indices - open and closed on the cluster
         if(remoteIndices.intersect(currentIndices).isNotEmpty()) {
@@ -110,7 +101,7 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
         try {
             log.info("Auto follow starting replication from ${remoteCluster}:$remoteIndex -> $remoteIndex")
             val request = ReplicateIndexRequest(remoteIndex, remoteCluster, remoteIndex)
-            val response = client.suspendExecute(ReplicateIndexAction.INSTANCE, request)
+            val response = client.suspendExecute(replicationMetadata, ReplicateIndexAction.INSTANCE, request)
             if (!response.isAcknowledged) {
                 log.warn("Failed to auto follow remote index $remoteIndex")
             }

@@ -19,6 +19,10 @@ import com.amazon.elasticsearch.replication.action.changes.GetChangesResponse
 import com.amazon.elasticsearch.replication.action.replay.ReplayChangesAction
 import com.amazon.elasticsearch.replication.action.replay.ReplayChangesRequest
 import com.amazon.elasticsearch.replication.action.replay.ReplayChangesResponse
+import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
+import com.amazon.elasticsearch.replication.metadata.store.ReplicationContext
+import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
+import com.amazon.elasticsearch.replication.metadata.store.ReplicationStoreMetadataType
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.ObsoleteCoroutinesApi
 import kotlinx.coroutines.sync.Semaphore
@@ -66,6 +70,8 @@ class TranslogSequencerTests : ESTestCase() {
     val remoteCluster = "remoteCluster"
     val remoteIndex = "remoteIndex"
     val followerShardId = ShardId("follower", "follower_uuid", 0)
+    val replicationMetadata = ReplicationMetadata(remoteCluster, ReplicationStoreMetadataType.INDEX.name, ReplicationOverallState.RUNNING.name,
+            ReplicationContext(followerShardId.indexName, null), ReplicationContext(remoteIndex, null))
     val client = RequestCapturingClient()
     init {
         closeAfterSuite(client)
@@ -80,7 +86,7 @@ class TranslogSequencerTests : ESTestCase() {
     fun `test sequencer out of order`() = runBlockingTest {
         val startSeqNo = randomNonNegativeLong()
         val rateLimiter = Semaphore(10)
-        val sequencer = TranslogSequencer(this, followerShardId, remoteCluster, remoteIndex, EMPTY_TASK_ID,
+        val sequencer = TranslogSequencer(this, replicationMetadata, followerShardId, remoteCluster, remoteIndex, EMPTY_TASK_ID,
                                           client, rateLimiter, startSeqNo)
 
         // Send requests out of order (shuffled seqNo) and await for them to be processed.

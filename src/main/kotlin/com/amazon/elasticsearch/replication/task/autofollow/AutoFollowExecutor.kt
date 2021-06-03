@@ -15,6 +15,7 @@
 
 package com.amazon.elasticsearch.replication.task.autofollow
 
+import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import org.elasticsearch.client.Client
 import org.elasticsearch.cluster.service.ClusterService
 import org.elasticsearch.persistent.AllocatedPersistentTask
@@ -25,7 +26,8 @@ import org.elasticsearch.tasks.TaskId
 import org.elasticsearch.threadpool.ThreadPool
 
 class AutoFollowExecutor(executor: String, private val clusterService: ClusterService,
-                         private val threadPool: ThreadPool, private val client: Client) :
+                         private val threadPool: ThreadPool, private val client: Client,
+                         private val replicationMetadataManager: ReplicationMetadataManager) :
     PersistentTasksExecutor<AutoFollowParams>(TASK_NAME, executor) {
 
     companion object {
@@ -44,7 +46,7 @@ class AutoFollowExecutor(executor: String, private val clusterService: ClusterSe
                             taskInProgress: PersistentTask<AutoFollowParams>,
                             headers: Map<String, String>): AllocatedPersistentTask {
         return AutoFollowTask(id, type, action, getDescription(taskInProgress), parentTaskId, headers,
-                              executor, clusterService, threadPool, client, taskInProgress.params!!)
+                              executor, clusterService, threadPool, client, replicationMetadataManager, taskInProgress.params!!)
     }
 
     override fun getDescription(taskInProgress: PersistentTask<AutoFollowParams>): String {

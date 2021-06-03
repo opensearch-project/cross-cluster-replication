@@ -33,7 +33,7 @@ import com.amazon.elasticsearch.replication.action.repository.TransportGetStoreM
 import com.amazon.elasticsearch.replication.action.stop.StopIndexReplicationAction
 import com.amazon.elasticsearch.replication.action.stop.TransportStopIndexReplicationAction
 import com.amazon.elasticsearch.replication.action.repository.TransportReleaseLeaderResourcesAction
-import com.amazon.elasticsearch.replication.metadata.ReplicationMetadata
+import com.amazon.elasticsearch.replication.metadata.state.ReplicationStateMetadata
 import com.amazon.elasticsearch.replication.repository.REMOTE_REPOSITORY_TYPE
 import com.amazon.elasticsearch.replication.repository.RemoteClusterRepositoriesService
 import com.amazon.elasticsearch.replication.repository.RemoteClusterRepository
@@ -108,11 +108,18 @@ import com.amazon.elasticsearch.replication.rest.ReplicateIndexHandler
 import com.amazon.elasticsearch.replication.rest.ResumeIndexReplicationHandler
 import com.amazon.elasticsearch.replication.rest.StopIndexReplicationHandler
 import com.amazon.elasticsearch.replication.rest.UpdateAutoFollowPatternsHandler
+import com.amazon.elasticsearch.replication.action.setup.SetupChecksAction
+import com.amazon.elasticsearch.replication.action.setup.TransportSetupChecksAction
+import com.amazon.elasticsearch.replication.action.setup.TransportValidatePermissionsAction
+import com.amazon.elasticsearch.replication.action.setup.ValidatePermissionsAction
+import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
+import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadataStore
 
 internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin, RepositoryPlugin, EnginePlugin {
 
     private lateinit var client: Client
     private lateinit var threadPool: ThreadPool
+    private lateinit var replicationMetadataManager: ReplicationMetadataManager
 
     companion object {
         const val REPLICATION_EXECUTOR_NAME = "replication"
@@ -131,11 +138,14 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                                   repositoriesService: Supplier<RepositoriesService>): Collection<Any> {
         this.client = client
         this.threadPool = threadPool
-        return listOf(RemoteClusterRepositoriesService(repositoriesService, clusterService))
+        this.replicationMetadataManager = ReplicationMetadataManager(clusterService,
+                ReplicationMetadataStore(client, clusterService, xContentRegistry))
+        return listOf(RemoteClusterRepositoriesService(repositoriesService, clusterService), replicationMetadataManager)
     }
 
     override fun getGuiceServiceClasses(): Collection<Class<out LifecycleComponent>> {
-        return listOf(Injectables::class.java, RemoteClusterRestoreLeaderService::class.java)
+        return listOf(Injectables::class.java,
+                RemoteClusterRestoreLeaderService::class.java)
     }
 
     override fun getActions(): List<ActionHandler<out ActionRequest, out ActionResponse>> {
@@ -150,7 +160,9 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             ActionHandler(PauseIndexReplicationAction.INSTANCE, TransportPauseIndexReplicationAction::class.java),
             ActionHandler(ResumeIndexReplicationAction.INSTANCE, TransportResumeIndexReplicationAction::class.java),
             ActionHandler(UpdateIndexBlockAction.INSTANCE, TransportUpddateIndexBlockAction::class.java),
-            ActionHandler(ReleaseLeaderResourcesAction.INSTANCE, TransportReleaseLeaderResourcesAction::class.java)
+            ActionHandler(ReleaseLeaderResourcesAction.INSTANCE, TransportReleaseLeaderResourcesAction::class.java),
+            ActionHandler(ValidatePermissionsAction.INSTANCE, TransportValidatePermissionsAction::class.java),
+            ActionHandler(SetupChecksAction.INSTANCE, TransportSetupChecksAction::class.java)
         )
     }
 
@@ -176,9 +188,9 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                                             expressionResolver: IndexNameExpressionResolver)
         : List<PersistentTasksExecutor<*>> {
         return listOf(
-            ShardReplicationExecutor(REPLICATION_EXECUTOR_NAME, clusterService, threadPool, client),
-            IndexReplicationExecutor(REPLICATION_EXECUTOR_NAME, clusterService, threadPool, client),
-            AutoFollowExecutor(REPLICATION_EXECUTOR_NAME, clusterService, threadPool, client))
+            ShardReplicationExecutor(REPLICATION_EXECUTOR_NAME, clusterService, threadPool, client, replicationMetadataManager),
+            IndexReplicationExecutor(REPLICATION_EXECUTOR_NAME, clusterService, threadPool, client, replicationMetadataManager),
+            AutoFollowExecutor(REPLICATION_EXECUTOR_NAME, clusterService, threadPool, client, replicationMetadataManager))
     }
 
     override fun getNamedWriteables(): List<NamedWriteableRegistry.Entry> {
@@ -197,10 +209,10 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             NamedWriteableRegistry.Entry(PersistentTaskParams::class.java, AutoFollowParams.NAME,
                                          Writeable.Reader { inp -> AutoFollowParams(inp) }),
 
-            NamedWriteableRegistry.Entry(Metadata.Custom::class.java, ReplicationMetadata.NAME,
-                Writeable.Reader { inp -> ReplicationMetadata(inp) }),
-            NamedWriteableRegistry.Entry(NamedDiff::class.java, ReplicationMetadata.NAME,
-                Writeable.Reader { inp -> ReplicationMetadata.Diff(inp) })
+            NamedWriteableRegistry.Entry(Metadata.Custom::class.java, ReplicationStateMetadata.NAME,
+                Writeable.Reader { inp -> ReplicationStateMetadata(inp) }),
+            NamedWriteableRegistry.Entry(NamedDiff::class.java, ReplicationStateMetadata.NAME,
+                Writeable.Reader { inp -> ReplicationStateMetadata.Diff(inp) })
 
         )
     }
@@ -223,8 +235,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                     ParseField(AutoFollowParams.NAME),
                     CheckedFunction { parser: XContentParser -> AutoFollowParams.fromXContent(parser)}),
             NamedXContentRegistry.Entry(Metadata.Custom::class.java,
-                    ParseField(ReplicationMetadata.NAME),
-                    CheckedFunction { parser: XContentParser -> ReplicationMetadata.fromXContent(parser)})
+                    ParseField(ReplicationStateMetadata.NAME),
+                    CheckedFunction { parser: XContentParser -> ReplicationStateMetadata.fromXContent(parser)})
         )
     }
 
@@ -235,7 +247,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
     override fun getInternalRepositories(env: Environment, namedXContentRegistry: NamedXContentRegistry,
                                          clusterService: ClusterService, recoverySettings: RecoverySettings): Map<String, Repository.Factory> {
         val repoFactory = Repository.Factory { repoMetadata: RepositoryMetadata ->
-            RemoteClusterRepository(repoMetadata, client, clusterService, recoverySettings) }
+            RemoteClusterRepository(repoMetadata, client, clusterService, recoverySettings, replicationMetadataManager) }
         return mapOf(REMOTE_REPOSITORY_TYPE to repoFactory)
     }
 

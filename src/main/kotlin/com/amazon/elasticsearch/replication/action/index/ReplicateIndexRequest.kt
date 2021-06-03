@@ -15,6 +15,7 @@
 
 package com.amazon.elasticsearch.replication.action.index
 
+import com.amazon.elasticsearch.replication.metadata.state.FollowIndexName
 import org.elasticsearch.action.ActionRequestValidationException
 import org.elasticsearch.action.IndicesRequest
 import org.elasticsearch.action.support.IndicesOptions
@@ -28,12 +29,14 @@ import org.elasticsearch.common.xcontent.ToXContentObject
 import org.elasticsearch.common.xcontent.XContentBuilder
 import org.elasticsearch.common.xcontent.XContentParser
 import java.io.IOException
+import java.util.function.BiConsumer
 
 class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, IndicesRequest.Replaceable, ToXContentObject {
 
     lateinit var followerIndex: String
     lateinit var remoteCluster: String
     lateinit var remoteIndex: String
+    var assumeRoles: HashMap<String, String>? = null // roles to assume - {leader_fgac_role: role1, follower_fgac_role: role2}
     // Used for integ tests to wait until the restore from remote cluster completes
     var waitForRestore: Boolean = false
 
@@ -47,30 +50,46 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
     }
 
     companion object {
-        private val PARSER = ObjectParser<ReplicateIndexRequest, Void>("FollowIndexRequestParser") { ReplicateIndexRequest() }
-
+        const val LEADER_FGAC_ROLE = "leader_fgac_role"
+        const val FOLLOWER_FGAC_ROLE = "follower_fgac_role"
+        private val INDEX_REQ_PARSER = ObjectParser<ReplicateIndexRequest, Void>("FollowIndexRequestParser") { ReplicateIndexRequest() }
+        val FGAC_ROLES_PARSER = ObjectParser<HashMap<String, String>, Void>("AssumeRolesParser") { HashMap() }
         init {
-            PARSER.declareString(ReplicateIndexRequest::remoteCluster::set, ParseField("remote_cluster"))
-            PARSER.declareString(ReplicateIndexRequest::remoteIndex::set, ParseField("remote_index"))
+            FGAC_ROLES_PARSER.declareStringOrNull({assumeRoles: HashMap<String, String>, role: String -> assumeRoles[LEADER_FGAC_ROLE] = role},
+                    ParseField(LEADER_FGAC_ROLE))
+            FGAC_ROLES_PARSER.declareStringOrNull({assumeRoles: HashMap<String, String>, role: String -> assumeRoles[FOLLOWER_FGAC_ROLE] = role},
+                    ParseField(FOLLOWER_FGAC_ROLE))
+
+            INDEX_REQ_PARSER.declareString(ReplicateIndexRequest::remoteCluster::set, ParseField("remote_cluster"))
+            INDEX_REQ_PARSER.declareString(ReplicateIndexRequest::remoteIndex::set, ParseField("remote_index"))
+            INDEX_REQ_PARSER.declareObjectOrDefault(BiConsumer {reqParser: ReplicateIndexRequest, roles: HashMap<String, String> -> reqParser.assumeRoles = roles},
+                    FGAC_ROLES_PARSER, null, ParseField("assume_roles"))
         }
 
         @Throws(IOException::class)
         fun fromXContent(parser: XContentParser, followerIndex: String): ReplicateIndexRequest {
-            val followIndexRequest = PARSER.parse(parser, null)
+            val followIndexRequest = INDEX_REQ_PARSER.parse(parser, null)
             followIndexRequest.followerIndex = followerIndex
+            if(followIndexRequest.assumeRoles?.size == 0) {
+                followIndexRequest.assumeRoles = null
+            }
             return followIndexRequest
         }
     }
 
     override fun validate(): ActionRequestValidationException? {
-        var validationException: ActionRequestValidationException? = null
+        var validationException = ActionRequestValidationException()
         if (!this::remoteCluster.isInitialized ||
             !this::remoteIndex.isInitialized ||
             !this::followerIndex.isInitialized) {
-            validationException = ActionRequestValidationException()
             validationException.addValidationError("Mandatory params are missing for the request")
         }
-        return validationException
+
+        if(assumeRoles != null && (assumeRoles!!.size < 2 || assumeRoles!![LEADER_FGAC_ROLE] == null ||
+                assumeRoles!![FOLLOWER_FGAC_ROLE] == null)) {
+            validationException.addValidationError("Need roles for $LEADER_FGAC_ROLE and $FOLLOWER_FGAC_ROLE")
+        }
+        return if(validationException.validationErrors().isEmpty()) return null else validationException
     }
 
     override fun indices(vararg indices: String?): IndicesRequest {
@@ -89,6 +108,13 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
         remoteCluster = inp.readString()
         remoteIndex = inp.readString()
         followerIndex = inp.readString()
+        var leaderFgacRole = inp.readOptionalString()
+        var followerFgacRole = inp.readOptionalString()
+        if(leaderFgacRole != null && followerFgacRole != null) {
+            assumeRoles = HashMap()
+            assumeRoles!![LEADER_FGAC_ROLE] = leaderFgacRole
+            assumeRoles!![FOLLOWER_FGAC_ROLE] = followerFgacRole
+        }
         waitForRestore = inp.readBoolean()
     }
 
@@ -97,6 +123,8 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
         out.writeString(remoteCluster)
         out.writeString(remoteIndex)
         out.writeString(followerIndex)
+        out.writeOptionalString(assumeRoles?.get(LEADER_FGAC_ROLE))
+        out.writeOptionalString(assumeRoles?.get(FOLLOWER_FGAC_ROLE))
         out.writeBoolean(waitForRestore)
     }
 
@@ -106,6 +134,13 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
         builder.field("remote_cluster", remoteCluster)
         builder.field("remote_index", remoteIndex)
         builder.field("follower_index", followerIndex)
+        if(assumeRoles != null && assumeRoles!!.size == 2) {
+            builder.field("assume_roles")
+            builder.startObject()
+            builder.field(LEADER_FGAC_ROLE, assumeRoles!![LEADER_FGAC_ROLE])
+            builder.field(FOLLOWER_FGAC_ROLE, assumeRoles!![FOLLOWER_FGAC_ROLE])
+            builder.endObject()
+        }
         builder.field("wait_for_restore", waitForRestore)
         builder.endObject()
         return builder

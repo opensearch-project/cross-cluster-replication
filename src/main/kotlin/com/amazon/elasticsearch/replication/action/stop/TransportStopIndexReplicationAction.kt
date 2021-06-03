@@ -16,11 +16,16 @@
 package com.amazon.elasticsearch.replication.action.stop
 
 import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.REPLICATED_INDEX_SETTING
-import com.amazon.elasticsearch.replication.metadata.REPLICATION_OVERALL_STATE_KEY
-import com.amazon.elasticsearch.replication.metadata.REPLICATION_OVERALL_STATE_RUNNING_VALUE
 import com.amazon.elasticsearch.replication.metadata.*
 import com.amazon.elasticsearch.replication.seqno.RemoteClusterRetentionLeaseHelper
 import com.amazon.elasticsearch.replication.task.index.IndexReplicationParams
+import com.amazon.elasticsearch.replication.metadata.INDEX_REPLICATION_BLOCK
+import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
+import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
+import com.amazon.elasticsearch.replication.metadata.checkIfIndexBlockedWithLevel
+import com.amazon.elasticsearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
+import com.amazon.elasticsearch.replication.metadata.state.getReplicationStateParamsForIndex
+import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
 import com.amazon.elasticsearch.replication.util.completeWith
 import com.amazon.elasticsearch.replication.util.coroutineContext
 import com.amazon.elasticsearch.replication.util.suspending
@@ -64,7 +69,8 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                                                               actionFilters: ActionFilters,
                                                               indexNameExpressionResolver:
                                                               IndexNameExpressionResolver,
-                                                              val client: Client) :
+                                                              val client: Client,
+                                                              val replicationMetadataManager: ReplicationMetadataManager) :
     TransportMasterNodeAction<StopIndexReplicationRequest, AcknowledgedResponse> (StopIndexReplicationAction.NAME,
             transportService, clusterService, threadPool, actionFilters, ::StopIndexReplicationRequest,
             indexNameExpressionResolver), CoroutineScope by GlobalScope {
@@ -98,56 +104,40 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                 }
                 if (!restoring &&
                         state.routingTable.hasIndex(request.indexName)) {
-                    val closeResponse = suspending(client.admin().indices()::close)(CloseIndexRequest(request.indexName))
+                    val closeResponse = client.suspending(client.admin().indices()::close)(CloseIndexRequest(request.indexName))
                     if (!closeResponse.isAcknowledged) {
                         throw ElasticsearchException("Unable to close index: ${request.indexName}")
                     }
                 }
-
+                val replMetadata = replicationMetadataManager.getIndexReplicationMetadata(request.indexName)
                 // If paused , we need to clear retention leases as Shard Tasks are non-existent
                 if (isPaused) {
-                    removeRetentionLease(state, request.indexName)
+                    removeRetentionLease(replMetadata, request.indexName)
                 }
 
-                val stateUpdateResponse : AcknowledgedResponse =
+                val clusterStateUpdateResponse : AcknowledgedResponse =
                     clusterService.waitForClusterStateUpdate("stop_replication") { l -> StopReplicationTask(request, l)}
-                if (!stateUpdateResponse.isAcknowledged) {
+                if (!clusterStateUpdateResponse.isAcknowledged) {
                     throw ElasticsearchException("Failed to update cluster state")
                 }
 
                 // Index will be deleted if stop is called while it is restoring.  So no need to reopen
                 if (!restoring &&
                         state.routingTable.hasIndex(request.indexName)) {
-                    val reopenResponse = suspending(client.admin().indices()::open)(OpenIndexRequest(request.indexName))
+                    val reopenResponse = client.suspending(client.admin().indices()::open)(OpenIndexRequest(request.indexName))
                     if (!reopenResponse.isAcknowledged) {
                         throw ElasticsearchException("Failed to reopen index: ${request.indexName}")
                     }
                 }
-
-
-
+                replicationMetadataManager.deleteIndexReplicationMetadata(request.indexName)
                 AcknowledgedResponse(true)
             }
         }
     }
 
-    private suspend fun removeRetentionLease(state: ClusterState, followerIndexName: String) {
-        val currentReplicationMetadata = state.metadata().custom(ReplicationMetadata.NAME)
-                ?: ReplicationMetadata.EMPTY
-
-        val clusterAlias = currentReplicationMetadata.replicatedIndices.entries.firstOrNull {
-            it.value.containsKey(followerIndexName)
-        }?.key
-
-        val leaderIndex = currentReplicationMetadata.replicatedIndices.get(clusterAlias)?.get(followerIndexName)
-
-        if (leaderIndex == null || clusterAlias == null) {
-            throw IllegalStateException("Unknown value of leader index or cluster alias")
-        }
-
-        val remoteMetadata = getRemoteIndexMetadata(clusterAlias, leaderIndex)
-
-        val params = IndexReplicationParams(clusterAlias, remoteMetadata.index, followerIndexName)
+    private suspend fun removeRetentionLease(replMetadata: ReplicationMetadata, followerIndexName: String) {
+        val remoteMetadata = getRemoteIndexMetadata(replMetadata.connectionName, replMetadata.leaderContext.resource)
+        val params = IndexReplicationParams(replMetadata.connectionName, remoteMetadata.index, followerIndexName)
         val remoteClient = client.getRemoteClusterClient(params.remoteCluster)
         val shards = clusterService.state().routingTable.indicesRouting().get(params.followerIndexName).shards()
         val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
@@ -159,14 +149,14 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
     }
 
     private suspend fun getRemoteIndexMetadata(remoteCluster: String, remoteIndex: String): IndexMetadata {
-        val remoteClusterClient = client.getRemoteClusterClient(remoteCluster).admin().cluster()
-        val clusterStateRequest = remoteClusterClient.prepareState()
+        val remoteClusterClient = client.getRemoteClusterClient(remoteCluster)
+        val clusterStateRequest = remoteClusterClient.admin().cluster().prepareState()
                 .clear()
                 .setIndices(remoteIndex)
                 .setMetadata(true)
                 .setIndicesOptions(IndicesOptions.strictSingleIndexNoExpandForbidClosed())
                 .request()
-        val remoteState = suspending(remoteClusterClient::state)(clusterStateRequest).state
+        val remoteState = remoteClusterClient.suspending(remoteClusterClient.admin().cluster()::state)(clusterStateRequest).state
         return remoteState.metadata.index(remoteIndex) ?: throw IndexNotFoundException("${remoteCluster}:${remoteIndex}")
     }
 
@@ -174,12 +164,12 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
         val replicationStateParams = getReplicationStateParamsForIndex(clusterService, request.indexName)
                 ?:
             throw IllegalArgumentException("No replication in progress for index:${request.indexName}")
-        val replicationOverallState = replicationStateParams[REPLICATION_OVERALL_STATE_KEY]
-        if (replicationOverallState == REPLICATION_OVERALL_STATE_RUNNING_VALUE)
+
+        val replicationOverallState = replicationStateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE]
+        if (replicationOverallState == ReplicationOverallState.RUNNING.name)
             return false
-        else if (replicationOverallState == REPLICATION_OVERALL_STATE_PAUSED)  {
+        else if (replicationOverallState == ReplicationOverallState.PAUSED.name)
             return true
-        }
         throw IllegalStateException("Unknown value of replication state:$replicationOverallState")
     }
 
@@ -205,21 +195,7 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                 newState.blocks(newBlocks)
             }
 
-            // remove replication metadata and state params
             val mdBuilder = Metadata.builder(currentState.metadata)
-            val currentReplicationMetadata = currentState.metadata().custom(ReplicationMetadata.NAME)
-                ?: ReplicationMetadata.EMPTY
-            val clusterAlias = currentReplicationMetadata.replicatedIndices.entries.firstOrNull {
-                it.value.containsKey(request.indexName)
-            }?.key
-            if (clusterAlias != null) {
-                val newMetadata = currentReplicationMetadata.removeIndex(clusterAlias, request.indexName)
-                        .removeReplicationStateParams(request.indexName)
-                        .removeSecurityContext(clusterAlias, request.indexName)
-                        .clearPausedState(request.indexName)
-                mdBuilder.putCustom(ReplicationMetadata.NAME, newMetadata)
-            }
-
             // remove replicated index setting
             val currentIndexMetadata = currentState.metadata.index(request.indexName)
             if (currentIndexMetadata != null) {

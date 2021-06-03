@@ -17,6 +17,8 @@ package com.amazon.elasticsearch.replication.action.pause
 
 import com.amazon.elasticsearch.replication.action.replicationstatedetails.UpdateReplicationStateDetailsRequest
 import com.amazon.elasticsearch.replication.metadata.*
+import com.amazon.elasticsearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
+import com.amazon.elasticsearch.replication.metadata.state.getReplicationStateParamsForIndex
 import com.amazon.elasticsearch.replication.util.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -38,7 +40,6 @@ import org.elasticsearch.cluster.RestoreInProgress
 import org.elasticsearch.cluster.block.ClusterBlockException
 import org.elasticsearch.cluster.block.ClusterBlockLevel
 import org.elasticsearch.cluster.metadata.IndexNameExpressionResolver
-import org.elasticsearch.cluster.metadata.Metadata
 import org.elasticsearch.cluster.service.ClusterService
 import org.elasticsearch.common.inject.Inject
 import org.elasticsearch.common.io.stream.StreamInput
@@ -51,8 +52,9 @@ class TransportPauseIndexReplicationAction @Inject constructor(transportService:
                                                                threadPool: ThreadPool,
                                                                actionFilters: ActionFilters,
                                                                indexNameExpressionResolver:
-                                                              IndexNameExpressionResolver,
-                                                               val client: Client) :
+                                                               IndexNameExpressionResolver,
+                                                               val client: Client,
+                                                               val replicationMetadataManager: ReplicationMetadataManager) :
     TransportMasterNodeAction<PauseIndexReplicationRequest, AcknowledgedResponse> (PauseIndexReplicationAction.NAME,
             transportService, clusterService, threadPool, actionFilters, ::PauseIndexReplicationRequest,
             indexNameExpressionResolver), CoroutineScope by GlobalScope {
@@ -78,23 +80,16 @@ class TransportPauseIndexReplicationAction @Inject constructor(transportService:
                 log.info("Pausing index replication on index:" + request.indexName)
                 validatePauseReplicationRequest(request)
 
-
                 // Restoring Index can't be paused
                 val restoring = clusterService.state().custom<RestoreInProgress>(RestoreInProgress.TYPE).any { entry ->
                     entry.indices().any { it == request.indexName }
                 }
-
                 if (restoring) {
                     throw ElasticsearchException("Index is in bootstrap phase currently for index:" + request.indexName)
                 }
 
-                val stateUpdateResponse : AcknowledgedResponse =
-                    clusterService.waitForClusterStateUpdate("Pause_replication") { l -> PauseReplicationTask(request, l)}
-                if (!stateUpdateResponse.isAcknowledged) {
-                    throw ElasticsearchException("Failed to update cluster state")
-                }
-
-                updateReplicationStateToPaused(request.indexName)
+                // If the index is not in bootstrap phase, bring down the tasks and persist the info
+                replicationMetadataManager.updateIndexReplicationState(request.indexName, ReplicationOverallState.PAUSED)
 
                 AcknowledgedResponse(true)
             }
@@ -105,10 +100,10 @@ class TransportPauseIndexReplicationAction @Inject constructor(transportService:
         val replicationStateParams = getReplicationStateParamsForIndex(clusterService, request.indexName)
                 ?:
             throw IllegalArgumentException("No replication in progress for index:${request.indexName}")
-        val replicationOverallState = replicationStateParams[REPLICATION_OVERALL_STATE_KEY]
-        if (replicationOverallState != REPLICATION_OVERALL_STATE_RUNNING_VALUE)
+        val replicationOverallState = replicationStateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE]
+        if (replicationOverallState != ReplicationOverallState.RUNNING.name)
             throw IllegalStateException("Unknown value of replication state:$replicationOverallState")
-        else if (replicationOverallState == REPLICATION_OVERALL_STATE_PAUSED)
+        else if (replicationOverallState == ReplicationOverallState.PAUSED.name)
             throw ResourceAlreadyExistsException("Index ${request.indexName} is already paused")
 
     }
@@ -117,39 +112,8 @@ class TransportPauseIndexReplicationAction @Inject constructor(transportService:
         return ThreadPool.Names.SAME
     }
 
-    private suspend fun updateReplicationStateToPaused(indexName: String) {
-        val replicationStateParamMap = HashMap<String, String>()
-        replicationStateParamMap[REPLICATION_OVERALL_STATE_KEY] = REPLICATION_OVERALL_STATE_PAUSED
-        val updateReplicationStateDetailsRequest = UpdateReplicationStateDetailsRequest(indexName, replicationStateParamMap,
-                UpdateReplicationStateDetailsRequest.UpdateType.ADD)
-        submitClusterStateUpdateTask(updateReplicationStateDetailsRequest, UpdateReplicationStateDetailsTaskExecutor.INSTANCE
-                as ClusterStateTaskExecutor<AcknowledgedRequest<UpdateReplicationStateDetailsRequest>>,
-                clusterService,
-                "pause-replication-state-params")
-    }
-
     @Throws(IOException::class)
     override fun read(inp: StreamInput): AcknowledgedResponse {
         return AcknowledgedResponse(inp)
-    }
-
-    class PauseReplicationTask(val request: PauseIndexReplicationRequest, listener: ActionListener<AcknowledgedResponse>) :
-        AckedClusterStateUpdateTask<AcknowledgedResponse>(request, listener) {
-
-        override fun execute(currentState: ClusterState): ClusterState {
-            val newState = ClusterState.builder(currentState)
-
-            val mdBuilder = Metadata.builder(currentState.metadata)
-            val currentReplicationMetadata = currentState.metadata().custom(ReplicationMetadata.NAME)
-                ?: ReplicationMetadata.EMPTY
-
-            // add paused index setting
-            val newMetadata = currentReplicationMetadata.pauseIndex(request.indexName, request.reason)
-            mdBuilder.putCustom(ReplicationMetadata.NAME, newMetadata)
-            newState.metadata(mdBuilder)
-            return newState.build()
-        }
-
-        override fun newResponse(acknowledged: Boolean) = AcknowledgedResponse(acknowledged)
     }
 }

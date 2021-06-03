@@ -15,7 +15,9 @@
 
 package com.amazon.elasticsearch.replication.seqno
 
+import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
 import com.amazon.elasticsearch.replication.util.suspendExecute
+import com.amazon.elasticsearch.replication.util.execute
 import org.apache.logging.log4j.LogManager
 import org.elasticsearch.client.Client
 import org.elasticsearch.common.logging.Loggers
