@@ -21,6 +21,8 @@ import com.amazon.elasticsearch.replication.action.repository.GetStoreMetadataRe
 import com.amazon.elasticsearch.replication.action.repository.ReleaseLeaderResourcesAction
 import com.amazon.elasticsearch.replication.util.SecurityContext
 import com.amazon.elasticsearch.replication.action.repository.ReleaseLeaderResourcesRequest
+import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
+import com.amazon.elasticsearch.replication.metadata.store.ReplicationStoreMetadataType
 import com.amazon.elasticsearch.replication.util.executeUnderSecurityContext
 import org.apache.logging.log4j.LogManager
 import org.apache.lucene.index.IndexCommit
@@ -72,7 +74,8 @@ const val REMOTE_SNAPSHOT_NAME = "opendistro-remote-snapshot"
 class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata,
                               private val client: Client,
                               private val clusterService: ClusterService,
-                              private val recoverySettings: RecoverySettings): AbstractLifecycleComponent(), Repository {
+                              private val recoverySettings: RecoverySettings,
+                              private val replicationMetadataManager: ReplicationMetadataManager): AbstractLifecycleComponent(), Repository {
 
     // Lazy init because we initialize when a remote cluster seed setting is added at which point the remote
     // cluster connection might not be available yet
@@ -295,7 +298,8 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
                 listener.onResponse(null)
             }
             else {
-                remoteClusterClient.executeUnderSecurityContext(clusterService, repositoryMetadata.remoteClusterName(), followerIndexName) {
+                val injectedUser = getSecurityContext(followerIndexName)
+                remoteClusterClient.executeUnderSecurityContext(injectedUser) {
                     multiChunkTransfer.start()
                 }
             }
@@ -339,6 +343,12 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         return remoteState
     }
 
+    private fun getSecurityContext(followerIndex: String): String? {
+        val securityContext = SecurityContext(replicationMetadataManager,
+                ReplicationStoreMetadataType.INDEX, repositoryMetadata.remoteClusterName(), followerIndex)
+        return securityContext.fromReplicationMetadata(REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC)
+    }
+
     /*
     * Makes transport action to the remote cluster by making a blocking call
     * For restore workflow this is expected.
@@ -346,9 +356,7 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
     private fun <T : ActionResponse> remoteClusterGetAction(actionType: ActionType<T>,
                                                             actionRequest: ActionRequest,
                                                             followerIndex: String): T {
-        val userString = SecurityContext.fromClusterState(clusterService.state(),
-                                                        repositoryMetadata.remoteClusterName(),
-                                                        followerIndex)
+        val userString = getSecurityContext(followerIndex)
         remoteClusterClient.threadPool().threadContext.newStoredContext(true).use {
             SecurityContext.toThreadContext(remoteClusterClient.threadPool().threadContext, userString)
             return remoteClusterClient.execute(actionType, actionRequest).actionGet(REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC)

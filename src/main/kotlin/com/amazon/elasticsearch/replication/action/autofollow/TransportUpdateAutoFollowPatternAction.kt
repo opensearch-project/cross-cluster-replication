@@ -15,8 +15,9 @@
 
 package com.amazon.elasticsearch.replication.action.autofollow
 
-import com.amazon.elasticsearch.replication.metadata.ReplicationMetadata
-import com.amazon.elasticsearch.replication.metadata.UpdateAutoFollowPattern
+import com.amazon.elasticsearch.replication.ReplicationException
+import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
+import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
 import com.amazon.elasticsearch.replication.task.autofollow.AutoFollowExecutor
 import com.amazon.elasticsearch.replication.task.autofollow.AutoFollowParams
 import com.amazon.elasticsearch.replication.util.SecurityContext
@@ -25,7 +26,6 @@ import com.amazon.elasticsearch.replication.util.coroutineContext
 import com.amazon.elasticsearch.replication.util.persistentTasksService
 import com.amazon.elasticsearch.replication.util.removeTask
 import com.amazon.elasticsearch.replication.util.startTask
-import com.amazon.elasticsearch.replication.util.waitForClusterStateUpdate
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
@@ -51,7 +51,7 @@ import org.elasticsearch.transport.TransportService
 class TransportUpdateAutoFollowPatternAction @Inject constructor(
     transportService: TransportService, clusterService: ClusterService, threadPool: ThreadPool,
     actionFilters: ActionFilters, indexNameExpressionResolver: IndexNameExpressionResolver,
-    private val client: NodeClient) : TransportMasterNodeAction<UpdateAutoFollowPatternRequest, AcknowledgedResponse>(
+    private val client: NodeClient, private val metadataManager: ReplicationMetadataManager) : TransportMasterNodeAction<UpdateAutoFollowPatternRequest, AcknowledgedResponse>(
     UpdateAutoFollowPatternAction.NAME, true, transportService, clusterService, threadPool, actionFilters,
     ::UpdateAutoFollowPatternRequest, indexNameExpressionResolver), CoroutineScope by GlobalScope {
 
@@ -76,31 +76,23 @@ class TransportUpdateAutoFollowPatternAction @Inject constructor(
 
         launch(threadPool.coroutineContext(ThreadPool.Names.MANAGEMENT)) {
             listener.completeWith {
-                val injectedUser = SecurityContext.fromSecurityThreadContext(threadPool.threadContext)
-                val replicationMetadata = clusterService.state().metadata.custom(ReplicationMetadata.NAME)
-                        ?: ReplicationMetadata.EMPTY
+                val user = SecurityContext.fromSecurityThreadContext(threadPool.threadContext)
                 if (request.action == UpdateAutoFollowPatternRequest.Action.REMOVE) {
                     // Stopping the tasks and removing the context information from the cluster state
-                    replicationMetadata.removePattern(request.connection, request.patternName).also {
-                        val shouldStop = it.autoFollowPatterns[request.connection]?.get(request.patternName) == null
-                        if (shouldStop) stopAutoFollowTask(request.connection, request.patternName)
-                    }
-                }
-
-                val response: AcknowledgedResponse = clusterService.waitForClusterStateUpdate("update autofollow patterns") { l ->
-                    UpdateAutoFollowPattern(request, threadPool, injectedUser, l)
-                }
-
-                if(!response.isAcknowledged) {
-                    throw ElasticsearchException(AUTOFOLLOW_EXCEPTION_GENERIC_STRING)
+                    stopAutoFollowTask(request.connection, request.patternName)
+                    metadataManager.deleteAutofollowMetadata(request.patternName, request.connection)
                 }
 
                 if (request.action == UpdateAutoFollowPatternRequest.Action.ADD) {
                     // Should start the task if there were no follow patterns before adding this
-                    val shouldStart = replicationMetadata.autoFollowPatterns[request.connection]?.get(request.patternName) == null
-                    if (shouldStart) startAutoFollowTask(request.connection, request.patternName)
+                    if(request.pattern == null) {
+                        throw ReplicationException("Failed to update empty autofollow pattern")
+                    }
+                    metadataManager.addAutofollowMetadata(request.patternName, request.connection, request.pattern,
+                            ReplicationOverallState.RUNNING, user, user?.roles?.getOrNull(0), user?.roles?.getOrNull(0))
+                    startAutoFollowTask(request.connection, request.patternName)
                 }
-                response
+                AcknowledgedResponse(true)
             }
         }
     }
@@ -133,6 +125,7 @@ class TransportUpdateAutoFollowPatternAction @Inject constructor(
         } catch(e: ResourceNotFoundException) {
             // Log warn as the task is already removed
             log.warn("Task already stopped for '$clusterAlias:$patternName'", e)
+            throw ElasticsearchException(AUTOFOLLOW_EXCEPTION_GENERIC_STRING)
         } catch (e: Exception) {
             log.error("Failed to stop auto follow task for cluster '$clusterAlias:$patternName'", e)
             throw ElasticsearchException(AUTOFOLLOW_EXCEPTION_GENERIC_STRING)

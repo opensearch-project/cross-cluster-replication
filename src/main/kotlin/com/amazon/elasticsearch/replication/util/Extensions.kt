@@ -15,6 +15,7 @@
 
 package com.amazon.elasticsearch.replication.util
 
+import com.amazon.opendistroforelasticsearch.commons.authuser.User
 import kotlinx.coroutines.delay
 import org.apache.logging.log4j.Logger
 import org.elasticsearch.ElasticsearchException
@@ -44,14 +45,10 @@ fun Store.performOp(tryBlock: () -> Unit, finalBlock: () -> Unit = {}) {
     }
 }
 
-fun <T>Client.executeUnderSecurityContext(clusterService: ClusterService,
-                                          remoteClusterName: String,
-                                          followerIndexName: String,
+fun <T>Client.executeUnderSecurityContext(user: String?,
                                           block: () -> T) {
-    val userString = SecurityContext.fromClusterState(clusterService.state(),
-            remoteClusterName, followerIndexName)
     this.threadPool().threadContext.newStoredContext(true).use {
-        SecurityContext.toThreadContext(this.threadPool().threadContext, userString)
+        SecurityContext.toThreadContext(this.threadPool().threadContext, user)
         block()
     }
 }
@@ -105,4 +102,14 @@ private fun defaultRetryableExceptions(): ArrayList<Class<*>> {
     return retryableExceptions
 }
 
+fun User.overrideFgacRole(fgacRole: String?): User? {
+    if(fgacRole == null) {
+        return null
+    }
+    return User(this.name, this.backendRoles, listOf(fgacRole),
+            this.customAttNames, this.requestedTenant)
+}
 
+fun User.toInjectedUser(): String? {
+    return "${name}|${backendRoles.joinToString(separator=",")}"
+}

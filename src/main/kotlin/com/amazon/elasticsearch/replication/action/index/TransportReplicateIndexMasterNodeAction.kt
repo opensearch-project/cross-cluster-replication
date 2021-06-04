@@ -16,20 +16,20 @@
 package com.amazon.elasticsearch.replication.action.index
 
 import com.amazon.elasticsearch.replication.action.replicationstatedetails.UpdateReplicationStateDetailsRequest
-import com.amazon.elasticsearch.replication.metadata.REPLICATION_OVERALL_STATE_KEY
-import com.amazon.elasticsearch.replication.metadata.REPLICATION_OVERALL_STATE_RUNNING_VALUE
-import com.amazon.elasticsearch.replication.metadata.UpdateReplicatedIndices
-import com.amazon.elasticsearch.replication.metadata.UpdateReplicationStateDetailsTaskExecutor
+import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
+import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
 import com.amazon.elasticsearch.replication.task.ReplicationState
 import com.amazon.elasticsearch.replication.task.index.IndexReplicationExecutor
 import com.amazon.elasticsearch.replication.task.index.IndexReplicationParams
 import com.amazon.elasticsearch.replication.task.index.IndexReplicationState
+import com.amazon.elasticsearch.replication.util.SecurityContext
 import com.amazon.elasticsearch.replication.util.coroutineContext
 import com.amazon.elasticsearch.replication.util.startTask
 import com.amazon.elasticsearch.replication.util.submitClusterStateUpdateTask
 import com.amazon.elasticsearch.replication.util.suspending
 import com.amazon.elasticsearch.replication.util.waitForClusterStateUpdate
 import com.amazon.elasticsearch.replication.util.waitForTaskCondition
+import com.amazon.opendistroforelasticsearch.commons.authuser.User
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
@@ -65,7 +65,8 @@ class TransportReplicateIndexMasterNodeAction @Inject constructor(transportServi
                                                                   indexNameExpressionResolver: IndexNameExpressionResolver,
                                                                   private val persistentTasksService: PersistentTasksService,
                                                                   private val nodeClient : NodeClient,
-                                                                  private val repositoryService: RepositoriesService) :
+                                                                  private val repositoryService: RepositoriesService,
+                                                                  private val replicationMetadataManager: ReplicationMetadataManager) :
         TransportMasterNodeAction<ReplicateIndexMasterNodeRequest, AcknowledgedResponse>(ReplicateIndexMasterNodeAction.NAME,
                 transportService, clusterService, threadPool, actionFilters, ::ReplicateIndexMasterNodeRequest, indexNameExpressionResolver),
         CoroutineScope by GlobalScope {
@@ -97,12 +98,10 @@ class TransportReplicateIndexMasterNodeAction @Inject constructor(transportServi
             try {
                 val remoteMetadata = getRemoteIndexMetadata(replicateIndexReq.remoteCluster, replicateIndexReq.remoteIndex)
                 val params = IndexReplicationParams(replicateIndexReq.remoteCluster, remoteMetadata.index, replicateIndexReq.followerIndex)
-                updateReplicationStateToStarted(replicateIndexReq.followerIndex)
 
-                val response : ReplicateIndexResponse =
-                        clusterService.waitForClusterStateUpdate("updating replicated indices") { l ->
-                            UpdateReplicatedIndices(replicateIndexReq, user, l)
-                        }
+                replicationMetadataManager.addIndexReplicationMetadata(replicateIndexReq.followerIndex,
+                        replicateIndexReq.remoteCluster, replicateIndexReq.remoteIndex,
+                        ReplicationOverallState.RUNNING, user, user?.roles?.getOrNull(0), user?.roles?.getOrNull(0))
 
                 val task = persistentTasksService.startTask("replication:index:${replicateIndexReq.followerIndex}",
                         IndexReplicationExecutor.TASK_NAME, params)
@@ -119,23 +118,12 @@ class TransportReplicateIndexMasterNodeAction @Inject constructor(transportServi
                             (!replicateIndexReq.waitForRestore && replicationState == ReplicationState.RESTORING)
                 }
 
-                listener.onResponse(response)
+                listener.onResponse(AcknowledgedResponse(true))
             } catch (e: Exception) {
                 log.error("Failed to trigger replication for ${replicateIndexReq.followerIndex} - $e")
                 listener.onFailure(e)
             }
         }
-    }
-
-    private suspend fun updateReplicationStateToStarted(indexName: String) {
-        val replicationStateParamMap = HashMap<String, String>()
-        replicationStateParamMap[REPLICATION_OVERALL_STATE_KEY] = REPLICATION_OVERALL_STATE_RUNNING_VALUE
-        val updateReplicationStateDetailsRequest = UpdateReplicationStateDetailsRequest(indexName, replicationStateParamMap,
-                UpdateReplicationStateDetailsRequest.UpdateType.ADD)
-        submitClusterStateUpdateTask(updateReplicationStateDetailsRequest, UpdateReplicationStateDetailsTaskExecutor.INSTANCE
-                as ClusterStateTaskExecutor<AcknowledgedRequest<UpdateReplicationStateDetailsRequest>>,
-                clusterService,
-                "add-replication-state-params")
     }
 
     private suspend fun getRemoteIndexMetadata(remoteCluster: String, remoteIndex: String): IndexMetadata {

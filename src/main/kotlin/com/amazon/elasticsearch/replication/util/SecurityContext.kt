@@ -15,12 +15,17 @@
 
 package com.amazon.elasticsearch.replication.util
 
-import com.amazon.elasticsearch.replication.metadata.ReplicationMetadata
+import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
+import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
+import com.amazon.elasticsearch.replication.metadata.store.ReplicationStoreMetadataType
+import com.amazon.opendistroforelasticsearch.commons.authuser.User
 import org.apache.logging.log4j.LogManager
-import org.elasticsearch.cluster.ClusterState
 import org.elasticsearch.common.util.concurrent.ThreadContext
 
-interface SecurityContext {
+class SecurityContext(val metadataManager: ReplicationMetadataManager,
+                      val metadataType: ReplicationStoreMetadataType,
+                      val connection: String,
+                      val resource: String) {
     companion object {
         const val INJECTED_USER = "injected_user"
         const val OPENDISTRO_USER_INFO = "_opendistro_security_user_info"
@@ -28,26 +33,9 @@ interface SecurityContext {
 
         private val log = LogManager.getLogger(SecurityContext::class.java)
 
-        fun fromSecurityThreadContext(threadContext: ThreadContext): String? {
-            // Directly return injected_user from the thread context if the user info is not set.
-            val userInfo = threadContext.getTransient<String?>(OPENDISTRO_USER_INFO) ?: return threadContext.getTransient(INJECTED_USER)
-            val usersAndRoles = userInfo.split(OPENDISTRO_USER_INFO_DELIMITOR)
-            var userName: String
-            var userBackendRoles = ""
-            if(usersAndRoles.isEmpty()) {
-                log.warn("Failed to parse security user info - $userInfo")
-                return null
-            }
-            userName = usersAndRoles[0]
-            if(usersAndRoles.size >= 2) {
-                userBackendRoles = usersAndRoles[1]
-            }
-            return "${userName}${OPENDISTRO_USER_INFO_DELIMITOR}${userBackendRoles}"
-        }
-
-        fun fromClusterState(clusterState: ClusterState, remoteCluster: String, followerIndex: String): String? {
-            val replicationMetadata = clusterState.metadata.custom<ReplicationMetadata>(ReplicationMetadata.NAME)
-            return replicationMetadata?.securityContexts?.get(remoteCluster)?.get(followerIndex)
+        fun fromSecurityThreadContext(threadContext: ThreadContext): User? {
+            val userInfo = threadContext.getTransient<String?>(OPENDISTRO_USER_INFO)
+            return User.parse(userInfo)
         }
 
         fun toThreadContext(threadContext: ThreadContext, injectedUser: String?) {
@@ -61,5 +49,24 @@ interface SecurityContext {
                 }
             }
         }
+    }
+
+    suspend fun fromReplicationMetadata(): String? {
+        var metadata: ReplicationMetadata? = if(metadataType == ReplicationStoreMetadataType.AUTO_FOLLOW) {
+            metadataManager.getAutofollowMetadata(resource, connection)
+        } else {
+            metadataManager.getIndexReplicationMetadata(resource, connection)
+        }
+        val user = metadata?.followerContext?.user
+        return user?.toInjectedUser()
+    }
+
+    fun fromReplicationMetadata(timeout: Long): String? {
+        val metadata = metadataManager.getIndexReplicationMetadata(resource, connection, timeout)
+        val user = metadata.followerContext.user
+        if(user != null) {
+            return user.toInjectedUser()
+        }
+        return null
     }
 }

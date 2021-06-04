@@ -15,9 +15,10 @@
 
 package com.amazon.elasticsearch.replication.task.index
 
-import com.amazon.elasticsearch.replication.metadata.REPLICATION_OVERALL_STATE_KEY
-import com.amazon.elasticsearch.replication.metadata.REPLICATION_OVERALL_STATE_RUNNING_VALUE
-import com.amazon.elasticsearch.replication.metadata.getReplicationStateParamsForIndex
+import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
+import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
+import com.amazon.elasticsearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
+import com.amazon.elasticsearch.replication.metadata.state.getReplicationStateParamsForIndex
 import com.amazon.elasticsearch.replication.util.persistentTasksService
 import org.apache.logging.log4j.LogManager
 import org.elasticsearch.client.Client
@@ -31,7 +32,8 @@ import org.elasticsearch.tasks.TaskId
 import org.elasticsearch.threadpool.ThreadPool
 
 class IndexReplicationExecutor(executor: String, private val clusterService: ClusterService,
-                               private val threadPool: ThreadPool, private val client: Client)
+                               private val threadPool: ThreadPool, private val client: Client,
+                               private val replicationMetadataManager: ReplicationMetadataManager)
     : PersistentTasksExecutor<IndexReplicationParams>(TASK_NAME, executor) {
 
     companion object {
@@ -48,9 +50,9 @@ class IndexReplicationExecutor(executor: String, private val clusterService: Clu
         val replicationStateParams = getReplicationStateParamsForIndex(clusterService, params.followerIndexName)
                 ?:
                 throw IllegalStateException("Index task started without replication state in cluster metadata")
-        if (replicationStateParams[REPLICATION_OVERALL_STATE_KEY] != REPLICATION_OVERALL_STATE_RUNNING_VALUE) {
+        if (replicationStateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE] != ReplicationOverallState.RUNNING.name) {
             throw IllegalArgumentException("Replication state for index:${params.followerIndexName} should be RUNNING, " +
-                    "but was:${replicationStateParams[REPLICATION_OVERALL_STATE_KEY]}")
+                    "but was:${replicationStateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE]}")
         }
     }
 
@@ -68,7 +70,7 @@ class IndexReplicationExecutor(executor: String, private val clusterService: Clu
                             headers: MutableMap<String, String>?): AllocatedPersistentTask {
         return IndexReplicationTask(id, type, action, getDescription(taskInProgress), parentTaskId,
                                     executor, clusterService, threadPool, client, requireNotNull(taskInProgress.params),
-                                    persistentTasksService)
+                                    persistentTasksService, replicationMetadataManager)
     }
 
     override fun getDescription(taskInProgress: PersistentTask<IndexReplicationParams>): String {

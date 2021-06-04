@@ -20,7 +20,7 @@ import com.amazon.elasticsearch.replication.action.index.block.IndexBlockUpdateT
 import com.amazon.elasticsearch.replication.action.index.block.UpdateIndexBlockRequest
 import com.amazon.elasticsearch.replication.action.stop.StopIndexReplicationAction
 import com.amazon.elasticsearch.replication.action.stop.StopIndexReplicationRequest
-import com.amazon.elasticsearch.replication.metadata.getReplicationStateParamsForIndex
+import com.amazon.elasticsearch.replication.metadata.state.getReplicationStateParamsForIndex
 import com.amazon.elasticsearch.replication.repository.REMOTE_SNAPSHOT_NAME
 import com.amazon.elasticsearch.replication.repository.RemoteClusterRepository
 import com.amazon.elasticsearch.replication.seqno.RemoteClusterRetentionLeaseHelper
@@ -67,6 +67,7 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
 import com.amazon.elasticsearch.replication.action.index.block.UpdateIndexBlockAction
+import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 
 class IndexReplicationTask(id: Long, type: String, action: String, description: String,
                            parentTask: TaskId,
@@ -75,9 +76,10 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
                            threadPool: ThreadPool,
                            client: Client,
                            params: IndexReplicationParams,
-                           private val persistentTasksService: PersistentTasksService)
+                           private val persistentTasksService: PersistentTasksService,
+                           replicationMetadataManager: ReplicationMetadataManager)
     : CrossClusterReplicationTask(id, type, action, description, parentTask, emptyMap(), executor,
-                                  clusterService, threadPool, client), ClusterStateListener {
+                                  clusterService, threadPool, client, replicationMetadataManager), ClusterStateListener {
     private lateinit var currentTaskState : IndexReplicationState
     private lateinit var followingTaskState : IndexReplicationState
 

@@ -1,5 +1,6 @@
 package com.amazon.elasticsearch.replication.metadata.store
 
+import com.amazon.elasticsearch.replication.repository.RemoteClusterRepository
 import com.amazon.elasticsearch.replication.util.execute
 import com.amazon.elasticsearch.replication.util.suspending
 import org.elasticsearch.ExceptionsHelper
@@ -17,8 +18,6 @@ import org.elasticsearch.client.Client
 import org.elasticsearch.cluster.metadata.IndexMetadata
 import org.elasticsearch.cluster.service.ClusterService
 import org.elasticsearch.common.component.AbstractLifecycleComponent
-import org.elasticsearch.common.inject.Inject
-import org.elasticsearch.common.inject.Singleton
 import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.xcontent.LoggingDeprecationHandler
 import org.elasticsearch.common.xcontent.NamedXContentRegistry
@@ -28,8 +27,7 @@ import org.elasticsearch.common.xcontent.XContentHelper
 import org.elasticsearch.common.xcontent.XContentType
 
 
-@Singleton
-class ReplicationMetadataStore @Inject constructor(val client: Client, val clusterService: ClusterService,
+class ReplicationMetadataStore constructor(val client: Client, val clusterService: ClusterService,
                                val namedXContentRegistry: NamedXContentRegistry): AbstractLifecycleComponent() {
 
     companion object {
@@ -58,7 +56,7 @@ class ReplicationMetadataStore @Inject constructor(val client: Client, val clust
         return suspending(indexReqBuilder::execute)("replication")
     }
 
-    suspend fun getMetadata(getMetadataReq: GetReplicationMetadataRequest): ReplicationMetadata {
+    suspend fun getMetadata(getMetadataReq: GetReplicationMetadataRequest): GetReplicationMetadataResponse {
         val id = getId(getMetadataReq.metadataType, getMetadataReq.connectionName, getMetadataReq.resourceName)
 
         if(!configStoreExists()) {
@@ -71,7 +69,24 @@ class ReplicationMetadataStore @Inject constructor(val client: Client, val clust
         val getRes = suspending(client::get)(getReq)
         val parser = XContentHelper.createParser(namedXContentRegistry, LoggingDeprecationHandler.INSTANCE,
                 getRes.sourceAsBytesRef, XContentType.JSON)
-        return ReplicationMetadata.fromXContent(parser)
+        return GetReplicationMetadataResponse(ReplicationMetadata.fromXContent(parser), getRes.seqNo, getRes.primaryTerm)
+    }
+
+    fun getMetadata(getMetadataReq: GetReplicationMetadataRequest,
+                    timeout: Long = RemoteClusterRepository.REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC): GetReplicationMetadataResponse {
+        val id = getId(getMetadataReq.metadataType, getMetadataReq.connectionName, getMetadataReq.resourceName)
+
+        if(!configStoreExists()) {
+            throw ResourceNotFoundException("Metadata for $id doesn't exist")
+        }
+
+        // TODO: Specify routing to fetch the metadata from primary shard
+        val getReq = GetRequest(REPLICATION_CONFIG_SYSTEM_INDEX, id)
+
+        val getRes = client.get(getReq).actionGet(timeout)
+        val parser = XContentHelper.createParser(namedXContentRegistry, LoggingDeprecationHandler.INSTANCE,
+                getRes.sourceAsBytesRef, XContentType.JSON)
+        return GetReplicationMetadataResponse(ReplicationMetadata.fromXContent(parser), getRes.seqNo, getRes.primaryTerm)
     }
 
     suspend fun deleteMetadata(delMetadataReq: DeleteReplicationMetadataRequest): DeleteResponse {
@@ -99,10 +114,12 @@ class ReplicationMetadataStore @Inject constructor(val client: Client, val clust
         return suspending(client::update)(updateReq)
     }
 
-    private fun getId(metadataType: String, connectionName: String, resourceName: String): String {
+    private fun getId(metadataType: String, connectionName: String?, resourceName: String): String {
         var id = resourceName
-        if(metadataType == ReplicationStoreMetadataType.AUTO_FOLLOW.name)
+        if(metadataType == ReplicationStoreMetadataType.AUTO_FOLLOW.name) {
+            assert(connectionName != null)
             id = "${connectionName}:${resourceName}"
+        }
         return id
     }
 
