@@ -15,6 +15,7 @@
 
 package com.amazon.elasticsearch.replication.action.index
 
+import com.amazon.opendistroforelasticsearch.commons.authuser.User
 import org.elasticsearch.action.ActionRequestValidationException
 import org.elasticsearch.action.support.master.MasterNodeRequest
 import org.elasticsearch.common.io.stream.StreamInput
@@ -26,26 +27,26 @@ import org.elasticsearch.common.xcontent.XContentBuilder
 class ReplicateIndexMasterNodeRequest:
         MasterNodeRequest<ReplicateIndexMasterNodeRequest>, ToXContentObject {
 
-    var user: String?
+    var user: User?
     var replicateIndexReq: ReplicateIndexRequest
 
     override fun validate(): ActionRequestValidationException? {
         return null
     }
 
-    constructor(user: String?, replicateIndexReq: ReplicateIndexRequest): super() {
+    constructor(user: User?, replicateIndexReq: ReplicateIndexRequest): super() {
         this.user = user
         this.replicateIndexReq = replicateIndexReq
     }
 
     constructor(inp: StreamInput) : super(inp) {
-        user = inp.readOptionalString()
+        user = User(inp)
         replicateIndexReq = ReplicateIndexRequest(inp)
     }
 
     override fun writeTo(out: StreamOutput) {
         super.writeTo(out)
-        out.writeOptionalString(user)
+        user?.writeTo(out)
         replicateIndexReq.writeTo(out)
     }
 

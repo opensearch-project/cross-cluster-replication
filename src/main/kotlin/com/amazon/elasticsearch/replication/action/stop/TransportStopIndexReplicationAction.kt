@@ -17,11 +17,11 @@ package com.amazon.elasticsearch.replication.action.stop
 
 import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.REPLICATED_INDEX_SETTING
 import com.amazon.elasticsearch.replication.metadata.INDEX_REPLICATION_BLOCK
+import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
+import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
 import com.amazon.elasticsearch.replication.metadata.checkIfIndexBlockedWithLevel
-import com.amazon.elasticsearch.replication.metadata.REPLICATION_OVERALL_STATE_KEY
-import com.amazon.elasticsearch.replication.metadata.REPLICATION_OVERALL_STATE_RUNNING_VALUE
-import com.amazon.elasticsearch.replication.metadata.ReplicationMetadata
-import com.amazon.elasticsearch.replication.metadata.getReplicationStateParamsForIndex
+import com.amazon.elasticsearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
+import com.amazon.elasticsearch.replication.metadata.state.getReplicationStateParamsForIndex
 import com.amazon.elasticsearch.replication.util.completeWith
 import com.amazon.elasticsearch.replication.util.coroutineContext
 import com.amazon.elasticsearch.replication.util.suspending
@@ -63,7 +63,8 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                                                               actionFilters: ActionFilters,
                                                               indexNameExpressionResolver:
                                                               IndexNameExpressionResolver,
-                                                              val client: Client) :
+                                                              val client: Client,
+                                                              val replicationMetadataManager: ReplicationMetadataManager) :
     TransportMasterNodeAction<StopIndexReplicationRequest, AcknowledgedResponse> (StopIndexReplicationAction.NAME,
             transportService, clusterService, threadPool, actionFilters, ::StopIndexReplicationRequest,
             indexNameExpressionResolver), CoroutineScope by GlobalScope {
@@ -103,9 +104,10 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                     }
                 }
 
-                val stateUpdateResponse : AcknowledgedResponse =
+                replicationMetadataManager.deleteIndexReplicationMetadata(request.indexName)
+                val clusterStateUpdateResponse : AcknowledgedResponse =
                     clusterService.waitForClusterStateUpdate("stop_replication") { l -> StopReplicationTask(request, l)}
-                if (!stateUpdateResponse.isAcknowledged) {
+                if (!clusterStateUpdateResponse.isAcknowledged) {
                     throw ElasticsearchException("Failed to update cluster state")
                 }
 
@@ -126,8 +128,8 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
         val replicationStateParams = getReplicationStateParamsForIndex(clusterService, request.indexName)
                 ?:
             throw IllegalArgumentException("No replication in progress for index:${request.indexName}")
-        val replicationOverallState = replicationStateParams[REPLICATION_OVERALL_STATE_KEY]
-        if (replicationOverallState == REPLICATION_OVERALL_STATE_RUNNING_VALUE)
+        val replicationOverallState = replicationStateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE]
+        if (replicationOverallState == ReplicationOverallState.RUNNING.name)
             return
         throw IllegalStateException("Unknown value of replication state:$replicationOverallState")
     }
@@ -154,20 +156,7 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                 newState.blocks(newBlocks)
             }
 
-            // remove replication metadata and state params
             val mdBuilder = Metadata.builder(currentState.metadata)
-            val currentReplicationMetadata = currentState.metadata().custom(ReplicationMetadata.NAME)
-                ?: ReplicationMetadata.EMPTY
-            val clusterAlias = currentReplicationMetadata.replicatedIndices.entries.firstOrNull {
-                it.value.containsKey(request.indexName)
-            }?.key
-            if (clusterAlias != null) {
-                val newMetadata = currentReplicationMetadata.removeIndex(clusterAlias, request.indexName)
-                        .removeReplicationStateParams(request.indexName)
-                        .removeSecurityContext(clusterAlias, request.indexName)
-                mdBuilder.putCustom(ReplicationMetadata.NAME, newMetadata)
-            }
-
             // remove replicated index setting
             val currentIndexMetadata = currentState.metadata.index(request.indexName)
             if (currentIndexMetadata != null) {

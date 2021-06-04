@@ -15,9 +15,10 @@
 
 package com.amazon.elasticsearch.replication.task.shard
 
-import com.amazon.elasticsearch.replication.metadata.REPLICATION_OVERALL_STATE_KEY
-import com.amazon.elasticsearch.replication.metadata.REPLICATION_OVERALL_STATE_RUNNING_VALUE
-import com.amazon.elasticsearch.replication.metadata.getReplicationStateParamsForIndex
+import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
+import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
+import com.amazon.elasticsearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
+import com.amazon.elasticsearch.replication.metadata.state.getReplicationStateParamsForIndex
 import org.apache.logging.log4j.LogManager
 import org.elasticsearch.ElasticsearchException
 import org.elasticsearch.client.Client
@@ -32,7 +33,8 @@ import org.elasticsearch.tasks.TaskId
 import org.elasticsearch.threadpool.ThreadPool
 
 class ShardReplicationExecutor(executor: String, private val clusterService : ClusterService,
-                               private val threadPool: ThreadPool, private val client: Client) :
+                               private val threadPool: ThreadPool, private val client: Client,
+                               private val replicationMetadataManager: ReplicationMetadataManager) :
     PersistentTasksExecutor<ShardReplicationParams>(TASK_NAME, executor) {
 
     companion object {
@@ -49,8 +51,8 @@ class ShardReplicationExecutor(executor: String, private val clusterService : Cl
                 ?:
             throw IllegalStateException("Cant find replication details metadata for followIndex:${params.followerShardId.indexName}. " +
                     "Seems like replication is not in progress, so not starting shard task for shardId:${params.followerShardId}")
-        if (replicationStateParams[REPLICATION_OVERALL_STATE_KEY] != REPLICATION_OVERALL_STATE_RUNNING_VALUE)
-            throw IllegalStateException("Unknown replication state metadata:${replicationStateParams[REPLICATION_OVERALL_STATE_KEY]} " +
+        if (replicationStateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE] != ReplicationOverallState.RUNNING.name)
+            throw IllegalStateException("Unknown replication state metadata:${replicationStateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE]} " +
                     " followIndex:${params.followerShardId.indexName}")
     }
 
@@ -73,7 +75,7 @@ class ShardReplicationExecutor(executor: String, private val clusterService : Cl
                             taskInProgress: PersistentTask<ShardReplicationParams>,
                             headers: Map<String, String>): AllocatedPersistentTask {
         return ShardReplicationTask(id, type, action, getDescription(taskInProgress), parentTaskId,
-                                    taskInProgress.params!!, executor, clusterService, threadPool, client)
+                                    taskInProgress.params!!, executor, clusterService, threadPool, client, replicationMetadataManager)
     }
 
     override fun getDescription(taskInProgress: PersistentTask<ShardReplicationParams>): String {

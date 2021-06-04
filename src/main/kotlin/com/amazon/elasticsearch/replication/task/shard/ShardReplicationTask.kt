@@ -19,7 +19,8 @@ import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.REPLICAT
 import com.amazon.elasticsearch.replication.action.changes.GetChangesAction
 import com.amazon.elasticsearch.replication.action.changes.GetChangesRequest
 import com.amazon.elasticsearch.replication.action.changes.GetChangesResponse
-import com.amazon.elasticsearch.replication.metadata.getReplicationStateParamsForIndex
+import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
+import com.amazon.elasticsearch.replication.metadata.state.getReplicationStateParamsForIndex
 import com.amazon.elasticsearch.replication.seqno.RemoteClusterRetentionLeaseHelper
 import com.amazon.elasticsearch.replication.task.CrossClusterReplicationTask
 import com.amazon.elasticsearch.replication.task.ReplicationState
@@ -49,9 +50,9 @@ import org.elasticsearch.threadpool.ThreadPool
 
 class ShardReplicationTask(id: Long, type: String, action: String, description: String, parentTask: TaskId,
                            params: ShardReplicationParams, executor: String, clusterService: ClusterService,
-                           threadPool: ThreadPool, client: Client)
+                           threadPool: ThreadPool, client: Client, replicationMetadataManager: ReplicationMetadataManager)
     : CrossClusterReplicationTask(id, type, action, description, parentTask, emptyMap(),
-                                  executor, clusterService, threadPool, client) {
+                                  executor, clusterService, threadPool, client, replicationMetadataManager) {
 
     override val remoteCluster: String = params.remoteCluster
     override val followerIndexName: String = params.followerShardId.indexName

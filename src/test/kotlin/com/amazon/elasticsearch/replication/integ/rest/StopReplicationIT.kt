@@ -61,7 +61,7 @@ class StopReplicationIT: MultiClusterRestTestCase() {
 
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
-        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
 
         /* At this point, the follower cluster should be in FOLLOWING state. Next, we stop replication
         and verify the same

@@ -15,6 +15,9 @@
 
 package com.amazon.elasticsearch.replication.task
 
+import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
+import com.amazon.elasticsearch.replication.metadata.store.ReplicationStoreMetadataType
+import com.amazon.elasticsearch.replication.task.autofollow.AutoFollowTask
 import com.amazon.elasticsearch.replication.util.SecurityContext
 import com.amazon.elasticsearch.replication.util.coroutineContext
 import com.amazon.elasticsearch.replication.util.suspending
@@ -47,7 +50,8 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
                                            protected val executor: String,
                                            protected val clusterService: ClusterService,
                                            protected val threadPool: ThreadPool,
-                                           protected val client: Client) :
+                                           protected val client: Client,
+                                           protected val replicationMetadataManager: ReplicationMetadataManager) :
     AllocatedPersistentTask(id, type, action, description, parentTask, headers) {
 
     protected val scope = CoroutineScope(threadPool.coroutineContext(executor))
@@ -166,9 +170,14 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
     /**
      * Sets the security context
      */
-    protected open fun setSecurityContext() {
-        val injectedUser = SecurityContext.fromClusterState(clusterService.state(), remoteCluster, followerIndexName)
-        SecurityContext.toThreadContext(threadPool.threadContext, injectedUser)
+    protected open suspend fun setSecurityContext() {
+        var metadataType = ReplicationStoreMetadataType.INDEX
+        if(this is AutoFollowTask) {
+            metadataType = ReplicationStoreMetadataType.AUTO_FOLLOW
+        }
+        val securityContext = SecurityContext(replicationMetadataManager, metadataType, remoteCluster, followerIndexName)
+        val userString = securityContext.fromReplicationMetadata()
+        SecurityContext.toThreadContext(threadPool.threadContext, userString)
     }
 
     open class CrossClusterReplicationTaskResponse(val status: String): ActionResponse(), ToXContentObject {
