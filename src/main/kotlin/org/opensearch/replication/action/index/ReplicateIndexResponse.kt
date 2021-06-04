@@ -13,4 +13,16 @@
  *   permissions and limitations under the License.
  */
 
-rootProject.name = "opensearch-cross-cluster-replication"
+package org.opensearch.replication.action.index
+
+import org.opensearch.action.support.master.AcknowledgedResponse
+import org.opensearch.common.io.stream.StreamInput
+import org.opensearch.common.io.stream.StreamOutput
+
+class ReplicateIndexResponse(acknowledged: Boolean) : AcknowledgedResponse(acknowledged) {
+    constructor(inp: StreamInput) : this(inp.readBoolean())
+
+    override fun writeTo(out: StreamOutput) {
+        out.writeBoolean(acknowledged)
+    }
+}

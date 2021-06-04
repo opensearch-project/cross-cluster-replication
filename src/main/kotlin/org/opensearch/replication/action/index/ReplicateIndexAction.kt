@@ -13,4 +13,13 @@
  *   permissions and limitations under the License.
  */
 
-rootProject.name = "opensearch-cross-cluster-replication"
+package org.opensearch.replication.action.index
+
+import org.opensearch.action.ActionType
+
+class ReplicateIndexAction private constructor(): ActionType<ReplicateIndexResponse>(NAME, ::ReplicateIndexResponse) {
+    companion object {
+        const val NAME = "indices:admin/opendistro/replication/index/start"
+        val INSTANCE: ReplicateIndexAction = ReplicateIndexAction()
+    }
+}

@@ -13,4 +13,21 @@
  *   permissions and limitations under the License.
  */
 
-rootProject.name = "opensearch-cross-cluster-replication"
+package org.opensearch.replication.action.replay
+
+import org.opensearch.action.support.WriteResponse
+import org.opensearch.action.support.replication.ReplicationResponse
+import org.opensearch.common.io.stream.StreamInput
+
+class ReplayChangesResponse : ReplicationResponse, WriteResponse {
+
+    constructor(inp: StreamInput) : super(inp)
+
+    constructor(): super()
+
+    override fun setForcedRefresh(forcedRefresh: Boolean) {
+        //no-op
+    }
+
+
+}

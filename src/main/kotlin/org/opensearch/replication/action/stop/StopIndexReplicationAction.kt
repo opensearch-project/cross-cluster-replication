@@ -13,4 +13,14 @@
  *   permissions and limitations under the License.
  */
 
-rootProject.name = "opensearch-cross-cluster-replication"
+package org.opensearch.replication.action.stop
+
+import org.opensearch.action.ActionType
+import org.opensearch.action.support.master.AcknowledgedResponse
+
+class StopIndexReplicationAction private constructor(): ActionType<AcknowledgedResponse>(NAME, ::AcknowledgedResponse) {
+    companion object {
+        const val NAME = "indices:admin/opendistro/replication/index/stop"
+        val INSTANCE: StopIndexReplicationAction = StopIndexReplicationAction()
+    }
+}
