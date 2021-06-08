@@ -13,20 +13,16 @@
  *   permissions and limitations under the License.
  */
 
-pluginManagement {
-    repositories {
-        mavenCentral()
-        jcenter()
-        gradlePluginPortal()
-    }
-    resolutionStrategy {
-        eachPlugin {
-            // ES not available in gradle plugin portal so hand code here
-            if(requested.id.namespace == "elasticsearch") {
-                useModule "org.elasticsearch.gradle:build-tools:${requested.version}"
-            }
-        }
+package com.amazon.elasticsearch.replication.action.index
+
+import org.elasticsearch.action.support.master.AcknowledgedResponse
+import org.elasticsearch.common.io.stream.StreamInput
+import org.elasticsearch.common.io.stream.StreamOutput
+
+class ReplicateIndexResponse(acknowledged: Boolean) : AcknowledgedResponse(acknowledged) {
+    constructor(inp: StreamInput) : this(inp.readBoolean())
+
+    override fun writeTo(out: StreamOutput) {
+        out.writeBoolean(acknowledged)
     }
 }
-
-rootProject.name = "opendistro-cross-cluster-replication"

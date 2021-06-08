@@ -13,20 +13,13 @@
  *   permissions and limitations under the License.
  */
 
-pluginManagement {
-    repositories {
-        mavenCentral()
-        jcenter()
-        gradlePluginPortal()
-    }
-    resolutionStrategy {
-        eachPlugin {
-            // ES not available in gradle plugin portal so hand code here
-            if(requested.id.namespace == "elasticsearch") {
-                useModule "org.elasticsearch.gradle:build-tools:${requested.version}"
-            }
-        }
+package com.amazon.elasticsearch.replication.action.repository
+
+import org.elasticsearch.action.ActionType
+
+class GetStoreMetadataAction private constructor() : ActionType<GetStoreMetadataResponse>(NAME, ::GetStoreMetadataResponse) {
+    companion object {
+        const val NAME = "indices:data/read/opendistro/replication/file_metadata"
+        val INSTANCE = GetStoreMetadataAction()
     }
 }
-
-rootProject.name = "opendistro-cross-cluster-replication"

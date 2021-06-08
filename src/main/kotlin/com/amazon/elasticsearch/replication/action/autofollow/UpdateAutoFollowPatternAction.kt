@@ -13,20 +13,15 @@
  *   permissions and limitations under the License.
  */
 
-pluginManagement {
-    repositories {
-        mavenCentral()
-        jcenter()
-        gradlePluginPortal()
-    }
-    resolutionStrategy {
-        eachPlugin {
-            // ES not available in gradle plugin portal so hand code here
-            if(requested.id.namespace == "elasticsearch") {
-                useModule "org.elasticsearch.gradle:build-tools:${requested.version}"
-            }
-        }
+package com.amazon.elasticsearch.replication.action.autofollow
+
+import org.elasticsearch.action.ActionType
+import org.elasticsearch.action.support.master.AcknowledgedResponse
+
+class UpdateAutoFollowPatternAction : ActionType<AcknowledgedResponse>(NAME, ::AcknowledgedResponse) {
+
+    companion object {
+        const val NAME = "cluster:admin/opendistro/replication/autofollow/update"
+        val INSTANCE = UpdateAutoFollowPatternAction()
     }
 }
-
-rootProject.name = "opendistro-cross-cluster-replication"
