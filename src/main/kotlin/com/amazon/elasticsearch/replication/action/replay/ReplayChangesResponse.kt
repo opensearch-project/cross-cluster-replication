@@ -13,20 +13,21 @@
  *   permissions and limitations under the License.
  */
 
-pluginManagement {
-    repositories {
-        mavenCentral()
-        jcenter()
-        gradlePluginPortal()
-    }
-    resolutionStrategy {
-        eachPlugin {
-            // ES not available in gradle plugin portal so hand code here
-            if(requested.id.namespace == "elasticsearch") {
-                useModule "org.elasticsearch.gradle:build-tools:${requested.version}"
-            }
-        }
-    }
-}
+package com.amazon.elasticsearch.replication.action.replay
 
-rootProject.name = "opendistro-cross-cluster-replication"
+import org.elasticsearch.action.support.WriteResponse
+import org.elasticsearch.action.support.replication.ReplicationResponse
+import org.elasticsearch.common.io.stream.StreamInput
+
+class ReplayChangesResponse : ReplicationResponse, WriteResponse {
+
+    constructor(inp: StreamInput) : super(inp)
+
+    constructor(): super()
+
+    override fun setForcedRefresh(forcedRefresh: Boolean) {
+        //no-op
+    }
+
+
+}

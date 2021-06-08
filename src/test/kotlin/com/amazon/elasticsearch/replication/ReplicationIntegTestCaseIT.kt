@@ -13,20 +13,12 @@
  *   permissions and limitations under the License.
  */
 
-pluginManagement {
-    repositories {
-        mavenCentral()
-        jcenter()
-        gradlePluginPortal()
-    }
-    resolutionStrategy {
-        eachPlugin {
-            // ES not available in gradle plugin portal so hand code here
-            if(requested.id.namespace == "elasticsearch") {
-                useModule "org.elasticsearch.gradle:build-tools:${requested.version}"
-            }
-        }
-    }
+package com.amazon.elasticsearch.replication
+
+import org.elasticsearch.test.ESIntegTestCase
+
+class ReplicationIntegTestCaseIT : ESIntegTestCase() {
+
 }
 
-rootProject.name = "opendistro-cross-cluster-replication"
+
