@@ -24,7 +24,9 @@ import org.elasticsearch.cluster.metadata.Metadata
 import org.elasticsearch.cluster.service.ClusterService
 import org.elasticsearch.common.io.stream.StreamInput
 import org.elasticsearch.common.io.stream.StreamOutput
+import org.elasticsearch.common.io.stream.Writeable
 import org.elasticsearch.common.xcontent.ToXContent
+import org.elasticsearch.common.xcontent.ToXContentFragment
 import org.elasticsearch.common.xcontent.XContentBuilder
 import org.elasticsearch.common.xcontent.XContentParser
 import java.io.IOException
@@ -36,6 +38,7 @@ import org.elasticsearch.cluster.Diff as ESDiff
 typealias AutoFollowPatterns = Map<String, AutoFollowPattern> // { pattern name -> pattern }
 typealias ReplicatedIndices = Map<String, String>             // { follower index name -> remote index name }
 typealias SecurityContexts = Map<String, String>           // { follower index name -> User detail string }
+typealias PausedIndices = Map<String, String>  //  follower index names -> reason for pause
 typealias ClusterAlias = String
 typealias ReplicationStateParams = Map<String, String>
 typealias FollowIndexName = String
@@ -43,7 +46,8 @@ typealias FollowIndexName = String
 data class ReplicationMetadata(val autoFollowPatterns: Map<ClusterAlias, AutoFollowPatterns>,
                                val replicatedIndices: Map<ClusterAlias, ReplicatedIndices>,
                                val replicationDetails: Map<FollowIndexName, ReplicationStateParams>,
-                               val securityContexts: Map<ClusterAlias, SecurityContexts>) : Metadata.Custom {
+                               val securityContexts: Map<ClusterAlias, SecurityContexts>,
+                               val pausedIndices: PausedIndices) : Metadata.Custom {
 
     companion object {
         const val NAME = "replication_metadata"
@@ -51,9 +55,10 @@ data class ReplicationMetadata(val autoFollowPatterns: Map<ClusterAlias, AutoFol
         const val REPLICATED_INDICES_KEY = "replicated_indices"
         const val REPLICATION_DETAILS_KEY = "replication_details"
         const val SECURITY_CONTEXTS_KEY = "security_contexts"
+        const val PAUSED_INDICES_KEY = "paused_indices"
         const val AUTOFOLLOW_SECURITY_CONTEXT_PATTERN_PREFIX = "odfe_autofollow_security_context_"
 
-        val EMPTY = ReplicationMetadata(mapOf(), mapOf(), mapOf(), mapOf())
+        val EMPTY = ReplicationMetadata(mapOf(), mapOf(), mapOf(), mapOf(), mapOf())
 
         val patternsSerializer = object : NonDiffableValueSerializer<String, AutoFollowPatterns>() {
             override fun write(value: AutoFollowPatterns, out: StreamOutput) {
@@ -62,6 +67,16 @@ data class ReplicationMetadata(val autoFollowPatterns: Map<ClusterAlias, AutoFol
 
             override fun read(inp: StreamInput, key: String): AutoFollowPatterns {
                 return inp.readMap(StreamInput::readString, ::AutoFollowPattern)
+            }
+        }
+
+        val pausedSerializer = object : NonDiffableValueSerializer<String, String>() {
+            override fun write(value: String, out: StreamOutput) {
+                out.writeString(value)
+            }
+
+            override fun read(inp: StreamInput, key: String): String {
+                return inp.readString()
             }
         }
 
@@ -165,6 +180,21 @@ data class ReplicationMetadata(val autoFollowPatterns: Map<ClusterAlias, AutoFol
                         }
                     }
                     builder.securityContexts(allSecurityContexts)
+                } else if (PAUSED_INDICES_KEY == currentField) {
+                    val pausedIndices = HashMap<FollowIndexName, String>()
+                    while(parser.nextToken().also { token = it } != XContentParser.Token.END_OBJECT) {
+                        if (token == XContentParser.Token.FIELD_NAME) {
+                            currentField = parser.currentName()
+                        }
+                        else if(token == XContentParser.Token.START_OBJECT) {
+                            var pausedDetails = parser.toString()
+                            pausedIndices[currentField!!] = pausedDetails
+                        } else {
+                            throw IllegalArgumentException("Unexpected token during parsing " +
+                                    "replication_metadata[$PAUSED_INDICES_KEY] - $token")
+                        }
+                    }
+                    builder.pausedIndices(pausedIndices)
                 }
             }
             return builder.build()
@@ -176,6 +206,7 @@ data class ReplicationMetadata(val autoFollowPatterns: Map<ClusterAlias, AutoFol
         private var replicatedIndices: Map<ClusterAlias, ReplicatedIndices> = mapOf()
         private var replicationDetails: Map<FollowIndexName, ReplicationStateParams> = mapOf()
         private var securityContexts: Map<ClusterAlias, SecurityContexts> = mapOf()
+        private var pausedIndices: PausedIndices = mapOf()
 
         fun autoFollowPatterns(patterns: Map<String, AutoFollowPatterns>): Builder {
             this.autoFollowPattern = patterns
@@ -197,8 +228,13 @@ data class ReplicationMetadata(val autoFollowPatterns: Map<ClusterAlias, AutoFol
             return this
         }
 
+        fun pausedIndices(pausedIndices: PausedIndices): Builder {
+            this.pausedIndices = pausedIndices
+            return this
+        }
+
         fun build(): ReplicationMetadata {
-            return ReplicationMetadata(autoFollowPattern, replicatedIndices, replicationDetails, securityContexts)
+            return ReplicationMetadata(autoFollowPattern, replicatedIndices, replicationDetails, securityContexts, pausedIndices)
         }
     }
 
@@ -206,7 +242,8 @@ data class ReplicationMetadata(val autoFollowPatterns: Map<ClusterAlias, AutoFol
         inp.readMap(StreamInput::readString) { i -> patternsSerializer.read(i, "") },
         inp.readMap(StreamInput::readString) { i -> indicesSerializer.read(i, "") },
         inp.readMap(StreamInput::readString) {i -> replicationDetailsSerializer.read(i, "")},
-        inp.readMap(StreamInput::readString) { i -> securityContextsSerializer.read(i, "") }
+        inp.readMap(StreamInput::readString) { i -> securityContextsSerializer.read(i, "") },
+        inp.readMap(StreamInput::readString) { i -> pausedSerializer.read(i, "") }
     )
 
     override fun writeTo(out: StreamOutput) {
@@ -214,6 +251,7 @@ data class ReplicationMetadata(val autoFollowPatterns: Map<ClusterAlias, AutoFol
         out.writeMap(replicatedIndices, StreamOutput::writeString) { o, v -> indicesSerializer.write(v, o) }
         out.writeMap(replicationDetails, StreamOutput::writeString) { o, v -> replicationDetailsSerializer.write(v, o) }
         out.writeMap(securityContexts, StreamOutput::writeString) { o, v -> securityContextsSerializer.write(v, o)}
+        out.writeMap(pausedIndices, StreamOutput::writeString) { o, v -> pausedSerializer.write(v, o)}
     }
 
     override fun diff(previousState: Metadata.Custom) = Diff(previousState as ReplicationMetadata, this)
@@ -242,6 +280,11 @@ data class ReplicationMetadata(val autoFollowPatterns: Map<ClusterAlias, AutoFol
         securityContexts.forEach { (connectionName, securityContext) ->
             builder.field(connectionName, securityContext)
         }
+        builder.endObject()
+        builder.startObject(PAUSED_INDICES_KEY)
+        pausedIndices.forEach { (connectionName, indices) ->
+            builder.field(connectionName, indices)
+        }
         return builder.endObject()
     }
 
@@ -251,8 +294,16 @@ data class ReplicationMetadata(val autoFollowPatterns: Map<ClusterAlias, AutoFol
         if (clusterAlias !in autoFollowPatterns && clusterAlias !in replicatedIndices) {
             return this
         }
+
+        var newPausedIndices = pausedIndices
+
+        var toRemovePaused = replicatedIndices[clusterAlias]?.keys?.asIterable()
+        if (toRemovePaused != null) {
+            newPausedIndices = pausedIndices.minus(toRemovePaused)
+        }
+
         return ReplicationMetadata(autoFollowPatterns.minus(clusterAlias), replicatedIndices.minus(clusterAlias),
-                replicationDetails, securityContexts.minus(clusterAlias))
+                replicationDetails, securityContexts.minus(clusterAlias), newPausedIndices)
     }
 
     fun removePattern(clusterAlias: ClusterAlias, patternName: String): ReplicationMetadata {
@@ -304,6 +355,24 @@ data class ReplicationMetadata(val autoFollowPatterns: Map<ClusterAlias, AutoFol
         return copy(replicatedIndices = newIndices)
     }
 
+    fun pauseIndex(index: String, reason: String) : ReplicationMetadata {
+        val newIndices = pausedIndices.plus(index to reason)
+        return copy(pausedIndices = newIndices)
+    }
+
+    fun resumeIndex(index: String) : ReplicationMetadata {
+        val newIndices = pausedIndices.minus(index)
+        return copy(pausedIndices = newIndices)
+    }
+
+    fun clearPausedState(index: String) : ReplicationMetadata {
+        if (index !in pausedIndices) {
+            return this
+        }
+        val newIndices = pausedIndices.minus(index)
+        return copy(pausedIndices = newIndices)
+    }
+
     fun addReplicationStateParams(followIndexName: String, replicationParams: ReplicationStateParams)
             : ReplicationMetadata {
         val currentStateParamsForIndex = replicationDetails.getOrDefault(followIndexName, emptyMap())
@@ -333,6 +402,7 @@ data class ReplicationMetadata(val autoFollowPatterns: Map<ClusterAlias, AutoFol
         private val replicatedIndices : ESDiff<Map<ClusterAlias, ReplicatedIndices>>
         private val replicationDetails : ESDiff<Map<FollowIndexName, ReplicationStateParams>>
         private val securityContexts : ESDiff<Map<ClusterAlias, SecurityContexts>>
+        private val pausedIndices: ESDiff<PausedIndices>
 
         constructor(previous: ReplicationMetadata, current: ReplicationMetadata) {
             autoFollowPatterns = DiffableUtils.diff(previous.autoFollowPatterns, current.autoFollowPatterns,
@@ -343,6 +413,8 @@ data class ReplicationMetadata(val autoFollowPatterns: Map<ClusterAlias, AutoFol
                                                     getStringKeySerializer(), replicationDetailsSerializer)
             securityContexts = DiffableUtils.diff(previous.securityContexts, current.securityContexts,
                                                    getStringKeySerializer(), securityContextsSerializer)
+            pausedIndices = DiffableUtils.diff(previous.pausedIndices, current.pausedIndices,
+                    getStringKeySerializer(), pausedSerializer)
         }
 
         constructor(inp: StreamInput) {
@@ -350,6 +422,7 @@ data class ReplicationMetadata(val autoFollowPatterns: Map<ClusterAlias, AutoFol
             replicatedIndices = DiffableUtils.readJdkMapDiff(inp, getStringKeySerializer(), indicesSerializer)
             replicationDetails = DiffableUtils.readJdkMapDiff(inp, getStringKeySerializer(), replicationDetailsSerializer)
             securityContexts = DiffableUtils.readJdkMapDiff(inp, getStringKeySerializer(), securityContextsSerializer)
+            pausedIndices = DiffableUtils.readJdkMapDiff(inp, getStringKeySerializer(), pausedSerializer)
         }
 
         override fun writeTo(out: StreamOutput) {
@@ -357,6 +430,7 @@ data class ReplicationMetadata(val autoFollowPatterns: Map<ClusterAlias, AutoFol
             replicatedIndices.writeTo(out)
             replicationDetails.writeTo(out)
             securityContexts.writeTo(out)
+            pausedIndices.writeTo(out)
         }
 
         override fun getWriteableName() = NAME
@@ -366,13 +440,17 @@ data class ReplicationMetadata(val autoFollowPatterns: Map<ClusterAlias, AutoFol
             return ReplicationMetadata(autoFollowPatterns.apply(part.autoFollowPatterns),
                                        replicatedIndices.apply(part.replicatedIndices),
                                         replicationDetails.apply(part.replicationDetails),
-                                       securityContexts.apply(part.securityContexts))
+                                       securityContexts.apply(part.securityContexts),
+                                        pausedIndices.apply(part.pausedIndices)
+
+            )
         }
     }
 }
 
 const val REPLICATION_OVERALL_STATE_KEY = "REPLICATION_OVERALL_STATE_KEY"
 const val REPLICATION_OVERALL_STATE_RUNNING_VALUE = "RUNNING"
+const val REPLICATION_OVERALL_STATE_PAUSED = "PAUSED"
 
 fun getReplicationStateParamsForIndex(clusterService: ClusterService,
                                       followerIndex: String) : ReplicationStateParams? {

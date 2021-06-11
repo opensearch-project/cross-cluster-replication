@@ -37,6 +37,8 @@ data class StartReplicationRequest(val remoteClusterAlias: String, val remoteInd
 const val REST_REPLICATION_PREFIX = "/_opendistro/_replication/"
 const val REST_REPLICATION_START = "$REST_REPLICATION_PREFIX{index}/_start"
 const val REST_REPLICATION_STOP = "$REST_REPLICATION_PREFIX{index}/_stop"
+const val REST_REPLICATION_PAUSE = "$REST_REPLICATION_PREFIX{index}/_pause"
+const val REST_REPLICATION_RESUME = "$REST_REPLICATION_PREFIX{index}/_resume"
 const val REST_AUTO_FOLLOW_PATTERN = "_opendistro/_replication/_autofollow"
 
 fun RestHighLevelClient.startReplication(request: StartReplicationRequest,
@@ -71,6 +73,24 @@ fun RestHighLevelClient.stopReplication(index: String) {
     val response = getAckResponse(lowLevelStopResponse)
     assertThat(response.isAcknowledged).withFailMessage("Replication could not be stopped").isTrue()
     waitForReplicationStop(index)
+}
+
+fun RestHighLevelClient.pauseReplication(index: String) {
+    val lowLevelStopRequest = Request("POST", REST_REPLICATION_PAUSE.replace("{index}", index,true))
+    lowLevelStopRequest.setJsonEntity("{}")
+    val lowLevelStopResponse = lowLevelClient.performRequest(lowLevelStopRequest)
+    val response = getAckResponse(lowLevelStopResponse)
+    assertThat(response.isAcknowledged).withFailMessage("Replication could not be stopped").isTrue()
+    waitForReplicationStop(index)
+}
+
+fun RestHighLevelClient.resumeReplication(index: String) {
+    val lowLevelStopRequest = Request("POST", REST_REPLICATION_RESUME.replace("{index}", index,true))
+    lowLevelStopRequest.setJsonEntity("{}")
+    val lowLevelStopResponse = lowLevelClient.performRequest(lowLevelStopRequest)
+    val response = getAckResponse(lowLevelStopResponse)
+    assertThat(response.isAcknowledged).withFailMessage("Replication could not be Resumed").isTrue()
+    waitForReplicationStart(index, TimeValue.timeValueSeconds(10))
 }
 
 fun RestHighLevelClient.waitForReplicationStart(index: String, waitFor : TimeValue = TimeValue.timeValueSeconds(10)) {

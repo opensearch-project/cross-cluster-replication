@@ -96,6 +96,12 @@ class TransportReplicateIndexMasterNodeAction @Inject constructor(transportServi
         launch(Dispatchers.Unconfined + threadPool.coroutineContext()) {
             try {
                 val remoteMetadata = getRemoteIndexMetadata(replicateIndexReq.remoteCluster, replicateIndexReq.remoteIndex)
+
+                if (state.routingTable.hasIndex(replicateIndexReq.followerIndex)) {
+                    throw IllegalArgumentException("Cant use same index again for replication. Either close or " +
+                    "delete the index:${replicateIndexReq.followerIndex}")
+                }
+
                 val params = IndexReplicationParams(replicateIndexReq.remoteCluster, remoteMetadata.index, replicateIndexReq.followerIndex)
                 updateReplicationStateToStarted(replicateIndexReq.followerIndex)
 
