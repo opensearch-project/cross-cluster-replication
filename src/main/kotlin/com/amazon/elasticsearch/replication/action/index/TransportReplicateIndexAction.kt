@@ -15,11 +15,18 @@
 
 package com.amazon.elasticsearch.replication.action.index
 
+import com.amazon.elasticsearch.replication.ReplicationException
+import com.amazon.elasticsearch.replication.action.setup.SetupChecksAction
+import com.amazon.elasticsearch.replication.action.setup.SetupChecksRequest
+import com.amazon.elasticsearch.replication.action.setup.TransportSetupChecksAction
+import com.amazon.elasticsearch.replication.metadata.store.ReplicationContext
 import com.amazon.elasticsearch.replication.util.SecurityContext
+import com.amazon.elasticsearch.replication.util.completeWith
 import com.amazon.elasticsearch.replication.util.coroutineContext
+import com.amazon.elasticsearch.replication.util.overrideFgacRole
 import com.amazon.elasticsearch.replication.util.suspendExecute
+import com.amazon.opendistroforelasticsearch.commons.authuser.User
 import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import org.apache.logging.log4j.LogManager
@@ -29,6 +36,7 @@ import org.elasticsearch.action.support.HandledTransportAction
 import org.elasticsearch.action.support.master.AcknowledgedResponse
 import org.elasticsearch.client.Client
 import org.elasticsearch.common.inject.Inject
+import org.elasticsearch.common.util.concurrent.ThreadContext
 import org.elasticsearch.tasks.Task
 import org.elasticsearch.threadpool.ThreadPool
 import org.elasticsearch.transport.TransportService
@@ -46,26 +54,33 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
     }
 
     override fun doExecute(task: Task, request: ReplicateIndexRequest, listener: ActionListener<ReplicateIndexResponse>) {
-        log.trace("Starting replication for ${request.remoteCluster}:${request.remoteIndex} -> ${request.followerIndex}")
+        log.info("Setting-up replication for ${request.remoteCluster}:${request.remoteIndex} -> ${request.followerIndex}")
+        val user = SecurityContext.fromSecurityThreadContext(threadPool.threadContext)
+        launch(threadPool.coroutineContext()) {
+            listener.completeWith {
+                val followerReplContext = ReplicationContext(request.followerIndex,
+                        user?.overrideFgacRole(request.assumeRoles?.get(ReplicateIndexRequest.FOLLOWER_FGAC_ROLE)))
+                val leaderReplContext = ReplicationContext(request.remoteIndex,
+                        user?.overrideFgacRole(request.assumeRoles?.get(ReplicateIndexRequest.LEADER_FGAC_ROLE)))
 
-        // Captures the security context and triggers relevant operation on the master
-        try {
-            val user = SecurityContext.fromSecurityThreadContext(threadPool.threadContext)
-            log.debug("Obtained security context - $user")
-            val req = ReplicateIndexMasterNodeRequest(user, request)
-            client.execute(ReplicateIndexMasterNodeAction.INSTANCE, req, object: ActionListener<AcknowledgedResponse>{
-                override fun onFailure(e: Exception) {
-                    listener.onFailure(e)
+                // For autofollow request, setup checks are already made during addition of the pattern with
+                // original user
+                if(!request.isAutoFollowRequest) {
+                    val setupChecksReq = SetupChecksRequest(followerReplContext, leaderReplContext, request.remoteCluster)
+                    val setupChecksRes = client.suspendExecute(SetupChecksAction.INSTANCE, setupChecksReq)
+                    if(!setupChecksRes.isAcknowledged) {
+                        log.error("Setup checks failed while triggering replication for ${request.remoteCluster}:${request.remoteIndex} -> " +
+                                "${request.followerIndex}")
+                        throw ReplicationException("Setup checks failed while setting-up replication for ${request.followerIndex}")
+                    }
                 }
 
-                override fun onResponse(response: AcknowledgedResponse) {
-                    listener.onResponse(ReplicateIndexResponse(response.isAcknowledged))
-                }
-            })
-        } catch (e: Exception) {
-            log.error("Failed to trigger replication for ${request.followerIndex} - $e")
-            listener.onFailure(e)
+                // Setup checks are successful and trigger replication for the index
+                // permissions evaluation to trigger replication is based on the current security context set
+                val internalReq = ReplicateIndexMasterNodeRequest(user, request)
+                client.suspendExecute(ReplicateIndexMasterNodeAction.INSTANCE, internalReq)
+                ReplicateIndexResponse(true)
+            }
         }
-
     }
 }

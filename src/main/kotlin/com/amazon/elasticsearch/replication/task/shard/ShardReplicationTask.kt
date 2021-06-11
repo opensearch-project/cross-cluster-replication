@@ -22,9 +22,10 @@ import com.amazon.elasticsearch.replication.action.changes.GetChangesRequest
 import com.amazon.elasticsearch.replication.action.changes.GetChangesResponse
 import com.amazon.elasticsearch.replication.action.pause.PauseIndexReplicationAction
 import com.amazon.elasticsearch.replication.action.pause.PauseIndexReplicationRequest
-import com.amazon.elasticsearch.replication.metadata.REPLICATION_OVERALL_STATE_KEY
-import com.amazon.elasticsearch.replication.metadata.REPLICATION_OVERALL_STATE_PAUSED
-import com.amazon.elasticsearch.replication.metadata.getReplicationStateParamsForIndex
+import com.amazon.elasticsearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
+import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
+import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
+import com.amazon.elasticsearch.replication.metadata.state.getReplicationStateParamsForIndex
 import com.amazon.elasticsearch.replication.seqno.RemoteClusterRetentionLeaseHelper
 import com.amazon.elasticsearch.replication.task.CrossClusterReplicationTask
 import com.amazon.elasticsearch.replication.task.ReplicationState
@@ -61,9 +62,9 @@ import org.elasticsearch.transport.NodeNotConnectedException
 
 class ShardReplicationTask(id: Long, type: String, action: String, description: String, parentTask: TaskId,
                            params: ShardReplicationParams, executor: String, clusterService: ClusterService,
-                           threadPool: ThreadPool, client: Client)
+                           threadPool: ThreadPool, client: Client, replicationMetadataManager: ReplicationMetadataManager)
     : CrossClusterReplicationTask(id, type, action, description, parentTask, emptyMap(),
-                                  executor, clusterService, threadPool, client) {
+                                  executor, clusterService, threadPool, client, replicationMetadataManager) {
 
     override val remoteCluster: String = params.remoteCluster
     override val followerIndexName: String = params.followerShardId.indexName
@@ -118,7 +119,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                 if (replicationStateParams == null) {
                     if (PersistentTasksNodeService.Status(State.STARTED) == status)
                         scope.cancel("Shard replication task received an interrupt.")
-                } else if (replicationStateParams[REPLICATION_OVERALL_STATE_KEY] == REPLICATION_OVERALL_STATE_PAUSED){
+                } else if (replicationStateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE] == ReplicationOverallState.PAUSED.name){
                     log.info("Pause state received for index $followerIndexName. Cancelling $followerShardId task")
                     paused = true
                     scope.cancel("Shard replication task received pause.")
@@ -145,7 +146,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         // Not really used yet as we only have one get changes action at a time.
         val rateLimiter = Semaphore(CONCURRENT_REQUEST_RATE_LIMIT)
         var seqNo = indexShard.localCheckpoint + 1
-        val sequencer = TranslogSequencer(scope, followerShardId, remoteCluster, remoteShardId.indexName,
+        val sequencer = TranslogSequencer(scope, replicationMetadata, followerShardId, remoteCluster, remoteShardId.indexName,
                                           TaskId(clusterService.nodeName, id), client, rateLimiter, seqNo - 1)
 
         // TODO: Redesign this to avoid sharing the rateLimiter between this block and the sequencer.
@@ -191,7 +192,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
             .setNodes(true)
             .setIndicesOptions(IndicesOptions.strictSingleIndexNoExpandForbidClosed())
             .request()
-        val remoteState = suspending(remoteClient.admin().cluster()::state)(clusterStateRequest).state
+        val remoteState = remoteClient.suspending(remoteClient.admin().cluster()::state)(clusterStateRequest).state
         val shardRouting = remoteState.routingNodes.activePrimary(remoteShardId)
             ?: throw ShardNotFoundException(remoteShardId, "cluster: $remoteCluster")
         return remoteState.nodes().get(shardRouting.currentNodeId())
@@ -201,7 +202,8 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     private suspend fun getChanges(remoteNode: DiscoveryNode, fromSeqNo: Long): GetChangesResponse {
         val remoteClient = client.getRemoteClusterClient(remoteCluster)
         val request = GetChangesRequest(remoteNode, remoteShardId, fromSeqNo, fromSeqNo + batchSize)
-        return remoteClient.suspendExecuteWithRetries(action = GetChangesAction.INSTANCE, req = request, log = log)
+        return remoteClient.suspendExecuteWithRetries(replicationMetadata = replicationMetadata,
+                action = GetChangesAction.INSTANCE, req = request, log = log)
     }
 
     override fun toString(): String {
@@ -215,7 +217,8 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
 
     // ToDo : Use in case of non retriable errors
     private suspend fun pauseReplicationTasks(reason: String) {
-        val pauseReplicationResponse = client.suspendExecute(PauseIndexReplicationAction.INSTANCE, PauseIndexReplicationRequest(followerIndexName, reason))
+        val pauseReplicationResponse = client.suspendExecute(PauseIndexReplicationAction.INSTANCE,
+                PauseIndexReplicationRequest(followerIndexName, reason))
         if (!pauseReplicationResponse.isAcknowledged)
             throw ReplicationException("Failed to pause replication")
     }

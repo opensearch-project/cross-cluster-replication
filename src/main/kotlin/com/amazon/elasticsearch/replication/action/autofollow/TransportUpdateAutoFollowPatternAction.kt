@@ -15,17 +15,28 @@
 
 package com.amazon.elasticsearch.replication.action.autofollow
 
-import com.amazon.elasticsearch.replication.metadata.ReplicationMetadata
-import com.amazon.elasticsearch.replication.metadata.UpdateAutoFollowPattern
+import com.amazon.elasticsearch.replication.ReplicationException
+import com.amazon.elasticsearch.replication.action.index.ReplicateIndexAction
+import com.amazon.elasticsearch.replication.action.index.ReplicateIndexRequest
+import com.amazon.elasticsearch.replication.action.index.ReplicateIndexResponse
+import com.amazon.elasticsearch.replication.action.index.TransportReplicateIndexAction
+import com.amazon.elasticsearch.replication.action.setup.SetupChecksAction
+import com.amazon.elasticsearch.replication.action.setup.SetupChecksRequest
+import com.amazon.elasticsearch.replication.action.setup.ValidatePermissionsRequest
+import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
+import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
+import com.amazon.elasticsearch.replication.metadata.store.ReplicationContext
 import com.amazon.elasticsearch.replication.task.autofollow.AutoFollowExecutor
 import com.amazon.elasticsearch.replication.task.autofollow.AutoFollowParams
 import com.amazon.elasticsearch.replication.util.SecurityContext
 import com.amazon.elasticsearch.replication.util.completeWith
 import com.amazon.elasticsearch.replication.util.coroutineContext
+import com.amazon.elasticsearch.replication.util.overrideFgacRole
 import com.amazon.elasticsearch.replication.util.persistentTasksService
 import com.amazon.elasticsearch.replication.util.removeTask
 import com.amazon.elasticsearch.replication.util.startTask
-import com.amazon.elasticsearch.replication.util.waitForClusterStateUpdate
+import com.amazon.elasticsearch.replication.util.suspendExecute
+import com.amazon.opendistroforelasticsearch.commons.authuser.User
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
@@ -35,8 +46,10 @@ import org.elasticsearch.ResourceAlreadyExistsException
 import org.elasticsearch.ResourceNotFoundException
 import org.elasticsearch.action.ActionListener
 import org.elasticsearch.action.support.ActionFilters
+import org.elasticsearch.action.support.HandledTransportAction
 import org.elasticsearch.action.support.master.AcknowledgedResponse
 import org.elasticsearch.action.support.master.TransportMasterNodeAction
+import org.elasticsearch.client.Client
 import org.elasticsearch.client.node.NodeClient
 import org.elasticsearch.cluster.ClusterState
 import org.elasticsearch.cluster.block.ClusterBlockException
@@ -45,97 +58,42 @@ import org.elasticsearch.cluster.metadata.IndexNameExpressionResolver
 import org.elasticsearch.cluster.service.ClusterService
 import org.elasticsearch.common.inject.Inject
 import org.elasticsearch.common.io.stream.StreamInput
+import org.elasticsearch.tasks.Task
 import org.elasticsearch.threadpool.ThreadPool
 import org.elasticsearch.transport.TransportService
 
-class TransportUpdateAutoFollowPatternAction @Inject constructor(
-    transportService: TransportService, clusterService: ClusterService, threadPool: ThreadPool,
-    actionFilters: ActionFilters, indexNameExpressionResolver: IndexNameExpressionResolver,
-    private val client: NodeClient) : TransportMasterNodeAction<UpdateAutoFollowPatternRequest, AcknowledgedResponse>(
-    UpdateAutoFollowPatternAction.NAME, true, transportService, clusterService, threadPool, actionFilters,
-    ::UpdateAutoFollowPatternRequest, indexNameExpressionResolver), CoroutineScope by GlobalScope {
+class TransportUpdateAutoFollowPatternAction @Inject constructor(transportService: TransportService,
+                                                                 val threadPool: ThreadPool,
+                                                                 actionFilters: ActionFilters,
+                                                                 private val client: Client) :
+        HandledTransportAction<UpdateAutoFollowPatternRequest, AcknowledgedResponse>(UpdateAutoFollowPatternAction.NAME,
+                transportService, actionFilters, ::UpdateAutoFollowPatternRequest), CoroutineScope by GlobalScope {
 
     companion object {
         private val log = LogManager.getLogger(TransportUpdateAutoFollowPatternAction::class.java)
-        const val AUTOFOLLOW_EXCEPTION_GENERIC_STRING = "Failed to update autofollow pattern"
     }
 
-    override fun executor(): String = ThreadPool.Names.SAME
-
-    override fun read(inp: StreamInput) = AcknowledgedResponse(inp)
-
-    override fun masterOperation(request: UpdateAutoFollowPatternRequest, state: ClusterState,
-                                 listener: ActionListener<AcknowledgedResponse>) {
-        // simplest way to check if there's a connection with the given name. Throws NoSuchRemoteClusterException if not..
-        try {
-            client.getRemoteClusterClient(request.connection)
-        } catch (e : Exception) {
-            listener.onFailure(e)
-            return
-        }
-
-        launch(threadPool.coroutineContext(ThreadPool.Names.MANAGEMENT)) {
+    override fun doExecute(task: Task, request: UpdateAutoFollowPatternRequest, listener: ActionListener<AcknowledgedResponse>) {
+        log.info("Setting-up autofollow for ${request.connection}:${request.patternName} -> " +
+                "${request.pattern}")
+        val user = SecurityContext.fromSecurityThreadContext(threadPool.threadContext)
+        launch(threadPool.coroutineContext()) {
             listener.completeWith {
-                val injectedUser = SecurityContext.fromSecurityThreadContext(threadPool.threadContext)
-                val replicationMetadata = clusterService.state().metadata.custom(ReplicationMetadata.NAME)
-                        ?: ReplicationMetadata.EMPTY
-                if (request.action == UpdateAutoFollowPatternRequest.Action.REMOVE) {
-                    // Stopping the tasks and removing the context information from the cluster state
-                    replicationMetadata.removePattern(request.connection, request.patternName).also {
-                        val shouldStop = it.autoFollowPatterns[request.connection]?.get(request.patternName) == null
-                        if (shouldStop) stopAutoFollowTask(request.connection, request.patternName)
+                if (request.action == UpdateAutoFollowPatternRequest.Action.ADD) {
+                    // Pattern is same for leader and follower
+                    val followerFgacRole = request.assumeRoles?.get(ReplicateIndexRequest.FOLLOWER_FGAC_ROLE)
+                    val leaderFgacRole = request.assumeRoles?.get(ReplicateIndexRequest.LEADER_FGAC_ROLE)
+                    val setupChecksRequest = SetupChecksRequest(ReplicationContext(request.pattern!!, user?.overrideFgacRole(followerFgacRole)),
+                            ReplicationContext(request.pattern!!, user?.overrideFgacRole(leaderFgacRole)),
+                            request.connection)
+                    val setupChecksRes = client.suspendExecute(SetupChecksAction.INSTANCE, setupChecksRequest)
+                    if(!setupChecksRes.isAcknowledged) {
+                        throw ReplicationException("Setup checks failed while setting-up auto follow pattern")
                     }
                 }
-
-                val response: AcknowledgedResponse = clusterService.waitForClusterStateUpdate("update autofollow patterns") { l ->
-                    UpdateAutoFollowPattern(request, threadPool, injectedUser, l)
-                }
-
-                if(!response.isAcknowledged) {
-                    throw ElasticsearchException(AUTOFOLLOW_EXCEPTION_GENERIC_STRING)
-                }
-
-                if (request.action == UpdateAutoFollowPatternRequest.Action.ADD) {
-                    // Should start the task if there were no follow patterns before adding this
-                    val shouldStart = replicationMetadata.autoFollowPatterns[request.connection]?.get(request.patternName) == null
-                    if (shouldStart) startAutoFollowTask(request.connection, request.patternName)
-                }
-                response
+                val masterNodeReq = AutoFollowMasterNodeRequest(user, request)
+                client.suspendExecute(AutoFollowMasterNodeAction.INSTANCE, masterNodeReq)
             }
-        }
-    }
-
-    override fun checkBlock(request: UpdateAutoFollowPatternRequest, state: ClusterState): ClusterBlockException? {
-        return state.blocks().globalBlockedException(ClusterBlockLevel.METADATA_WRITE)
-    }
-
-    private suspend fun startAutoFollowTask(clusterAlias: String, patternName: String) {
-        try {
-            val response = persistentTasksService.startTask("autofollow:$clusterAlias:$patternName",
-                    AutoFollowExecutor.TASK_NAME,
-                    AutoFollowParams(clusterAlias, patternName))
-            if (!response.isAssigned) {
-                log.warn("""Failed to assign auto follow task for cluster $clusterAlias:$patternName to any node. Check if any
-                    |cluster blocks are active.""".trimMargin())
-            }
-        } catch(e: ResourceAlreadyExistsException) {
-            // Log and bail as task is already running
-            log.warn("Task already started for '$clusterAlias:$patternName'", e)
-        } catch (e: Exception) {
-            log.error("Failed to start auto follow task for cluster '$clusterAlias:$patternName'", e)
-            throw ElasticsearchException(AUTOFOLLOW_EXCEPTION_GENERIC_STRING)
-        }
-    }
-
-    private suspend fun stopAutoFollowTask(clusterAlias: String, patternName: String) {
-        try {
-            persistentTasksService.removeTask("autofollow:$clusterAlias:$patternName")
-        } catch(e: ResourceNotFoundException) {
-            // Log warn as the task is already removed
-            log.warn("Task already stopped for '$clusterAlias:$patternName'", e)
-        } catch (e: Exception) {
-            log.error("Failed to stop auto follow task for cluster '$clusterAlias:$patternName'", e)
-            throw ElasticsearchException(AUTOFOLLOW_EXCEPTION_GENERIC_STRING)
         }
     }
 }
