@@ -3,6 +3,8 @@ package com.amazon.elasticsearch.replication.metadata.store
 import com.amazon.elasticsearch.replication.repository.RemoteClusterRepository
 import com.amazon.elasticsearch.replication.util.execute
 import com.amazon.elasticsearch.replication.util.suspending
+import com.amazon.opendistroforelasticsearch.commons.ConfigConstants
+import org.apache.logging.log4j.LogManager
 import org.elasticsearch.ExceptionsHelper
 import org.elasticsearch.ResourceAlreadyExistsException
 import org.elasticsearch.ResourceNotFoundException
@@ -19,6 +21,7 @@ import org.elasticsearch.cluster.metadata.IndexMetadata
 import org.elasticsearch.cluster.service.ClusterService
 import org.elasticsearch.common.component.AbstractLifecycleComponent
 import org.elasticsearch.common.settings.Settings
+import org.elasticsearch.common.util.concurrent.ThreadContext
 import org.elasticsearch.common.xcontent.LoggingDeprecationHandler
 import org.elasticsearch.common.xcontent.NamedXContentRegistry
 import org.elasticsearch.common.xcontent.ToXContent
@@ -34,6 +37,7 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
         const val REPLICATION_CONFIG_SYSTEM_INDEX = ".replication-metadata-store"
         const val MAPPING_TYPE = "_doc"
         val REPLICATION_CONFIG_SYSTEM_INDEX_MAPPING = javaClass.classLoader.getResource("mappings/replication-metadata-store.json").readText()
+        private val log = LogManager.getLogger(ReplicationMetadataStore::class.java)
     }
 
     suspend fun addMetadata(addReq: AddReplicationMetadataRequest): IndexResponse {
@@ -52,8 +56,7 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
                 addReq.replicationMetadata.followerContext.resource)
         val indexReqBuilder = client.prepareIndex(REPLICATION_CONFIG_SYSTEM_INDEX, MAPPING_TYPE, id)
                 .setSource(addReq.replicationMetadata.toXContent(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS))
-
-        return suspending(indexReqBuilder::execute)("replication")
+        return client.suspending(indexReqBuilder::execute, defaultContext = true)("replication")
     }
 
     suspend fun getMetadata(getMetadataReq: GetReplicationMetadataRequest): GetReplicationMetadataResponse {
@@ -66,7 +69,7 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
         // TODO: Specify routing to fetch the metadata from primary shard
         val getReq = GetRequest(REPLICATION_CONFIG_SYSTEM_INDEX, id)
 
-        val getRes = suspending(client::get)(getReq)
+        val getRes = client.suspending(client::get, defaultContext = true)(getReq)
         val parser = XContentHelper.createParser(namedXContentRegistry, LoggingDeprecationHandler.INSTANCE,
                 getRes.sourceAsBytesRef, XContentType.JSON)
         return GetReplicationMetadataResponse(ReplicationMetadata.fromXContent(parser), getRes.seqNo, getRes.primaryTerm)
@@ -82,11 +85,17 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
 
         // TODO: Specify routing to fetch the metadata from primary shard
         val getReq = GetRequest(REPLICATION_CONFIG_SYSTEM_INDEX, id)
+        var storedContext: ThreadContext.StoredContext? = null
+        try {
+            storedContext = client.threadPool().threadContext.stashContext()
+            val getRes = client.get(getReq).actionGet(timeout)
+            val parser = XContentHelper.createParser(namedXContentRegistry, LoggingDeprecationHandler.INSTANCE,
+                    getRes.sourceAsBytesRef, XContentType.JSON)
+            return GetReplicationMetadataResponse(ReplicationMetadata.fromXContent(parser), getRes.seqNo, getRes.primaryTerm)
+        } finally {
+            storedContext?.close()
+        }
 
-        val getRes = client.get(getReq).actionGet(timeout)
-        val parser = XContentHelper.createParser(namedXContentRegistry, LoggingDeprecationHandler.INSTANCE,
-                getRes.sourceAsBytesRef, XContentType.JSON)
-        return GetReplicationMetadataResponse(ReplicationMetadata.fromXContent(parser), getRes.seqNo, getRes.primaryTerm)
     }
 
     suspend fun deleteMetadata(delMetadataReq: DeleteReplicationMetadataRequest): DeleteResponse {
@@ -96,7 +105,7 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
         }
 
         val delReq = DeleteRequest(REPLICATION_CONFIG_SYSTEM_INDEX, id)
-        return suspending(client::delete)(delReq)
+        return client.suspending(client::delete, defaultContext = true)(delReq)
     }
 
     suspend fun updateMetadata(updateMetadataReq: UpdateReplicationMetadataRequest): UpdateResponse {
@@ -111,7 +120,7 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
                 .setIfSeqNo(updateMetadataReq.ifSeqno)
                 .setIfPrimaryTerm(updateMetadataReq.ifPrimaryTerm)
                 .doc(metadata.toXContent(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS))
-        return suspending(client::update)(updateReq)
+        return client.suspending(client::update, defaultContext = true)(updateReq)
     }
 
     private fun getId(metadataType: String, connectionName: String?, resourceName: String): String {
@@ -126,7 +135,7 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
     private suspend fun createIndex(): CreateIndexResponse {
         val createIndexReq = CreateIndexRequest(REPLICATION_CONFIG_SYSTEM_INDEX, configStoreSettings())
                 .mapping(MAPPING_TYPE, REPLICATION_CONFIG_SYSTEM_INDEX_MAPPING, XContentType.JSON)
-        return suspending(client.admin().indices()::create)(createIndexReq)
+        return client.suspending(client.admin().indices()::create, defaultContext = true)(createIndexReq)
     }
 
     private fun configStoreExists(): Boolean {

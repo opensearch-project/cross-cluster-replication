@@ -98,7 +98,7 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                 }
                 if (!restoring &&
                         state.routingTable.hasIndex(request.indexName)) {
-                    val closeResponse = suspending(client.admin().indices()::close)(CloseIndexRequest(request.indexName))
+                    val closeResponse = client.suspending(client.admin().indices()::close)(CloseIndexRequest(request.indexName))
                     if (!closeResponse.isAcknowledged) {
                         throw ElasticsearchException("Unable to close index: ${request.indexName}")
                     }
@@ -114,7 +114,7 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                 // Index will be deleted if stop is called while it is restoring.  So no need to reopen
                 if (!restoring &&
                         state.routingTable.hasIndex(request.indexName)) {
-                    val reopenResponse = suspending(client.admin().indices()::open)(OpenIndexRequest(request.indexName))
+                    val reopenResponse = client.suspending(client.admin().indices()::open)(OpenIndexRequest(request.indexName))
                     if (!reopenResponse.isAcknowledged) {
                         throw ElasticsearchException("Failed to reopen index: ${request.indexName}")
                     }

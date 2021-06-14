@@ -16,11 +16,13 @@
 package com.amazon.elasticsearch.replication.task
 
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
+import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationStoreMetadataType
 import com.amazon.elasticsearch.replication.task.autofollow.AutoFollowTask
 import com.amazon.elasticsearch.replication.util.SecurityContext
 import com.amazon.elasticsearch.replication.util.coroutineContext
 import com.amazon.elasticsearch.replication.util.suspending
+import com.amazon.elasticsearch.replication.util.toInjectedUser
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.NonCancellable
@@ -58,6 +60,7 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
     protected abstract val log : Logger
     protected abstract val followerIndexName: String
     protected abstract val remoteCluster: String
+    protected lateinit var replicationMetadata: ReplicationMetadata
     @Volatile private lateinit var taskManager: TaskManager
 
     override fun init(persistentTasksService: PersistentTasksService, taskManager: TaskManager,
@@ -76,7 +79,7 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
             var exception : Throwable? = null
             try {
                 registerCloseListeners()
-                setSecurityContext()
+                setReplicationMetadata()
                 execute(initialState)
                 markAsCompleted()
             } catch (e: Exception) {
@@ -145,7 +148,7 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
      * will be used to restart the task from the correct state.
      */
     protected suspend fun updateTaskState(state: PersistentTaskState) {
-        suspending(::updatePersistentTaskState)(state)
+        client.suspending(::updatePersistentTaskState)(state)
     }
 
     protected abstract suspend fun execute(initialState: PersistentTaskState?)
@@ -170,14 +173,13 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
     /**
      * Sets the security context
      */
-    protected open suspend fun setSecurityContext() {
-        var metadataType = ReplicationStoreMetadataType.INDEX
-        if(this is AutoFollowTask) {
-            metadataType = ReplicationStoreMetadataType.AUTO_FOLLOW
+    protected open suspend fun setReplicationMetadata() {
+        replicationMetadata = if(this is AutoFollowTask) {
+            replicationMetadataManager.getAutofollowMetadata(followerIndexName, remoteCluster)
         }
-        val securityContext = SecurityContext(replicationMetadataManager, metadataType, remoteCluster, followerIndexName)
-        val userString = securityContext.fromReplicationMetadata()
-        SecurityContext.toThreadContext(threadPool.threadContext, userString)
+        else {
+            replicationMetadataManager.getIndexReplicationMetadata(followerIndexName, remoteCluster)
+        }
     }
 
     open class CrossClusterReplicationTaskResponse(val status: String): ActionResponse(), ToXContentObject {

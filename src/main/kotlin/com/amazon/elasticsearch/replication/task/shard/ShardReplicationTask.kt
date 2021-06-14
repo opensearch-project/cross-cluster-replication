@@ -122,7 +122,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
 
         // Not really used yet as we only have one get changes action at a time.
         val rateLimiter = Semaphore(CONCURRENT_REQUEST_RATE_LIMIT)
-        val sequencer = TranslogSequencer(scope, followerShardId, remoteCluster, remoteShardId.indexName,
+        val sequencer = TranslogSequencer(scope, replicationMetadata, followerShardId, remoteCluster, remoteShardId.indexName,
                                           TaskId(clusterService.nodeName, id), client, rateLimiter, seqNo - 1)
 
         // TODO: Redesign this to avoid sharing the rateLimiter between this block and the sequencer.
@@ -152,7 +152,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
             .setNodes(true)
             .setIndicesOptions(IndicesOptions.strictSingleIndexNoExpandForbidClosed())
             .request()
-        val remoteState = suspending(remoteClient.admin().cluster()::state)(clusterStateRequest).state
+        val remoteState = remoteClient.suspending(remoteClient.admin().cluster()::state)(clusterStateRequest).state
         val shardRouting = remoteState.routingNodes.activePrimary(remoteShardId)
             ?: throw ShardNotFoundException(remoteShardId, "cluster: $remoteCluster")
         return remoteState.nodes().get(shardRouting.currentNodeId())
@@ -162,7 +162,8 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     private suspend fun getChanges(remoteNode: DiscoveryNode, fromSeqNo: Long): GetChangesResponse {
         val remoteClient = client.getRemoteClusterClient(remoteCluster)
         val request = GetChangesRequest(remoteNode, remoteShardId, fromSeqNo, fromSeqNo + batchSize)
-        return remoteClient.suspendExecuteWithRetries(action = GetChangesAction.INSTANCE, req = request, log = log)
+        return remoteClient.suspendExecuteWithRetries(replicationMetadata = replicationMetadata,
+                action = GetChangesAction.INSTANCE, req = request, log = log)
     }
 
     override fun toString(): String {

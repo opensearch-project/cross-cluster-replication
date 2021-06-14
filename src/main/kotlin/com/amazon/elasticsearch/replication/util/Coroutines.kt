@@ -15,6 +15,7 @@
 
 package com.amazon.elasticsearch.replication.util
 
+import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
 import kotlinx.coroutines.*
 import org.elasticsearch.ElasticsearchTimeoutException
 import org.elasticsearch.ExceptionsHelper
@@ -55,13 +56,43 @@ import kotlin.coroutines.*
  *
  * @param fn - a block of code that is passed an [ActionListener] that should be passed to the ES client API.
  */
-fun <Req, Resp> suspending(fn: (Req, ActionListener<Resp>) -> Unit): suspend (Req) -> Resp {
-    return { req: Req -> suspendCancellableCoroutine { cont -> fn(req, CoroutineActionListener(cont)) } }
+fun <Req, Resp> Client.suspending(fn: (Req, ActionListener<Resp>) -> Unit,
+                                  injectSecurityContext: Boolean = false,
+                                  defaultContext: Boolean = false): suspend (Req) -> Resp {
+    return { req: Req ->
+        withContext(this.threadPool().coroutineContext(null, "default", injectSecurityContext, defaultContext)) {
+            suspendCancellableCoroutine<Resp> { cont -> fn(req, CoroutineActionListener(cont)) }
+        }
+    }
+}
+
+fun <Req, Resp> Client.suspending(replicationMetadata: ReplicationMetadata,
+                                  fn: (req: Req, ActionListener<Resp>) -> Unit,
+                                  defaultContext: Boolean = false): suspend (Req) -> Resp {
+    return { req: Req ->
+        withContext(this.threadPool().coroutineContext(replicationMetadata, "default", true, defaultContext)) {
+            suspendCancellableCoroutine<Resp> { cont -> fn(req, CoroutineActionListener(cont)) }
+        }
+    }
 }
 
 suspend fun <Req: ActionRequest, Resp: ActionResponse>
-    ElasticsearchClient.suspendExecute(action: ActionType<Resp>, req: Req) : Resp {
-    return suspendCancellableCoroutine { cont -> execute(action, req, CoroutineActionListener(cont)) }
+        ElasticsearchClient.suspendExecute(action: ActionType<Resp>, req: Req,
+                                           injectSecurityContext: Boolean = false,
+                                           defaultContext: Boolean = false) : Resp {
+    return withContext(this.threadPool().coroutineContext(null, action.name(), injectSecurityContext, defaultContext)) {
+        suspendCancellableCoroutine<Resp> { cont -> execute(action, req, CoroutineActionListener(cont)) }
+    }
+}
+
+suspend fun <Req: ActionRequest, Resp: ActionResponse>
+        ElasticsearchClient.suspendExecute(replicationMetadata: ReplicationMetadata,
+                                           action: ActionType<Resp>, req: Req, defaultContext: Boolean = false) : Resp {
+    return withContext(this.threadPool().coroutineContext(replicationMetadata, action.name(), true, defaultContext)) {
+        suspendCancellableCoroutine<Resp> { cont ->
+            execute(action, req, CoroutineActionListener(cont))
+        }
+    }
 }
 
 suspend fun IndexShard.waitForGlobalCheckpoint(waitingForGlobalCheckpoint: Long, timeout: TimeValue?) : Long {
@@ -166,7 +197,36 @@ class ElasticThreadContextElement(private val threadContext: ThreadContext) : Th
     override fun updateThreadContext(context: CoroutineContext) = this.context.close()
 }
 
+class ElasticsearchClientThreadContextElement(private val threadContext: ThreadContext,
+                                              private val replicationMetadata: ReplicationMetadata?,
+                                              private val action: String,
+                                              private val injectSecurityContext: Boolean,
+                                              private val defaultContext: Boolean) : ThreadContextElement<Unit> {
+
+    companion object Key : CoroutineContext.Key<ElasticThreadContextElement>
+
+    override val key: CoroutineContext.Key<*>
+        get() = Key
+
+    private var context = if(injectSecurityContext || defaultContext) threadContext.stashContext() else threadContext.newStoredContext(false)
+
+    override fun restoreThreadContext(context: CoroutineContext, oldState: Unit) {
+        this.context.close()
+    }
+
+    override fun updateThreadContext(context: CoroutineContext) {
+        if(injectSecurityContext) {
+            // Populate relevant transients from replication metadata
+            SecurityContext.setBasedOnActions(replicationMetadata, action, threadContext)
+        }
+    }
+}
+
 fun ThreadPool.coroutineContext() : CoroutineContext = ElasticThreadContextElement(threadContext)
+
+fun ThreadPool.coroutineContext(replicationMetadata: ReplicationMetadata?, action: String,
+                                injectSecurityContext: Boolean, defaultContext: Boolean) : CoroutineContext =
+        ElasticsearchClientThreadContextElement(threadContext, replicationMetadata, action, injectSecurityContext, defaultContext)
 
 /**
  * Captures the current Elastic [ThreadContext] in the coroutine context as well as sets the given executor as the dispatcher

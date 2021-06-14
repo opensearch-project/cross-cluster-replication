@@ -27,8 +27,9 @@ import org.elasticsearch.common.xcontent.XContentBuilder
 class ReplicateIndexMasterNodeRequest:
         MasterNodeRequest<ReplicateIndexMasterNodeRequest>, ToXContentObject {
 
-    var user: User?
+    var user: User? = null
     var replicateIndexReq: ReplicateIndexRequest
+    var withSecurityContext: Boolean = false
 
     override fun validate(): ActionRequestValidationException? {
         return null
@@ -37,16 +38,25 @@ class ReplicateIndexMasterNodeRequest:
     constructor(user: User?, replicateIndexReq: ReplicateIndexRequest): super() {
         this.user = user
         this.replicateIndexReq = replicateIndexReq
+        if (this.user != null) {
+            this.withSecurityContext = true
+        }
     }
 
     constructor(inp: StreamInput) : super(inp) {
-        user = User(inp)
+        this.withSecurityContext = inp.readBoolean()
+        if(withSecurityContext) {
+            user = User(inp)
+        }
         replicateIndexReq = ReplicateIndexRequest(inp)
     }
 
     override fun writeTo(out: StreamOutput) {
         super.writeTo(out)
-        user?.writeTo(out)
+        out.writeBoolean(withSecurityContext)
+        if(this.withSecurityContext) {
+            user?.writeTo(out)
+        }
         replicateIndexReq.writeTo(out)
     }
 
@@ -54,6 +64,7 @@ class ReplicateIndexMasterNodeRequest:
         val responseBuilder =  builder.startObject()
                 .field("user", user)
                 .field("replication_request")
-        return replicateIndexReq.toXContent(responseBuilder, params).endObject()
+        replicateIndexReq.toXContent(responseBuilder, params).endObject()
+        return builder.field("with_security_context", withSecurityContext)
     }
 }

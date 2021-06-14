@@ -32,7 +32,6 @@ import com.amazon.elasticsearch.replication.task.shard.ShardReplicationTask
 import com.amazon.elasticsearch.replication.util.suspending
 import com.amazon.elasticsearch.replication.util.waitForNextChange
 import com.amazon.elasticsearch.replication.util.startTask
-import com.amazon.elasticsearch.replication.util.suspendExecute
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -68,6 +67,7 @@ import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
 import com.amazon.elasticsearch.replication.action.index.block.UpdateIndexBlockAction
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
+import com.amazon.elasticsearch.replication.util.suspendExecute
 
 class IndexReplicationTask(id: Long, type: String, action: String, description: String,
                            parentTask: TaskId,
@@ -153,7 +153,8 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
     }
 
     private suspend fun stopReplicationTasks() {
-        val stopReplicationResponse = client.suspendExecute(StopIndexReplicationAction.INSTANCE, StopIndexReplicationRequest(followerIndexName))
+        val stopReplicationResponse = client.suspendExecute(replicationMetadata,
+                StopIndexReplicationAction.INSTANCE, StopIndexReplicationRequest(followerIndexName), defaultContext = true)
         if (!stopReplicationResponse.isAcknowledged)
             throw ReplicationException("Failed to gracefully stop replication after one or more shard tasks failed. " +
                     "Replication tasks may need to be stopped manually.")
@@ -183,7 +184,7 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
 
     private suspend fun addIndexBlockForReplication(): IndexReplicationState {
         val request = UpdateIndexBlockRequest(followerIndexName, IndexBlockUpdateType.ADD_BLOCK)
-        client.suspendExecute(UpdateIndexBlockAction.INSTANCE, request)
+        client.suspendExecute(replicationMetadata, UpdateIndexBlockAction.INSTANCE, request, defaultContext = true)
         return MonitoringState
     }
 
@@ -232,7 +233,7 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
          * a snapshot restore can be cancelled by deleting the indices being restored.
          */
         log.info("Deleting the index $followerIndexName")
-        suspending(client.admin().indices()::delete)(DeleteIndexRequest(followerIndexName))
+        client.suspending(client.admin().indices()::delete, defaultContext = true)(DeleteIndexRequest(followerIndexName))
     }
 
     private suspend fun startRestore(): IndexReplicationState {
@@ -244,7 +245,7 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
             restoreRequest.renamePattern(remoteIndex.name)
                 .renameReplacement(followerIndexName)
         }
-        val response = suspending(client.admin().cluster()::restoreSnapshot)(restoreRequest)
+        val response = client.suspending(client.admin().cluster()::restoreSnapshot, defaultContext = true)(restoreRequest)
         if (response.restoreInfo != null) {
             if (response.restoreInfo.failedShards() != 0) {
                 throw ReplicationException("Restore failed: $response")

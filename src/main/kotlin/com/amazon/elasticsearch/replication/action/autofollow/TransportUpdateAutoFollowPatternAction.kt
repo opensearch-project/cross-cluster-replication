@@ -16,16 +16,24 @@
 package com.amazon.elasticsearch.replication.action.autofollow
 
 import com.amazon.elasticsearch.replication.ReplicationException
+import com.amazon.elasticsearch.replication.action.index.ReplicateIndexRequest
+import com.amazon.elasticsearch.replication.action.setup.SetupChecksAction
+import com.amazon.elasticsearch.replication.action.setup.SetupChecksRequest
+import com.amazon.elasticsearch.replication.action.setup.ValidatePermissionsRequest
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
+import com.amazon.elasticsearch.replication.metadata.store.ReplicationContext
 import com.amazon.elasticsearch.replication.task.autofollow.AutoFollowExecutor
 import com.amazon.elasticsearch.replication.task.autofollow.AutoFollowParams
 import com.amazon.elasticsearch.replication.util.SecurityContext
 import com.amazon.elasticsearch.replication.util.completeWith
 import com.amazon.elasticsearch.replication.util.coroutineContext
+import com.amazon.elasticsearch.replication.util.overrideFgacRole
 import com.amazon.elasticsearch.replication.util.persistentTasksService
 import com.amazon.elasticsearch.replication.util.removeTask
 import com.amazon.elasticsearch.replication.util.startTask
+import com.amazon.elasticsearch.replication.util.suspendExecute
+import com.amazon.opendistroforelasticsearch.commons.authuser.User
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
@@ -74,9 +82,10 @@ class TransportUpdateAutoFollowPatternAction @Inject constructor(
             return
         }
 
-        launch(threadPool.coroutineContext(ThreadPool.Names.MANAGEMENT)) {
+        val user = SecurityContext.fromSecurityThreadContext(threadPool.threadContext)
+
+        launch(threadPool.coroutineContext()) {
             listener.completeWith {
-                val user = SecurityContext.fromSecurityThreadContext(threadPool.threadContext)
                 if (request.action == UpdateAutoFollowPatternRequest.Action.REMOVE) {
                     // Stopping the tasks and removing the context information from the cluster state
                     stopAutoFollowTask(request.connection, request.patternName)
@@ -88,8 +97,19 @@ class TransportUpdateAutoFollowPatternAction @Inject constructor(
                     if(request.pattern == null) {
                         throw ReplicationException("Failed to update empty autofollow pattern")
                     }
-                    metadataManager.addAutofollowMetadata(request.patternName, request.connection, request.pattern,
-                            ReplicationOverallState.RUNNING, user, user?.roles?.getOrNull(0), user?.roles?.getOrNull(0))
+                    // Pattern is same for leader and follower
+                    val followerFgacRole = request.assumeRoles?.get(ReplicateIndexRequest.FOLLOWER_FGAC_ROLE)
+                    val leaderFgacRole = request.assumeRoles?.get(ReplicateIndexRequest.LEADER_FGAC_ROLE)
+                    val setupChecksRequest = SetupChecksRequest(ReplicationContext(request.pattern!!, user?.overrideFgacRole(followerFgacRole)),
+                            ReplicationContext(request.pattern!!, user?.overrideFgacRole(leaderFgacRole)),
+                            request.connection)
+                    val setupChecksRes = client.suspendExecute(SetupChecksAction.INSTANCE, setupChecksRequest)
+                    if(!setupChecksRes.isAcknowledged) {
+                        throw ReplicationException("Setup checks failed while setting-up auto follow pattern")
+                    }
+
+                    metadataManager.addAutofollowMetadata(request.patternName, request.connection, request.pattern!!,
+                            ReplicationOverallState.RUNNING, user, followerFgacRole, leaderFgacRole)
                     startAutoFollowTask(request.connection, request.patternName)
                 }
                 AcknowledgedResponse(true)

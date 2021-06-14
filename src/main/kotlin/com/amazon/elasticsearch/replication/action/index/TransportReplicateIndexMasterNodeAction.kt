@@ -15,6 +15,7 @@
 
 package com.amazon.elasticsearch.replication.action.index
 
+import com.amazon.elasticsearch.replication.action.replay.TransportReplayChangesAction
 import com.amazon.elasticsearch.replication.action.replicationstatedetails.UpdateReplicationStateDetailsRequest
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
@@ -101,7 +102,8 @@ class TransportReplicateIndexMasterNodeAction @Inject constructor(transportServi
 
                 replicationMetadataManager.addIndexReplicationMetadata(replicateIndexReq.followerIndex,
                         replicateIndexReq.remoteCluster, replicateIndexReq.remoteIndex,
-                        ReplicationOverallState.RUNNING, user, user?.roles?.getOrNull(0), user?.roles?.getOrNull(0))
+                        ReplicationOverallState.RUNNING, user, replicateIndexReq.assumeRoles?.getOrDefault(ReplicateIndexRequest.LEADER_FGAC_ROLE, null),
+                        replicateIndexReq.assumeRoles?.getOrDefault(ReplicateIndexRequest.FOLLOWER_FGAC_ROLE, null))
 
                 val task = persistentTasksService.startTask("replication:index:${replicateIndexReq.followerIndex}",
                         IndexReplicationExecutor.TASK_NAME, params)
@@ -127,14 +129,19 @@ class TransportReplicateIndexMasterNodeAction @Inject constructor(transportServi
     }
 
     private suspend fun getRemoteIndexMetadata(remoteCluster: String, remoteIndex: String): IndexMetadata {
-        val remoteClusterClient = nodeClient.getRemoteClusterClient(remoteCluster).admin().cluster()
-        val clusterStateRequest = remoteClusterClient.prepareState()
+        val user = threadPool.threadContext.getTransient<Object?>(SecurityContext.OPENDISTRO_SECURITY_USER)
+        log.info("User obj is $user")
+        val injectedHeader = threadPool.threadContext.getTransient<String?>(SecurityContext.OPENDISTRO_SECURITY_ASSUME_ROLES)
+        log.info("Injected user obj is $injectedHeader")
+        val remoteClusterClient = nodeClient.getRemoteClusterClient(remoteCluster)
+        val clusterStateRequest = remoteClusterClient.admin().cluster().prepareState()
                 .clear()
                 .setIndices(remoteIndex)
                 .setMetadata(true)
                 .setIndicesOptions(IndicesOptions.strictSingleIndexNoExpandForbidClosed())
                 .request()
-        val remoteState = suspending(remoteClusterClient::state)(clusterStateRequest).state
+        val remoteState = remoteClusterClient.suspending(remoteClusterClient.admin().cluster()::state,
+                injectSecurityContext = true, defaultContext = true)(clusterStateRequest).state
         return remoteState.metadata.index(remoteIndex) ?: throw IndexNotFoundException("${remoteCluster}:${remoteIndex}")
     }
 

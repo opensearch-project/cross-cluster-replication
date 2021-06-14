@@ -2,6 +2,9 @@ package com.amazon.elasticsearch.replication.metadata.store
 
 import com.amazon.opendistroforelasticsearch.commons.authuser.User
 import org.elasticsearch.common.ParseField
+import org.elasticsearch.common.io.stream.StreamInput
+import org.elasticsearch.common.io.stream.StreamOutput
+import org.elasticsearch.common.io.stream.Writeable
 import org.elasticsearch.common.xcontent.ObjectParser
 import org.elasticsearch.common.xcontent.ToXContent
 import org.elasticsearch.common.xcontent.XContentBuilder
@@ -10,9 +13,10 @@ import java.io.IOException
 import java.util.function.BiConsumer
 import java.util.function.BiFunction
 
-class ReplicationContext {
+class ReplicationContext: ToXContent, Writeable {
     lateinit var resource: String
     var user: User? = null
+    var isSecurityContextEnabled: Boolean = false
 
     private constructor() {
     }
@@ -24,6 +28,19 @@ class ReplicationContext {
     constructor(resource: String, user: User?) {
         this.resource = resource
         this.user = user
+        if(user != null) isSecurityContextEnabled = true
+    }
+
+    constructor(inp: StreamInput) {
+        resource = inp.readString()
+        isSecurityContextEnabled = inp.readBoolean()
+        if(isSecurityContextEnabled) User(inp)
+    }
+
+    override fun writeTo(out: StreamOutput) {
+        out.writeString(resource)
+        out.writeBoolean(isSecurityContextEnabled)
+        if(isSecurityContextEnabled) user!!.writeTo(out)
     }
 
     companion object {
@@ -34,6 +51,13 @@ class ReplicationContext {
                     BiFunction {parser: XContentParser, _ -> User.parse(parser)}, null, ParseField("user"))
             //REPLICATION_CONTEXT_PARSER.declareField({ parser, _, _ -> User.parse(parser)}, ParseField("user"), ObjectParser.ValueType.OBJECT)
         }
+    }
+
+    override fun toXContent(builder: XContentBuilder, params: ToXContent.Params): XContentBuilder {
+        builder.startObject()
+        builder.field("resource", resource)
+        builder.field("user", user)
+        return builder.endObject()
     }
 }
 

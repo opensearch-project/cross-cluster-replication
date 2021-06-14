@@ -65,7 +65,6 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
 
     private suspend fun autoFollow() {
         log.debug("Checking $remoteCluster under pattern name $patternName for new indices to auto follow")
-        val replicationMetadata = replicationMetadataManager.getAutofollowMetadata(patternName, remoteCluster)
         val entry = replicationMetadata.leaderContext.resource
 
         // Fetch remote indices matching auto follow pattern
@@ -73,7 +72,7 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
         val indexReq = GetIndexRequest().features(*emptyArray())
                 .indices(entry)
                 .indicesOptions(IndicesOptions.lenientExpandOpen())
-        val response = suspending(remoteClient.admin().indices()::getIndex)(indexReq)
+        val response = remoteClient.suspending(remoteClient.admin().indices()::getIndex, true)(indexReq)
         var remoteIndices = response.indices.asIterable()
 
         var currentIndices = clusterService.state().metadata().concreteAllIndices.asIterable() // All indices - open and closed on the cluster
@@ -102,7 +101,7 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
         try {
             log.info("Auto follow starting replication from ${remoteCluster}:$remoteIndex -> $remoteIndex")
             val request = ReplicateIndexRequest(remoteIndex, remoteCluster, remoteIndex)
-            val response = client.suspendExecute(ReplicateIndexAction.INSTANCE, request)
+            val response = client.suspendExecute(replicationMetadata, ReplicateIndexAction.INSTANCE, request)
             if (!response.isAcknowledged) {
                 log.warn("Failed to auto follow remote index $remoteIndex")
             }

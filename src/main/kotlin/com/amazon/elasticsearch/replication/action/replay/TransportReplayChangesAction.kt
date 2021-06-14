@@ -17,6 +17,7 @@ package com.amazon.elasticsearch.replication.action.replay
 
 import com.amazon.elasticsearch.replication.ReplicationException
 import com.amazon.elasticsearch.replication.metadata.checkIfIndexBlockedWithLevel
+import com.amazon.elasticsearch.replication.util.SecurityContext
 import com.amazon.elasticsearch.replication.util.completeWith
 import com.amazon.elasticsearch.replication.util.coroutineContext
 import com.amazon.elasticsearch.replication.util.suspending
@@ -176,7 +177,11 @@ class TransportReplayChangesAction @Inject constructor(settings: Settings, trans
         val remoteClient = client.getRemoteClusterClient(remoteCluster)
         val options = IndicesOptions.strictSingleIndexNoExpandForbidClosed()
         val getMappingsRequest = GetMappingsRequest().indices(remoteIndex).indicesOptions(options)
-        val getMappingsResponse = suspending(remoteClient.admin().indices()::getMappings)(getMappingsRequest)
+        val user = threadPool.threadContext.getTransient<Object?>(SecurityContext.OPENDISTRO_SECURITY_USER)
+        log.info("User obj is $user")
+        val injectedHeader = threadPool.threadContext.getTransient<String?>(SecurityContext.OPENDISTRO_SECURITY_ASSUME_ROLES)
+        log.info("Injected user obj is $injectedHeader")
+        val getMappingsResponse = remoteClient.suspending(remoteClient.admin().indices()::getMappings)(getMappingsRequest)
         val mappingSource = getMappingsResponse.mappings().get(remoteIndex).get(type).source().string()
 
         // This should use MappingUpdateAction but that uses PutMappingRequest internally and
@@ -185,7 +190,7 @@ class TransportReplayChangesAction @Inject constructor(settings: Settings, trans
         val putMappingRequest = PutMappingRequest().indices(followerIndex).indicesOptions(options)
             .type(type).source(mappingSource, XContentType.JSON)
             //TODO: call .masterNodeTimeout() with the setting indices.mapping.dynamic_timeout
-        val putMappingResponse = suspending(client.admin().indices()::putMapping)(putMappingRequest)
+        val putMappingResponse = client.suspending(client.admin().indices()::putMapping)(putMappingRequest)
         if (!putMappingResponse.isAcknowledged) {
             throw ReplicationException("failed to update mappings to match mapping in source clusters")
         } else {

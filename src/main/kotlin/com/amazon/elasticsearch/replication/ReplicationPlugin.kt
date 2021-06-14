@@ -102,6 +102,10 @@ import java.util.Optional
 import java.util.function.Supplier
 import com.amazon.elasticsearch.replication.action.index.block.UpdateIndexBlockAction
 import com.amazon.elasticsearch.replication.action.index.block.TransportUpddateIndexBlockAction
+import com.amazon.elasticsearch.replication.action.setup.SetupChecksAction
+import com.amazon.elasticsearch.replication.action.setup.TransportSetupChecksAction
+import com.amazon.elasticsearch.replication.action.setup.TransportValidatePermissionsAction
+import com.amazon.elasticsearch.replication.action.setup.ValidatePermissionsAction
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadataStore
 
@@ -148,7 +152,9 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             ActionHandler(UpdateAutoFollowPatternAction.INSTANCE, TransportUpdateAutoFollowPatternAction::class.java),
             ActionHandler(StopIndexReplicationAction.INSTANCE, TransportStopIndexReplicationAction::class.java),
             ActionHandler(UpdateIndexBlockAction.INSTANCE, TransportUpddateIndexBlockAction::class.java),
-            ActionHandler(ReleaseLeaderResourcesAction.INSTANCE, TransportReleaseLeaderResourcesAction::class.java)
+            ActionHandler(ReleaseLeaderResourcesAction.INSTANCE, TransportReleaseLeaderResourcesAction::class.java),
+            ActionHandler(ValidatePermissionsAction.INSTANCE, TransportValidatePermissionsAction::class.java),
+            ActionHandler(SetupChecksAction.INSTANCE, TransportSetupChecksAction::class.java)
         )
     }
 
