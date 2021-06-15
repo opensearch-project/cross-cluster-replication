@@ -19,6 +19,7 @@ import com.amazon.elasticsearch.replication.action.repository.GetFileChunkAction
 import com.amazon.elasticsearch.replication.util.completeWith
 import com.amazon.elasticsearch.replication.util.coroutineContext
 import com.amazon.elasticsearch.replication.util.waitForGlobalCheckpoint
+import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.REPLICATION_EXECUTOR_NAME_LEADER
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import org.elasticsearch.ElasticsearchTimeoutException
@@ -47,7 +48,7 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
                                                     private val indicesService: IndicesService) :
     TransportSingleShardAction<GetChangesRequest, GetChangesResponse>(
         GetChangesAction.NAME, threadPool, clusterService, transportService, actionFilters,
-        indexNameExpressionResolver, ::GetChangesRequest, ThreadPool.Names.SEARCH) {
+        indexNameExpressionResolver, ::GetChangesRequest, REPLICATION_EXECUTOR_NAME_LEADER) {
 
     init {
         TransportActionProxy.registerProxyAction(transportService, GetChangesAction.NAME, ::GetChangesResponse)
@@ -63,7 +64,7 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
 
     @Suppress("BlockingMethodInNonBlockingContext")
     override fun asyncShardOperation(request: GetChangesRequest, shardId: ShardId, listener: ActionListener<GetChangesResponse>) {
-        GlobalScope.launch(threadPool.coroutineContext(ThreadPool.Names.SEARCH)) {
+        GlobalScope.launch(threadPool.coroutineContext(REPLICATION_EXECUTOR_NAME_LEADER)) {
             // TODO: Figure out if we need to acquire a primary permit here
             listener.completeWith {
                 val indexShard = indicesService.indexServiceSafe(shardId.index).getShard(shardId.id)
