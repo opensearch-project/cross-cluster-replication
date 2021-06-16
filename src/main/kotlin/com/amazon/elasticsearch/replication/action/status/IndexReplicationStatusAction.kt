@@ -5,7 +5,7 @@ import org.elasticsearch.action.support.master.AcknowledgedResponse
 
 class IndexReplicationStatusAction private constructor(): ActionType<StatusResponse>(NAME, ::StatusResponse) {
     companion object {
-        const val NAME = "indices:admin/opendistro/replication/index/status-check"
+        const val NAME = "indices:admin/opensearch/replication/index/status-check"
         val INSTANCE: IndexReplicationStatusAction = IndexReplicationStatusAction()
     }
 }

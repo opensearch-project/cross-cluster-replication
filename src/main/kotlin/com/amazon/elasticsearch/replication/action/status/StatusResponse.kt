@@ -9,23 +9,43 @@ import org.elasticsearch.common.xcontent.ToXContentObject
 import org.elasticsearch.common.xcontent.XContentBuilder
 import org.elasticsearch.index.shard.ShardId
 
-class StatusResponse(val acknowledged: String,val restoreDetailsList: List<RestoreDetails>,val replayDetailsList: List<ReplayDetails>): ActionResponse(), ToXContentObject {
-    constructor(inp: StreamInput) : this(inp.readString(), inp.readGenericValue() as List<RestoreDetails> ,inp.readGenericValue() as List<ReplayDetails>)
+class StatusResponse( val statusResponse: List<ReplicationResponse>) : ActionResponse(), ToXContentObject  {
+
+    constructor(inp: StreamInput) : this(inp.readGenericValue() as List<ReplicationResponse>)
+
+    private val REPLICATIONSTAUS = ParseField("replication_status")
+
+    override fun writeTo(out: StreamOutput) {
+        out.writeGenericValue(statusResponse)
+    }
+
+    override fun toXContent(builder: XContentBuilder?, params: ToXContent.Params?): XContentBuilder {
+        builder!!.startObject()
+        builder.field(REPLICATIONSTAUS.preferredName, statusResponse)
+        builder.endObject()
+        return builder
+    }
+}
+
+class ReplicationResponse(val state: String, val indexName: String?, val restoreDetailsList: List<RestoreDetails>, val replayDetailsList: List<ReplayDetails>): ActionResponse(), ToXContentObject {
+    constructor(inp: StreamInput) : this(inp.readString(),inp.readString(), inp.readGenericValue() as List<RestoreDetails> ,inp.readGenericValue() as List<ReplayDetails>)
 
 
     private val STATE = ParseField("state")
+    private val INDEXNAME = ParseField("index_name")
     private val RESTOREDETAILS = ParseField("restore_task_details")
     private val REPLAYDETAILS = ParseField("replay_task_details")
 
     override fun writeTo(out: StreamOutput) {
-        out.writeString(acknowledged)
+        out.writeString(state)
         out.writeGenericValue(restoreDetailsList)
         out.writeGenericValue(replayDetailsList)
     }
 
     override fun toXContent(builder: XContentBuilder?, params: ToXContent.Params?): XContentBuilder {
         builder!!.startObject()
-        builder.field(STATE.preferredName, acknowledged)
+        builder.field(STATE.preferredName, state)
+        builder.field(INDEXNAME.preferredName, indexName)
         builder.field(RESTOREDETAILS.preferredName, restoreDetailsList)
         builder.field(REPLAYDETAILS.preferredName, replayDetailsList)
         builder.endObject()

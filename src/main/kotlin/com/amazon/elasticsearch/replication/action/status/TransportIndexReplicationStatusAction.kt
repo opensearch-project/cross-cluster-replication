@@ -35,9 +35,11 @@ class TransportIndexReplicationStatusAction @Inject constructor(threadPool: Thre
 
     @Suppress("BlockingMethodInNonBlockingContext")
     override fun asyncShardOperation(request: IndexReplicationStatusRequest?, shardId: ShardId?, listener: ActionListener<StatusResponse>?) {
+        val indexName = request?.indexName
         val shards = clusterService.state().routingTable.indicesRouting().get((request?.indexName ?: null)).shards()
         val replayDetailsList: MutableList<ReplayDetails> = mutableListOf<ReplayDetails>()
         val rerstoreDetailsList: MutableList<RestoreDetails> = mutableListOf<RestoreDetails>()
+        val ReplicationResponseList: MutableList<ReplicationResponse> = mutableListOf<ReplicationResponse>()
         var state = "restore"
         shards.forEach {
             val shardid = it.value.shardId
@@ -58,9 +60,9 @@ class TransportIndexReplicationStatusAction @Inject constructor(threadPool: Thre
             replayDetailsList.add(ReplayDetails(indexShard.lastSyncedGlobalCheckpoint, indexShard.lastSyncedGlobalCheckpoint, seqNo, shardid))
         }
 
-
+        ReplicationResponseList.add(ReplicationResponse(state,indexName, rerstoreDetailsList, replayDetailsList))
         if (listener != null) {
-            listener.onResponse(StatusResponse(state, rerstoreDetailsList, replayDetailsList))
+            listener.onResponse(StatusResponse(ReplicationResponseList))
         }
     }
 

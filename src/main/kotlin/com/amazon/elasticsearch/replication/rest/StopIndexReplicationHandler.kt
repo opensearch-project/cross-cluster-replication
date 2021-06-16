@@ -28,10 +28,6 @@ import java.io.IOException
 
 class StopIndexReplicationHandler : BaseRestHandler() {
 
-    companion object {
-        private val log = LogManager.getLogger(StopIndexReplicationHandler::class.java)
-    }
-
     override fun routes(): List<RestHandler.Route> {
         return listOf(RestHandler.Route(RestRequest.Method.POST, "/_opendistro/_replication/{index}/_stop"))
     }

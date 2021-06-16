@@ -20,7 +20,7 @@ class ReplicationStatusHandler : BaseRestHandler() {
     }
 
     override fun routes(): List<RestHandler.Route> {
-        return listOf(RestHandler.Route(RestRequest.Method.GET, "/_opendistro/{index}/_replication/_status"))
+        return listOf(RestHandler.Route(RestRequest.Method.GET, "/_opensearch/{index}/_replication/_status"))
     }
 
     override fun getName(): String {
