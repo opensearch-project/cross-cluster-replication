@@ -190,9 +190,9 @@ class StopReplicationIT: MultiClusterRestTestCase() {
     fun `test stop without replication in progress`() {
         val followerClient = getClientForCluster(FOLLOWER)
         assertThatThrownBy {
-            followerClient.stopReplication(followerIndexName)
+            followerClient.stopReplication("no_index")
         }.isInstanceOf(ResponseException::class.java)
-                .hasMessageContaining("No replication in progress for index:follower_index")
+                .hasMessageContaining("No replication in progress for index:no_index")
     }
 
     fun `test stop with deleted follower index`() {
