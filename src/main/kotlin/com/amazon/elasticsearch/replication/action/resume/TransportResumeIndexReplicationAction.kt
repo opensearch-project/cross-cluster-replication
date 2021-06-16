@@ -137,16 +137,30 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
     }
 
     private suspend fun isResumable(params :IndexReplicationParams): Boolean {
+        var isResumable = true
         val remoteClient = client.getRemoteClusterClient(params.remoteCluster)
         val shards = clusterService.state().routingTable.indicesRouting().get(params.followerIndexName).shards()
         val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
         shards.forEach {
             val followerShardId = it.value.shardId
             if  (!retentionLeaseHelper.verifyRetentionLeaseExist(ShardId(params.remoteIndex, followerShardId.id), followerShardId)) {
-                return  false
+                isResumable =  false
             }
         }
-        return true
+
+        if (isResumable) {
+            return true
+        }
+
+        // clean up all retention leases we may have accidentally took while doing verifyRetentionLeaseExist .
+        // Idempotent Op which does no harm
+        shards.forEach {
+            val followerShardId = it.value.shardId
+            log.debug("Removing lease for $followerShardId.id ")
+            retentionLeaseHelper.removeRetentionLease(ShardId(params.remoteIndex, followerShardId.id), followerShardId)
+        }
+
+        return false
     }
 
     private suspend fun getRemoteIndexMetadata(remoteCluster: String, remoteIndex: String): IndexMetadata {
