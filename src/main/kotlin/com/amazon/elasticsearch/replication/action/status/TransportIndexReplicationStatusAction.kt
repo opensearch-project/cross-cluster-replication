@@ -45,6 +45,7 @@ class TransportIndexReplicationStatusAction @Inject constructor(threadPool: Thre
 
             var indexState = indexShard.recoveryState().index
 
+
             if(indexState.recoveredBytesPercent() >= 100 || indexState.recoveredFilesPercent() >= 100.0) {
                 state = "replay"
                 rerstoreDetailsList.add(RestoreDetails(indexState.totalBytes(), indexState.recoveredBytes(),
