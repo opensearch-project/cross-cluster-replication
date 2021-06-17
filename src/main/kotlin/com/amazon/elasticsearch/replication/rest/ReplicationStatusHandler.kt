@@ -20,7 +20,7 @@ class ReplicationStatusHandler : BaseRestHandler() {
     }
 
     override fun routes(): List<RestHandler.Route> {
-        return listOf(RestHandler.Route(RestRequest.Method.GET, "/_opensearch/{index}/_replication/_status"))
+        return listOf(RestHandler.Route(RestRequest.Method.GET, "/_opensearch/_replication/{index}/_status"))
     }
 
     override fun getName(): String {
@@ -29,14 +29,12 @@ class ReplicationStatusHandler : BaseRestHandler() {
 
     @Throws(IOException::class)
     override fun prepareRequest(request: RestRequest, client: NodeClient): RestChannelConsumer {
-                request.contentOrSourceParamParser().use { parser ->
-                        val followIndex = request.param("index")
-                    val indexReplicationStatusRequest = IndexReplicationStatusRequest.fromXContent(parser, followIndex)
-                    return RestChannelConsumer { channel: RestChannel? ->
-                                client.admin().cluster()
-                                        .execute(IndexReplicationStatusAction.INSTANCE, indexReplicationStatusRequest, RestToXContentListener(channel))
-                            }
-                }
+            val followIndex = request.param("index")
+            val indexReplicationStatusRequest = IndexReplicationStatusRequest(followIndex)
+            return RestChannelConsumer { channel: RestChannel? ->
+                client.admin().cluster()
+                        .execute(IndexReplicationStatusAction.INSTANCE, indexReplicationStatusRequest, RestToXContentListener(channel))
+            }
     }
 
 }

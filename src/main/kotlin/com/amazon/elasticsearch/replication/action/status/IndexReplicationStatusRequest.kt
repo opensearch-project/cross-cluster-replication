@@ -1,5 +1,6 @@
 package com.amazon.elasticsearch.replication.action.status
 
+import com.amazon.elasticsearch.replication.rest.ReplicationStatusHandler
 import org.apache.logging.log4j.LogManager
 import org.elasticsearch.action.ActionRequestValidationException
 import org.elasticsearch.action.support.IndicesOptions
@@ -13,7 +14,7 @@ class IndexReplicationStatusRequest : SingleShardRequest<IndexReplicationStatusR
 
     lateinit var indexName: String
 
-    constructor(indexName: String?, remoteNode: DiscoveryNode?) {
+    constructor(indexName: String?) {
         if (indexName != null) {
             this.indexName = indexName
         }
@@ -30,7 +31,7 @@ class IndexReplicationStatusRequest : SingleShardRequest<IndexReplicationStatusR
         }
 
         private fun IndexReplicationStatusRequest(): IndexReplicationStatusRequest? {
-            return IndexReplicationStatusRequest(null,null)
+            return IndexReplicationStatusRequest(null)
         }
 
         fun fromXContent(parser: XContentParser, followerIndex: String): IndexReplicationStatusRequest {

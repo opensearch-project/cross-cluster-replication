@@ -45,6 +45,7 @@ class TransportIndexReplicationStatusAction @Inject constructor(threadPool: Thre
             val shardid = it.value.shardId
             val indexShard = indicesService.indexServiceSafe(shardid.index).getShard(shardid.id)
 
+
             var indexState = indexShard.recoveryState().index
 
             if(indexState.recoveredBytesPercent() >= 100 || indexState.recoveredFilesPercent() >= 100.0) {
