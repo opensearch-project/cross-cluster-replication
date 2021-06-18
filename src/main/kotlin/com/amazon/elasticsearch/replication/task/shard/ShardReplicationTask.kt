@@ -110,17 +110,19 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     private suspend fun replicate() {
         updateTaskState(FollowingState)
         // TODO: Acquire retention lease prior to initiating remote recovery
-        retentionLeaseHelper.addRetentionLease(remoteShardId, RetentionLeaseActions.RETAIN_ALL, followerShardId)
         val followerIndexService = indicesService.indexServiceSafe(followerShardId.index)
         val indexShard = followerIndexService.getShard(followerShardId.id)
-        // After restore, persisted localcheckpoint is matched with maxSeqNo.
-        // Fetch the operations after localCheckpoint from the leader
-        var seqNo = indexShard.localCheckpoint + 1
+        // Adding retention lease at local checkpoint of a node. This makes sure
+        // new tasks spawned after node changes/shard movements are handled properly
+        log.info("Adding retentionlease at follower Sequence number: ${indexShard.localCheckpoint}")
+        retentionLeaseHelper.addRetentionLease(remoteShardId, indexShard.localCheckpoint , followerShardId)
+
         val node = primaryShardNode()
         addListenerToInterruptTask()
 
         // Not really used yet as we only have one get changes action at a time.
         val rateLimiter = Semaphore(CONCURRENT_REQUEST_RATE_LIMIT)
+        var seqNo = indexShard.localCheckpoint + 1
         val sequencer = TranslogSequencer(scope, followerShardId, remoteCluster, remoteShardId.indexName,
                                           TaskId(clusterService.nodeName, id), client, rateLimiter, seqNo - 1)
 
@@ -138,7 +140,8 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                 rateLimiter.release()
                 continue
             }
-            retentionLeaseHelper.renewRetentionLease(remoteShardId, seqNo, followerShardId)
+            //renew retention lease with global checkpoint so that any shard that picks up shard replication task has data until then.
+            retentionLeaseHelper.renewRetentionLease(remoteShardId, indexShard.lastSyncedGlobalCheckpoint, followerShardId)
         }
         sequencer.close()
     }
