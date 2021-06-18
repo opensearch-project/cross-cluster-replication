@@ -22,6 +22,7 @@ import com.amazon.elasticsearch.replication.action.repository.ReleaseLeaderResou
 import com.amazon.elasticsearch.replication.util.SecurityContext
 import com.amazon.elasticsearch.replication.action.repository.ReleaseLeaderResourcesRequest
 import com.amazon.elasticsearch.replication.util.executeUnderSecurityContext
+import com.amazon.elasticsearch.replication.util.restoreShardWithRetries
 import org.apache.logging.log4j.LogManager
 import org.apache.lucene.index.IndexCommit
 import org.elasticsearch.Version
@@ -49,7 +50,6 @@ import org.elasticsearch.index.mapper.MapperService
 import org.elasticsearch.index.shard.ShardId
 import org.elasticsearch.index.snapshots.IndexShardSnapshotStatus
 import org.elasticsearch.index.store.Store
-import org.elasticsearch.index.store.StoreStats
 import org.elasticsearch.indices.recovery.RecoverySettings
 import org.elasticsearch.indices.recovery.RecoveryState
 import org.elasticsearch.repositories.IndexId
@@ -60,6 +60,9 @@ import org.elasticsearch.repositories.ShardGenerations
 import org.elasticsearch.snapshots.SnapshotId
 import org.elasticsearch.snapshots.SnapshotInfo
 import org.elasticsearch.snapshots.SnapshotState
+import org.elasticsearch.transport.ConnectTransportException
+import org.elasticsearch.transport.NodeDisconnectedException
+import org.elasticsearch.transport.NodeNotConnectedException
 import java.util.UUID
 import java.util.function.Consumer
 import java.util.function.Function
@@ -72,7 +75,7 @@ const val REMOTE_SNAPSHOT_NAME = "opendistro-remote-snapshot"
 class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata,
                               private val client: Client,
                               private val clusterService: ClusterService,
-                              private val recoverySettings: RecoverySettings): AbstractLifecycleComponent(), Repository {
+                              private val recoverySettings: RecoverySettings) : AbstractLifecycleComponent(), Repository {
 
     // Lazy init because we initialize when a remote cluster seed setting is added at which point the remote
     // cluster connection might not be available yet
@@ -81,16 +84,19 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
     companion object {
         private val log = LogManager.getLogger(RemoteClusterRepository::class.java)
         private val restoreRateLimitingTimeInNanos = CounterMetric()
-        private fun String.asUUID() : String = UUID.nameUUIDFromBytes(toByteArray()).toString()
-        private fun RepositoryMetadata.remoteClusterName() : String = this.name().split(REMOTE_REPOSITORY_PREFIX)[1]
+        private fun String.asUUID(): String = UUID.nameUUIDFromBytes(toByteArray()).toString()
+        private fun RepositoryMetadata.remoteClusterName(): String = this.name().split(REMOTE_REPOSITORY_PREFIX)[1]
         const val REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC = 60000L
 
         fun clusterForRepo(remoteRepoName: String) = remoteRepoName.split(REMOTE_REPOSITORY_PREFIX)[1]
-        fun repoForCluster(remoteClusterName: String) : String = REMOTE_REPOSITORY_PREFIX + remoteClusterName
+        fun repoForCluster(remoteClusterName: String): String = REMOTE_REPOSITORY_PREFIX + remoteClusterName
     }
 
-    @Volatile private var parallelChunks = recoverySettings.maxConcurrentFileChunks
-    @Volatile private var chunkSize = recoverySettings.chunkSize
+    @Volatile
+    private var parallelChunks = recoverySettings.maxConcurrentFileChunks
+
+    @Volatile
+    private var chunkSize = recoverySettings.chunkSize
 
     override fun getRestoreThrottleTimeInNanos(): Long {
         return restoreRateLimitingTimeInNanos.count()
@@ -154,12 +160,12 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
                                         shardId: ShardId): IndexShardSnapshotStatus? {
         val indicesStatsRequest = IndicesStatsRequest().all().indices(indexId.name)
         val indicesStatsResponse = remoteClusterGetAction(IndicesStatsAction.INSTANCE, indicesStatsRequest, shardId.indexName)
-        for(i in indicesStatsResponse.shards.indices) {
-            if(indicesStatsResponse.shards[i].shardRouting.shardId().id == shardId.id) {
+        for (i in indicesStatsResponse.shards.indices) {
+            if (indicesStatsResponse.shards[i].shardRouting.shardId().id == shardId.id) {
                 val sizeInBytes = indicesStatsResponse.shards[i].stats?.store?.sizeInBytes!!
                 // Filling in dummy values except size
                 return IndexShardSnapshotStatus.newDone(0L, 3L, 1,
-                        1, sizeInBytes, sizeInBytes , "")
+                        1, sizeInBytes, sizeInBytes, "")
             }
         }
         return null
@@ -183,17 +189,17 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         val clusterState = getRemoteClusterState(false, false)
         val shardGenerations = ShardGenerations.builder()
         clusterState.metadata.indices.values()
-            .map { it.value }
-            .forEach { indexMetadata ->
-                val indexId = IndexId(indexMetadata.index.name, indexMetadata.indexUUID)
-                for (i in 0 until indexMetadata.numberOfShards) {
-                    // Generations only make sense for eventually consistent BlobStores so just use a dummy value here.
-                    shardGenerations.put(indexId, i, "dummy")
+                .map { it.value }
+                .forEach { indexMetadata ->
+                    val indexId = IndexId(indexMetadata.index.name, indexMetadata.indexUUID)
+                    for (i in 0 until indexMetadata.numberOfShards) {
+                        // Generations only make sense for eventually consistent BlobStores so just use a dummy value here.
+                        shardGenerations.put(indexId, i, "dummy")
+                    }
                 }
-            }
         val snapshotId = SnapshotId(REMOTE_SNAPSHOT_NAME, REMOTE_SNAPSHOT_NAME.asUUID())
         val repositoryData = RepositoryData.EMPTY
-            .addSnapshot(snapshotId, SnapshotState.SUCCESS, Version.CURRENT, shardGenerations.build(), null, null)
+                .addSnapshot(snapshotId, SnapshotState.SUCCESS, Version.CURRENT, shardGenerations.build(), null, null)
         listener.onResponse(repositoryData)
     }
 
@@ -240,65 +246,9 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
      */
     override fun restoreShard(store: Store, snapshotId: SnapshotId, indexId: IndexId, snapshotShardId: ShardId,
                               recoveryState: RecoveryState, listener: ActionListener<Void>) {
-        var multiChunkTransfer: RemoteClusterMultiChunkTransfer?
-        var restoreUUID: String?
-        var remoteShardNode: DiscoveryNode?
-        var remoteShardId: ShardId?
         try {
-            store.incRef()
-            val followerIndexName = store.shardId().indexName
-            val followerShardId = store.shardId()
-            // 1. Get all the files info from the remote cluster for this shardId
-            // Node containing the shard
-            val remoteClusterState = getRemoteClusterState(true, true, indexId.name)
-            val remoteShardRouting = remoteClusterState.routingTable.shardRoutingTable(snapshotShardId.indexName,
-                    snapshotShardId.id).primaryShard()
-            remoteShardNode = remoteClusterState.nodes.get(remoteShardRouting.currentNodeId())
-
-            // Get the index UUID of the remote cluster for the metadata request
-            remoteShardId = ShardId(snapshotShardId.indexName,
-                    remoteClusterState.metadata.index(indexId.name).indexUUID,
-                    snapshotShardId.id)
-            restoreUUID = UUIDs.randomBase64UUID()
-            val getStoreMetadataRequest = GetStoreMetadataRequest(restoreUUID, remoteShardNode, remoteShardId,
-                    clusterService.clusterName.value(), followerShardId)
-
-            // Gets the remote store metadata
-            val metadataResponse = remoteClusterGetAction(GetStoreMetadataAction.INSTANCE, getStoreMetadataRequest, followerIndexName)
-            val metadataSnapshot = metadataResponse.metadataSnapshot
-
-            // 2. Request for individual files from remote cluster for this shardId
-            // make sure the store is not released until we are done.
-            val fileMetadata = ArrayList(metadataSnapshot.asMap().values)
-            multiChunkTransfer = RemoteClusterMultiChunkTransfer(log, clusterService.clusterName.value(), client.threadPool().threadContext,
-                    store, parallelChunks, restoreUUID, remoteShardNode,
-                    remoteShardId, fileMetadata, remoteClusterClient, recoveryState, chunkSize,
-                    object: ActionListener<Void>{
-                        override fun onFailure(e: java.lang.Exception?) {
-                            log.error("Restore of ${store.shardId()} failed due to $e")
-                            store.decRef()
-                            releaseLeaderResources(restoreUUID, remoteShardNode, remoteShardId, followerShardId, followerIndexName)
-                            listener.onFailure(e)
-                        }
-                        override fun onResponse(response: Void?) {
-                            log.info("Restore successful for ${store.shardId()}")
-                            store.decRef()
-                            releaseLeaderResources(restoreUUID, remoteShardNode, remoteShardId, followerShardId, followerIndexName)
-                            listener.onResponse(null)
-                        }
-                    })
-            if(fileMetadata.isEmpty()) {
-                log.info("Initializing with empty store for shard:" + snapshotShardId.id)
-                store.createEmpty(store.indexSettings().indexVersionCreated.luceneVersion)
-                store.decRef()
-                releaseLeaderResources(restoreUUID, remoteShardNode, remoteShardId, followerShardId, followerIndexName)
-                listener.onResponse(null)
-            }
-            else {
-                remoteClusterClient.executeUnderSecurityContext(clusterService, repositoryMetadata.remoteClusterName(), followerIndexName) {
-                    multiChunkTransfer.start()
-                }
-            }
+            restoreShardWithRetries(store, snapshotId, indexId, snapshotShardId,
+                    recoveryState, listener, ::restoreShardUsingMultiChunkTransfer, log = log)
         } catch (e: Exception) {
             log.error("Restore of shard from remote cluster repository failed due to $e")
             store.decRef()
@@ -306,13 +256,90 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         }
     }
 
+
+    fun restoreShardUsingMultiChunkTransfer(store: Store, snapshotId: SnapshotId, indexId: IndexId, snapshotShardId: ShardId,
+                                            recoveryState: RecoveryState, listener: ActionListener<Void>) {
+
+        var multiChunkTransfer: RemoteClusterMultiChunkTransfer?
+        var restoreUUID: String?
+        var remoteShardNode: DiscoveryNode?
+        var remoteShardId: ShardId?
+        store.incRef()
+        val followerIndexName = store.shardId().indexName
+        val followerShardId = store.shardId()
+        // 1. Get all the files info from the remote cluster for this shardId
+        // Node containing the shard
+        val remoteClusterState = getRemoteClusterState(true, true, indexId.name)
+        val remoteShardRouting = remoteClusterState.routingTable.shardRoutingTable(snapshotShardId.indexName,
+                snapshotShardId.id).primaryShard()
+        remoteShardNode = remoteClusterState.nodes.get(remoteShardRouting.currentNodeId())
+        // Get the index UUID of the remote cluster for the metadata request
+        remoteShardId = ShardId(snapshotShardId.indexName,
+                remoteClusterState.metadata.index(indexId.name).indexUUID,
+                snapshotShardId.id)
+        restoreUUID = UUIDs.randomBase64UUID()
+        val getStoreMetadataRequest = GetStoreMetadataRequest(restoreUUID, remoteShardNode, remoteShardId,
+                clusterService.clusterName.value(), followerShardId)
+
+        // Gets the remote store metadata
+        val metadataResponse = remoteClusterGetAction(GetStoreMetadataAction.INSTANCE, getStoreMetadataRequest, followerIndexName)
+        val metadataSnapshot = metadataResponse.metadataSnapshot
+
+        // 2. Request for individual files from remote cluster for this shardId
+        // make sure the store is not released until we are done.
+        val fileMetadata = ArrayList(metadataSnapshot.asMap().values)
+        multiChunkTransfer = RemoteClusterMultiChunkTransfer(log, clusterService.clusterName.value(), client.threadPool().threadContext,
+                store, parallelChunks, restoreUUID, remoteShardNode,
+                remoteShardId, fileMetadata, remoteClusterClient, recoveryState, chunkSize,
+                object : ActionListener<Void> {
+                    override fun onFailure(e: java.lang.Exception?) {
+                        log.error("Restore of ${store.shardId()} failed due to $e")
+                        if (e is NodeDisconnectedException || e is NodeNotConnectedException || e is ConnectTransportException) {
+                            log.info("Retrying restore shard for ${store.shardId()}")
+                            Thread.sleep(1000) // to get updated remote cluster state
+                            restoreShardWithRetries(store, snapshotId, indexId, snapshotShardId,
+                                    recoveryState, listener, ::restoreShardUsingMultiChunkTransfer, log = log)
+                        } else {
+                            log.info("Not retrying restore shard for ${store.shardId()}")
+                            store.decRef()
+                            releaseLeaderResources(restoreUUID, remoteShardNode, remoteShardId, followerShardId, followerIndexName)
+                            listener.onFailure(e)
+                        }
+                    }
+
+                    override fun onResponse(response: Void?) {
+                        log.info("Restore successful for ${store.shardId()}")
+                        store.decRef()
+                        releaseLeaderResources(restoreUUID, remoteShardNode, remoteShardId, followerShardId, followerIndexName)
+                        listener.onResponse(null)
+                    }
+                })
+        if (fileMetadata.isEmpty()) {
+            log.info("Initializing with empty store for shard:" + snapshotShardId.id)
+            store.createEmpty(store.indexSettings().indexVersionCreated.luceneVersion)
+            store.decRef()
+            releaseLeaderResources(restoreUUID, remoteShardNode, remoteShardId, followerShardId, followerIndexName)
+            listener.onResponse(null)
+        } else {
+            remoteClusterClient.executeUnderSecurityContext(clusterService, repositoryMetadata.remoteClusterName(), followerIndexName) {
+                multiChunkTransfer.start()
+            }
+        }
+
+    }
+
     private fun releaseLeaderResources(restoreUUID: String, remoteShardNode: DiscoveryNode,
                                        remoteShardId: ShardId, followerShardId: ShardId, followerIndexName: String) {
-        val releaseResourcesReq = ReleaseLeaderResourcesRequest(restoreUUID, remoteShardNode, remoteShardId,
-                clusterService.clusterName.value(), followerShardId)
-        if(remoteClusterGetAction(ReleaseLeaderResourcesAction.INSTANCE, releaseResourcesReq, followerIndexName).isAcknowledged) {
-            log.info("Successfully released resources at the leader cluster for $remoteShardId at $remoteShardNode")
+        try {
+            val releaseResourcesReq = ReleaseLeaderResourcesRequest(restoreUUID, remoteShardNode, remoteShardId,
+                    clusterService.clusterName.value(), followerShardId)
+            if (remoteClusterGetAction(ReleaseLeaderResourcesAction.INSTANCE, releaseResourcesReq, followerIndexName).isAcknowledged) {
+                log.info("Successfully released resources at the leader cluster for $remoteShardId at $remoteShardNode")
+            }
+        } catch (e: Exception) {
+            log.error("Releasing leader resource failed due to $e")
         }
+
     }
 
     override fun isReadOnly(): Boolean {
@@ -347,8 +374,8 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
                                                             actionRequest: ActionRequest,
                                                             followerIndex: String): T {
         val userString = SecurityContext.fromClusterState(clusterService.state(),
-                                                        repositoryMetadata.remoteClusterName(),
-                                                        followerIndex)
+                repositoryMetadata.remoteClusterName(),
+                followerIndex)
         remoteClusterClient.threadPool().threadContext.newStoredContext(true).use {
             SecurityContext.toThreadContext(remoteClusterClient.threadPool().threadContext, userString)
             return remoteClusterClient.execute(actionType, actionRequest).actionGet(REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC)

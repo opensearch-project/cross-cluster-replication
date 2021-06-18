@@ -262,7 +262,7 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
             try {
                 cso.waitForNextChange("remote restore finish")
             } catch(e: ElasticsearchTimeoutException) {
-                log.info("Waiting for restore to complete")
+                log.trace("Waiting for restore to complete")
             }
             restore = inProgressRestore() ?: throw ResourceNotFoundException("""
             Unable to find in progress restore for remote index: $remoteCluster:$remoteIndex. 
