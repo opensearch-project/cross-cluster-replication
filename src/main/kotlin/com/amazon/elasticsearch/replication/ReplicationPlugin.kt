@@ -108,17 +108,23 @@ import com.amazon.elasticsearch.replication.rest.ReplicateIndexHandler
 import com.amazon.elasticsearch.replication.rest.ResumeIndexReplicationHandler
 import com.amazon.elasticsearch.replication.rest.StopIndexReplicationHandler
 import com.amazon.elasticsearch.replication.rest.UpdateAutoFollowPatternsHandler
+import org.elasticsearch.common.util.concurrent.EsExecutors
+import org.elasticsearch.threadpool.FixedExecutorBuilder
 
 internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin, RepositoryPlugin, EnginePlugin {
 
     private lateinit var client: Client
     private lateinit var threadPool: ThreadPool
-
     companion object {
-        const val REPLICATION_EXECUTOR_NAME = "replication"
-        val REPLICATED_INDEX_SETTING = Setting.simpleString("index.opendistro.replicated",
+        const val REPLICATION_EXECUTOR_NAME_LEADER = "replication_leader"
+        const val REPLICATION_EXECUTOR_NAME_FOLLOWER = "replication_follower"
+        val REPLICATED_INDEX_SETTING: Setting<String> = Setting.simpleString("index.opendistro.replicated",
             Setting.Property.InternalIndex, Setting.Property.IndexScope)
-        val REPLICATION_CHANGE_BATCH_SIZE = Setting.intSetting("opendistro.replication.ops_batch_size", 512, 16,
+        val REPLICATION_CHANGE_BATCH_SIZE: Setting<Int> = Setting.intSetting("opendistro.replication.ops_batch_size", 512, 16,
+            Setting.Property.Dynamic, Setting.Property.NodeScope)
+        val REPLICATION_LEADER_THREADPOOL_SIZE: Setting<Int> = Setting.intSetting("opendistro.replication.leader.size", 0, 0,
+            Setting.Property.Dynamic, Setting.Property.NodeScope)
+        val REPLICATION_LEADER_THREADPOOL_QUEUE_SIZE: Setting<Int> = Setting.intSetting("opendistro.replication.leader.queue_size", 1000, 0,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
     }
 
@@ -167,8 +173,28 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
     }
 
     override fun getExecutorBuilders(settings: Settings): List<ExecutorBuilder<*>> {
-        //TODO: get the executor size from settings
-        return listOf(ScalingExecutorBuilder(REPLICATION_EXECUTOR_NAME, 1, 10, TimeValue.timeValueMinutes(1)))
+        return listOf(followerExecutorBuilder(settings), leaderExecutorBuilder(settings))
+    }
+
+    private fun followerExecutorBuilder(settings: Settings): ExecutorBuilder<*> {
+        return ScalingExecutorBuilder(REPLICATION_EXECUTOR_NAME_FOLLOWER, 1, 10, TimeValue.timeValueMinutes(1), REPLICATION_EXECUTOR_NAME_FOLLOWER)
+    }
+
+    /**
+     * Keeping the default configuration for threadpool in parity with search threadpool which is what we were using earlier.
+     * https://github.com/opensearch-project/OpenSearch/blob/main/server/src/main/java/org/opensearch/threadpool/ThreadPool.java#L195
+     */
+    private fun leaderExecutorBuilder(settings: Settings): ExecutorBuilder<*> {
+        val availableProcessors = EsExecutors.allocatedProcessors(settings)
+        val leaderThreadPoolQueueSize = REPLICATION_LEADER_THREADPOOL_QUEUE_SIZE.get(settings)
+
+        var leaderThreadPoolSize = REPLICATION_LEADER_THREADPOOL_SIZE.get(settings)
+        leaderThreadPoolSize = if (leaderThreadPoolSize > 0) leaderThreadPoolSize else leaderThreadPoolSize(availableProcessors)
+
+        return FixedExecutorBuilder(settings, REPLICATION_EXECUTOR_NAME_LEADER, leaderThreadPoolSize, leaderThreadPoolQueueSize, REPLICATION_EXECUTOR_NAME_LEADER)
+    }
+    fun leaderThreadPoolSize(allocatedProcessors: Int): Int {
+        return allocatedProcessors * 3 / 2 + 1
     }
 
     override fun getPersistentTasksExecutor(clusterService: ClusterService, threadPool: ThreadPool, client: Client,
@@ -176,9 +202,9 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                                             expressionResolver: IndexNameExpressionResolver)
         : List<PersistentTasksExecutor<*>> {
         return listOf(
-            ShardReplicationExecutor(REPLICATION_EXECUTOR_NAME, clusterService, threadPool, client),
-            IndexReplicationExecutor(REPLICATION_EXECUTOR_NAME, clusterService, threadPool, client),
-            AutoFollowExecutor(REPLICATION_EXECUTOR_NAME, clusterService, threadPool, client))
+            ShardReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client),
+            IndexReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client),
+            AutoFollowExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client))
     }
 
     override fun getNamedWriteables(): List<NamedWriteableRegistry.Entry> {
@@ -229,7 +255,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
     }
 
     override fun getSettings(): List<Setting<*>> {
-        return listOf(REPLICATED_INDEX_SETTING, REPLICATION_CHANGE_BATCH_SIZE)
+        return listOf(REPLICATED_INDEX_SETTING, REPLICATION_CHANGE_BATCH_SIZE, REPLICATION_LEADER_THREADPOOL_SIZE, REPLICATION_LEADER_THREADPOOL_QUEUE_SIZE)
     }
 
     override fun getInternalRepositories(env: Environment, namedXContentRegistry: NamedXContentRegistry,
