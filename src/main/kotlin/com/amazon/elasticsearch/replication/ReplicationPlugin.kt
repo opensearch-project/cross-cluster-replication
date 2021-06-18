@@ -114,7 +114,9 @@ import com.amazon.elasticsearch.replication.rest.StopIndexReplicationHandler
 import com.amazon.elasticsearch.replication.rest.UpdateAutoFollowPatternsHandler
 import com.amazon.elasticsearch.replication.metadata.TransportUpdateMetadataAction
 import com.amazon.elasticsearch.replication.metadata.UpdateMetadataAction
+import kotlinx.coroutines.sync.Mutex
 import org.elasticsearch.common.util.concurrent.EsExecutors
+import org.elasticsearch.monitor.jvm.JvmInfo
 import org.elasticsearch.threadpool.FixedExecutorBuilder
 import com.amazon.elasticsearch.replication.action.setup.SetupChecksAction
 import com.amazon.elasticsearch.replication.action.setup.TransportSetupChecksAction
@@ -122,6 +124,9 @@ import com.amazon.elasticsearch.replication.action.setup.TransportValidatePermis
 import com.amazon.elasticsearch.replication.action.setup.ValidatePermissionsAction
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadataStore
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
+import kotlin.math.min
 
 internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin, RepositoryPlugin, EnginePlugin {
 
@@ -129,7 +134,25 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
     private lateinit var threadPool: ThreadPool
     private lateinit var replicationMetadataManager: ReplicationMetadataManager
 
+    private var translogBufferMutex = Mutex()
+
+    /** Variable translogBuffer captures the size of buffer which will hold the in-flight translog batches, which are
+    fetched from leader but yet to be applied to follower. All changes to translogBuffer must happen after acquiring a
+    lock on [translogBufferMutex].
+     */
+    val translogBuffer = AtomicLong(JvmInfo.jvmInfo().getMem().getHeapMax().getBytes() *
+            min(DEFAULT_TRANSLOG_BUFFER_PERCENT, MAX_TRANSLOG_BUFFER_PERCENT) / 100)
+
+    /** We keep estimate of size of a translog batch in [batchSizeEstimate] map, so that we can use it as a guess of
+     *  how much a to-be fetched batch is going to consume.
+     *  Note that all mutating operations to this map should be done after acquiring lock on [translogBufferMutex].
+     *  Key is index name, value is estimate size of one batch
+     */
+    private var batchSizeEstimate = ConcurrentHashMap<String, Long>()
+
     companion object {
+        const val DEFAULT_TRANSLOG_BUFFER_PERCENT = 10
+        const val MAX_TRANSLOG_BUFFER_PERCENT = 50
         const val REPLICATION_EXECUTOR_NAME_LEADER = "replication_leader"
         const val REPLICATION_EXECUTOR_NAME_FOLLOWER = "replication_follower"
         val REPLICATED_INDEX_SETTING: Setting<String> = Setting.simpleString("index.opendistro.replicated",
@@ -140,6 +163,9 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
         val REPLICATION_LEADER_THREADPOOL_QUEUE_SIZE: Setting<Int> = Setting.intSetting("opendistro.replication.leader.queue_size", 1000, 0,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
+        val REPLICATION_TRANSLOG_BUFFER_PERCENT: Setting<Int> = Setting.intSetting(
+                "opendistro.replication.translog_buffer_percent", DEFAULT_TRANSLOG_BUFFER_PERCENT, 1,
+                Setting.Property.Dynamic, Setting.Property.NodeScope)
     }
 
     override fun createComponents(client: Client, clusterService: ClusterService, threadPool: ThreadPool,
@@ -224,7 +250,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                                             expressionResolver: IndexNameExpressionResolver)
         : List<PersistentTasksExecutor<*>> {
         return listOf(
-            ShardReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager),
+            ShardReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool,
+                client, replicationMetadataManager, this.translogBuffer, this.translogBufferMutex, this.batchSizeEstimate),
             IndexReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager),
             AutoFollowExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager))
     }

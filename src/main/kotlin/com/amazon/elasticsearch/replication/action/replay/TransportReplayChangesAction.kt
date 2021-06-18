@@ -33,7 +33,6 @@ import org.apache.logging.log4j.LogManager
 import org.elasticsearch.action.ActionListener
 import org.elasticsearch.action.admin.indices.mapping.get.GetMappingsRequest
 import org.elasticsearch.action.admin.indices.mapping.put.PutMappingRequest
-import org.elasticsearch.action.bulk.TransportShardBulkAction
 import org.elasticsearch.action.resync.TransportResyncReplicationAction
 import org.elasticsearch.action.support.ActionFilters
 import org.elasticsearch.action.support.IndicesOptions
