@@ -19,6 +19,7 @@ import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
 import com.amazon.elasticsearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
 import com.amazon.elasticsearch.replication.metadata.state.getReplicationStateParamsForIndex
+import kotlinx.coroutines.sync.Mutex
 import org.apache.logging.log4j.LogManager
 import org.elasticsearch.ElasticsearchException
 import org.elasticsearch.client.Client
@@ -31,10 +32,15 @@ import org.elasticsearch.persistent.PersistentTasksCustomMetadata.PersistentTask
 import org.elasticsearch.persistent.PersistentTasksExecutor
 import org.elasticsearch.tasks.TaskId
 import org.elasticsearch.threadpool.ThreadPool
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 
 class ShardReplicationExecutor(executor: String, private val clusterService : ClusterService,
                                private val threadPool: ThreadPool, private val client: Client,
-                               private val replicationMetadataManager: ReplicationMetadataManager) :
+                               private val replicationMetadataManager: ReplicationMetadataManager,
+                               private val translogBuffer: AtomicLong,
+                               private val translogBufferMutex: Mutex,
+                               private val batchSizeEstimate: ConcurrentHashMap<String, Long>):
     PersistentTasksExecutor<ShardReplicationParams>(TASK_NAME, executor) {
 
     companion object {
@@ -75,7 +81,8 @@ class ShardReplicationExecutor(executor: String, private val clusterService : Cl
                             taskInProgress: PersistentTask<ShardReplicationParams>,
                             headers: Map<String, String>): AllocatedPersistentTask {
         return ShardReplicationTask(id, type, action, getDescription(taskInProgress), parentTaskId,
-                                    taskInProgress.params!!, executor, clusterService, threadPool, client, replicationMetadataManager)
+                                    taskInProgress.params!!, executor, clusterService, threadPool, client, replicationMetadataManager,
+                                    translogBuffer, translogBufferMutex, batchSizeEstimate)
     }
 
     override fun getDescription(taskInProgress: PersistentTask<ShardReplicationParams>): String {

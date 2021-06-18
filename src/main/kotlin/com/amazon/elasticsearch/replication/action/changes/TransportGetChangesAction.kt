@@ -113,7 +113,11 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
                         }
                     }
                 }
-                GetChangesResponse(ops, request.fromSeqNo, indexShard.maxSeqNoOfUpdatesOrDeletes)
+                var changesSizeEstimate = 0L
+                for (opn in ops) {
+                    changesSizeEstimate += opn.estimateSize()
+                }
+                GetChangesResponse(ops, request.fromSeqNo, indexShard.maxSeqNoOfUpdatesOrDeletes, changesSizeEstimate)
             }
         }
     }
