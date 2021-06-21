@@ -62,11 +62,6 @@ class TransportPauseIndexReplicationAction @Inject constructor(transportService:
     }
 
     override fun checkBlock(request: PauseIndexReplicationRequest, state: ClusterState): ClusterBlockException? {
-        try {
-            checkIfIndexBlockedWithLevel(clusterService, request.indexName, ClusterBlockLevel.METADATA_WRITE)
-        } catch (exception: ClusterBlockException) {
-            return exception
-        }
         return state.blocks().globalBlockedException(ClusterBlockLevel.METADATA_WRITE)
     }
 
@@ -85,7 +80,7 @@ class TransportPauseIndexReplicationAction @Inject constructor(transportService:
                 }
 
                 if (restoring) {
-                    throw ElasticsearchException("Index is in bootstrap phase currently for index:" + request.indexName)
+                    throw ElasticsearchException("Index is in restore phase currently for index: ${request.indexName}. You can pause after restore completes." )
                 }
 
                 val stateUpdateResponse : AcknowledgedResponse =

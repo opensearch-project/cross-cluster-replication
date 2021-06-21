@@ -111,7 +111,7 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
         assertThatThrownBy {
             followerClient.pauseReplication(followerIndexName)
         }.isInstanceOf(ResponseException::class.java)
-                .hasMessageContaining("Index is in bootstrap phase currently for index:${followerIndexName}")
+                .hasMessageContaining("Index is in restore phase currently for index: ${followerIndexName}")
     }
 
     private fun fillIndex(clusterClient: RestHighLevelClient,

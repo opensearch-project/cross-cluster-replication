@@ -72,11 +72,6 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
     }
 
     override fun checkBlock(request: ResumeIndexReplicationRequest, state: ClusterState): ClusterBlockException? {
-        try {
-            checkIfIndexBlockedWithLevel(clusterService, request.indexName, ClusterBlockLevel.METADATA_WRITE)
-        } catch (exception: ClusterBlockException) {
-            return exception
-        }
         return state.blocks().globalBlockedException(ClusterBlockLevel.METADATA_WRITE)
     }
 
