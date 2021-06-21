@@ -106,10 +106,10 @@ class TransportPauseIndexReplicationAction @Inject constructor(transportService:
                 ?:
             throw IllegalArgumentException("No replication in progress for index:${request.indexName}")
         val replicationOverallState = replicationStateParams[REPLICATION_OVERALL_STATE_KEY]
-        if (replicationOverallState != REPLICATION_OVERALL_STATE_RUNNING_VALUE)
-            throw IllegalStateException("Unknown value of replication state:$replicationOverallState")
-        else if (replicationOverallState == REPLICATION_OVERALL_STATE_PAUSED)
+        if (replicationOverallState == REPLICATION_OVERALL_STATE_PAUSED)
             throw ResourceAlreadyExistsException("Index ${request.indexName} is already paused")
+        else if (replicationOverallState != REPLICATION_OVERALL_STATE_RUNNING_VALUE)
+            throw IllegalStateException("Unknown value of replication state:$replicationOverallState")
 
     }
 
