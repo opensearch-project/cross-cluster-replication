@@ -15,6 +15,7 @@
 
 package com.amazon.elasticsearch.replication.metadata
 
+import com.amazon.elasticsearch.replication.action.index.block.IndexBlockUpdateType
 import com.amazon.elasticsearch.replication.action.index.block.UpdateIndexBlockRequest
 import org.elasticsearch.action.ActionListener
 import org.elasticsearch.action.support.master.AcknowledgedResponse
@@ -41,10 +42,7 @@ val INDEX_REPLICATION_BLOCK = ClusterBlock(
         false,
         false,
         RestStatus.FORBIDDEN,
-        /* Follower index deletion is allowed in the absence of Metadata block. */
-        // TODO: Add METADATA_WRITE to the list of blocked actions once we have a way for the replication tasks
-        //       to make metadata changes like updating document mappings.
-        EnumSet.of(ClusterBlockLevel.WRITE))
+        EnumSet.of(ClusterBlockLevel.WRITE, ClusterBlockLevel.METADATA_WRITE))
 
 /* This function checks the local cluster state to see if given
     index is blocked with given level with any block other than
@@ -65,16 +63,24 @@ fun checkIfIndexBlockedWithLevel(clusterService: ClusterService,
         throw ClusterBlockException(clusterBlocksSet)
 }
 
-class AddIndexBlockTask(val request: UpdateIndexBlockRequest, listener: ActionListener<AcknowledgedResponse>) :
+class UpdateIndexBlockTask(val request: UpdateIndexBlockRequest, listener: ActionListener<AcknowledgedResponse>) :
         AckedClusterStateUpdateTask<AcknowledgedResponse>(request, listener)
 {
     override fun execute(currentState: ClusterState): ClusterState {
         val newState = ClusterState.builder(currentState)
-
-        if (!currentState.blocks.hasIndexBlock(request.indexName, INDEX_REPLICATION_BLOCK)) {
-            val newBlocks = ClusterBlocks.builder().blocks(currentState.blocks)
-                    .addIndexBlock(request.indexName, INDEX_REPLICATION_BLOCK)
-            newState.blocks(newBlocks)
+        when(request.updateType) {
+            IndexBlockUpdateType.ADD_BLOCK -> {
+                if (!currentState.blocks.hasIndexBlock(request.indexName, INDEX_REPLICATION_BLOCK)) {
+                    val newBlocks = ClusterBlocks.builder().blocks(currentState.blocks)
+                        .addIndexBlock(request.indexName, INDEX_REPLICATION_BLOCK)
+                    newState.blocks(newBlocks)
+                }
+            }
+            IndexBlockUpdateType.REMOVE_BLOCK -> {
+                val newBlocks = ClusterBlocks.builder().blocks(currentState.blocks)
+                    .removeIndexBlock(request.indexName, INDEX_REPLICATION_BLOCK)
+                newState.blocks(newBlocks)
+            }
         }
         return newState.build()
     }

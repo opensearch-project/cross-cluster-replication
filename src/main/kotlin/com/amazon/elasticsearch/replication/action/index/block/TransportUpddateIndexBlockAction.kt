@@ -15,8 +15,7 @@
 
 package com.amazon.elasticsearch.replication.action.index.block
 
-import com.amazon.elasticsearch.replication.metadata.AddIndexBlockTask
-import com.amazon.elasticsearch.replication.metadata.checkIfIndexBlockedWithLevel
+import com.amazon.elasticsearch.replication.metadata.UpdateIndexBlockTask
 import com.amazon.elasticsearch.replication.util.completeWith
 import com.amazon.elasticsearch.replication.util.coroutineContext
 import com.amazon.elasticsearch.replication.util.waitForClusterStateUpdate
@@ -58,14 +57,6 @@ class TransportUpddateIndexBlockAction @Inject constructor(transportService: Tra
     }
 
     override fun checkBlock(request: UpdateIndexBlockRequest?, state: ClusterState): ClusterBlockException? {
-        try {
-            if (request != null) {
-                state.routingTable.index(request.indexName) ?: return null
-                checkIfIndexBlockedWithLevel(clusterService, request.indexName, ClusterBlockLevel.METADATA_WRITE)
-            }
-        } catch (exception: ClusterBlockException) {
-            return exception
-        }
         return state.blocks().globalBlockedException(ClusterBlockLevel.METADATA_WRITE)
     }
 
@@ -73,18 +64,18 @@ class TransportUpddateIndexBlockAction @Inject constructor(transportService: Tra
     override fun masterOperation(request: UpdateIndexBlockRequest?, state: ClusterState?, listener: ActionListener<AcknowledgedResponse>) {
         val followerIndexName = request!!.indexName
         launch(threadPool.coroutineContext(ThreadPool.Names.MANAGEMENT)) {
-            listener.completeWith { addIndexBlockForReplication(followerIndexName) }
+            listener.completeWith { addIndexBlockForReplication(request) }
         }
     }
 
-    private suspend fun addIndexBlockForReplication(indexName: String): AcknowledgedResponse {
+    private suspend fun addIndexBlockForReplication(request: UpdateIndexBlockRequest): AcknowledgedResponse {
         val addIndexBlockTaskResponse : AcknowledgedResponse =
                 clusterService.waitForClusterStateUpdate("add-block") {
                     l ->
-                    AddIndexBlockTask(UpdateIndexBlockRequest(indexName, IndexBlockUpdateType.ADD_BLOCK), l)
+                    UpdateIndexBlockTask(request, l)
                 }
         if (!addIndexBlockTaskResponse.isAcknowledged) {
-            throw ElasticsearchException("Failed to add index block to index:$indexName")
+            throw ElasticsearchException("Failed to add index block to index:${request.indexName}")
         }
         return addIndexBlockTaskResponse
     }

@@ -57,13 +57,17 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
 
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
-        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
 
-        /* At this point, the follower cluster should be in FOLLOWING state. Next, we pause replication
-        and verify the same
-         */
-        followerClient.pauseReplication(followerIndexName)
-        followerClient.resumeReplication(followerIndexName)
+            /* At this point, the follower cluster should be in FOLLOWING state. Next, we pause replication
+            and verify the same
+             */
+            followerClient.pauseReplication(followerIndexName)
+            followerClient.resumeReplication(followerIndexName)
+        } finally {
+            followerClient.stopReplication(followerIndexName)
+        }
     }
 
 
@@ -75,12 +79,16 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
 
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
-        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
 
-        assertThatThrownBy {
-            followerClient.resumeReplication(followerIndexName)
-        }.isInstanceOf(ResponseException::class.java)
-                .hasMessageContaining("Replication on Index ${followerIndexName} is already running")
+            assertThatThrownBy {
+                followerClient.resumeReplication(followerIndexName)
+            }.isInstanceOf(ResponseException::class.java)
+                    .hasMessageContaining("Replication on Index ${followerIndexName} is already running")
+        } finally {
+            followerClient.stopReplication(followerIndexName)
+        }
     }
 
     fun `test resume without retention lease`() {
@@ -91,22 +99,25 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
 
         var createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
-        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
 
 
-        followerClient.pauseReplication(followerIndexName)
+            followerClient.pauseReplication(followerIndexName)
 
-        // If we delete the existing index and recreate the index with same name, retention leases should be lost
-        val deleteIndexResponse = leaderClient.indices().delete(DeleteIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
-        assertThat(deleteIndexResponse.isAcknowledged).isTrue()
-        createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
-        assertThat(createIndexResponse.isAcknowledged).isTrue()
+            // If we delete the existing index and recreate the index with same name, retention leases should be lost
+            val deleteIndexResponse = leaderClient.indices().delete(DeleteIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+            assertThat(deleteIndexResponse.isAcknowledged).isTrue()
+            createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+            assertThat(createIndexResponse.isAcknowledged).isTrue()
 
-        assertThatThrownBy {
-            followerClient.resumeReplication(followerIndexName)
-        }.isInstanceOf(ResponseException::class.java)
-                .hasMessageContaining("Retention lease doesn't exist. Replication can't be resumed for $followerIndexName")
-
+            assertThatThrownBy {
+                followerClient.resumeReplication(followerIndexName)
+            }.isInstanceOf(ResponseException::class.java)
+                    .hasMessageContaining("Retention lease doesn't exist. Replication can't be resumed for $followerIndexName")
+        } finally {
+            followerClient.stopReplication(followerIndexName)
+        }
     }
 
     fun `test pause and resume replication amid leader index close and open`() {
@@ -117,17 +128,21 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
 
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
-        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
 
-        /* At this point, the follower cluster should be in FOLLOWING state. Next, we pause replication
-        and verify the same
-         */
-        followerClient.pauseReplication(followerIndexName)
+            /* At this point, the follower cluster should be in FOLLOWING state. Next, we pause replication
+            and verify the same
+             */
+            followerClient.pauseReplication(followerIndexName)
 
-        leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
-        leaderClient.indices().open(OpenIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
+            leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
+            leaderClient.indices().open(OpenIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
 
-        followerClient.resumeReplication(followerIndexName)
+            followerClient.resumeReplication(followerIndexName)
+        } finally {
+            followerClient.stopReplication(followerIndexName)
+        }
     }
 
     fun `test pause and resume replication amid index close`() {
@@ -138,20 +153,27 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
 
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
-        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
 
-        /* At this point, the follower cluster should be in FOLLOWING state. Next, we pause replication
-        and verify the same
-         */
-        followerClient.pauseReplication(followerIndexName)
+            /* At this point, the follower cluster should be in FOLLOWING state. Next, we pause replication
+            and verify the same
+             */
+            followerClient.pauseReplication(followerIndexName)
 
-        leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
+            leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
 
-        assertThatThrownBy {
-            followerClient.resumeReplication(followerIndexName)
-        }.isInstanceOf(ResponseException::class.java)
-                .hasMessageContaining("closed")
-
+            assertThatThrownBy {
+                followerClient.resumeReplication(followerIndexName)
+            }.isInstanceOf(ResponseException::class.java)
+                    .hasMessageContaining("closed")
+        } finally {
+            try {
+                followerClient.stopReplication(followerIndexName)
+            } catch (e: Exception) {
+                // DO nothing
+            }
+        }
     }
 
 

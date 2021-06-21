@@ -55,6 +55,7 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
         val leaderIndexName = createRandomIndex(leaderClient)
+        var leaderIndexNameNew = ""
         createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
 
         try {
@@ -68,9 +69,8 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
             }, 30, TimeUnit.SECONDS)
             Assertions.assertThat(getAutoFollowTasks(FOLLOWER).size).isEqualTo(1)
 
-
+            leaderIndexNameNew = createRandomIndex(leaderClient)
             // Verify that newly created index on leader which match the pattern are also replicated.
-            val leaderIndexNameNew = createRandomIndex(leaderClient)
             assertBusy ({
                 Assertions.assertThat(followerClient.indices()
                         .exists(GetIndexRequest(leaderIndexNameNew), RequestOptions.DEFAULT))
@@ -78,6 +78,8 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
             }, 30, TimeUnit.SECONDS)
         } finally {
             followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
+            followerClient.stopReplication(leaderIndexName, false)
+            followerClient.stopReplication(leaderIndexNameNew)
         }
     }
 

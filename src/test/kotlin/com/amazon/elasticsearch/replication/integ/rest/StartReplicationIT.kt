@@ -20,6 +20,7 @@ import com.amazon.elasticsearch.replication.MultiClusterAnnotations
 import com.amazon.elasticsearch.replication.MultiClusterRestTestCase
 import com.amazon.elasticsearch.replication.StartReplicationRequest
 import com.amazon.elasticsearch.replication.startReplication
+import com.amazon.elasticsearch.replication.stopReplication
 import org.apache.http.HttpStatus
 import org.apache.http.entity.ContentType
 import org.apache.http.nio.entity.NStringEntity
@@ -56,11 +57,13 @@ class StartReplicationIT: MultiClusterRestTestCase() {
 
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
-        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
-        assertBusy {
-            assertThat(followerClient.indices()
-                    .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
-                    .isEqualTo(true)
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
+            assertBusy {
+                assertThat(followerClient.indices().exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT)).isEqualTo(true)
+            }
+        } finally {
+            followerClient.stopReplication(followerIndexName)
         }
     }
 
@@ -132,18 +135,23 @@ class StartReplicationIT: MultiClusterRestTestCase() {
 
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
-        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
-        assertBusy {
-            assertThat(followerClient.indices()
-                    .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
-                    .isEqualTo(true)
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
+                assertBusy {
+                    assertThat(followerClient.indices()
+                            .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
+                            .isEqualTo(true)
+                }
+                Assert.assertEquals(
+                        leaderClient.indices().getMapping(GetMappingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
+                                .mappings()[leaderIndexName],
+                        followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
+                                .mappings()[followerIndexName]
+                )
+        } finally {
+            followerClient.stopReplication(followerIndexName)
         }
-        Assert.assertEquals(
-                leaderClient.indices().getMapping(GetMappingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
-                        .mappings()[leaderIndexName],
-                followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
-                        .mappings()[followerIndexName]
-        )
+
     }
 
     fun `test that index settings are getting replicated`() {
@@ -158,21 +166,25 @@ class StartReplicationIT: MultiClusterRestTestCase() {
 
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName).settings(settings), RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
-        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
-        assertBusy {
-            assertThat(followerClient.indices()
-                    .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
-                    .isEqualTo(true)
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
+            assertBusy {
+                assertThat(followerClient.indices()
+                        .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
+                        .isEqualTo(true)
+            }
+            val getSettingsRequest = GetSettingsRequest()
+            getSettingsRequest.indices(followerIndexName)
+            getSettingsRequest.names(IndexMetadata.SETTING_NUMBER_OF_REPLICAS)
+            Assert.assertEquals(
+                    "0",
+                    followerClient.indices()
+                    .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
+                    .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+            )
+        } finally {
+            followerClient.stopReplication(followerIndexName)
         }
-        val getSettingsRequest = GetSettingsRequest()
-        getSettingsRequest.indices(followerIndexName)
-        getSettingsRequest.names(IndexMetadata.SETTING_NUMBER_OF_REPLICAS)
-        Assert.assertEquals(
-                "0",
-                followerClient.indices()
-                .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
-        )
     }
 
     fun `test that aliases settings are getting replicated`() {
@@ -183,18 +195,22 @@ class StartReplicationIT: MultiClusterRestTestCase() {
 
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName).alias(Alias("leaderAlias")), RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
-        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
-        assertBusy {
-            assertThat(followerClient.indices()
-                    .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
-                    .isEqualTo(true)
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
+            assertBusy {
+                assertThat(followerClient.indices()
+                        .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
+                        .isEqualTo(true)
+            }
+            Assert.assertEquals(
+                    leaderClient.indices().getAlias(GetAliasesRequest().indices(leaderIndexName),
+                            RequestOptions.DEFAULT).aliases[leaderIndexName],
+                    followerClient.indices().getAlias(GetAliasesRequest().indices(followerIndexName),
+                            RequestOptions.DEFAULT).aliases[followerIndexName]
+            )
+        } finally {
+            followerClient.stopReplication(followerIndexName)
         }
-        Assert.assertEquals(
-                leaderClient.indices().getAlias(GetAliasesRequest().indices(leaderIndexName),
-                        RequestOptions.DEFAULT).aliases[leaderIndexName],
-                followerClient.indices().getAlias(GetAliasesRequest().indices(followerIndexName),
-                        RequestOptions.DEFAULT).aliases[followerIndexName]
-        )
     }
 
     private fun addClusterMetadataBlock(clusterName: String, blockValue: String) {

@@ -55,21 +55,25 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
 
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
-        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
 
-        /* At this point, the follower cluster should be in FOLLOWING state. Next, we pause replication
-        and verify the same
-         */
-        followerClient.pauseReplication(followerIndexName)
-        // Since, we were still in FOLLOWING phase when pause was called, the index
-        // in follower index should not have been deleted in follower cluster
-        assertBusy {
-            assertThat(followerClient.indices()
-                    .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
-                    .isEqualTo(true)
+            /* At this point, the follower cluster should be in FOLLOWING state. Next, we pause replication
+            and verify the same
+             */
+            followerClient.pauseReplication(followerIndexName)
+            // Since, we were still in FOLLOWING phase when pause was called, the index
+            // in follower index should not have been deleted in follower cluster
+            assertBusy {
+                assertThat(followerClient.indices()
+                        .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
+                        .isEqualTo(true)
+            }
+
+            followerClient.resumeReplication(followerIndexName)
+        } finally {
+            followerClient.stopReplication(followerIndexName)
         }
-
-        followerClient.resumeReplication(followerIndexName)
     }
 
     fun `test pause replication in restoring state with multiple shards`() {
@@ -104,14 +108,18 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
             assertThat(leaderClient.indices()
                     .exists(GetIndexRequest(leaderIndexName), RequestOptions.DEFAULT))
         }
-        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
-                TimeValue.timeValueSeconds(10),
-                false)
-        //Given the size of index, the replication should be in RESTORING phase at this point
-        assertThatThrownBy {
-            followerClient.pauseReplication(followerIndexName)
-        }.isInstanceOf(ResponseException::class.java)
-                .hasMessageContaining("Index is in restore phase currently for index: ${followerIndexName}")
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
+                    TimeValue.timeValueSeconds(10),
+                    false)
+            //Given the size of index, the replication should be in RESTORING phase at this point
+            assertThatThrownBy {
+                followerClient.pauseReplication(followerIndexName)
+            }.isInstanceOf(ResponseException::class.java)
+                    .hasMessageContaining("Index is in restore phase currently for index: ${followerIndexName}")
+        } finally {
+            followerClient.stopReplication(followerIndexName)
+        }
     }
 
     private fun fillIndex(clusterClient: RestHighLevelClient,
@@ -152,21 +160,23 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
 
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
-        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
 
-        /* At this point, the follower cluster should be in FOLLOWING state. Next, we pause replication
-        and verify the same
-         */
-        followerClient.pauseReplication(followerIndexName)
-        // Since, we were still in FOLLOWING phase when pause was called, the index
-        // in follower index should not have been deleted in follower cluster
-        assertBusy {
-            assertThat(followerClient.indices()
-                    .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
-                    .isEqualTo(true)
+            /* At this point, the follower cluster should be in FOLLOWING state. Next, we pause replication
+            and verify the same
+             */
+            followerClient.pauseReplication(followerIndexName)
+            // Since, we were still in FOLLOWING phase when pause was called, the index
+            // in follower index should not have been deleted in follower cluster
+            assertBusy {
+                assertThat(followerClient.indices()
+                        .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
+                        .isEqualTo(true)
+            }
+        } finally {
+            followerClient.stopReplication(followerIndexName)
         }
-
-        followerClient.stopReplication(followerIndexName)
     }
 
 }

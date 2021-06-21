@@ -16,6 +16,10 @@
 package com.amazon.elasticsearch.replication.action.stop
 
 import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.REPLICATED_INDEX_SETTING
+import com.amazon.elasticsearch.replication.action.index.block.IndexBlockUpdateType
+import com.amazon.elasticsearch.replication.action.index.block.UpdateIndexBlockAction
+import com.amazon.elasticsearch.replication.action.index.block.UpdateIndexBlockRequest
+import com.amazon.elasticsearch.replication.metadata.INDEX_REPLICATION_BLOCK
 import com.amazon.elasticsearch.replication.metadata.REPLICATION_OVERALL_STATE_KEY
 import com.amazon.elasticsearch.replication.metadata.REPLICATION_OVERALL_STATE_RUNNING_VALUE
 import com.amazon.elasticsearch.replication.metadata.*
@@ -23,6 +27,7 @@ import com.amazon.elasticsearch.replication.seqno.RemoteClusterRetentionLeaseHel
 import com.amazon.elasticsearch.replication.task.index.IndexReplicationParams
 import com.amazon.elasticsearch.replication.util.completeWith
 import com.amazon.elasticsearch.replication.util.coroutineContext
+import com.amazon.elasticsearch.replication.util.suspendExecute
 import com.amazon.elasticsearch.replication.util.suspending
 import com.amazon.elasticsearch.replication.util.waitForClusterStateUpdate
 import kotlinx.coroutines.CoroutineScope
@@ -74,13 +79,6 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
     }
 
     override fun checkBlock(request: StopIndexReplicationRequest, state: ClusterState): ClusterBlockException? {
-        try {
-            checkIfIndexBlockedWithLevel(clusterService, request.indexName, ClusterBlockLevel.METADATA_WRITE)
-        } catch (exception: ClusterBlockException) {
-            return exception
-        } catch (exception: IndexNotFoundException) {
-            log.warn("Index ${request.indexName} is deleted")
-        }
         return state.blocks().globalBlockedException(ClusterBlockLevel.METADATA_WRITE)
     }
 
@@ -91,6 +89,9 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
             listener.completeWith {
                 log.info("Stopping index replication on index:" + request.indexName)
                 val isPaused = validateStopReplicationRequest(request)
+
+                val updateIndexBlockRequest = UpdateIndexBlockRequest(request.indexName,IndexBlockUpdateType.REMOVE_BLOCK)
+                client.suspendExecute(UpdateIndexBlockAction.INSTANCE, updateIndexBlockRequest)
 
                 // Index will be deleted if replication is stopped while it is restoring.  So no need to close/reopen
                 val restoring = clusterService.state().custom<RestoreInProgress>(RestoreInProgress.TYPE).any { entry ->
