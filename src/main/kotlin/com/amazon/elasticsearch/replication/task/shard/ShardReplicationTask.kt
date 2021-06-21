@@ -15,15 +15,21 @@
 
 package com.amazon.elasticsearch.replication.task.shard
 
+import com.amazon.elasticsearch.replication.ReplicationException
 import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.REPLICATION_CHANGE_BATCH_SIZE
 import com.amazon.elasticsearch.replication.action.changes.GetChangesAction
 import com.amazon.elasticsearch.replication.action.changes.GetChangesRequest
 import com.amazon.elasticsearch.replication.action.changes.GetChangesResponse
+import com.amazon.elasticsearch.replication.action.pause.PauseIndexReplicationAction
+import com.amazon.elasticsearch.replication.action.pause.PauseIndexReplicationRequest
+import com.amazon.elasticsearch.replication.metadata.REPLICATION_OVERALL_STATE_KEY
+import com.amazon.elasticsearch.replication.metadata.REPLICATION_OVERALL_STATE_PAUSED
 import com.amazon.elasticsearch.replication.metadata.getReplicationStateParamsForIndex
 import com.amazon.elasticsearch.replication.seqno.RemoteClusterRetentionLeaseHelper
 import com.amazon.elasticsearch.replication.task.CrossClusterReplicationTask
 import com.amazon.elasticsearch.replication.task.ReplicationState
 import com.amazon.elasticsearch.replication.util.indicesService
+import com.amazon.elasticsearch.replication.util.suspendExecute
 import com.amazon.elasticsearch.replication.util.suspendExecuteWithRetries
 import com.amazon.elasticsearch.replication.util.suspending
 import kotlinx.coroutines.ObsoleteCoroutinesApi
@@ -59,6 +65,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     private val followerShardId = params.followerShardId
     private val remoteClient = client.getRemoteClusterClient(remoteCluster)
     private val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
+    private var paused = false
 
     private val clusterStateListenerForTaskInterruption = ClusterStateListenerForTaskInterruption()
 
@@ -80,11 +87,16 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     }
 
     override suspend fun cleanup() {
-        retentionLeaseHelper.removeRetentionLease(remoteShardId, followerShardId)
         /* This is to minimise overhead of calling an additional listener as
-         * it continues to be called even after the task is completed.
+        * it continues to be called even after the task is completed.
          */
         clusterService.removeListener(clusterStateListenerForTaskInterruption)
+        if (paused) {
+            log.debug("Pausing and not removing lease for index $followerIndexName and shard $followerShardId task")
+            return
+        }
+        retentionLeaseHelper.removeRetentionLease(remoteShardId, followerShardId)
+
     }
 
     private fun addListenerToInterruptTask() {
@@ -99,6 +111,10 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                 if (replicationStateParams == null) {
                     if (PersistentTasksNodeService.Status(State.STARTED) == status)
                         scope.cancel("Shard replication task received an interrupt.")
+                } else if (replicationStateParams[REPLICATION_OVERALL_STATE_KEY] == REPLICATION_OVERALL_STATE_PAUSED){
+                    log.info("Pause state received for index $followerIndexName. Cancelling $followerShardId task")
+                    paused = true
+                    scope.cancel("Shard replication task received pause.")
                 }
             }
         }
@@ -109,14 +125,16 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     @ObsoleteCoroutinesApi
     private suspend fun replicate() {
         updateTaskState(FollowingState)
-        // TODO: Acquire retention lease prior to initiating remote recovery
-        retentionLeaseHelper.addRetentionLease(remoteShardId, RetentionLeaseActions.RETAIN_ALL, followerShardId)
         val followerIndexService = indicesService.indexServiceSafe(followerShardId.index)
         val indexShard = followerIndexService.getShard(followerShardId.id)
         // After restore, persisted localcheckpoint is matched with maxSeqNo.
         // Fetch the operations after localCheckpoint from the leader
         var seqNo = indexShard.localCheckpoint + 1
         val node = primaryShardNode()
+
+        // TODO: Acquire retention lease prior to initiating remote recovery
+        retentionLeaseHelper.addRetentionLease(remoteShardId, seqNo, followerShardId)
+
         addListenerToInterruptTask()
 
         // Not really used yet as we only have one get changes action at a time.
@@ -171,5 +189,12 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     override fun replicationTaskResponse(): CrossClusterReplicationTaskResponse {
         // Cancellation and valid executions are marked as completed
         return CrossClusterReplicationTaskResponse(ReplicationState.COMPLETED.name)
+    }
+
+    // ToDo : Use in case of non retriable errors
+    private suspend fun pauseReplicationTasks(reason: String) {
+        val pauseReplicationResponse = client.suspendExecute(PauseIndexReplicationAction.INSTANCE, PauseIndexReplicationRequest(followerIndexName, reason))
+        if (!pauseReplicationResponse.isAcknowledged)
+            throw ReplicationException("Failed to pause replication")
     }
 }

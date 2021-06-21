@@ -41,10 +41,6 @@ class IndexReplicationExecutor(executor: String, private val clusterService: Clu
     }
 
     override fun validate(params: IndexReplicationParams, clusterState: ClusterState) {
-        if (clusterState.routingTable.hasIndex(params.followerIndexName)) {
-            throw IllegalArgumentException("Cant use same index again for replication. Either close or " +
-                    "delete the index:${params.followerIndexName}")
-        }
         val replicationStateParams = getReplicationStateParamsForIndex(clusterService, params.followerIndexName)
                 ?:
                 throw IllegalStateException("Index task started without replication state in cluster metadata")
