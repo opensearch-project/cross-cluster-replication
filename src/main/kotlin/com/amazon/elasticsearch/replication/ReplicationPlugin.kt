@@ -38,9 +38,6 @@ import com.amazon.elasticsearch.replication.repository.REMOTE_REPOSITORY_TYPE
 import com.amazon.elasticsearch.replication.repository.RemoteClusterRepositoriesService
 import com.amazon.elasticsearch.replication.repository.RemoteClusterRepository
 import com.amazon.elasticsearch.replication.repository.RemoteClusterRestoreLeaderService
-import com.amazon.elasticsearch.replication.rest.ReplicateIndexHandler
-import com.amazon.elasticsearch.replication.rest.StopIndexReplicationHandler
-import com.amazon.elasticsearch.replication.rest.UpdateAutoFollowPatternsHandler
 import com.amazon.elasticsearch.replication.task.IndexCloseListener
 import com.amazon.elasticsearch.replication.task.autofollow.AutoFollowExecutor
 import com.amazon.elasticsearch.replication.task.autofollow.AutoFollowParams
@@ -102,6 +99,15 @@ import java.util.Optional
 import java.util.function.Supplier
 import com.amazon.elasticsearch.replication.action.index.block.UpdateIndexBlockAction
 import com.amazon.elasticsearch.replication.action.index.block.TransportUpddateIndexBlockAction
+import com.amazon.elasticsearch.replication.action.pause.PauseIndexReplicationAction
+import com.amazon.elasticsearch.replication.action.pause.TransportPauseIndexReplicationAction
+import com.amazon.elasticsearch.replication.action.resume.ResumeIndexReplicationAction
+import com.amazon.elasticsearch.replication.action.resume.TransportResumeIndexReplicationAction
+import com.amazon.elasticsearch.replication.rest.PauseIndexReplicationHandler
+import com.amazon.elasticsearch.replication.rest.ReplicateIndexHandler
+import com.amazon.elasticsearch.replication.rest.ResumeIndexReplicationHandler
+import com.amazon.elasticsearch.replication.rest.StopIndexReplicationHandler
+import com.amazon.elasticsearch.replication.rest.UpdateAutoFollowPatternsHandler
 import org.elasticsearch.common.util.concurrent.EsExecutors
 import org.elasticsearch.threadpool.FixedExecutorBuilder
 
@@ -147,6 +153,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             ActionHandler(GetFileChunkAction.INSTANCE, TransportGetFileChunkAction::class.java),
             ActionHandler(UpdateAutoFollowPatternAction.INSTANCE, TransportUpdateAutoFollowPatternAction::class.java),
             ActionHandler(StopIndexReplicationAction.INSTANCE, TransportStopIndexReplicationAction::class.java),
+            ActionHandler(PauseIndexReplicationAction.INSTANCE, TransportPauseIndexReplicationAction::class.java),
+            ActionHandler(ResumeIndexReplicationAction.INSTANCE, TransportResumeIndexReplicationAction::class.java),
             ActionHandler(UpdateIndexBlockAction.INSTANCE, TransportUpddateIndexBlockAction::class.java),
             ActionHandler(ReleaseLeaderResourcesAction.INSTANCE, TransportReleaseLeaderResourcesAction::class.java)
         )
@@ -159,6 +167,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                                  nodesInCluster: Supplier<DiscoveryNodes>): List<RestHandler> {
         return listOf(ReplicateIndexHandler(),
             UpdateAutoFollowPatternsHandler(),
+            PauseIndexReplicationHandler(),
+            ResumeIndexReplicationHandler(),
             StopIndexReplicationHandler())
     }
 

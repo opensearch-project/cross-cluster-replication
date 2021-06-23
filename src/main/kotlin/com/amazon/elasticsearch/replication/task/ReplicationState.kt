@@ -27,7 +27,7 @@ import org.elasticsearch.common.xcontent.XContentBuilder
  */
 enum class ReplicationState : Writeable, ToXContentFragment {
 
-    INIT, RESTORING, INIT_FOLLOW, FOLLOWING, MONITORING, FAILED, COMPLETED; // TODO: Add PAUSED state
+    INIT, RESTORING, INIT_FOLLOW, FOLLOWING, MONITORING, FAILED, COMPLETED;
 
     override fun writeTo(out: StreamOutput) {
         out.writeEnum(this)

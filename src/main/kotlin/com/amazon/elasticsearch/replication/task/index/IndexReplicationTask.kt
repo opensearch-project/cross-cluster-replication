@@ -67,6 +67,10 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
 import com.amazon.elasticsearch.replication.action.index.block.UpdateIndexBlockAction
+import com.amazon.elasticsearch.replication.action.pause.PauseIndexReplicationAction
+import com.amazon.elasticsearch.replication.action.pause.PauseIndexReplicationRequest
+import com.amazon.elasticsearch.replication.metadata.REPLICATION_OVERALL_STATE_KEY
+import com.amazon.elasticsearch.replication.metadata.REPLICATION_OVERALL_STATE_PAUSED
 
 class IndexReplicationTask(id: Long, type: String, action: String, description: String,
                            parentTask: TaskId,
@@ -103,7 +107,12 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
             val newState = when (currentTaskState.state) {
                 ReplicationState.INIT -> {
                     addListenerToInterruptTask()
-                    startRestore()
+                    if (isResumed()) {
+                        log.debug("Resuming tasks now.")
+                        InitFollowState
+                    } else {
+                        startRestore()
+                    }
                 }
                 ReplicationState.RESTORING -> {
                     waitForRestore()
@@ -150,6 +159,10 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
         return MonitoringState
     }
 
+    private fun isResumed(): Boolean {
+        return  clusterService.state().routingTable.hasIndex(followerIndexName)
+    }
+
     private suspend fun stopReplicationTasks() {
         val stopReplicationResponse = client.suspendExecute(StopIndexReplicationAction.INSTANCE, StopIndexReplicationRequest(followerIndexName))
         if (!stopReplicationResponse.isAcknowledged)
@@ -169,7 +182,7 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
     }
 
     override suspend fun cleanup() {
-        if (currentTaskState.state == ReplicationState.INIT || currentTaskState.state == ReplicationState.RESTORING)  {
+        if (currentTaskState.state == ReplicationState.RESTORING)  {
             log.info("Replication stopped before restore could finish, so removing partial restore..")
             cancelRestore()
         }
@@ -300,6 +313,10 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
             if (replicationStateParams == null) {
                 if (PersistentTasksNodeService.Status(State.STARTED) == status)
                     scope.cancel("Index replication task received an interrupt.")
+
+            } else if (replicationStateParams[REPLICATION_OVERALL_STATE_KEY] == REPLICATION_OVERALL_STATE_PAUSED){
+                log.info("Pause state received for index $followerIndexName task")
+                scope.cancel("Index replication task received a pause.")
             }
         }
     }
