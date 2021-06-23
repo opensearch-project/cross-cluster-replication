@@ -114,8 +114,8 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         val indexShard = followerIndexService.getShard(followerShardId.id)
         // Adding retention lease at local checkpoint of a node. This makes sure
         // new tasks spawned after node changes/shard movements are handled properly
-        log.info("Adding retentionlease at follower Sequence number: ${indexShard.localCheckpoint}")
-        retentionLeaseHelper.addRetentionLease(remoteShardId, indexShard.localCheckpoint , followerShardId)
+        log.info("Adding retentionlease at follower Sequence number: ${indexShard.lastSyncedGlobalCheckpoint}")
+        retentionLeaseHelper.addRetentionLease(remoteShardId, indexShard.lastSyncedGlobalCheckpoint , followerShardId)
 
         val node = primaryShardNode()
         addListenerToInterruptTask()
