@@ -112,10 +112,10 @@ import com.amazon.elasticsearch.replication.action.setup.SetupChecksAction
 import com.amazon.elasticsearch.replication.action.setup.TransportSetupChecksAction
 import com.amazon.elasticsearch.replication.action.setup.TransportValidatePermissionsAction
 import com.amazon.elasticsearch.replication.action.setup.ValidatePermissionsAction
+import com.amazon.elasticsearch.replication.action.status.ReplicationStatusAction
+import com.amazon.elasticsearch.replication.action.status.TransportReplicationStatusAction
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadataStore
-import com.amazon.elasticsearch.replication.action.status.IndexReplicationStatusAction
-import com.amazon.elasticsearch.replication.action.status.TransportIndexReplicationStatusAction
 import com.amazon.elasticsearch.replication.rest.ReplicationStatusHandler
 
 internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin, RepositoryPlugin, EnginePlugin {
@@ -166,7 +166,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             ActionHandler(ReleaseLeaderResourcesAction.INSTANCE, TransportReleaseLeaderResourcesAction::class.java),
             ActionHandler(ValidatePermissionsAction.INSTANCE, TransportValidatePermissionsAction::class.java),
             ActionHandler(SetupChecksAction.INSTANCE, TransportSetupChecksAction::class.java),
-            ActionHandler(IndexReplicationStatusAction.INSTANCE, TransportIndexReplicationStatusAction::class.java)
+            ActionHandler(ReplicationStatusAction.INSTANCE, TransportReplicationStatusAction::class.java)
         )
     }
 
