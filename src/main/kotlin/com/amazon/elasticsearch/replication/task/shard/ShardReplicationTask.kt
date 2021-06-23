@@ -34,11 +34,14 @@ import com.amazon.elasticsearch.replication.util.suspendExecuteWithRetries
 import com.amazon.elasticsearch.replication.util.suspending
 import kotlinx.coroutines.ObsoleteCoroutinesApi
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Semaphore
+import org.elasticsearch.ElasticsearchException
 import org.elasticsearch.ElasticsearchTimeoutException
 import org.elasticsearch.action.NoSuchNodeException
 import org.elasticsearch.action.support.IndicesOptions
+import org.elasticsearch.action.support.TransportActions
 import org.elasticsearch.client.Client
 import org.elasticsearch.cluster.ClusterChangedEvent
 import org.elasticsearch.cluster.ClusterStateListener
@@ -52,6 +55,7 @@ import org.elasticsearch.persistent.PersistentTaskState
 import org.elasticsearch.persistent.PersistentTasksNodeService
 import org.elasticsearch.tasks.TaskId
 import org.elasticsearch.threadpool.ThreadPool
+import org.elasticsearch.transport.NodeNotConnectedException
 
 class ShardReplicationTask(id: Long, type: String, action: String, description: String, parentTask: TaskId,
                            params: ShardReplicationParams, executor: String, clusterService: ClusterService,
@@ -66,6 +70,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     private val remoteClient = client.getRemoteClusterClient(remoteCluster)
     private val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
     private var paused = false
+    val backOffForNodeDiscovery = 1000L
 
     private val clusterStateListenerForTaskInterruption = ClusterStateListenerForTaskInterruption()
 
@@ -132,11 +137,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         log.info("Adding retentionlease at follower sequence number: ${indexShard.lastSyncedGlobalCheckpoint}")
         retentionLeaseHelper.addRetentionLease(remoteShardId, indexShard.lastSyncedGlobalCheckpoint , followerShardId)
 
-        val node = primaryShardNode()
-
-        // TODO: Acquire retention lease prior to initiating remote recovery
-        retentionLeaseHelper.addRetentionLease(remoteShardId, seqNo, followerShardId)
-
+        var node = primaryShardNode()
         addListenerToInterruptTask()
 
         // Not really used yet as we only have one get changes action at a time.
@@ -158,9 +159,19 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                 log.info("Timed out waiting for new changes. Current seqNo: $seqNo")
                 rateLimiter.release()
                 continue
+            } catch (e: NodeNotConnectedException) {
+                log.info("Node not connected. Retrying request using a different node. $e")
+                delay(backOffForNodeDiscovery)
+                node = primaryShardNode()
+                rateLimiter.release()
+                continue
             }
             //renew retention lease with global checkpoint so that any shard that picks up shard replication task has data until then.
-            retentionLeaseHelper.renewRetentionLease(remoteShardId, indexShard.lastSyncedGlobalCheckpoint, followerShardId)
+            try {
+                retentionLeaseHelper.renewRetentionLease(remoteShardId, indexShard.lastSyncedGlobalCheckpoint, followerShardId)
+            } catch (e: Exception) {
+                log.info("Exception renewing retention lease. Not an issue", e);
+            }
         }
         sequencer.close()
     }
