@@ -21,6 +21,7 @@ import org.elasticsearch.ElasticsearchException
 import org.elasticsearch.action.ActionRequest
 import org.elasticsearch.action.ActionResponse
 import org.elasticsearch.action.ActionType
+import org.elasticsearch.action.support.TransportActions
 import org.elasticsearch.client.Client
 import org.elasticsearch.cluster.service.ClusterService
 import org.elasticsearch.index.store.Store
@@ -81,7 +82,7 @@ suspend fun <Req: ActionRequest, Resp: ActionResponse> Client.suspendExecuteWith
         try {
             return suspendExecute(action, req)
         } catch (e: ElasticsearchException) {
-            if (retryOn.contains(e.javaClass)) {
+            if (retryOn.contains(e.javaClass) || TransportActions.isShardNotAvailableException(e)) {
                 log.warn("Encountered a failure. Retrying in ${currentBackoff/1000} seconds.", e)
                 delay(currentBackoff)
                 currentBackoff = (currentBackoff * factor).toLong().coerceAtMost(maxTimeOut)
