@@ -49,6 +49,8 @@ import org.elasticsearch.cluster.node.DiscoveryNode
 import org.elasticsearch.cluster.service.ClusterService
 import org.elasticsearch.common.logging.Loggers
 import org.elasticsearch.index.seqno.RetentionLeaseActions
+import org.elasticsearch.index.seqno.RetentionLeaseInvalidRetainingSeqNoException
+import org.elasticsearch.index.seqno.RetentionLeaseNotFoundException
 import org.elasticsearch.index.shard.ShardId
 import org.elasticsearch.index.shard.ShardNotFoundException
 import org.elasticsearch.persistent.PersistentTaskState
@@ -169,8 +171,13 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
             //renew retention lease with global checkpoint so that any shard that picks up shard replication task has data until then.
             try {
                 retentionLeaseHelper.renewRetentionLease(remoteShardId, indexShard.lastSyncedGlobalCheckpoint, followerShardId)
-            } catch (e: Exception) {
-                log.info("Exception renewing retention lease. Not an issue", e);
+            } catch (ex: Exception) {
+                when (ex) {
+                    is RetentionLeaseInvalidRetainingSeqNoException, is RetentionLeaseNotFoundException -> {
+                        throw ex
+                    }
+                    else -> log.info("Exception renewing retention lease. Not an issue", ex);
+                }
             }
         }
         sequencer.close()
