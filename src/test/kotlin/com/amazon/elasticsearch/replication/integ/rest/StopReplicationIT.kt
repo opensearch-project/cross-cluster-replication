@@ -194,38 +194,4 @@ class StopReplicationIT: MultiClusterRestTestCase() {
         }.isInstanceOf(ResponseException::class.java)
                 .hasMessageContaining("No replication in progress for index:follower_index")
     }
-
-    fun `test stop with deleted follower index`() {
-        val followerClient = getClientForCluster(FOLLOWER)
-        val leaderClient = getClientForCluster(LEADER)
-        createConnectionBetweenClusters(FOLLOWER, LEADER)
-        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
-        assertThat(createIndexResponse.isAcknowledged).isTrue()
-        val sourceMap = mapOf("name" to randomAlphaOfLength(5))
-        leaderClient.index(IndexRequest(leaderIndexName).id("1").source(sourceMap), RequestOptions.DEFAULT)
-        // Need to set waitForRestore=true as the cluster blocks are added only
-        // after restore is completed.
-        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
-                waitForRestore = true)
-        // Need to wait till index blocks appear into state
-        assertBusy ({
-            val clusterBlocksResponse = followerClient.lowLevelClient.performRequest(Request("GET", "/_cluster/state/blocks"))
-            val clusterResponseString = EntityUtils.toString(clusterBlocksResponse.entity)
-            assertThat(clusterResponseString.contains("cross-cluster-replication"))
-                    .withFailMessage("Cant find replication block afer starting replication")
-                    .isTrue()
-        }, 10, TimeUnit.SECONDS)
-        //Now delete the follower index
-        val deleteIndexResponse = followerClient.indices().delete(DeleteIndexRequest(followerIndexName), RequestOptions.DEFAULT)
-        assertThat(deleteIndexResponse.isAcknowledged).isTrue()
-        //Stop the replication
-        followerClient.stopReplication(followerIndexName)
-        //verify that replication metadata state is cleared from cluster state
-        val followerClusterState = followerClient.lowLevelClient.performRequest(Request("GET", "/_cluster/state/metadata"))
-        val followerClusterStateString = EntityUtils.toString(followerClusterState.entity)
-        assertThat(followerClusterStateString.contains("REPLICATION_OVERALL_STATE_KEY"))
-                .isFalse()
-                .withFailMessage("Replication params existing after stop is called")
-
-    }
 }

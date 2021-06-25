@@ -66,13 +66,13 @@ fun getAckResponse(lowLevelResponse: Response): AcknowledgedResponse {
     return AcknowledgedResponse.fromXContent(xcp)
 }
 
-fun RestHighLevelClient.stopReplication(index: String) {
+fun RestHighLevelClient.stopReplication(index: String, shouldWait: Boolean = true) {
     val lowLevelStopRequest = Request("POST", REST_REPLICATION_STOP.replace("{index}", index,true))
     lowLevelStopRequest.setJsonEntity("{}")
     val lowLevelStopResponse = lowLevelClient.performRequest(lowLevelStopRequest)
     val response = getAckResponse(lowLevelStopResponse)
     assertThat(response.isAcknowledged).withFailMessage("Replication could not be stopped").isTrue()
-    waitForReplicationStop(index)
+    if (shouldWait) waitForReplicationStop(index)
 }
 
 fun RestHighLevelClient.pauseReplication(index: String) {

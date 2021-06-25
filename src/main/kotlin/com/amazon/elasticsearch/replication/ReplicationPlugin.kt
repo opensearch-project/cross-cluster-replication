@@ -108,6 +108,8 @@ import com.amazon.elasticsearch.replication.rest.ReplicateIndexHandler
 import com.amazon.elasticsearch.replication.rest.ResumeIndexReplicationHandler
 import com.amazon.elasticsearch.replication.rest.StopIndexReplicationHandler
 import com.amazon.elasticsearch.replication.rest.UpdateAutoFollowPatternsHandler
+import com.amazon.elasticsearch.replication.metadata.TransportUpdateMetadataAction
+import com.amazon.elasticsearch.replication.metadata.UpdateMetadataAction
 import org.elasticsearch.common.util.concurrent.EsExecutors
 import org.elasticsearch.threadpool.FixedExecutorBuilder
 
@@ -156,7 +158,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             ActionHandler(PauseIndexReplicationAction.INSTANCE, TransportPauseIndexReplicationAction::class.java),
             ActionHandler(ResumeIndexReplicationAction.INSTANCE, TransportResumeIndexReplicationAction::class.java),
             ActionHandler(UpdateIndexBlockAction.INSTANCE, TransportUpddateIndexBlockAction::class.java),
-            ActionHandler(ReleaseLeaderResourcesAction.INSTANCE, TransportReleaseLeaderResourcesAction::class.java)
+            ActionHandler(ReleaseLeaderResourcesAction.INSTANCE, TransportReleaseLeaderResourcesAction::class.java),
+            ActionHandler(UpdateMetadataAction.INSTANCE, TransportUpdateMetadataAction::class.java)
         )
     }
 
