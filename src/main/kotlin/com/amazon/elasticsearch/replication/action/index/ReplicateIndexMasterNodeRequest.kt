@@ -15,6 +15,7 @@
 
 package com.amazon.elasticsearch.replication.action.index
 
+import com.amazon.opendistroforelasticsearch.commons.authuser.User
 import org.elasticsearch.action.ActionRequestValidationException
 import org.elasticsearch.action.support.master.MasterNodeRequest
 import org.elasticsearch.common.io.stream.StreamInput
@@ -26,26 +27,36 @@ import org.elasticsearch.common.xcontent.XContentBuilder
 class ReplicateIndexMasterNodeRequest:
         MasterNodeRequest<ReplicateIndexMasterNodeRequest>, ToXContentObject {
 
-    var user: String?
+    var user: User? = null
     var replicateIndexReq: ReplicateIndexRequest
+    var withSecurityContext: Boolean = false
 
     override fun validate(): ActionRequestValidationException? {
         return null
     }
 
-    constructor(user: String?, replicateIndexReq: ReplicateIndexRequest): super() {
+    constructor(user: User?, replicateIndexReq: ReplicateIndexRequest): super() {
         this.user = user
         this.replicateIndexReq = replicateIndexReq
+        if (this.user != null) {
+            this.withSecurityContext = true
+        }
     }
 
     constructor(inp: StreamInput) : super(inp) {
-        user = inp.readOptionalString()
+        this.withSecurityContext = inp.readBoolean()
+        if(withSecurityContext) {
+            user = User(inp)
+        }
         replicateIndexReq = ReplicateIndexRequest(inp)
     }
 
     override fun writeTo(out: StreamOutput) {
         super.writeTo(out)
-        out.writeOptionalString(user)
+        out.writeBoolean(withSecurityContext)
+        if(this.withSecurityContext) {
+            user?.writeTo(out)
+        }
         replicateIndexReq.writeTo(out)
     }
 
@@ -53,6 +64,7 @@ class ReplicateIndexMasterNodeRequest:
         val responseBuilder =  builder.startObject()
                 .field("user", user)
                 .field("replication_request")
-        return replicateIndexReq.toXContent(responseBuilder, params).endObject()
+        replicateIndexReq.toXContent(responseBuilder, params).endObject()
+        return builder.field("with_security_context", withSecurityContext)
     }
 }

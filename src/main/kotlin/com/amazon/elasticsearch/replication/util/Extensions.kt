@@ -15,15 +15,21 @@
 
 package com.amazon.elasticsearch.replication.util
 
+import com.amazon.elasticsearch.replication.metadata.store.ReplicationContext
+import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
+import com.amazon.opendistroforelasticsearch.commons.authuser.User
 import kotlinx.coroutines.delay
 import org.apache.logging.log4j.Logger
 import org.elasticsearch.ElasticsearchException
+import org.elasticsearch.action.ActionListener
 import org.elasticsearch.action.ActionRequest
 import org.elasticsearch.action.ActionResponse
 import org.elasticsearch.action.ActionType
 import org.elasticsearch.action.support.TransportActions
+import org.elasticsearch.action.index.IndexRequestBuilder
+import org.elasticsearch.action.index.IndexResponse
 import org.elasticsearch.client.Client
-import org.elasticsearch.cluster.service.ClusterService
+import org.elasticsearch.common.util.concurrent.ThreadContext
 import org.elasticsearch.index.store.Store
 import org.elasticsearch.transport.ConnectTransportException
 import org.elasticsearch.transport.NodeDisconnectedException
@@ -42,19 +48,32 @@ fun Store.performOp(tryBlock: () -> Unit, finalBlock: () -> Unit = {}) {
     }
 }
 
-fun <T>Client.executeUnderSecurityContext(clusterService: ClusterService,
-                                          remoteClusterName: String,
-                                          followerIndexName: String,
-                                          block: () -> T) {
-    val userString = SecurityContext.fromClusterState(clusterService.state(),
-            remoteClusterName, followerIndexName)
-    this.threadPool().threadContext.newStoredContext(true).use {
-        SecurityContext.toThreadContext(this.threadPool().threadContext, userString)
-        block()
+fun <T: ActionResponse>Client.execute(replMetadata: ReplicationMetadata, actionType: ActionType<T>,
+                                      actionRequest: ActionRequest, timeout: Long): T {
+    var storedContext: ThreadContext.StoredContext? = null
+    try {
+        storedContext = threadPool().threadContext.stashContext()
+        SecurityContext.setBasedOnActions(replMetadata, actionType.name(), threadPool().threadContext)
+        return execute(actionType, actionRequest).actionGet(timeout)
+    } finally {
+        storedContext?.restore()
     }
 }
 
+fun <T>Client.executeBlockUnderSecurityContext(replContext: ReplicationContext, block: () -> T): T {
+    var storedContext: ThreadContext.StoredContext? = null
+    try {
+        storedContext = threadPool().threadContext.stashContext()
+        SecurityContext.asRolesInjection(this.threadPool().threadContext, replContext.user?.toInjectedRoles())
+        return block()
+    } finally {
+        storedContext?.restore()
+    }
+}
 
+fun IndexRequestBuilder.execute(id: String, listener: ActionListener<IndexResponse>) {
+    execute(listener)
+}
 /**
  * Retries a given block of code.
  * Only specified error are retried
@@ -68,6 +87,7 @@ fun <T>Client.executeUnderSecurityContext(clusterService: ClusterService,
  * @param block - the block of code to retry. This should be a suspend function.
  */
 suspend fun <Req: ActionRequest, Resp: ActionResponse> Client.suspendExecuteWithRetries(
+        replicationMetadata: ReplicationMetadata,
         action: ActionType<Resp>,
         req: Req,
         numberOfRetries: Int = 5,
@@ -80,7 +100,7 @@ suspend fun <Req: ActionRequest, Resp: ActionResponse> Client.suspendExecuteWith
     retryOn.addAll(defaultRetryableExceptions())
     repeat(numberOfRetries - 1) {
         try {
-            return suspendExecute(action, req)
+            return suspendExecute(replicationMetadata, action, req)
         } catch (e: ElasticsearchException) {
             if (retryOn.contains(e.javaClass) || TransportActions.isShardNotAvailableException(e)) {
                 log.warn("Encountered a failure. Retrying in ${currentBackoff/1000} seconds.", e)
@@ -91,7 +111,7 @@ suspend fun <Req: ActionRequest, Resp: ActionResponse> Client.suspendExecuteWith
             }
         }
     }
-    return suspendExecute(action, req) // last attempt
+    return suspendExecute(replicationMetadata, action, req) // last attempt
 }
 
 private fun defaultRetryableExceptions(): ArrayList<Class<*>> {
@@ -101,4 +121,19 @@ private fun defaultRetryableExceptions(): ArrayList<Class<*>> {
     return retryableExceptions
 }
 
+fun User.overrideFgacRole(fgacRole: String?): User? {
+    var roles = emptyList<String>()
+    if(fgacRole != null) {
+        roles = listOf(fgacRole)
+    }
+    return User(this.name, this.backendRoles, roles,
+            this.customAttNames, this.requestedTenant)
+}
 
+fun User.toInjectedUser(): String? {
+    return "${name}|${backendRoles.joinToString(separator=",")}"
+}
+
+fun User.toInjectedRoles(): String? {
+    return "${name}|${roles.joinToString(separator=",")}"
+}

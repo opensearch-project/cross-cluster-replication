@@ -15,7 +15,7 @@
 
 package com.amazon.elasticsearch.replication.action.replicationstatedetails
 
-import com.amazon.elasticsearch.replication.metadata.ReplicationStateParams
+import com.amazon.elasticsearch.replication.metadata.state.ReplicationStateParams
 import org.elasticsearch.action.ActionRequestValidationException
 import org.elasticsearch.action.support.master.AcknowledgedRequest
 import org.elasticsearch.common.io.stream.StreamInput

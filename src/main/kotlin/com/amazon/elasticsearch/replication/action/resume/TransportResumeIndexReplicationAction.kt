@@ -18,6 +18,8 @@ package com.amazon.elasticsearch.replication.action.resume
 import com.amazon.elasticsearch.replication.action.index.ReplicateIndexResponse
 import com.amazon.elasticsearch.replication.action.replicationstatedetails.UpdateReplicationStateDetailsRequest
 import com.amazon.elasticsearch.replication.metadata.*
+import com.amazon.elasticsearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
+import com.amazon.elasticsearch.replication.metadata.state.getReplicationStateParamsForIndex
 import com.amazon.elasticsearch.replication.seqno.RemoteClusterRetentionLeaseHelper
 import com.amazon.elasticsearch.replication.task.ReplicationState
 import com.amazon.elasticsearch.replication.task.index.IndexReplicationExecutor
@@ -60,9 +62,9 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
                                                                 clusterService: ClusterService,
                                                                 threadPool: ThreadPool,
                                                                 actionFilters: ActionFilters,
-                                                                indexNameExpressionResolver:
-                                                              IndexNameExpressionResolver,
-                                                                val client: Client) :
+                                                                indexNameExpressionResolver: IndexNameExpressionResolver,
+                                                                val client: Client,
+                                                                val replicationMetadataManager: ReplicationMetadataManager) :
     TransportMasterNodeAction<ResumeIndexReplicationRequest, AcknowledgedResponse> (ResumeIndexReplicationAction.NAME,
             transportService, clusterService, threadPool, actionFilters, ::ResumeIndexReplicationRequest,
             indexNameExpressionResolver), CoroutineScope by GlobalScope {
@@ -82,36 +84,13 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
             listener.completeWith {
                 log.info("Resuming index replication on index:" + request.indexName)
                 validateResumeReplicationRequest(request)
-
-                val stateUpdateResponse : AcknowledgedResponse =
-                    clusterService.waitForClusterStateUpdate("Resume_replication") { l -> ResumeReplicationTask(request, l)}
-                if (!stateUpdateResponse.isAcknowledged) {
-                    throw ElasticsearchException("Failed to update cluster state")
-                }
-
-                val currentReplicationMetadata = state.metadata().custom(ReplicationMetadata.NAME)
-                        ?: ReplicationMetadata.EMPTY
-
-                val clusterAlias = currentReplicationMetadata.replicatedIndices.entries.firstOrNull {
-                    it.value.containsKey(request.indexName)
-                }?.key
-
-                val leaderIndex = currentReplicationMetadata.replicatedIndices.get(clusterAlias)?.get(request.indexName)
-
-                if (leaderIndex == null || clusterAlias == null) {
-                    throw IllegalStateException("Unknown value of leader index or cluster alias")
-                }
-
-                val remoteMetadata = getRemoteIndexMetadata(clusterAlias, leaderIndex)
-
-                val params = IndexReplicationParams(clusterAlias, remoteMetadata.index, request.indexName)
-
+                val replMetdata = replicationMetadataManager.getIndexReplicationMetadata(request.indexName)
+                val remoteMetadata = getRemoteIndexMetadata(replMetdata.connectionName, replMetdata.leaderContext.resource)
+                val params = IndexReplicationParams(replMetdata.connectionName, remoteMetadata.index, request.indexName)
                 if (!isResumable(params)) {
                     throw ResourceNotFoundException("Retention lease doesn't exist. Replication can't be resumed for ${request.indexName}")
                 }
-
-                updateReplicationStateToStarted(request.indexName)
-
+                replicationMetadataManager.updateIndexReplicationState(request.indexName, ReplicationOverallState.RUNNING)
                 val task = persistentTasksService.startTask("replication:index:${request.indexName}",
                         IndexReplicationExecutor.TASK_NAME, params)
 
@@ -139,7 +118,7 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
         shards.forEach {
             val followerShardId = it.value.shardId
             if  (!retentionLeaseHelper.verifyRetentionLeaseExist(ShardId(params.remoteIndex, followerShardId.id), followerShardId)) {
-                isResumable =  false
+                isResumable = false
             }
         }
 
@@ -159,14 +138,14 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
     }
 
     private suspend fun getRemoteIndexMetadata(remoteCluster: String, remoteIndex: String): IndexMetadata {
-        val remoteClusterClient = client.getRemoteClusterClient(remoteCluster).admin().cluster()
-        val clusterStateRequest = remoteClusterClient.prepareState()
+        val remoteClusterClient = client.getRemoteClusterClient(remoteCluster)
+        val clusterStateRequest = remoteClusterClient.admin().cluster().prepareState()
                 .clear()
                 .setIndices(remoteIndex)
                 .setMetadata(true)
                 .setIndicesOptions(IndicesOptions.strictSingleIndexNoExpandForbidClosed())
                 .request()
-        val remoteState = suspending(remoteClusterClient::state)(clusterStateRequest).state
+        val remoteState = remoteClusterClient.suspending(remoteClusterClient.admin().cluster()::state)(clusterStateRequest).state
         return remoteState.metadata.index(remoteIndex) ?: throw IndexNotFoundException("${remoteCluster}:${remoteIndex}")
     }
 
@@ -174,21 +153,10 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
         val replicationStateParams = getReplicationStateParamsForIndex(clusterService, request.indexName)
                 ?:
             throw IllegalArgumentException("No replication in progress for index:${request.indexName}")
-        val replicationOverallState = replicationStateParams[REPLICATION_OVERALL_STATE_KEY]
+        val replicationOverallState = replicationStateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE]
 
-        if (replicationOverallState != REPLICATION_OVERALL_STATE_PAUSED)
+        if (replicationOverallState != ReplicationOverallState.PAUSED.name)
             throw ResourceAlreadyExistsException("Replication on Index ${request.indexName} is already running")
-    }
-
-    private suspend fun updateReplicationStateToStarted(indexName: String) {
-        val replicationStateParamMap = HashMap<String, String>()
-        replicationStateParamMap[REPLICATION_OVERALL_STATE_KEY] = REPLICATION_OVERALL_STATE_RUNNING_VALUE
-        val updateReplicationStateDetailsRequest = UpdateReplicationStateDetailsRequest(indexName, replicationStateParamMap,
-                UpdateReplicationStateDetailsRequest.UpdateType.ADD)
-        submitClusterStateUpdateTask(updateReplicationStateDetailsRequest, UpdateReplicationStateDetailsTaskExecutor.INSTANCE
-                as ClusterStateTaskExecutor<AcknowledgedRequest<UpdateReplicationStateDetailsRequest>>,
-                clusterService,
-                "resume-replication-state-params")
     }
 
     override fun executor(): String {
@@ -198,25 +166,5 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
     @Throws(IOException::class)
     override fun read(inp: StreamInput): AcknowledgedResponse {
         return AcknowledgedResponse(inp)
-    }
-
-    class ResumeReplicationTask(val request: ResumeIndexReplicationRequest, listener: ActionListener<AcknowledgedResponse>) :
-        AckedClusterStateUpdateTask<AcknowledgedResponse>(request, listener) {
-
-        override fun execute(currentState: ClusterState): ClusterState {
-            val newState = ClusterState.builder(currentState)
-
-            val mdBuilder = Metadata.builder(currentState.metadata)
-            val currentReplicationMetadata = currentState.metadata().custom(ReplicationMetadata.NAME)
-                ?: ReplicationMetadata.EMPTY
-
-            // add paused index setting
-            val newMetadata = currentReplicationMetadata.resumeIndex(request.indexName)
-            mdBuilder.putCustom(ReplicationMetadata.NAME, newMetadata)
-            newState.metadata(mdBuilder)
-            return newState.build()
-        }
-
-        override fun newResponse(acknowledged: Boolean) = AcknowledgedResponse(acknowledged)
     }
 }
