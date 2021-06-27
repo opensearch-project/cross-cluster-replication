@@ -92,13 +92,14 @@ class TransportReplicationStatusAction :
                 job.join()
             }
         }
-        shardResponses.listIterator().forEach {
-            var restoredetails = it.restoreDetails
-            if ((restoredetails.recovereyPercentage < 100 || restoredetails.fileRecovereyPercentage < 100)) {
-                state = if (state == "RUNNING") "RESTORE" else state
-            } else {
-                state = if (state == "RUNNING") "REPLAY" else state
-            }
+        if (shardResponses.size > 0) {
+                var restoredetails = shardResponses.get(0).restoreDetails
+                if ((restoredetails.recovereyPercentage < 100 || restoredetails.fileRecovereyPercentage < 100)) {
+                    state = if (state == "RUNNING") "RESTORE" else state
+                } else {
+                    state = if (state == "RUNNING") "REPLAY" else state
+                }
+
         }
         return state
     }

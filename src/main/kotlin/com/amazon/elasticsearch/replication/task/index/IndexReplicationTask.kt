@@ -29,6 +29,12 @@ import com.amazon.elasticsearch.replication.task.ReplicationState
 import com.amazon.elasticsearch.replication.task.shard.ShardReplicationExecutor
 import com.amazon.elasticsearch.replication.task.shard.ShardReplicationParams
 import com.amazon.elasticsearch.replication.task.shard.ShardReplicationTask
+import com.amazon.elasticsearch.replication.util.suspending
+import com.amazon.elasticsearch.replication.util.waitForNextChange
+import com.amazon.elasticsearch.replication.util.startTask
+import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import org.elasticsearch.ElasticsearchTimeoutException
 import org.elasticsearch.ResourceNotFoundException
 import org.elasticsearch.action.ActionListener
@@ -63,8 +69,7 @@ import com.amazon.elasticsearch.replication.action.index.block.UpdateIndexBlockA
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
 import com.amazon.elasticsearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
-import com.amazon.elasticsearch.replication.util.*
-import kotlinx.coroutines.*
+import com.amazon.elasticsearch.replication.util.suspendExecute
 
 class IndexReplicationTask(id: Long, type: String, action: String, description: String,
                            parentTask: TaskId,
@@ -127,6 +132,7 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
                     pollShardTaskStatus((followingTaskState as FollowingState).shardReplicationTasks)
                 }
                 ReplicationState.FAILED -> {
+                    stopReplicationTasks()
                     currentTaskState
                 }
                 ReplicationState.COMPLETED -> {
@@ -302,25 +308,16 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
     }
 
     override fun clusterChanged(event: ClusterChangedEvent) {
-        GlobalScope.launch(threadPool.coroutineContext(ThreadPool.Names.SEARCH)) {
-            log.debug("Cluster metadata listener invoked on index task...")
-            if (event.metadataChanged()) {
-                var itr = clusterService.state().metadata.custom<PersistentTasksCustomMetadata>("persistent_tasks").tasks().iterator()
-                while (itr.hasNext()) {
-                    var task = itr.next()
-                    if (task.state is FailedState){
-                        replicationMetadataManager.updateIndexReplicationState(followerIndexName, ReplicationOverallState.FAILED)
-                    }
-                }
-                val replicationStateParams = getReplicationStateParamsForIndex(clusterService, followerIndexName)
-                if (replicationStateParams == null) {
-                    if (PersistentTasksNodeService.Status(State.STARTED) == status)
-                        scope.cancel("Index replication task received an interrupt.")
+        log.debug("Cluster metadata listener invoked on index task...")
+        if (event.metadataChanged()) {
+            val replicationStateParams = getReplicationStateParamsForIndex(clusterService, followerIndexName)
+            if (replicationStateParams == null) {
+                if (PersistentTasksNodeService.Status(State.STARTED) == status)
+                    scope.cancel("Index replication task received an interrupt.")
 
-                } else if (replicationStateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE] == ReplicationOverallState.PAUSED.name) {
-                    log.info("Pause state received for index $followerIndexName task")
-                    scope.cancel("Index replication task received a pause.")
-                }
+            } else if (replicationStateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE] == ReplicationOverallState.PAUSED.name){
+                log.info("Pause state received for index $followerIndexName task")
+                scope.cancel("Index replication task received a pause.")
             }
         }
     }
