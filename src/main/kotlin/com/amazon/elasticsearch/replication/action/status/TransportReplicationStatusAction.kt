@@ -1,8 +1,11 @@
 package com.amazon.elasticsearch.replication.action.status
 
 
+import com.amazon.elasticsearch.replication.action.checkpoint.FetchGlobalCheckPointAction
+import com.amazon.elasticsearch.replication.action.checkpoint.FetchGlobalCheckPointRequest
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.util.coroutineContext
+import com.amazon.elasticsearch.replication.util.suspendExecute
 import kotlinx.coroutines.*
 import org.apache.logging.log4j.LogManager
 import org.elasticsearch.action.support.ActionFilters
@@ -18,9 +21,9 @@ import org.elasticsearch.threadpool.ThreadPool
 import org.elasticsearch.transport.TransportService
 import org.elasticsearch.action.support.DefaultShardOperationFailedException
 import org.elasticsearch.action.support.broadcast.node.TransportBroadcastByNodeAction
+import org.elasticsearch.client.Client
 import org.elasticsearch.cluster.block.ClusterBlockException
 import org.elasticsearch.cluster.routing.ShardRouting
-import org.elasticsearch.index.analysis.AnalysisRegistry
 import org.elasticsearch.index.shard.IndexShard
 import java.io.IOException
 
@@ -41,7 +44,7 @@ class TransportReplicationStatusAction :
             replicationMetadataManager: ReplicationMetadataManager,
             threadPool: ThreadPool,
             actionFilters: ActionFilters,
-            analysisRegistry: AnalysisRegistry,
+            client: Client,
             indexNameExpressionResolver: IndexNameExpressionResolver?
     ) : super(
             ReplicationStatusAction.NAME,
@@ -53,15 +56,15 @@ class TransportReplicationStatusAction :
             ThreadPool.Names.MANAGEMENT
     ) {
         this.replicationMetadataManager = replicationMetadataManager
-        this.analysisRegistry = analysisRegistry
         this.indicesService = indicesService
         this.threadPool = threadPool
+        this.client = client
     }
 
     private val indicesService: IndicesService
-    private val analysisRegistry: AnalysisRegistry
     private val replicationMetadataManager: ReplicationMetadataManager
     private val threadPool: ThreadPool
+    private val client: Client
 
     @Throws(IOException::class)
     override fun readShardResult(si: StreamInput): ReplicationStatusShardResponse? {
@@ -77,31 +80,45 @@ class TransportReplicationStatusAction :
             shardFailures: List<DefaultShardOperationFailedException>,
             clusterState: ClusterState
     ): ReplicationStatusResponse {
-        var state = getReplicationState(request, shardResponses)
-        return ReplicationStatusResponse(totalShards, successfulShards, failedShards, shardFailures, shardResponses, state)
+        return updateReplicationStatusResponseWithRemoteCheckPoints(ReplicationStatusResponse(totalShards, successfulShards, failedShards, shardFailures, shardResponses),request)
     }
 
-    private fun getReplicationState(request: ReplicationStatusRequest, shardResponses: List<ReplicationStatusShardResponse>): String {
-        var state = "STOPPED"
+    private fun updateReplicationStatusResponseWithRemoteCheckPoints(replicationStatusResponse: ReplicationStatusResponse, request: ReplicationStatusRequest): ReplicationStatusResponse {
+        var shardResponses = replicationStatusResponse.replicationShardResponse
+        var status = "STOPPED"
         runBlocking {
             withTimeout(1000) {
                 val job = CoroutineScope(threadPool.coroutineContext()).launch(Dispatchers.Unconfined + threadPool.coroutineContext()) {
                     val metadata = replicationMetadataManager.getIndexReplicationMetadata(request!!.indices()[0])
-                    state = if (metadata.overallState.isNullOrEmpty()) "STOPPED" else metadata.overallState
+                    val remoteClient = client.getRemoteClusterClient(metadata.connectionName)
+                    val response = remoteClient.suspendExecute(FetchGlobalCheckPointAction.INSTANCE,
+                            FetchGlobalCheckPointRequest(metadata.leaderContext.resource))
+                    status = if (metadata.overallState.isNullOrEmpty()) "STOPPED" else metadata.overallState
+                    response.shardResponses.listIterator().forEach {
+                        val leaderShardName = it.shardId.toString()
+                        val remoteCheckPoint = it.shardGlobalCheckPoint
+                        shardResponses.listIterator().forEach {
+                            if(leaderShardName.equals(it.shardId.toString().replace(metadata.followerContext.resource, metadata.leaderContext.resource))) {
+                                it.replayDetails.remoteCheckpoint = remoteCheckPoint
+                            }
+                        }
+                        replicationStatusResponse.replicationShardResponse = shardResponses
+                    }
                 }
                 job.join()
             }
         }
-        if (shardResponses.size > 0) {
-                var restoredetails = shardResponses.get(0).restoreDetails
-                if ((restoredetails.recovereyPercentage < 100 || restoredetails.fileRecovereyPercentage < 100)) {
-                    state = if (state == "RUNNING") "RESTORE" else state
-                } else {
-                    state = if (state == "RUNNING") "REPLAY" else state
-                }
 
+        if (replicationStatusResponse.replicationShardResponse.size > 0) {
+            var restoredetails = replicationStatusResponse.replicationShardResponse.get(0).restoreDetails
+            if ((restoredetails.recovereyPercentage < 100 || restoredetails.fileRecovereyPercentage < 100)) {
+                status = if (status == "RUNNING") "RESTORE" else status
+            } else {
+                status = if (status == "RUNNING") "REPLAY" else status
+            }
         }
-        return state
+        replicationStatusResponse.status = status
+        return replicationStatusResponse;
     }
 
     @Throws(IOException::class)
@@ -114,7 +131,7 @@ class TransportReplicationStatusAction :
         val indexShard: IndexShard = indicesService.indexServiceSafe(shardRouting.shardId().index).getShard(shardRouting.shardId().id())
         var indexState = indexShard.recoveryState().index
         var seqNo = indexShard.localCheckpoint + 1
-        return ReplicationStatusShardResponse(shardRouting.shardId(), ReplayDetails(indexShard.lastSyncedGlobalCheckpoint, indexShard.lastKnownGlobalCheckpoint, seqNo),
+        return ReplicationStatusShardResponse(shardRouting.shardId(), ReplayDetails(indexShard.lastSyncedGlobalCheckpoint, seqNo),
                 RestoreDetails(indexState.totalBytes(), indexState.recoveredBytes(),
                         indexState.recoveredBytesPercent(), indexState.totalFileCount(), indexState.recoveredFileCount(),
                         indexState.recoveredFilesPercent(), indexState.startTime(), indexState.time()))

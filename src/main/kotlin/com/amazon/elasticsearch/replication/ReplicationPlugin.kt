@@ -19,6 +19,8 @@ import com.amazon.elasticsearch.replication.action.autofollow.TransportUpdateAut
 import com.amazon.elasticsearch.replication.action.autofollow.UpdateAutoFollowPatternAction
 import com.amazon.elasticsearch.replication.action.changes.GetChangesAction
 import com.amazon.elasticsearch.replication.action.changes.TransportGetChangesAction
+import com.amazon.elasticsearch.replication.action.checkpoint.FetchGlobalCheckPointAction
+import com.amazon.elasticsearch.replication.action.checkpoint.TransportFetchRemoteCheckPointAction
 import com.amazon.elasticsearch.replication.action.index.ReplicateIndexAction
 import com.amazon.elasticsearch.replication.action.index.ReplicateIndexMasterNodeAction
 import com.amazon.elasticsearch.replication.action.index.TransportReplicateIndexAction
@@ -103,11 +105,6 @@ import com.amazon.elasticsearch.replication.action.pause.PauseIndexReplicationAc
 import com.amazon.elasticsearch.replication.action.pause.TransportPauseIndexReplicationAction
 import com.amazon.elasticsearch.replication.action.resume.ResumeIndexReplicationAction
 import com.amazon.elasticsearch.replication.action.resume.TransportResumeIndexReplicationAction
-import com.amazon.elasticsearch.replication.rest.PauseIndexReplicationHandler
-import com.amazon.elasticsearch.replication.rest.ReplicateIndexHandler
-import com.amazon.elasticsearch.replication.rest.ResumeIndexReplicationHandler
-import com.amazon.elasticsearch.replication.rest.StopIndexReplicationHandler
-import com.amazon.elasticsearch.replication.rest.UpdateAutoFollowPatternsHandler
 import com.amazon.elasticsearch.replication.action.setup.SetupChecksAction
 import com.amazon.elasticsearch.replication.action.setup.TransportSetupChecksAction
 import com.amazon.elasticsearch.replication.action.setup.TransportValidatePermissionsAction
@@ -116,7 +113,7 @@ import com.amazon.elasticsearch.replication.action.status.ReplicationStatusActio
 import com.amazon.elasticsearch.replication.action.status.TransportReplicationStatusAction
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadataStore
-import com.amazon.elasticsearch.replication.rest.ReplicationStatusHandler
+import com.amazon.elasticsearch.replication.rest.*
 
 internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin, RepositoryPlugin, EnginePlugin {
 
@@ -166,7 +163,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             ActionHandler(ReleaseLeaderResourcesAction.INSTANCE, TransportReleaseLeaderResourcesAction::class.java),
             ActionHandler(ValidatePermissionsAction.INSTANCE, TransportValidatePermissionsAction::class.java),
             ActionHandler(SetupChecksAction.INSTANCE, TransportSetupChecksAction::class.java),
-            ActionHandler(ReplicationStatusAction.INSTANCE, TransportReplicationStatusAction::class.java)
+            ActionHandler(ReplicationStatusAction.INSTANCE, TransportReplicationStatusAction::class.java),
+            ActionHandler(FetchGlobalCheckPointAction.INSTANCE,TransportFetchRemoteCheckPointAction::class.java)
         )
     }
 

@@ -1,7 +1,5 @@
 package com.amazon.elasticsearch.replication.action.status
 
-import com.amazon.elasticsearch.replication.action.index.ReplicateIndexRequest
-import org.elasticsearch.action.ActionResponse
 import org.elasticsearch.action.support.broadcast.BroadcastResponse
 import org.elasticsearch.action.support.broadcast.BroadcastShardResponse
 import org.elasticsearch.common.ParseField
@@ -23,9 +21,9 @@ class ReplicationStatusShardResponse : BroadcastShardResponse, ToXContentObject 
         this.restoreDetails = RestoreDetails(si)
     }
 
-    constructor(shardId: ShardId,replayDetails : ReplayDetails,restoreDetails : RestoreDetails) : super(shardId) {
-        this.replayDetails = replayDetails
-        this.restoreDetails = restoreDetails
+    constructor(shardId: ShardId, replayDetailsShard : ReplayDetails, restoreDetailsShard : RestoreDetails) : super(shardId) {
+        this.replayDetails = replayDetailsShard
+        this.restoreDetails = restoreDetailsShard
     }
 
     @Throws(IOException::class)
@@ -35,7 +33,6 @@ class ReplicationStatusShardResponse : BroadcastShardResponse, ToXContentObject 
         restoreDetails.writeTo(out)
     }
 
-    private val STATE = ParseField("state")
     private val SHARDID = ParseField("shard_id")
     private val REPLAYDETAILS = ParseField("replay_task_details")
     private val RESTOREDETAILS = ParseField("restore_task_details")
@@ -130,60 +127,63 @@ class RestoreDetails :  BroadcastResponse, ToXContentObject {
 
 class ReplayDetails:  BroadcastResponse, ToXContentObject {
 
-    var lastSyncedGlobalCheckpoint: Long
-    var lastKnownGlobalCheckpoint: Long
+    var remoteCheckpoint: Long = -1
+    var localCheckpoint: Long
     var seqNo: Long
 
     constructor(si: StreamInput) {
-        this.lastSyncedGlobalCheckpoint = si.readLong()
-        this.lastKnownGlobalCheckpoint = si.readLong()
+        this.remoteCheckpoint = si.readLong()
+        this.localCheckpoint = si.readLong()
         this.seqNo = si.readLong()
     }
 
-    constructor(lastSyncedGlobalCheckpoint: Long,lastKnownGlobalCheckpoint : Long,
+    constructor(remoteCheckpoint: Long,localCheckpoint : Long,
                 seqNo : Long)  {
-        this.lastSyncedGlobalCheckpoint = lastSyncedGlobalCheckpoint
-        this.lastKnownGlobalCheckpoint = lastKnownGlobalCheckpoint
+        this.remoteCheckpoint = remoteCheckpoint
+        this.localCheckpoint = localCheckpoint
         this.seqNo = seqNo
     }
 
-
-    private val GLOBALCHECKPOINT = ParseField("leader_checkpoint")
-    private val LOCALCHECKPOINT = ParseField("follower_checkpoint")
-    private val SEQUENCENUMBER = ParseField("seq_no")
-
-
-
-    fun lastSyncedGlobalCheckpoint(): Long {
-        return lastSyncedGlobalCheckpoint
+    constructor(localCheckpoint : Long,
+                seqNo : Long)  {
+        this.localCheckpoint = localCheckpoint
+        this.seqNo = seqNo
     }
 
-    fun lastKnownGlobalCheckpoint(): Long {
-        return lastKnownGlobalCheckpoint
+    private val REMOTECHECKPOINT = ParseField("remote_checkpoint")
+    private val LOCALCHECKPOINT = ParseField("local_checkpoint")
+    private val SEQUENCENUMBER = ParseField("seq_no")
+
+    fun remoteCheckpoint(): Long {
+        return remoteCheckpoint
+    }
+
+    fun localCheckpoint(): Long {
+        return localCheckpoint
     }
 
     fun seqNo(): Long {
         return seqNo
     }
 
-
-
     override fun writeTo(out: StreamOutput) {
-        out.writeLong(lastSyncedGlobalCheckpoint)
-        out.writeLong(lastKnownGlobalCheckpoint)
-        out.writeLong(lastKnownGlobalCheckpoint)
+        out.writeLong(remoteCheckpoint)
+        out.writeLong(localCheckpoint)
+        out.writeLong(localCheckpoint)
     }
 
     override fun toXContent(builder: XContentBuilder?, params: ToXContent.Params?): XContentBuilder {
         builder!!.startObject()
-        builder.field(GLOBALCHECKPOINT.preferredName, lastSyncedGlobalCheckpoint())
-        builder.field(LOCALCHECKPOINT.preferredName, lastKnownGlobalCheckpoint())
+        builder.field(REMOTECHECKPOINT.preferredName, remoteCheckpoint())
+        builder.field(LOCALCHECKPOINT.preferredName, localCheckpoint())
         builder.field(SEQUENCENUMBER.preferredName, seqNo())
         builder.endObject()
         return builder
     }
 
     override fun toString(): String {
-        return "ReplayDetails(lastSyncedGlobalCheckpoint=$lastSyncedGlobalCheckpoint, lastKnownGlobalCheckpoint=$lastKnownGlobalCheckpoint, seqNo=$seqNo, GLOBALCHECKPOINT=$GLOBALCHECKPOINT, LOCALCHECKPOINT=$LOCALCHECKPOINT, SEQUENCENUMBER=$SEQUENCENUMBER)"
+        return "ReplayDetails(remoteCheckpoint=$remoteCheckpoint, localCheckpoint=$localCheckpoint, seqNo=$seqNo, REMOTECHECKPOINT=$REMOTECHECKPOINT, LOCALCHECKPOINT=$LOCALCHECKPOINT, SEQUENCENUMBER=$SEQUENCENUMBER)"
     }
+
+
 }

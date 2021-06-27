@@ -35,11 +35,14 @@ import com.amazon.elasticsearch.replication.util.suspendExecuteWithRetries
 import com.amazon.elasticsearch.replication.util.suspending
 import kotlinx.coroutines.ObsoleteCoroutinesApi
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Semaphore
+import org.elasticsearch.ElasticsearchException
 import org.elasticsearch.ElasticsearchTimeoutException
 import org.elasticsearch.action.NoSuchNodeException
 import org.elasticsearch.action.support.IndicesOptions
+import org.elasticsearch.action.support.TransportActions
 import org.elasticsearch.client.Client
 import org.elasticsearch.cluster.ClusterChangedEvent
 import org.elasticsearch.cluster.ClusterStateListener
@@ -47,12 +50,15 @@ import org.elasticsearch.cluster.node.DiscoveryNode
 import org.elasticsearch.cluster.service.ClusterService
 import org.elasticsearch.common.logging.Loggers
 import org.elasticsearch.index.seqno.RetentionLeaseActions
+import org.elasticsearch.index.seqno.RetentionLeaseInvalidRetainingSeqNoException
+import org.elasticsearch.index.seqno.RetentionLeaseNotFoundException
 import org.elasticsearch.index.shard.ShardId
 import org.elasticsearch.index.shard.ShardNotFoundException
 import org.elasticsearch.persistent.PersistentTaskState
 import org.elasticsearch.persistent.PersistentTasksNodeService
 import org.elasticsearch.tasks.TaskId
 import org.elasticsearch.threadpool.ThreadPool
+import org.elasticsearch.transport.NodeNotConnectedException
 
 class ShardReplicationTask(id: Long, type: String, action: String, description: String, parentTask: TaskId,
                            params: ShardReplicationParams, executor: String, clusterService: ClusterService,
@@ -67,6 +73,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     private val remoteClient = client.getRemoteClusterClient(remoteCluster)
     private val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
     private var paused = false
+    val backOffForNodeDiscovery = 1000L
 
     private val clusterStateListenerForTaskInterruption = ClusterStateListenerForTaskInterruption()
 
@@ -128,18 +135,17 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         updateTaskState(FollowingState)
         val followerIndexService = indicesService.indexServiceSafe(followerShardId.index)
         val indexShard = followerIndexService.getShard(followerShardId.id)
-        // After restore, persisted localcheckpoint is matched with maxSeqNo.
-        // Fetch the operations after localCheckpoint from the leader
-        var seqNo = indexShard.localCheckpoint + 1
-        val node = primaryShardNode()
+        // Adding retention lease at local checkpoint of a node. This makes sure
+        // new tasks spawned after node changes/shard movements are handled properly
+        log.info("Adding retentionlease at follower sequence number: ${indexShard.lastSyncedGlobalCheckpoint}")
+        retentionLeaseHelper.addRetentionLease(remoteShardId, indexShard.lastSyncedGlobalCheckpoint , followerShardId)
 
-        // TODO: Acquire retention lease prior to initiating remote recovery
-        retentionLeaseHelper.addRetentionLease(remoteShardId, seqNo, followerShardId)
-
+        var node = primaryShardNode()
         addListenerToInterruptTask()
 
         // Not really used yet as we only have one get changes action at a time.
         val rateLimiter = Semaphore(CONCURRENT_REQUEST_RATE_LIMIT)
+        var seqNo = indexShard.localCheckpoint + 1
         val sequencer = TranslogSequencer(scope, replicationMetadata, followerShardId, remoteCluster, remoteShardId.indexName,
                                           TaskId(clusterService.nodeName, id), client, rateLimiter, seqNo - 1)
 
@@ -156,8 +162,24 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                 log.info("Timed out waiting for new changes. Current seqNo: $seqNo")
                 rateLimiter.release()
                 continue
+            } catch (e: NodeNotConnectedException) {
+                log.info("Node not connected. Retrying request using a different node. $e")
+                delay(backOffForNodeDiscovery)
+                node = primaryShardNode()
+                rateLimiter.release()
+                continue
             }
-            retentionLeaseHelper.renewRetentionLease(remoteShardId, seqNo, followerShardId)
+            //renew retention lease with global checkpoint so that any shard that picks up shard replication task has data until then.
+            try {
+                retentionLeaseHelper.renewRetentionLease(remoteShardId, indexShard.lastSyncedGlobalCheckpoint, followerShardId)
+            } catch (ex: Exception) {
+                when (ex) {
+                    is RetentionLeaseInvalidRetainingSeqNoException, is RetentionLeaseNotFoundException -> {
+                        throw ex
+                    }
+                    else -> log.info("Exception renewing retention lease. Not an issue", ex);
+                }
+            }
         }
         sequencer.close()
     }

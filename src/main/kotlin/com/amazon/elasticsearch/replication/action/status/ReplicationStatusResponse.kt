@@ -14,13 +14,25 @@ import java.io.IOException
 class ReplicationStatusResponse : BroadcastResponse, ToXContentObject {
 
     private val log = LogManager.getLogger(javaClass)
-    private lateinit var replicationShardResponse: MutableList<ReplicationStatusShardResponse>
-    private lateinit var status: String
+    lateinit var replicationShardResponse: MutableList<ReplicationStatusShardResponse>
+    lateinit var status: String
 
     @Throws(IOException::class)
     constructor(inp: StreamInput) : super(inp) {
         inp.readList(::ReplicationStatusShardResponse)
         status = inp.readString()
+    }
+
+    constructor(
+            totalShards: Int,
+            successfulShards: Int,
+            failedShards: Int,
+            shardFailures: List<DefaultShardOperationFailedException>,
+            shardResponses: List<ReplicationStatusShardResponse>
+    ) : super(
+            totalShards, successfulShards, failedShards, shardFailures
+    ) {
+        this.replicationShardResponse = shardResponses.toMutableList()
     }
 
     constructor(
