@@ -23,6 +23,9 @@ import com.amazon.elasticsearch.replication.util.SecurityContext
 import com.amazon.elasticsearch.replication.action.repository.ReleaseLeaderResourcesRequest
 import com.amazon.elasticsearch.replication.util.executeUnderSecurityContext
 import com.amazon.elasticsearch.replication.util.restoreShardWithRetries
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
 import org.apache.logging.log4j.LogManager
 import org.apache.lucene.index.IndexCommit
 import org.elasticsearch.Version
@@ -75,7 +78,8 @@ const val REMOTE_SNAPSHOT_NAME = "opendistro-remote-snapshot"
 class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata,
                               private val client: Client,
                               private val clusterService: ClusterService,
-                              private val recoverySettings: RecoverySettings) : AbstractLifecycleComponent(), Repository {
+                              private val recoverySettings: RecoverySettings) : AbstractLifecycleComponent(),
+        Repository, CoroutineScope by GlobalScope {
 
     // Lazy init because we initialize when a remote cluster seed setting is added at which point the remote
     // cluster connection might not be available yet
@@ -246,18 +250,14 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
      */
     override fun restoreShard(store: Store, snapshotId: SnapshotId, indexId: IndexId, snapshotShardId: ShardId,
                               recoveryState: RecoveryState, listener: ActionListener<Void>) {
-        try {
+        launch {
             restoreShardWithRetries(store, snapshotId, indexId, snapshotShardId,
                     recoveryState, listener, ::restoreShardUsingMultiChunkTransfer, log = log)
-        } catch (e: Exception) {
-            log.error("Restore of shard from remote cluster repository failed due to $e")
-            store.decRef()
-            listener.onFailure(e)
         }
     }
 
-
-    fun restoreShardUsingMultiChunkTransfer(store: Store, snapshotId: SnapshotId, indexId: IndexId, snapshotShardId: ShardId,
+    suspend fun restoreShardUsingMultiChunkTransfer(store: Store, snapshotId: SnapshotId, indexId: IndexId,
+    snapshotShardId: ShardId,
                                             recoveryState: RecoveryState, listener: ActionListener<Void>) {
 
         var multiChunkTransfer: RemoteClusterMultiChunkTransfer?
@@ -297,8 +297,10 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
                         if (e is NodeDisconnectedException || e is NodeNotConnectedException || e is ConnectTransportException) {
                             log.info("Retrying restore shard for ${store.shardId()}")
                             Thread.sleep(1000) // to get updated remote cluster state
-                            restoreShardWithRetries(store, snapshotId, indexId, snapshotShardId,
-                                    recoveryState, listener, ::restoreShardUsingMultiChunkTransfer, log = log)
+                            launch {
+                                restoreShardWithRetries(store, snapshotId, indexId, snapshotShardId,
+                                        recoveryState, listener, ::restoreShardUsingMultiChunkTransfer, log = log)
+                            }
                         } else {
                             log.info("Not retrying restore shard for ${store.shardId()}")
                             store.decRef()

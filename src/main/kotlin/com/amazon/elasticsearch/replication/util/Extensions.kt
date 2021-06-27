@@ -110,10 +110,10 @@ suspend fun <Req : ActionRequest, Resp : ActionResponse> Client.suspendExecuteWi
  * @param log - logger used to log intermediate failures
  * @param retryOn - javaClass name of Elasticsearch exceptions that should be retried along with default retryable exceptions
  */
-fun RemoteClusterRepository.restoreShardWithRetries(
+suspend fun RemoteClusterRepository.restoreShardWithRetries(
         store: Store, snapshotId: SnapshotId, indexId: IndexId, snapshotShardId: ShardId,
         recoveryState: RecoveryState, listener: ActionListener<Void>,
-        function: (Store, SnapshotId, IndexId, ShardId, RecoveryState, ActionListener<Void>) -> Unit,
+        function: suspend (Store, SnapshotId, IndexId, ShardId, RecoveryState, ActionListener<Void>) -> Unit,
         numberOfRetries: Int = 5,
         backoff: Long = 10000,        // 10 seconds
         maxTimeOut: Long = 600000,    // 10 minutes
@@ -122,27 +122,23 @@ fun RemoteClusterRepository.restoreShardWithRetries(
         retryOn: ArrayList<Class<*>> = ArrayList()
 ) {
     var currentBackoff = backoff
+    var retryCount = 1
     retryOn.addAll(defaultRetryableExceptions())
-    repeat(numberOfRetries - 1) {
+    repeat(numberOfRetries) {
         try {
             return function(store, snapshotId, indexId, snapshotShardId, recoveryState, listener)
         } catch (e: ElasticsearchException) {
-            if (retryOn.contains(e.javaClass)) {
+            if (retryOn.contains(e.javaClass) && retryCount < numberOfRetries) {
                 log.warn("Encountered a failure during restore shard. Retrying in ${currentBackoff / 1000} seconds.", e)
-                Thread.sleep(currentBackoff)
+                delay(currentBackoff)
                 currentBackoff = (currentBackoff * factor).toLong().coerceAtMost(maxTimeOut)
+                retryCount++
             } else {
-                throw e
+                log.error("Restore of shard from remote cluster repository failed permanently after all retries due to $e")
+                store.decRef()
+                listener.onFailure(e)
             }
         }
-    }
-    log.info("Calling restore shard one last time") // this time we fail irrespective of exception type
-    try {
-        return function(store, snapshotId, indexId, snapshotShardId, recoveryState, listener)
-    } catch (e: Exception) {
-        log.error("Restore of shard from remote cluster repository failed permanently after all retries due to $e")
-        store.decRef()
-        listener.onFailure(e)
     }
 }
 
