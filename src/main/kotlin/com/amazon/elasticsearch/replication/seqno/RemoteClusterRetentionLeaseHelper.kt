@@ -15,12 +15,15 @@
 
 package com.amazon.elasticsearch.replication.seqno
 
+import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
 import com.amazon.elasticsearch.replication.util.suspendExecute
+import com.amazon.elasticsearch.replication.util.execute
 import org.apache.logging.log4j.LogManager
 import org.elasticsearch.client.Client
 import org.elasticsearch.common.logging.Loggers
 import org.elasticsearch.index.seqno.RetentionLeaseActions
 import org.elasticsearch.index.seqno.RetentionLeaseAlreadyExistsException
+import org.elasticsearch.index.seqno.RetentionLeaseInvalidRetainingSeqNoException
 import org.elasticsearch.index.seqno.RetentionLeaseNotFoundException
 import org.elasticsearch.index.shard.ShardId
 
@@ -50,6 +53,27 @@ class RemoteClusterRetentionLeaseHelper constructor(val followerClusterName: Str
             // Ideally, this should have got cleaned-up
             renewRetentionLease(remoteShardId, seqNo, followerShardId)
         }
+    }
+
+    public suspend fun verifyRetentionLeaseExist(remoteShardId: ShardId, followerShardId: ShardId): Boolean  {
+        val retentionLeaseId = retentionLeaseIdForShard(followerClusterName, followerShardId)
+        // Currently there is no API to describe/list the retention leases .
+        // So we are verifying the existence of lease by trying to renew a lease by same name .
+        // If retention lease doesn't exist, this will throw an RetentionLeaseNotFoundException exception
+        // If it does it will try to RENEW that one with -1 seqno , which should  either
+        // throw RetentionLeaseInvalidRetainingSeqNoException if a retention lease exists with higher seq no.
+        // which will exist in all probability
+        // Or if a retention lease already exists with -1 seqno, it will renew that .
+        val request = RetentionLeaseActions.RenewRequest(remoteShardId, retentionLeaseId, RetentionLeaseActions.RETAIN_ALL, retentionLeaseSource)
+        try {
+            client.suspendExecute(RetentionLeaseActions.Renew.INSTANCE, request)
+        } catch (e : RetentionLeaseInvalidRetainingSeqNoException) {
+            return true
+        }
+        catch (e: RetentionLeaseNotFoundException) {
+            return false
+        }
+        return true
     }
 
     public suspend fun renewRetentionLease(remoteShardId: ShardId, seqNo: Long, followerShardId: ShardId) {

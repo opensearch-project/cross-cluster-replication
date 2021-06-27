@@ -15,11 +15,10 @@
 
 package com.amazon.elasticsearch.replication.repository
 
-import com.amazon.elasticsearch.replication.action.changes.GetChangesAction
 import com.amazon.elasticsearch.replication.action.repository.GetFileChunkAction
 import com.amazon.elasticsearch.replication.action.repository.GetFileChunkRequest
+import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
 import com.amazon.elasticsearch.replication.util.coroutineContext
-import com.amazon.elasticsearch.replication.util.suspendExecute
 import com.amazon.elasticsearch.replication.util.suspendExecuteWithRetries
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -46,6 +45,7 @@ class RemoteClusterMultiChunkTransfer(val logger: Logger,
                                       val localStore: Store,
                                       maxConcurrentFileChunks: Int,
                                       val restoreUUID: String,
+                                      val replMetadata: ReplicationMetadata,
                                       val remoteNode: DiscoveryNode,
                                       val remoteShardId: ShardId,
                                       val remoteFiles: List<StoreFileMetadata>,
@@ -88,8 +88,8 @@ class RemoteClusterMultiChunkTransfer(val logger: Logger,
 
         launch(Dispatchers.IO + remoteClusterClient.threadPool().coroutineContext()) {
             try {
-                val response = remoteClusterClient.suspendExecuteWithRetries(action = GetFileChunkAction.INSTANCE, req =
-                getFileChunkRequest, log = logger)
+                val response = remoteClusterClient.suspendExecuteWithRetries(replMetadata, GetFileChunkAction.INSTANCE,
+                        getFileChunkRequest, defaultContext = true, log = logger)
                 logger.debug("Filename: ${request.storeFileMetadata.name()}, " +
                         "response_size: ${response.data.length()}, response_offset: ${response.offset}")
                 mutex.withLock {

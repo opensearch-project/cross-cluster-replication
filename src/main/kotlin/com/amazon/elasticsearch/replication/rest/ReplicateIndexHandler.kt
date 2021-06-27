@@ -42,6 +42,7 @@ class ReplicateIndexHandler : BaseRestHandler() {
             val followerIndex = request.param("index")
             val followIndexRequest = ReplicateIndexRequest.fromXContent(parser, followerIndex)
             followIndexRequest.waitForRestore = request.paramAsBoolean("wait_for_restore", false)
+
             return RestChannelConsumer {
                 channel: RestChannel? -> client.admin().cluster()
                     .execute(ReplicateIndexAction.INSTANCE, followIndexRequest, RestToXContentListener(channel))

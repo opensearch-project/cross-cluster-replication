@@ -16,14 +16,23 @@
 package com.amazon.elasticsearch.replication.action.stop
 
 import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.REPLICATED_INDEX_SETTING
+import com.amazon.elasticsearch.replication.action.index.block.IndexBlockUpdateType
+import com.amazon.elasticsearch.replication.action.index.block.UpdateIndexBlockAction
+import com.amazon.elasticsearch.replication.action.index.block.UpdateIndexBlockRequest
 import com.amazon.elasticsearch.replication.metadata.INDEX_REPLICATION_BLOCK
+import com.amazon.elasticsearch.replication.metadata.*
+import com.amazon.elasticsearch.replication.seqno.RemoteClusterRetentionLeaseHelper
+import com.amazon.elasticsearch.replication.task.index.IndexReplicationParams
+import com.amazon.elasticsearch.replication.metadata.INDEX_REPLICATION_BLOCK
+import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
+import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
 import com.amazon.elasticsearch.replication.metadata.checkIfIndexBlockedWithLevel
-import com.amazon.elasticsearch.replication.metadata.REPLICATION_OVERALL_STATE_KEY
-import com.amazon.elasticsearch.replication.metadata.REPLICATION_OVERALL_STATE_RUNNING_VALUE
-import com.amazon.elasticsearch.replication.metadata.ReplicationMetadata
-import com.amazon.elasticsearch.replication.metadata.getReplicationStateParamsForIndex
+import com.amazon.elasticsearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
+import com.amazon.elasticsearch.replication.metadata.state.getReplicationStateParamsForIndex
+import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
 import com.amazon.elasticsearch.replication.util.completeWith
 import com.amazon.elasticsearch.replication.util.coroutineContext
+import com.amazon.elasticsearch.replication.util.suspendExecute
 import com.amazon.elasticsearch.replication.util.suspending
 import com.amazon.elasticsearch.replication.util.waitForClusterStateUpdate
 import kotlinx.coroutines.CoroutineScope
@@ -36,6 +45,7 @@ import org.elasticsearch.action.ActionListener
 import org.elasticsearch.action.admin.indices.close.CloseIndexRequest
 import org.elasticsearch.action.admin.indices.open.OpenIndexRequest
 import org.elasticsearch.action.support.ActionFilters
+import org.elasticsearch.action.support.IndicesOptions
 import org.elasticsearch.action.support.master.AcknowledgedResponse
 import org.elasticsearch.action.support.master.TransportMasterNodeAction
 import org.elasticsearch.client.Client
@@ -53,6 +63,7 @@ import org.elasticsearch.common.inject.Inject
 import org.elasticsearch.common.io.stream.StreamInput
 import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.index.IndexNotFoundException
+import org.elasticsearch.index.shard.ShardId
 import org.elasticsearch.threadpool.ThreadPool
 import org.elasticsearch.transport.TransportService
 import java.io.IOException
@@ -63,7 +74,8 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                                                               actionFilters: ActionFilters,
                                                               indexNameExpressionResolver:
                                                               IndexNameExpressionResolver,
-                                                              val client: Client) :
+                                                              val client: Client,
+                                                              val replicationMetadataManager: ReplicationMetadataManager) :
     TransportMasterNodeAction<StopIndexReplicationRequest, AcknowledgedResponse> (StopIndexReplicationAction.NAME,
             transportService, clusterService, threadPool, actionFilters, ::StopIndexReplicationRequest,
             indexNameExpressionResolver), CoroutineScope by GlobalScope {
@@ -73,13 +85,6 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
     }
 
     override fun checkBlock(request: StopIndexReplicationRequest, state: ClusterState): ClusterBlockException? {
-        try {
-            checkIfIndexBlockedWithLevel(clusterService, request.indexName, ClusterBlockLevel.METADATA_WRITE)
-        } catch (exception: ClusterBlockException) {
-            return exception
-        } catch (exception: IndexNotFoundException) {
-            log.warn("Index ${request.indexName} is deleted")
-        }
         return state.blocks().globalBlockedException(ClusterBlockLevel.METADATA_WRITE)
     }
 
@@ -89,7 +94,10 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
         launch(Dispatchers.Unconfined + threadPool.coroutineContext()) {
             listener.completeWith {
                 log.info("Stopping index replication on index:" + request.indexName)
-                validateStopReplicationRequest(request)
+                val isPaused = validateStopReplicationRequest(request)
+
+                val updateIndexBlockRequest = UpdateIndexBlockRequest(request.indexName,IndexBlockUpdateType.REMOVE_BLOCK)
+                client.suspendExecute(UpdateIndexBlockAction.INSTANCE, updateIndexBlockRequest)
 
                 // Index will be deleted if replication is stopped while it is restoring.  So no need to close/reopen
                 val restoring = clusterService.state().custom<RestoreInProgress>(RestoreInProgress.TYPE).any { entry ->
@@ -97,38 +105,71 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                 }
                 if (!restoring &&
                         state.routingTable.hasIndex(request.indexName)) {
-                    val closeResponse = suspending(client.admin().indices()::close)(CloseIndexRequest(request.indexName))
+                    val closeResponse = client.suspending(client.admin().indices()::close)(CloseIndexRequest(request.indexName))
                     if (!closeResponse.isAcknowledged) {
                         throw ElasticsearchException("Unable to close index: ${request.indexName}")
                     }
                 }
+                val replMetadata = replicationMetadataManager.getIndexReplicationMetadata(request.indexName)
+                // If paused , we need to clear retention leases as Shard Tasks are non-existent
+                if (isPaused) {
+                    removeRetentionLease(replMetadata, request.indexName)
+                }
 
-                val stateUpdateResponse : AcknowledgedResponse =
+                val clusterStateUpdateResponse : AcknowledgedResponse =
                     clusterService.waitForClusterStateUpdate("stop_replication") { l -> StopReplicationTask(request, l)}
-                if (!stateUpdateResponse.isAcknowledged) {
+                if (!clusterStateUpdateResponse.isAcknowledged) {
                     throw ElasticsearchException("Failed to update cluster state")
                 }
 
                 // Index will be deleted if stop is called while it is restoring.  So no need to reopen
                 if (!restoring &&
                         state.routingTable.hasIndex(request.indexName)) {
-                    val reopenResponse = suspending(client.admin().indices()::open)(OpenIndexRequest(request.indexName))
+                    val reopenResponse = client.suspending(client.admin().indices()::open)(OpenIndexRequest(request.indexName))
                     if (!reopenResponse.isAcknowledged) {
                         throw ElasticsearchException("Failed to reopen index: ${request.indexName}")
                     }
                 }
+                replicationMetadataManager.deleteIndexReplicationMetadata(request.indexName)
                 AcknowledgedResponse(true)
             }
         }
     }
 
-    private fun validateStopReplicationRequest(request: StopIndexReplicationRequest) {
+    private suspend fun removeRetentionLease(replMetadata: ReplicationMetadata, followerIndexName: String) {
+        val remoteMetadata = getRemoteIndexMetadata(replMetadata.connectionName, replMetadata.leaderContext.resource)
+        val params = IndexReplicationParams(replMetadata.connectionName, remoteMetadata.index, followerIndexName)
+        val remoteClient = client.getRemoteClusterClient(params.remoteCluster)
+        val shards = clusterService.state().routingTable.indicesRouting().get(params.followerIndexName).shards()
+        val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
+        shards.forEach {
+            val followerShardId = it.value.shardId
+            log.debug("Removing lease for $followerShardId.id ")
+            retentionLeaseHelper.removeRetentionLease(ShardId(params.remoteIndex, followerShardId.id), followerShardId)
+            }
+    }
+
+    private suspend fun getRemoteIndexMetadata(remoteCluster: String, remoteIndex: String): IndexMetadata {
+        val remoteClusterClient = client.getRemoteClusterClient(remoteCluster)
+        val clusterStateRequest = remoteClusterClient.admin().cluster().prepareState()
+                .clear()
+                .setIndices(remoteIndex)
+                .setMetadata(true)
+                .setIndicesOptions(IndicesOptions.strictSingleIndexNoExpandForbidClosed())
+                .request()
+        val remoteState = remoteClusterClient.suspending(remoteClusterClient.admin().cluster()::state)(clusterStateRequest).state
+        return remoteState.metadata.index(remoteIndex) ?: throw IndexNotFoundException("${remoteCluster}:${remoteIndex}")
+    }
+
+    private fun validateStopReplicationRequest(request: StopIndexReplicationRequest): Boolean {
         val replicationStateParams = getReplicationStateParamsForIndex(clusterService, request.indexName)
                 ?:
             throw IllegalArgumentException("No replication in progress for index:${request.indexName}")
-        val replicationOverallState = replicationStateParams[REPLICATION_OVERALL_STATE_KEY]
-        if (replicationOverallState == REPLICATION_OVERALL_STATE_RUNNING_VALUE)
-            return
+        val replicationOverallState = replicationStateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE]
+        if (replicationOverallState == ReplicationOverallState.RUNNING.name)
+            return false
+        else if (replicationOverallState == ReplicationOverallState.PAUSED.name)
+            return true
         throw IllegalStateException("Unknown value of replication state:$replicationOverallState")
     }
 
@@ -154,20 +195,7 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                 newState.blocks(newBlocks)
             }
 
-            // remove replication metadata and state params
             val mdBuilder = Metadata.builder(currentState.metadata)
-            val currentReplicationMetadata = currentState.metadata().custom(ReplicationMetadata.NAME)
-                ?: ReplicationMetadata.EMPTY
-            val clusterAlias = currentReplicationMetadata.replicatedIndices.entries.firstOrNull {
-                it.value.containsKey(request.indexName)
-            }?.key
-            if (clusterAlias != null) {
-                val newMetadata = currentReplicationMetadata.removeIndex(clusterAlias, request.indexName)
-                        .removeReplicationStateParams(request.indexName)
-                        .removeSecurityContext(clusterAlias, request.indexName)
-                mdBuilder.putCustom(ReplicationMetadata.NAME, newMetadata)
-            }
-
             // remove replicated index setting
             val currentIndexMetadata = currentState.metadata.index(request.indexName)
             if (currentIndexMetadata != null) {

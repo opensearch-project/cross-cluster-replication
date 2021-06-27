@@ -16,9 +16,13 @@
 package com.amazon.elasticsearch.replication.action.replay
 
 import com.amazon.elasticsearch.replication.ReplicationException
+import com.amazon.elasticsearch.replication.metadata.UpdateMetadataAction
+import com.amazon.elasticsearch.replication.metadata.UpdateMetadataRequest
 import com.amazon.elasticsearch.replication.metadata.checkIfIndexBlockedWithLevel
+import com.amazon.elasticsearch.replication.util.SecurityContext
 import com.amazon.elasticsearch.replication.util.completeWith
 import com.amazon.elasticsearch.replication.util.coroutineContext
+import com.amazon.elasticsearch.replication.util.suspendExecute
 import com.amazon.elasticsearch.replication.util.suspending
 import com.amazon.elasticsearch.replication.util.waitForNextChange
 import kotlinx.coroutines.CoroutineScope
@@ -176,7 +180,7 @@ class TransportReplayChangesAction @Inject constructor(settings: Settings, trans
         val remoteClient = client.getRemoteClusterClient(remoteCluster)
         val options = IndicesOptions.strictSingleIndexNoExpandForbidClosed()
         val getMappingsRequest = GetMappingsRequest().indices(remoteIndex).indicesOptions(options)
-        val getMappingsResponse = suspending(remoteClient.admin().indices()::getMappings)(getMappingsRequest)
+        val getMappingsResponse = remoteClient.suspending(remoteClient.admin().indices()::getMappings, injectSecurityContext = true)(getMappingsRequest)
         val mappingSource = getMappingsResponse.mappings().get(remoteIndex).get(type).source().string()
 
         // This should use MappingUpdateAction but that uses PutMappingRequest internally and
@@ -185,12 +189,9 @@ class TransportReplayChangesAction @Inject constructor(settings: Settings, trans
         val putMappingRequest = PutMappingRequest().indices(followerIndex).indicesOptions(options)
             .type(type).source(mappingSource, XContentType.JSON)
             //TODO: call .masterNodeTimeout() with the setting indices.mapping.dynamic_timeout
-        val putMappingResponse = suspending(client.admin().indices()::putMapping)(putMappingRequest)
-        if (!putMappingResponse.isAcknowledged) {
-            throw ReplicationException("failed to update mappings to match mapping in source clusters")
-        } else {
-            log.debug("Mappings synced for $followerIndex")
-        }
+        val updateMappingRequest = UpdateMetadataRequest(followerIndex, UpdateMetadataRequest.Type.MAPPING, putMappingRequest)
+        client.suspendExecute(UpdateMetadataAction.INSTANCE, updateMappingRequest, injectSecurityContext = true)
+        log.debug("Mappings synced for $followerIndex")
     }
 
     /**

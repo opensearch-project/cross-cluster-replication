@@ -19,6 +19,7 @@ import com.amazon.elasticsearch.replication.ReplicationException
 import com.amazon.elasticsearch.replication.action.changes.GetChangesResponse
 import com.amazon.elasticsearch.replication.action.replay.ReplayChangesAction
 import com.amazon.elasticsearch.replication.action.replay.ReplayChangesRequest
+import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
 import com.amazon.elasticsearch.replication.util.suspendExecute
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -45,7 +46,8 @@ import java.util.concurrent.ConcurrentHashMap
  * this API and a new one is being worked on to which we can migrate when needed.
  */
 @ObsoleteCoroutinesApi
-class TranslogSequencer(scope: CoroutineScope, private val followerShardId: ShardId,
+class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: ReplicationMetadata,
+                        private val followerShardId: ShardId,
                         private val remoteCluster: String, private val remoteIndexName: String,
                         private val parentTaskId: TaskId, private val client: Client,
                         private val rateLimiter: Semaphore, initialSeqNo: Long) {
@@ -68,7 +70,7 @@ class TranslogSequencer(scope: CoroutineScope, private val followerShardId: Shar
                     val replayRequest = ReplayChangesRequest(followerShardId, next.changes, next.maxSeqNoOfUpdatesOrDeletes,
                                                              remoteCluster, remoteIndexName)
                     replayRequest.parentTask = parentTaskId
-                    val replayResponse = client.suspendExecute(ReplayChangesAction.INSTANCE, replayRequest)
+                    val replayResponse = client.suspendExecute(replicationMetadata, ReplayChangesAction.INSTANCE, replayRequest)
                     if (replayResponse.shardInfo.failed > 0) {
                         replayResponse.shardInfo.failures.forEachIndexed { i, failure ->
                             log.error("Failed replaying changes. Failure:$i:$failure")
