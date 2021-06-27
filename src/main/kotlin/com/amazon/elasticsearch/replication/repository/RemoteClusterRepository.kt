@@ -251,6 +251,7 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
      */
     override fun restoreShard(store: Store, snapshotId: SnapshotId, indexId: IndexId, snapshotShardId: ShardId,
                               recoveryState: RecoveryState, listener: ActionListener<Void>) {
+        store.incRef()
         launch {
             restoreShardWithRetries(store, snapshotId, indexId, snapshotShardId,
                     recoveryState, listener, ::restoreShardUsingMultiChunkTransfer, log = log)
@@ -265,7 +266,6 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         var restoreUUID: String?
         var remoteShardNode: DiscoveryNode?
         var remoteShardId: ShardId?
-        store.incRef()
         val followerIndexName = store.shardId().indexName
         val followerShardId = store.shardId()
         // 1. Get all the files info from the remote cluster for this shardId
