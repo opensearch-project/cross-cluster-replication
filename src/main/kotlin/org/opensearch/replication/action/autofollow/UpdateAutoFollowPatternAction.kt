@@ -21,7 +21,7 @@ import org.opensearch.action.support.master.AcknowledgedResponse
 class UpdateAutoFollowPatternAction : ActionType<AcknowledgedResponse>(NAME, ::AcknowledgedResponse) {
 
     companion object {
-        const val NAME = "cluster:admin/opendistro/replication/autofollow/update"
+        const val NAME = "cluster:admin/plugins/replication/autofollow/update"
         val INSTANCE = UpdateAutoFollowPatternAction()
     }
 }

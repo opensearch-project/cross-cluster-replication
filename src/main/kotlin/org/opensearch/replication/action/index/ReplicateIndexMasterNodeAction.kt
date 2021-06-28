@@ -20,7 +20,7 @@ import org.opensearch.action.support.master.AcknowledgedResponse
 
 class ReplicateIndexMasterNodeAction private constructor(): ActionType<AcknowledgedResponse>(NAME, ::AcknowledgedResponse) {
     companion object {
-        const val NAME = "internal:indices/admin/opendistro/replication/index/start"
+        const val NAME = "internal:indices/admin/plugins/replication/index/start"
         val INSTANCE: ReplicateIndexMasterNodeAction = ReplicateIndexMasterNodeAction()
     }
 }

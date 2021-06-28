@@ -29,11 +29,11 @@ import java.io.IOException
 class ReplicateIndexHandler : BaseRestHandler() {
 
     override fun routes(): List<RestHandler.Route> {
-        return listOf(RestHandler.Route(RestRequest.Method.PUT, "/_opendistro/_replication/{index}/_start"))
+        return listOf(RestHandler.Route(RestRequest.Method.PUT, "/_plugins/_replication/{index}/_start"))
     }
 
     override fun getName(): String {
-        return "opendistro_index_start_replicate_action"
+        return "opensearch_index_start_replicate_action"
     }
 
     @Throws(IOException::class)

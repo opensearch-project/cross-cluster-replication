@@ -178,7 +178,7 @@ testClusters {
         plugin(project.tasks.bundlePlugin.archiveFile)
         if(!isReleaseTask && securityEnabled) {
             plugin(provider(securityPluginFile))
-            cliSetup("opendistro_security/install_demo_configuration.sh", "-y")
+            cliSetup("opensearch-security/install_demo_configuration.sh", "-y")
         }
         int debugPort = 5005
         testDistribution = "INTEG_TEST"
@@ -192,7 +192,7 @@ testClusters {
         plugin(project.tasks.bundlePlugin.archiveFile)
         if(!isReleaseTask && securityEnabled) {
             plugin(provider(securityPluginFile))
-            cliSetup("opendistro_security/install_demo_configuration.sh", "-y")
+            cliSetup("opensearch-security/install_demo_configuration.sh", "-y")
         }
         int debugPort = 5010
         if (_numNodes > 1) numberOfNodes = _numNodes

@@ -23,15 +23,15 @@ import org.opensearch.common.util.concurrent.ThreadContext
 interface SecurityContext {
     companion object {
         const val INJECTED_USER = "injected_user"
-        const val OPENDISTRO_USER_INFO = "_opendistro_security_user_info"
-        const val OPENDISTRO_USER_INFO_DELIMITOR = "|"
+        const val OPENSEARCH_USER_INFO = "_opensearch_security_user_info"
+        const val OPENSEARCH_USER_INFO_DELIMITOR = "|"
 
         private val log = LogManager.getLogger(SecurityContext::class.java)
 
         fun fromSecurityThreadContext(threadContext: ThreadContext): String? {
             // Directly return injected_user from the thread context if the user info is not set.
-            val userInfo = threadContext.getTransient<String?>(OPENDISTRO_USER_INFO) ?: return threadContext.getTransient(INJECTED_USER)
-            val usersAndRoles = userInfo.split(OPENDISTRO_USER_INFO_DELIMITOR)
+            val userInfo = threadContext.getTransient<String?>(OPENSEARCH_USER_INFO) ?: return threadContext.getTransient(INJECTED_USER)
+            val usersAndRoles = userInfo.split(OPENSEARCH_USER_INFO_DELIMITOR)
             var userName: String
             var userBackendRoles = ""
             if(usersAndRoles.isEmpty()) {
@@ -42,7 +42,7 @@ interface SecurityContext {
             if(usersAndRoles.size >= 2) {
                 userBackendRoles = usersAndRoles[1]
             }
-            return "${userName}${OPENDISTRO_USER_INFO_DELIMITOR}${userBackendRoles}"
+            return "${userName}${OPENSEARCH_USER_INFO_DELIMITOR}${userBackendRoles}"
         }
 
         fun fromClusterState(clusterState: ClusterState, remoteCluster: String, followerIndex: String): String? {

@@ -110,9 +110,9 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
 
     companion object {
         const val REPLICATION_EXECUTOR_NAME = "replication"
-        val REPLICATED_INDEX_SETTING = Setting.simpleString("index.opendistro.replicated",
+        val REPLICATED_INDEX_SETTING = Setting.simpleString("index.opensearch.replicated",
             Setting.Property.InternalIndex, Setting.Property.IndexScope)
-        val REPLICATION_CHANGE_BATCH_SIZE = Setting.intSetting("opendistro.replication.ops_batch_size", 512, 16,
+        val REPLICATION_CHANGE_BATCH_SIZE = Setting.intSetting("plugins.replication.ops_batch_size", 512, 16,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
     }
 

@@ -66,9 +66,9 @@ import java.util.function.Consumer
 import java.util.function.Function
 import kotlin.collections.ArrayList
 
-const val REMOTE_REPOSITORY_PREFIX = "opendistro-remote-repo-"
-const val REMOTE_REPOSITORY_TYPE = "opendistro-remote-repository"
-const val REMOTE_SNAPSHOT_NAME = "opendistro-remote-snapshot"
+const val REMOTE_REPOSITORY_PREFIX = "opensearch-remote-repo-"
+const val REMOTE_REPOSITORY_TYPE = "opensearch-remote-repository"
+const val REMOTE_SNAPSHOT_NAME = "opensearch-remote-snapshot"
 
 class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata,
                               private val client: Client,

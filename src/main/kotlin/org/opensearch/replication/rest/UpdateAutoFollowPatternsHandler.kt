@@ -29,7 +29,7 @@ import org.opensearch.rest.action.RestToXContentListener
 class UpdateAutoFollowPatternsHandler : BaseRestHandler() {
 
     companion object {
-        const val PATH = "/_opendistro/_replication/_autofollow"
+        const val PATH = "/_plugins/_replication/_autofollow"
     }
 
     override fun routes(): List<RestHandler.Route> {
@@ -37,7 +37,7 @@ class UpdateAutoFollowPatternsHandler : BaseRestHandler() {
             RestHandler.Route(RestRequest.Method.DELETE, PATH))
     }
 
-    override fun getName() = "opendistro_replication_autofollow_update"
+    override fun getName() = "opensearch_replication_autofollow_update"
 
     override fun prepareRequest(request: RestRequest, client: NodeClient): RestChannelConsumer {
         val action = when {

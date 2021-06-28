@@ -19,7 +19,7 @@ import org.opensearch.action.ActionType
 
 class GetStoreMetadataAction private constructor() : ActionType<GetStoreMetadataResponse>(NAME, ::GetStoreMetadataResponse) {
     companion object {
-        const val NAME = "indices:data/read/opendistro/replication/file_metadata"
+        const val NAME = "indices:data/read/plugins/replication/file_metadata"
         val INSTANCE = GetStoreMetadataAction()
     }
 }
