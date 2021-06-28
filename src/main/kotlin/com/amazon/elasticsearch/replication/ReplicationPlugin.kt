@@ -107,11 +107,6 @@ import com.amazon.elasticsearch.replication.action.replicationstatedetails.Trans
 import com.amazon.elasticsearch.replication.action.replicationstatedetails.UpdateReplicationStateAction
 import com.amazon.elasticsearch.replication.action.resume.ResumeIndexReplicationAction
 import com.amazon.elasticsearch.replication.action.resume.TransportResumeIndexReplicationAction
-import com.amazon.elasticsearch.replication.rest.PauseIndexReplicationHandler
-import com.amazon.elasticsearch.replication.rest.ReplicateIndexHandler
-import com.amazon.elasticsearch.replication.rest.ResumeIndexReplicationHandler
-import com.amazon.elasticsearch.replication.rest.StopIndexReplicationHandler
-import com.amazon.elasticsearch.replication.rest.UpdateAutoFollowPatternsHandler
 import com.amazon.elasticsearch.replication.metadata.TransportUpdateMetadataAction
 import com.amazon.elasticsearch.replication.metadata.UpdateMetadataAction
 import org.elasticsearch.common.util.concurrent.EsExecutors
@@ -120,8 +115,14 @@ import com.amazon.elasticsearch.replication.action.setup.SetupChecksAction
 import com.amazon.elasticsearch.replication.action.setup.TransportSetupChecksAction
 import com.amazon.elasticsearch.replication.action.setup.TransportValidatePermissionsAction
 import com.amazon.elasticsearch.replication.action.setup.ValidatePermissionsAction
+import com.amazon.elasticsearch.replication.action.status.ShardsInfoAction
+import com.amazon.elasticsearch.replication.action.status.ReplicationStatusAction
+import com.amazon.elasticsearch.replication.action.status.TranportShardsInfoAction
+import com.amazon.elasticsearch.replication.action.status.TransportReplicationStatusAction
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadataStore
+import com.amazon.elasticsearch.replication.rest.*
+
 
 internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin, RepositoryPlugin, EnginePlugin {
 
@@ -178,7 +179,9 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             ActionHandler(UpdateMetadataAction.INSTANCE, TransportUpdateMetadataAction::class.java),
             ActionHandler(ValidatePermissionsAction.INSTANCE, TransportValidatePermissionsAction::class.java),
             ActionHandler(SetupChecksAction.INSTANCE, TransportSetupChecksAction::class.java),
-            ActionHandler(UpdateReplicationStateAction.INSTANCE, TransportUpdateReplicationStateDetails::class.java)
+            ActionHandler(UpdateReplicationStateAction.INSTANCE, TransportUpdateReplicationStateDetails::class.java),
+            ActionHandler(ShardsInfoAction.INSTANCE, TranportShardsInfoAction::class.java),
+            ActionHandler(ReplicationStatusAction.INSTANCE,TransportReplicationStatusAction::class.java)
         )
     }
 
@@ -191,7 +194,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             UpdateAutoFollowPatternsHandler(),
             PauseIndexReplicationHandler(),
             ResumeIndexReplicationHandler(),
-            StopIndexReplicationHandler())
+            StopIndexReplicationHandler(),
+            ReplicationStatusHandler())
     }
 
     override fun getExecutorBuilders(settings: Settings): List<ExecutorBuilder<*>> {
