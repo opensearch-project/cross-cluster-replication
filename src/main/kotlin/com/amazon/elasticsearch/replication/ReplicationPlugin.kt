@@ -122,7 +122,7 @@ import com.amazon.elasticsearch.replication.action.status.TransportReplicationSt
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadataStore
 import com.amazon.elasticsearch.replication.rest.*
-
+import com.amazon.elasticsearch.replication.seqno.RemoteClusterTranslogService
 
 internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin, RepositoryPlugin, EnginePlugin {
 
@@ -159,7 +159,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
 
     override fun getGuiceServiceClasses(): Collection<Class<out LifecycleComponent>> {
         return listOf(Injectables::class.java,
-                RemoteClusterRestoreLeaderService::class.java)
+                RemoteClusterRestoreLeaderService::class.java, RemoteClusterTranslogService::class.java)
     }
 
     override fun getActions(): List<ActionHandler<out ActionRequest, out ActionResponse>> {

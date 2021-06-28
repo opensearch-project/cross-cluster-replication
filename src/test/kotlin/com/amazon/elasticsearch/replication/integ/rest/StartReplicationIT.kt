@@ -29,6 +29,9 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.elasticsearch.action.admin.indices.alias.Alias
 import org.elasticsearch.action.admin.indices.alias.get.GetAliasesRequest
 import org.elasticsearch.action.admin.indices.settings.get.GetSettingsRequest
+import org.elasticsearch.action.admin.indices.settings.put.UpdateSettingsRequest
+import org.elasticsearch.action.get.GetRequest
+import org.elasticsearch.action.index.IndexRequest
 import org.elasticsearch.client.Request
 import org.elasticsearch.client.RequestOptions
 import org.elasticsearch.client.ResponseException
@@ -37,6 +40,7 @@ import org.elasticsearch.client.indices.GetIndexRequest
 import org.elasticsearch.client.indices.GetMappingsRequest
 import org.elasticsearch.cluster.metadata.IndexMetadata
 import org.elasticsearch.common.settings.Settings
+import org.elasticsearch.index.IndexSettings
 import org.elasticsearch.test.ESTestCase.assertBusy
 import org.junit.Assert
 
@@ -137,21 +141,20 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         assertThat(createIndexResponse.isAcknowledged).isTrue()
         try {
             followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
-                assertBusy {
-                    assertThat(followerClient.indices()
-                            .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
-                            .isEqualTo(true)
-                }
-                Assert.assertEquals(
-                        leaderClient.indices().getMapping(GetMappingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
-                                .mappings()[leaderIndexName],
-                        followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
-                                .mappings()[followerIndexName]
-                )
+            assertBusy {
+                assertThat(followerClient.indices()
+                        .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
+                        .isEqualTo(true)
+            }
+            Assert.assertEquals(
+                    leaderClient.indices().getMapping(GetMappingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
+                            .mappings()[leaderIndexName],
+                    followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
+                            .mappings()[followerIndexName]
+            )
         } finally {
             followerClient.stopReplication(followerIndexName)
         }
-
     }
 
     fun `test that index settings are getting replicated`() {
@@ -179,8 +182,8 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             Assert.assertEquals(
                     "0",
                     followerClient.indices()
-                    .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                    .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+                            .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
+                            .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
             )
         } finally {
             followerClient.stopReplication(followerIndexName)
@@ -208,6 +211,66 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                     followerClient.indices().getAlias(GetAliasesRequest().indices(followerIndexName),
                             RequestOptions.DEFAULT).aliases[followerIndexName]
             )
+        } finally {
+            followerClient.stopReplication(followerIndexName)
+        }
+    }
+
+    fun `test that translog settings are set on leader and not on follower`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
+            assertBusy {
+                assertThat(followerClient.indices()
+                        .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
+                        .isEqualTo(true)
+                assertThat(followerClient.indices()
+                        .getSettings(GetSettingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
+                        .getSetting(followerIndexName, IndexSettings.INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key)
+                        .isNullOrEmpty())
+            }
+
+            assertThat(leaderClient.indices()
+                    .getSettings(GetSettingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
+                    .getSetting(leaderIndexName, IndexSettings.INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key) == "true")
+
+        } finally {
+            followerClient.stopReplication(followerIndexName)
+        }
+    }
+
+    fun `test that replication continues after removing translog settings based on retention lease`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
+                    waitForRestore = true)
+            assertBusy {
+                assertThat(followerClient.indices()
+                        .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
+                        .isEqualTo(true)
+            }
+            // Turn-off the settings and index doc
+            val settingsBuilder = Settings.builder().put(IndexSettings.INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key, false)
+            val settingsUpdateResponse = leaderClient.indices().putSettings(UpdateSettingsRequest(leaderIndexName)
+                    .settings(settingsBuilder.build()), RequestOptions.DEFAULT)
+            Assert.assertEquals(settingsUpdateResponse.isAcknowledged, true)
+            val sourceMap = mapOf("name" to randomAlphaOfLength(5))
+            leaderClient.index(IndexRequest(leaderIndexName).id("2").source(sourceMap), RequestOptions.DEFAULT)
+            assertBusy {
+                followerClient.get(GetRequest(followerIndexName).id("2"), RequestOptions.DEFAULT).isExists
+            }
         } finally {
             followerClient.stopReplication(followerIndexName)
         }

@@ -53,6 +53,7 @@ import org.elasticsearch.common.UUIDs
 import org.elasticsearch.common.component.AbstractLifecycleComponent
 import org.elasticsearch.common.metrics.CounterMetric
 import org.elasticsearch.common.settings.Settings
+import org.elasticsearch.index.IndexSettings
 import org.elasticsearch.index.mapper.MapperService
 import org.elasticsearch.index.shard.ShardId
 import org.elasticsearch.index.snapshots.IndexShardSnapshotStatus
@@ -242,6 +243,10 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         val builder = Settings.builder().put(indexMetadata.settings)
         val replicatedIndex = "${repositoryMetadata.remoteClusterName()}:${index.name}"
         builder.put(ReplicationPlugin.REPLICATED_INDEX_SETTING.key, replicatedIndex)
+
+        // Remove translog pruning for the follower index
+        builder.remove(IndexSettings.INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key)
+
         val indexMdBuilder = IndexMetadata.builder(indexMetadata).settings(builder)
         indexMetadata.aliases.valuesIt().forEach {
             indexMdBuilder.putAlias(it)

@@ -125,12 +125,19 @@ class TransportReplayChangesAction @Inject constructor(settings: Settings, trans
             if(primaryShard.maxSeqNoOfUpdatesOrDeletes < request.maxSeqNoOfUpdatesOrDeletes) {
                 primaryShard.advanceMaxSeqNoOfUpdatesOrDeletes(request.maxSeqNoOfUpdatesOrDeletes)
             }
-            var result = primaryShard.applyTranslogOperation(op, Engine.Operation.Origin.PRIMARY)
+            var eachOp = op
+            if(op.opType() == Translog.Operation.Type.INDEX) {
+                eachOp = op as Translog.Index
+                // Unset autogeneretedIdTimeStamp as we are using externel ID from the leader index
+                eachOp = Translog.Index(eachOp.docType(), eachOp.id(), eachOp.seqNo(),
+                        eachOp.primaryTerm(), eachOp.version(), eachOp.source().toBytesRef().bytes, eachOp.routing(), -1)
+            }
+            var result = primaryShard.applyTranslogOperation(eachOp, Engine.Operation.Origin.PRIMARY)
             if (result.resultType == Engine.Result.Type.MAPPING_UPDATE_REQUIRED) {
                 waitForMappingUpdate {
                     // fetch mappings from the remote cluster when applying on PRIMARY...
                     syncRemoteMapping(request.remoteCluster, request.remoteIndex, request.shardId()!!.indexName,
-                        op.docType())
+                            eachOp.docType())
                 }
                 result = primaryShard.applyTranslogOperation(op, Engine.Operation.Origin.PRIMARY)
             }

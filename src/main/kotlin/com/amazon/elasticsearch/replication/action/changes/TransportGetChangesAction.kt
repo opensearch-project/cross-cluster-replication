@@ -15,14 +15,16 @@
 
 package com.amazon.elasticsearch.replication.action.changes
 
-import com.amazon.elasticsearch.replication.action.repository.GetFileChunkAction
 import com.amazon.elasticsearch.replication.util.completeWith
 import com.amazon.elasticsearch.replication.util.coroutineContext
 import com.amazon.elasticsearch.replication.util.waitForGlobalCheckpoint
 import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.REPLICATION_EXECUTOR_NAME_LEADER
+import com.amazon.elasticsearch.replication.seqno.RemoteClusterTranslogService
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
+import org.apache.logging.log4j.LogManager
 import org.elasticsearch.ElasticsearchTimeoutException
+import org.elasticsearch.ResourceNotFoundException
 import org.elasticsearch.action.ActionListener
 import org.elasticsearch.action.support.ActionFilters
 import org.elasticsearch.action.support.single.shard.TransportSingleShardAction
@@ -34,6 +36,7 @@ import org.elasticsearch.common.inject.Inject
 import org.elasticsearch.common.io.stream.StreamInput
 import org.elasticsearch.common.io.stream.Writeable
 import org.elasticsearch.common.unit.TimeValue
+import org.elasticsearch.index.IndexSettings
 import org.elasticsearch.index.shard.ShardId
 import org.elasticsearch.index.translog.Translog
 import org.elasticsearch.indices.IndicesService
@@ -45,7 +48,8 @@ import kotlin.math.min
 class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clusterService: ClusterService,
                                                     transportService: TransportService, actionFilters: ActionFilters,
                                                     indexNameExpressionResolver: IndexNameExpressionResolver,
-                                                    private val indicesService: IndicesService) :
+                                                    private val indicesService: IndicesService,
+                                                    private val translogService: RemoteClusterTranslogService) :
     TransportSingleShardAction<GetChangesRequest, GetChangesResponse>(
         GetChangesAction.NAME, threadPool, clusterService, transportService, actionFilters,
         indexNameExpressionResolver, ::GetChangesRequest, REPLICATION_EXECUTOR_NAME_LEADER) {
@@ -56,6 +60,7 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
 
     companion object {
         val WAIT_FOR_NEW_OPS_TIMEOUT = TimeValue.timeValueMinutes(1)!!
+        private val log = LogManager.getLogger(TransportGetChangesAction::class.java)
     }
 
     override fun shardOperation(request: GetChangesRequest, shardId: ShardId): GetChangesResponse {
@@ -85,17 +90,42 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
 
                 // At this point lastSyncedGlobalCheckpoint is at least fromSeqNo
                 val toSeqNo = min(indexShard.lastSyncedGlobalCheckpoint, request.toSeqNo)
-                indexShard.newChangesSnapshot("odr", request.fromSeqNo, toSeqNo, true).use { snapshot ->
-                    val ops = ArrayList<Translog.Operation>(snapshot.totalOperations())
-                    var op = snapshot.next()
-                    while (op != null) {
-                        ops.add(op)
-                        op = snapshot.next()
+
+                var ops: List<Translog.Operation> = listOf()
+                var fetchFromTranslog = isTranslogPruningByRetentionLeaseEnabled(shardId)
+                if(fetchFromTranslog) {
+                    try {
+                        ops = translogService.getHistoryOfOperations(indexShard, request.fromSeqNo, toSeqNo)
+                    } catch (e: ResourceNotFoundException) {
+                        fetchFromTranslog = false
                     }
-                    GetChangesResponse(ops, request.fromSeqNo, indexShard.maxSeqNoOfUpdatesOrDeletes)
                 }
+
+                // Translog fetch is disabled or not found
+                if(!fetchFromTranslog) {
+                    log.info("Fetching changes from lucene for ${request.shardId} - from:${request.fromSeqNo}, to:$toSeqNo")
+                    indexShard.newChangesSnapshot("odr", request.fromSeqNo, toSeqNo, true).use { snapshot ->
+                        ops = ArrayList(snapshot.totalOperations())
+                        var op = snapshot.next()
+                        while (op != null) {
+                            (ops as ArrayList<Translog.Operation>).add(op)
+                            op = snapshot.next()
+                        }
+                    }
+                }
+                GetChangesResponse(ops, request.fromSeqNo, indexShard.maxSeqNoOfUpdatesOrDeletes)
             }
         }
+    }
+
+
+    private fun isTranslogPruningByRetentionLeaseEnabled(shardId: ShardId): Boolean {
+        val enabled = clusterService.state().metadata.indices.get(shardId.indexName)
+                ?.settings?.getAsBoolean(IndexSettings.INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key, false)
+        if(enabled != null) {
+            return enabled
+        }
+        return false
     }
 
     override fun resolveIndex(request: GetChangesRequest): Boolean {
