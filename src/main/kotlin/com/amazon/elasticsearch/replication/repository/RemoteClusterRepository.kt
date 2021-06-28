@@ -26,7 +26,10 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
+import com.amazon.elasticsearch.replication.util.coroutineContext
 import com.amazon.elasticsearch.replication.util.execute
+import com.amazon.elasticsearch.replication.util.suspendExecute
+import kotlinx.coroutines.Dispatchers
 import org.apache.logging.log4j.LogManager
 import org.apache.lucene.index.IndexCommit
 import org.elasticsearch.Version
@@ -251,8 +254,8 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
      */
     override fun restoreShard(store: Store, snapshotId: SnapshotId, indexId: IndexId, snapshotShardId: ShardId,
                               recoveryState: RecoveryState, listener: ActionListener<Void>) {
-        store.incRef()
-        launch {
+        launch(Dispatchers.IO + remoteClusterClient.threadPool().coroutineContext()) {
+            store.incRef()
             restoreShardWithRetries(store, snapshotId, indexId, snapshotShardId,
                     recoveryState, listener, ::restoreShardUsingMultiChunkTransfer, log = log)
         }
@@ -283,7 +286,7 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
                 clusterService.clusterName.value(), followerShardId)
 
         // Gets the remote store metadata
-        val metadataResponse = remoteClusterGetAction(GetStoreMetadataAction.INSTANCE, getStoreMetadataRequest, followerIndexName)
+        val metadataResponse = executeActionOnRemote(GetStoreMetadataAction.INSTANCE, getStoreMetadataRequest, followerIndexName)
         val metadataSnapshot = metadataResponse.metadataSnapshot
 
         val replMetadata = getReplicationMetadata(followerIndexName)
@@ -299,7 +302,7 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
                         if (e is NodeDisconnectedException || e is NodeNotConnectedException || e is ConnectTransportException) {
                             log.info("Retrying restore shard for ${store.shardId()}")
                             Thread.sleep(1000) // to get updated remote cluster state
-                            launch {
+                            launch(Dispatchers.IO + remoteClusterClient.threadPool().coroutineContext()) {
                                 restoreShardWithRetries(store, snapshotId, indexId, snapshotShardId,
                                         recoveryState, listener, ::restoreShardUsingMultiChunkTransfer, log = log)
                             }
@@ -389,6 +392,18 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         val replMetadata = getReplicationMetadata(followerIndex)
         return remoteClusterClient.execute(replMetadata, actionType, actionRequest,
                 REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC)
+
+    }
+
+    /*
+    * Makes transport action to the remote cluster by making a non blocking call.
+    */
+    private suspend fun <T : ActionResponse> executeActionOnRemote(actionType: ActionType<T>,
+                                                                   actionRequest: ActionRequest,
+                                                                   followerIndex: String): T {
+
+        val replMetadata = getReplicationMetadata(followerIndex)
+        return remoteClusterClient.suspendExecute(replMetadata, actionType, actionRequest)
 
     }
 }

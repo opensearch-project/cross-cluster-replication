@@ -160,6 +160,7 @@ suspend fun RemoteClusterRepository.restoreShardWithRetries(
                 log.error("Restore of shard from remote cluster repository failed permanently after all retries due to $e")
                 store.decRef()
                 listener.onFailure(e)
+                return
             }
         }
     }
