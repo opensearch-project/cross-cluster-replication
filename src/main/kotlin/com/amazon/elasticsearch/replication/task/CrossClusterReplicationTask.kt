@@ -127,13 +127,13 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
      */
     protected open fun indicesOrShards() : List<Any> = emptyList()
 
-    private fun registerCloseListeners() {
+    protected fun registerCloseListeners() {
         for (indexOrShard in indicesOrShards()) {
             IndexCloseListener.addCloseListener(indexOrShard, this)
         }
     }
 
-    private fun unregisterCloseListeners() {
+    protected fun unregisterCloseListeners() {
         for (indexOrShard in indicesOrShards()) {
             IndexCloseListener.removeCloseListener(indexOrShard, this)
         }
