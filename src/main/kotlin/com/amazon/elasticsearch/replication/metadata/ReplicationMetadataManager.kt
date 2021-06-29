@@ -4,26 +4,17 @@ import com.amazon.elasticsearch.replication.ReplicationException
 import com.amazon.elasticsearch.replication.action.replicationstatedetails.UpdateReplicationStateAction
 import com.amazon.elasticsearch.replication.action.replicationstatedetails.UpdateReplicationStateDetailsRequest
 import com.amazon.elasticsearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
-import com.amazon.elasticsearch.replication.metadata.store.AddReplicationMetadataRequest
-import com.amazon.elasticsearch.replication.metadata.store.DeleteReplicationMetadataRequest
-import com.amazon.elasticsearch.replication.metadata.store.GetReplicationMetadataRequest
-import com.amazon.elasticsearch.replication.metadata.store.ReplicationContext
-import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
-import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadataStore
-import com.amazon.elasticsearch.replication.metadata.store.ReplicationStoreMetadataType
-import com.amazon.elasticsearch.replication.metadata.store.UpdateReplicationMetadataRequest
+import com.amazon.elasticsearch.replication.metadata.store.*
 import com.amazon.elasticsearch.replication.repository.RemoteClusterRepository
 import com.amazon.elasticsearch.replication.util.overrideFgacRole
-import com.amazon.elasticsearch.replication.util.submitClusterStateUpdateTask
 import com.amazon.elasticsearch.replication.util.suspendExecute
 import com.amazon.opendistroforelasticsearch.commons.authuser.User
 import org.apache.logging.log4j.LogManager
 import org.elasticsearch.action.DocWriteResponse
-import org.elasticsearch.action.support.master.AcknowledgedRequest
 import org.elasticsearch.client.Client
-import org.elasticsearch.cluster.ClusterStateTaskExecutor
 import org.elasticsearch.cluster.service.ClusterService
 import org.elasticsearch.common.inject.Singleton
+import org.elasticsearch.common.settings.Settings
 
 @Singleton
 class ReplicationMetadataManager constructor(private val clusterService: ClusterService,
@@ -92,8 +83,20 @@ class ReplicationMetadataManager constructor(private val clusterService: Cluster
         val response = replicaionMetadataStore.updateMetadata(updateReq)
         if(response.result != DocWriteResponse.Result.CREATED &&
                 response.result != DocWriteResponse.Result.UPDATED) {
+            log.error("Error while updating metadata $response")
             throw ReplicationException("Error updating replication metadata")
         }
+    }
+
+    suspend fun updateSettings(followerIndex: String, settings: Settings) {
+        val getReq = GetReplicationMetadataRequest(ReplicationStoreMetadataType.INDEX.name, null, followerIndex)
+        val getRes = replicaionMetadataStore.getMetadata(getReq)
+        val metadata = getRes.replicationMetadata
+        metadata.settings = settings
+        // Not using updateMetada as it just merges new settings with older ones
+        // But we want to replace entire settings metadata
+        val addReq = AddReplicationMetadataRequest(metadata)
+        addMetadata(addReq)
     }
 
     suspend fun deleteIndexReplicationMetadata(followerIndex: String) {

@@ -21,8 +21,12 @@ import com.amazon.elasticsearch.replication.action.index.block.UpdateIndexBlockA
 import com.amazon.elasticsearch.replication.action.index.block.UpdateIndexBlockRequest
 import com.amazon.elasticsearch.replication.action.stop.StopIndexReplicationAction
 import com.amazon.elasticsearch.replication.action.stop.StopIndexReplicationRequest
+import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
+import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
+import com.amazon.elasticsearch.replication.metadata.UpdateMetadataAction
+import com.amazon.elasticsearch.replication.metadata.UpdateMetadataRequest
+import com.amazon.elasticsearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
 import com.amazon.elasticsearch.replication.metadata.state.getReplicationStateParamsForIndex
-import com.amazon.elasticsearch.replication.metadata.*
 import com.amazon.elasticsearch.replication.repository.REMOTE_SNAPSHOT_NAME
 import com.amazon.elasticsearch.replication.repository.RemoteClusterRepository
 import com.amazon.elasticsearch.replication.seqno.RemoteClusterRetentionLeaseHelper
@@ -31,9 +35,6 @@ import com.amazon.elasticsearch.replication.task.ReplicationState
 import com.amazon.elasticsearch.replication.task.shard.ShardReplicationExecutor
 import com.amazon.elasticsearch.replication.task.shard.ShardReplicationParams
 import com.amazon.elasticsearch.replication.task.shard.ShardReplicationTask
-import com.amazon.elasticsearch.replication.util.suspending
-import com.amazon.elasticsearch.replication.util.waitForNextChange
-import com.amazon.elasticsearch.replication.util.startTask
 import com.amazon.elasticsearch.replication.util.*
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
@@ -75,10 +76,6 @@ import java.util.stream.Collectors
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
-import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
-import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
-import com.amazon.elasticsearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
-import com.amazon.elasticsearch.replication.util.suspendExecute
 
 class IndexReplicationTask(id: Long, type: String, action: String, description: String,
                            parentTask: TaskId,
@@ -103,6 +100,8 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
     override val log = Loggers.getLogger(javaClass, Index(params.followerIndexName, ClusterState.UNKNOWN_UUID))
     private val cso = ClusterStateObserver(clusterService, log, threadPool.threadContext)
     private val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
+
+    private var evalCalled = false
 
     companion object {
         val blSettings  : Set<Setting<*>> = setOf(
@@ -154,11 +153,17 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
                     }
                 }
                 ReplicationState.MONITORING -> {
-                    var state = pollShardTaskStatus((followingTaskState as FollowingState).shardReplicationTasks)
-                    if (state == MonitoringState) {
-                        updateMetadata()
-                    } else {
+                    var state = evalMonitoringStateOnce()
+                    if (state != MonitoringState) {
+                        // Tasks need to be started
                         state
+                    } else {
+                        state = pollShardTaskStatus((followingTaskState as FollowingState).shardReplicationTasks)
+                        if (state == MonitoringState) {
+                            updateMetadata()
+                        } else {
+                            state
+                        }
                     }
                 }
                 ReplicationState.FAILED -> {
@@ -193,13 +198,47 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
         return clusterService.state().routingTable.hasIndex(followerIndexName)
     }
 
+    private suspend fun evalMonitoringStateOnce():IndexReplicationState {
+        // Handling for node crashes during Static Index Updates'
+
+        // Makes sure follower index is open, shard tasks are running
+        // Shard & Index Tasks has Close listeners
+        //ToDo Fix
+        if (true) {
+            return MonitoringState
+        }
+
+        removeIndexBlockForReplication()
+
+        client.suspending(client.admin().indices()::open)(Requests.openIndexRequest(followerIndexName))
+
+        addIndexBlockForReplication()
+
+        registerCloseListeners()
+        val clusterState = clusterService.state()
+        val persistentTasks = clusterState.metadata.custom<PersistentTasksCustomMetadata>(PersistentTasksCustomMetadata.TYPE)
+        val runningShardTasks = persistentTasks.findTasks(ShardReplicationExecutor.TASK_NAME, Predicate { true }).stream()
+                .map { task -> task.params as ShardReplicationParams }
+                .collect(Collectors.toList())
+
+        if (runningShardTasks.size == 0) {
+            return InitFollowState
+        }
+
+        evalCalled = true
+        return MonitoringState
+    }
+
     private suspend fun updateMetadata() :IndexReplicationState {
-        var needsInit = false
-        try {
-            updateAlias()
-            needsInit = updateSettings()
+        var needsInit: Boolean
+
+        updateAlias()
+
+        needsInit = try {
+            updateSettings()
         } catch (e: Exception) {
-            log.error("Got an error while updating metadata ${followerIndexName} - $e ")
+            log.error("Got an error while updating static settings ${followerIndexName} - $e ")
+            true
         }
 
         if (needsInit) {
@@ -230,9 +269,6 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
         val replMetdata = replicationMetadataManager.getIndexReplicationMetadata(this.followerIndexName)
         var overriddenSettings = replMetdata.settings
 
-        log.info("Overridden settings gbbafna $overriddenSettings")
-
-
         val indexScopedSettings = IndexScopedSettings.DEFAULT_SCOPED_SETTINGS
 
         val settingsList = arrayOf(leaderSettings, overriddenSettings)
@@ -261,6 +297,7 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
                 if (!setting.isDynamic()) {
                     staticUpdated = true
                 }
+                log.info("Adding setting $key from $followerIndexName")
                 changedSettingsBuilder.copy(key, desiredSettings);
             }
         }
@@ -288,44 +325,67 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
             return false
         }
 
-        log.debug("Got index settings to apply ${changedSettings}")
+        log.info("Got index settings to apply ${changedSettings}")
 
         val updateSettingsRequest = Requests.updateSettingsRequest(followerIndexName)
         updateSettingsRequest.settings(changedSettings)
 
         if (staticUpdated) {
+            //ToDo : Static Index Update is not bulletproof.
+            // While updating this, if the node crashes, it can result in replication to move to failed state
+
             log.info("Handle static settings change ${changedSettings}")
-            //Step 1 : Remove the tasks
-            val shards = clusterService.state().routingTable.indicesRouting().get(followerIndexName).shards()
-            shards.forEach {
-                persistentTasksService.removeTask(ShardReplicationTask.taskIdForShard(it.value.shardId))
+
+            try {
+                //Step 1 : Remove the tasks
+                val shards = clusterService.state().routingTable.indicesRouting().get(followerIndexName).shards()
+                shards.forEach {
+                    persistentTasksService.removeTask(ShardReplicationTask.taskIdForShard(it.value.shardId))
+                }
+
+                //Step 2 : Unregister Close Listener w/o which the Index Task is going to get cancelled
+                unregisterCloseListeners()
+
+                //ToDo : Add Transport action for close which bypasses metadatablock
+                removeIndexBlockForReplication()
+
+                //Step 3 : Close index
+                log.info("Closing the index now ")
+                //client.suspending(client.admin().indices()::close)(Requests.closeIndexRequest(followerIndexName))
+
+                var updateRequest = UpdateMetadataRequest(followerIndexName, UpdateMetadataRequest.Type.CLOSE, Requests.closeIndexRequest(followerIndexName))
+                client.suspendExecute(UpdateMetadataAction.INSTANCE, updateRequest)
+
+                log.info("Closed the index now ")
+
+                //Step 4 : apply settings
+                 updateRequest = UpdateMetadataRequest(followerIndexName, UpdateMetadataRequest.Type.SETTING, updateSettingsRequest)
+                client.suspendExecute(UpdateMetadataAction.INSTANCE, updateRequest)
+            } finally {
+                log.info("Opening the index now ")
+                //Step 5: open the index
+                //client.suspending(client.admin().indices()::open)(Requests.openIndexRequest(followerIndexName))
+
+                val updateRequest = UpdateMetadataRequest(followerIndexName, UpdateMetadataRequest.Type.OPEN, Requests.openIndexRequest(followerIndexName))
+                client.suspendExecute(UpdateMetadataAction.INSTANCE, updateRequest)
+
+                log.info("Opened the index now ")
+
+                //ToDo : Add Transport action for open index which bypasses metadatablock
+                addIndexBlockForReplication()
+
+                //Step 6 :  Register Close Listeners again
+                registerCloseListeners()
             }
 
-            //Step 2 : Unregister Close Listener w/o which the Index Task is going to get cancelled
-            unregisterCloseListeners()
-
-            //ToDo : Add Transport action for close which bypasses metadatablock
-            removeIndexBlockForReplication()
-
-            //Step 3 : Close index
-            client.suspending(client.admin().indices()::close)(Requests.closeIndexRequest(followerIndexName))
-
-            //Step 4 : apply settings
-            val updateRequest = UpdateMetadataRequest(followerIndexName, UpdateMetadataRequest.Type.SETTING, updateSettingsRequest)
-            client.suspendExecute(UpdateMetadataAction.INSTANCE, updateRequest)
-
-            //Step 5: open the index
-            client.suspending(client.admin().indices()::open)(Requests.openIndexRequest(followerIndexName))
-
-            //ToDo : Add Transport action for open index which bypasses metadatablock
-            addIndexBlockForReplication()
-
-            //Step 6 :  Register Close Listeners again
-            registerCloseListeners()
         } else {
             log.info("Handling dynamic settings change")
             val updateRequest = UpdateMetadataRequest(followerIndexName, UpdateMetadataRequest.Type.SETTING, updateSettingsRequest)
-            client.suspendExecute(UpdateMetadataAction.INSTANCE, updateRequest)
+            try {
+                client.suspendExecute(UpdateMetadataAction.INSTANCE, updateRequest)
+            } catch (e: Exception) {
+                log.error("Got an error while updating dynamic settings ${followerIndexName} - $e ")
+            }
         }
 
         log.info("Updated settings for $followerIndexName")
@@ -372,8 +432,13 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
                     .alias(alias.alias))
         }
 
-        val updateRequest = UpdateMetadataRequest(followerIndexName, UpdateMetadataRequest.Type.ALIAS, request)
-        client.suspendExecute(UpdateMetadataAction.INSTANCE, updateRequest)
+        try {
+            val updateRequest = UpdateMetadataRequest(followerIndexName, UpdateMetadataRequest.Type.ALIAS, request)
+            client.suspendExecute(UpdateMetadataAction.INSTANCE, updateRequest, injectSecurityContext = true)
+        } catch (e: Exception) {
+            log.error("Got an error while updating alias ${followerIndexName} - $e ")
+        }
+
     }
 
     private suspend fun stopReplicationTasks() {

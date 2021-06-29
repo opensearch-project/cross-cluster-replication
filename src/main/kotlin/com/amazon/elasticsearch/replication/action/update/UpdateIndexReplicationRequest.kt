@@ -14,8 +14,7 @@
  */
 
 package com.amazon.elasticsearch.replication.action.update
-
-import com.amazon.elasticsearch.replication.metadata.ReplicationMetadata
+import com.amazon.elasticsearch.replication.metadata.store.KEY_SETTINGS
 import org.elasticsearch.action.ActionRequestValidationException
 import org.elasticsearch.action.IndicesRequest
 import org.elasticsearch.action.support.IndicesOptions
@@ -84,7 +83,7 @@ class UpdateIndexReplicationRequest : AcknowledgedRequest<UpdateIndexReplication
         builder.field("indexName", indexName)
         builder.endObject()
 
-        builder.startObject(ReplicationMetadata.KEY_SETTINGS)
+        builder.startObject(KEY_SETTINGS)
         settings.toXContent(builder, ToXContent.MapParams(Collections.singletonMap("flat_settings", "true")));
         builder.endObject()
 

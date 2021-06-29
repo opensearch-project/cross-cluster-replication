@@ -3,7 +3,6 @@ package com.amazon.elasticsearch.replication.metadata.store
 import com.amazon.elasticsearch.replication.repository.RemoteClusterRepository
 import com.amazon.elasticsearch.replication.util.execute
 import com.amazon.elasticsearch.replication.util.suspending
-import com.amazon.opendistroforelasticsearch.commons.ConfigConstants
 import org.apache.logging.log4j.LogManager
 import org.elasticsearch.ExceptionsHelper
 import org.elasticsearch.ResourceAlreadyExistsException
@@ -22,12 +21,7 @@ import org.elasticsearch.cluster.service.ClusterService
 import org.elasticsearch.common.component.AbstractLifecycleComponent
 import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.util.concurrent.ThreadContext
-import org.elasticsearch.common.xcontent.LoggingDeprecationHandler
-import org.elasticsearch.common.xcontent.NamedXContentRegistry
-import org.elasticsearch.common.xcontent.ToXContent
-import org.elasticsearch.common.xcontent.XContentFactory
-import org.elasticsearch.common.xcontent.XContentHelper
-import org.elasticsearch.common.xcontent.XContentType
+import org.elasticsearch.common.xcontent.*
 
 
 class ReplicationMetadataStore constructor(val client: Client, val clusterService: ClusterService,
@@ -125,6 +119,7 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
                 .setIfPrimaryTerm(updateMetadataReq.ifPrimaryTerm)
                 .doc(metadata.toXContent(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS))
         return client.suspending(client::update, defaultContext = true)(updateReq)
+
     }
 
     private fun getId(metadataType: String, connectionName: String?, resourceName: String): String {

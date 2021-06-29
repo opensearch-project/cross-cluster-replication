@@ -1,14 +1,20 @@
 package com.amazon.elasticsearch.replication.metadata
 
-import com.amazon.elasticsearch.replication.action.stop.StopIndexReplicationRequest
 import org.apache.logging.log4j.LogManager
+import org.apache.logging.log4j.message.ParameterizedMessage
 import org.elasticsearch.action.ActionListener
 import org.elasticsearch.action.IndicesRequest
 import org.elasticsearch.action.admin.indices.alias.IndicesAliasesClusterStateUpdateRequest
 import org.elasticsearch.action.admin.indices.alias.IndicesAliasesRequest
 import org.elasticsearch.action.admin.indices.alias.IndicesAliasesRequest.AliasActions
+import org.elasticsearch.action.admin.indices.close.CloseIndexClusterStateUpdateRequest
+import org.elasticsearch.action.admin.indices.close.CloseIndexRequest
+import org.elasticsearch.action.admin.indices.close.CloseIndexResponse
 import org.elasticsearch.action.admin.indices.mapping.put.PutMappingClusterStateUpdateRequest
 import org.elasticsearch.action.admin.indices.mapping.put.PutMappingRequest
+import org.elasticsearch.action.admin.indices.open.OpenIndexClusterStateUpdateRequest
+import org.elasticsearch.action.admin.indices.open.OpenIndexRequest
+import org.elasticsearch.action.admin.indices.open.OpenIndexResponse
 import org.elasticsearch.action.admin.indices.settings.put.UpdateSettingsClusterStateUpdateRequest
 import org.elasticsearch.action.admin.indices.settings.put.UpdateSettingsRequest
 import org.elasticsearch.action.support.ActionFilters
@@ -17,25 +23,20 @@ import org.elasticsearch.action.support.master.AcknowledgedResponse
 import org.elasticsearch.action.support.master.TransportMasterNodeAction
 import org.elasticsearch.cluster.ClusterState
 import org.elasticsearch.cluster.ack.ClusterStateUpdateResponse
+import org.elasticsearch.cluster.ack.OpenIndexClusterStateUpdateResponse
 import org.elasticsearch.cluster.block.ClusterBlockException
 import org.elasticsearch.cluster.block.ClusterBlockLevel
-import org.elasticsearch.cluster.metadata.AliasAction
+import org.elasticsearch.cluster.metadata.*
 import org.elasticsearch.cluster.metadata.AliasAction.RemoveIndex
-import org.elasticsearch.cluster.metadata.IndexAbstraction
-import org.elasticsearch.cluster.metadata.IndexNameExpressionResolver
-import org.elasticsearch.cluster.metadata.Metadata
-import org.elasticsearch.cluster.metadata.MetadataIndexAliasesService
-import org.elasticsearch.cluster.metadata.MetadataMappingService
-import org.elasticsearch.cluster.metadata.MetadataUpdateSettingsService
 import org.elasticsearch.cluster.service.ClusterService
 import org.elasticsearch.common.inject.Inject
 import org.elasticsearch.common.io.stream.StreamInput
 import org.elasticsearch.index.Index
 import org.elasticsearch.index.IndexNotFoundException
 import org.elasticsearch.rest.action.admin.indices.AliasesNotFoundException
+import org.elasticsearch.tasks.Task
 import org.elasticsearch.threadpool.ThreadPool
 import org.elasticsearch.transport.TransportService
-import java.lang.Exception
 import java.util.*
 
 /*
@@ -47,7 +48,8 @@ class TransportUpdateMetadataAction @Inject constructor(
     clusterService: ClusterService, indexNameExpressionResolver: IndexNameExpressionResolver,
     val metadataMappingService: MetadataMappingService,
     val updateSettingsService: MetadataUpdateSettingsService,
-    val indexAliasService: MetadataIndexAliasesService
+    val indexAliasService: MetadataIndexAliasesService,
+    val indexStateService: MetadataIndexStateService
 ) : TransportMasterNodeAction<UpdateMetadataRequest, AcknowledgedResponse>(UpdateMetadataAction.NAME,
     transportService, clusterService, threadPool, actionFilters, ::UpdateMetadataRequest, indexNameExpressionResolver) {
 
@@ -63,6 +65,7 @@ class TransportUpdateMetadataAction @Inject constructor(
     }
 
     override fun masterOperation(
+        task: Task,
         request: UpdateMetadataRequest,
         state: ClusterState,
         listener: ActionListener<AcknowledgedResponse>
@@ -78,7 +81,55 @@ class TransportUpdateMetadataAction @Inject constructor(
             UpdateMetadataRequest.Type.ALIAS -> {
                 performAliasUpdate(concreteIndices, request, listener, indexAliasService, state)
             }
+            UpdateMetadataRequest.Type.OPEN -> {
+                performOpenIndex(concreteIndices, request, listener)
+            }
+            UpdateMetadataRequest.Type.CLOSE -> {
+                performCloseIndex(task, concreteIndices, request, listener)
+            }
         }
+    }
+
+
+    private fun performOpenIndex(concreteIndices: Array<Index>, request: UpdateMetadataRequest,
+                                 listener: ActionListener<AcknowledgedResponse>) {
+        val openIndexRequest = request.request as OpenIndexRequest
+        val updateRequest = OpenIndexClusterStateUpdateRequest()
+                .ackTimeout(request.timeout()).masterNodeTimeout(openIndexRequest.masterNodeTimeout())
+                .indices(concreteIndices).waitForActiveShards(openIndexRequest.waitForActiveShards())
+
+        indexStateService.openIndex(updateRequest, object : ActionListener<OpenIndexClusterStateUpdateResponse> {
+            override fun onResponse(response: OpenIndexClusterStateUpdateResponse) {
+                listener.onResponse(OpenIndexResponse(response.isAcknowledged, response.isShardsAcknowledged))
+            }
+
+            override fun onFailure(t: java.lang.Exception) {
+                log.error({ ParameterizedMessage("failed to open indices [{}]", concreteIndices as Any) }, t)
+                listener.onFailure(t)
+            }
+        })
+    }
+
+    private fun performCloseIndex(task :Task , concreteIndices: Array<Index>, request: UpdateMetadataRequest,
+                                 listener: ActionListener<AcknowledgedResponse>) {
+        val request = request.request as CloseIndexRequest
+        val closeRequest = CloseIndexClusterStateUpdateRequest(task.id)
+                .ackTimeout(request.timeout())
+                .masterNodeTimeout(request.masterNodeTimeout())
+                .waitForActiveShards(request.waitForActiveShards())
+                .indices(concreteIndices)
+
+        indexStateService.closeIndices(closeRequest, object : ActionListener<CloseIndexResponse> {
+            override fun onResponse(response: CloseIndexResponse) {
+                listener.onResponse(response)
+            }
+
+            override fun onFailure(t: java.lang.Exception) {
+                log.error({ ParameterizedMessage("failed to close indices [{}]", concreteIndices as Any) }, t)
+                listener.onFailure(t)
+            }
+        })
+
     }
 
     private fun performAliasUpdate(concreteIndices: Array<Index>, request: UpdateMetadataRequest,
@@ -225,5 +276,8 @@ class TransportUpdateMetadataAction @Inject constructor(
         }
     }
 
+    override fun masterOperation(request: UpdateMetadataRequest?, state: ClusterState?, listener: ActionListener<AcknowledgedResponse>?) {
+        throw UnsupportedOperationException("The task parameter is required")
+    }
 
 }
