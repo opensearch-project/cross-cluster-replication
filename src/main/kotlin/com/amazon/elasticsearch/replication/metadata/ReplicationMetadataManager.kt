@@ -14,14 +14,11 @@ import com.amazon.elasticsearch.replication.metadata.store.ReplicationStoreMetad
 import com.amazon.elasticsearch.replication.metadata.store.UpdateReplicationMetadataRequest
 import com.amazon.elasticsearch.replication.repository.RemoteClusterRepository
 import com.amazon.elasticsearch.replication.util.overrideFgacRole
-import com.amazon.elasticsearch.replication.util.submitClusterStateUpdateTask
 import com.amazon.elasticsearch.replication.util.suspendExecute
 import com.amazon.opendistroforelasticsearch.commons.authuser.User
 import org.apache.logging.log4j.LogManager
 import org.elasticsearch.action.DocWriteResponse
-import org.elasticsearch.action.support.master.AcknowledgedRequest
 import org.elasticsearch.client.Client
-import org.elasticsearch.cluster.ClusterStateTaskExecutor
 import org.elasticsearch.cluster.service.ClusterService
 import org.elasticsearch.common.inject.Singleton
 
@@ -71,7 +68,7 @@ class ReplicationMetadataManager constructor(private val clusterService: Cluster
     suspend fun updateIndexReplicationState(followerIndex: String,
                                             overallState: ReplicationOverallState) {
         val getReq = GetReplicationMetadataRequest(ReplicationStoreMetadataType.INDEX.name, null, followerIndex)
-        val getRes = replicaionMetadataStore.getMetadata(getReq)
+        val getRes = replicaionMetadataStore.getMetadata(getReq, false)
         val updatedMetadata = getRes.replicationMetadata
         updatedMetadata.overallState = overallState.name
         updateMetadata(UpdateReplicationMetadataRequest(updatedMetadata, getRes.seqNo, getRes.primaryTerm))
@@ -82,7 +79,7 @@ class ReplicationMetadataManager constructor(private val clusterService: Cluster
                                          connectionName: String,
                                          pattern: String) {
         val getReq = GetReplicationMetadataRequest(ReplicationStoreMetadataType.AUTO_FOLLOW.name, connectionName, patternName)
-        val getRes = replicaionMetadataStore.getMetadata(getReq)
+        val getRes = replicaionMetadataStore.getMetadata(getReq, false)
         val updatedMetadata = getRes.replicationMetadata
         updatedMetadata.leaderContext.resource = pattern
         updateMetadata(UpdateReplicationMetadataRequest(updatedMetadata, getRes.seqNo, getRes.primaryTerm))
@@ -92,6 +89,7 @@ class ReplicationMetadataManager constructor(private val clusterService: Cluster
         val response = replicaionMetadataStore.updateMetadata(updateReq)
         if(response.result != DocWriteResponse.Result.CREATED &&
                 response.result != DocWriteResponse.Result.UPDATED) {
+            log.error("Encountered error with result - ${response.result}, while updating metadata")
             throw ReplicationException("Error updating replication metadata")
         }
     }
@@ -111,26 +109,29 @@ class ReplicationMetadataManager constructor(private val clusterService: Cluster
     private suspend fun deleteMetadata(deleteReq: DeleteReplicationMetadataRequest) {
         val delRes = replicaionMetadataStore.deleteMetadata(deleteReq)
         if(delRes.result != DocWriteResponse.Result.DELETED && delRes.result != DocWriteResponse.Result.NOT_FOUND) {
+            log.error("Encountered error with result - ${delRes.result}, while deleting metadata")
             throw ReplicationException("Error deleting replication metadata")
         }
     }
 
-    suspend fun getIndexReplicationMetadata(followerIndex: String): ReplicationMetadata {
+    suspend fun getIndexReplicationMetadata(followerIndex: String, fetch_from_primary: Boolean = false): ReplicationMetadata {
         val getReq = GetReplicationMetadataRequest(ReplicationStoreMetadataType.INDEX.name, null, followerIndex)
-        return replicaionMetadataStore.getMetadata(getReq).replicationMetadata
+        return replicaionMetadataStore.getMetadata(getReq, fetch_from_primary).replicationMetadata
     }
 
     fun getIndexReplicationMetadata(followerIndex: String,
                                     connectionName: String?,
+                                    fetch_from_primary: Boolean = false,
                                     timeout: Long = RemoteClusterRepository.REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC): ReplicationMetadata {
         val getReq = GetReplicationMetadataRequest(ReplicationStoreMetadataType.INDEX.name, connectionName, followerIndex)
-        return replicaionMetadataStore.getMetadata(getReq, timeout).replicationMetadata
+        return replicaionMetadataStore.getMetadata(getReq, fetch_from_primary, timeout).replicationMetadata
     }
 
     suspend fun getAutofollowMetadata(patternName: String,
-                                      connectionName: String): ReplicationMetadata {
+                                      connectionName: String,
+                                      fetch_from_primary: Boolean = false): ReplicationMetadata {
         val getReq = GetReplicationMetadataRequest(ReplicationStoreMetadataType.AUTO_FOLLOW.name, connectionName, patternName)
-        return replicaionMetadataStore.getMetadata(getReq).replicationMetadata
+        return replicaionMetadataStore.getMetadata(getReq, fetch_from_primary).replicationMetadata
     }
 
     private suspend fun updateReplicationState(indexName: String, overallState: ReplicationOverallState) {

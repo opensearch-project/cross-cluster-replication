@@ -175,10 +175,10 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
      */
     protected open suspend fun setReplicationMetadata() {
         replicationMetadata = if(this is AutoFollowTask) {
-            replicationMetadataManager.getAutofollowMetadata(followerIndexName, remoteCluster)
+            replicationMetadataManager.getAutofollowMetadata(followerIndexName, remoteCluster, fetch_from_primary = true)
         }
         else {
-            replicationMetadataManager.getIndexReplicationMetadata(followerIndexName)
+            replicationMetadataManager.getIndexReplicationMetadata(followerIndexName, fetch_from_primary = true)
         }
     }
 

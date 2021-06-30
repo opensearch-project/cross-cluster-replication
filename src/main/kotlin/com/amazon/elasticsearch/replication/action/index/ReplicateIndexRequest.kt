@@ -52,8 +52,8 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
     }
 
     companion object {
-        const val LEADER_FGAC_ROLE = "leader_fgac_role"
-        const val FOLLOWER_FGAC_ROLE = "follower_fgac_role"
+        const val LEADER_FGAC_ROLE = "remote_cluster_role"
+        const val FOLLOWER_FGAC_ROLE = "local_cluster_role"
         private val INDEX_REQ_PARSER = ObjectParser<ReplicateIndexRequest, Void>("FollowIndexRequestParser") { ReplicateIndexRequest() }
         val FGAC_ROLES_PARSER = ObjectParser<HashMap<String, String>, Void>("AssumeRolesParser") { HashMap() }
         init {
