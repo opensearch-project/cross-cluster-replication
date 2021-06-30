@@ -42,7 +42,7 @@ Content-Type: application/json
 }
 
 ### request with security plugin
-PUT https://localhost:{{foll_port}}/_opendistro/_replication/customer/_start?pretty
+PUT https://localhost:{{foll_port}}/_plugins/_replication/customer/_start?pretty
 Authorization: Basic admin admin
 Content-Type: application/json
 
@@ -92,7 +92,7 @@ Content-Type: application/json
 POST localhost:{{leader_port}}/_flush
 
 ### Start replication
-PUT localhost:{{foll_port}}/_opendistro/_replication/customer/_start
+PUT localhost:{{foll_port}}/_plugins/_replication/customer/_start
 Content-Type: application/json
 
 
@@ -147,7 +147,7 @@ GET localhost:{{leader_port}}/_cat/shards?v&h=i,s,pr,node,globalCheckpoint,maxSe
 GET localhost:{{foll_port}}/_cat/shards?v&h=i,s,pr,node,globalCheckpoint,maxSeqNo,segmentsCount,docs
 
 ### Update auto follow actions
-POST localhost:{{foll_port}}/_opendistro/_replication/_autofollow
+POST localhost:{{foll_port}}/_plugins/_replication/_autofollow
 Content-Type: application/json
 
 {
@@ -157,7 +157,7 @@ Content-Type: application/json
 }
 
 ### Add auto follow actions with Security plugin
-POST localhost:{{foll_port}}/_opendistro/_replication/_autofollow
+POST localhost:{{foll_port}}/_plugins/_replication/_autofollow
 Content-Type: application/json
 
 {
@@ -171,7 +171,7 @@ Content-Type: application/json
 }
 
 ### Delete the auto follow pattern
-DELETE localhost:{{foll_port}}/_opendistro/_replication/_autofollow
+DELETE localhost:{{foll_port}}/_plugins/_replication/_autofollow
 Content-Type: application/json
 
 {
@@ -180,7 +180,7 @@ Content-Type: application/json
 }
 
 ### Stop replication
-POST localhost:{{foll_port}}/_opendistro/_replication/customer/_stop
+POST localhost:{{foll_port}}/_plugins/_replication/customer/_stop
 Content-Type: application/json
 
 {

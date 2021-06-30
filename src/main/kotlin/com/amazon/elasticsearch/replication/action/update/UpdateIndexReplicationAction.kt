@@ -20,7 +20,7 @@ import org.elasticsearch.action.support.master.AcknowledgedResponse
 
 class UpdateIndexReplicationAction private constructor(): ActionType<AcknowledgedResponse>(NAME, ::AcknowledgedResponse) {
     companion object {
-        const val NAME = "indices:admin/opendistro/replication/index/update"
+        const val NAME = "indices:admin/plugins/replication/index/update"
         val INSTANCE: UpdateIndexReplicationAction = UpdateIndexReplicationAction()
     }
 }

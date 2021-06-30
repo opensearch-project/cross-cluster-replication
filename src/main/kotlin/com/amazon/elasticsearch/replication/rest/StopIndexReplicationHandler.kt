@@ -28,11 +28,11 @@ import java.io.IOException
 class StopIndexReplicationHandler : BaseRestHandler() {
 
     override fun routes(): List<RestHandler.Route> {
-        return listOf(RestHandler.Route(RestRequest.Method.POST, "/_opendistro/_replication/{index}/_stop"))
+        return listOf(RestHandler.Route(RestRequest.Method.POST, "/_plugins/_replication/{index}/_stop"))
     }
 
     override fun getName(): String {
-        return "opendistro_index_stop_replicate_action"
+        return "plugins_index_stop_replicate_action"
     }
 
     @Throws(IOException::class)

@@ -42,11 +42,11 @@ curl -ks -u $admin -XPUT "https://${endpoint}/_opendistro/_security/api/actiongr
     "indices:admin/create",
     "indices:admin/mapping/put",
     "indices:admin/open",
-    "indices:admin/opendistro/replication/index/start",
-    "indices:admin/opendistro/replication/index/stop",
-    "indices:data/read/opendistro/replication/file_metadata",
+    "indices:admin/plugins/replication/index/start",
+    "indices:admin/plugins/replication/index/stop",
+    "indices:data/read/plugins/replication/file_metadata",
     "indices:data/write/index",
-    "indices:data/write/opendistro/replication/changes",
+    "indices:data/write/plugins/replication/changes",
     "indices:data/write/replication",
     "indices:monitor/stats"
   ]
@@ -61,7 +61,7 @@ curl -ks -u $admin -XPUT "https://${endpoint}/_opendistro/_security/api/actiongr
   "allowed_actions": [
     "cluster:monitor/state",
     "cluster:admin/snapshot/restore",
-    "cluster:admin/opendistro/replication/autofollow/update"
+    "cluster:admin/plugins/replication/autofollow/update"
   ]
 }
 '
@@ -73,10 +73,10 @@ echo "Creating actiongroup 'leader-replication-action-group' and associating ind
 curl -ks -u $admin -XPUT "https://${endpoint}/_opendistro/_security/api/actiongroups/leader-replication-action-group" -H 'Content-Type: application/json' -d'
 {
   "allowed_actions": [
-    "indices:data/read/opendistro/replication/file_chunk",
-    "indices:data/read/opendistro/replication/file_metadata",
-    "indices:admin/opendistro/replication/resources/release",
-    "indices:data/read/opendistro/replication/changes",
+    "indices:data/read/plugins/replication/file_chunk",
+    "indices:data/read/plugins/replication/file_metadata",
+    "indices:admin/plugins/replication/resources/release",
+    "indices:data/read/plugins/replication/changes",
     "indices:admin/mappings/get",
     "indices:monitor/stats"
   ]

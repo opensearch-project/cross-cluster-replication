@@ -33,11 +33,11 @@ import java.io.IOException
 class UpdateIndexHandler : BaseRestHandler() {
 
     override fun routes(): List<RestHandler.Route> {
-        return listOf(RestHandler.Route(RestRequest.Method.PUT, "/_opendistro/_replication/{index}/_update"))
+        return listOf(RestHandler.Route(RestRequest.Method.PUT, "/_plugins/_replication/{index}/_update"))
     }
 
     override fun getName(): String {
-        return "opendistro_index_update_replicate_action"
+        return "plugins_index_update_replicate_action"
     }
 
     @Throws(IOException::class)

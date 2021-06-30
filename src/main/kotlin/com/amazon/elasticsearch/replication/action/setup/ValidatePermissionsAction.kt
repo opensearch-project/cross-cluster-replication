@@ -5,7 +5,7 @@ import org.elasticsearch.action.support.master.AcknowledgedResponse
 
 class ValidatePermissionsAction private constructor(): ActionType<AcknowledgedResponse>(NAME, ::AcknowledgedResponse){
     companion object {
-        const val NAME = "indices:admin/opendistro/replication/index/setup/validate"
+        const val NAME = "indices:admin/plugins/replication/index/setup/validate"
         val INSTANCE: ValidatePermissionsAction = ValidatePermissionsAction()
     }
 }

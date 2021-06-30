@@ -20,7 +20,7 @@ import org.elasticsearch.action.support.master.AcknowledgedResponse
 
 class PauseIndexReplicationAction private constructor(): ActionType<AcknowledgedResponse>(NAME, ::AcknowledgedResponse) {
     companion object {
-        const val NAME = "indices:admin/opendistro/replication/index/pause"
+        const val NAME = "indices:admin/plugins/replication/index/pause"
         val INSTANCE: PauseIndexReplicationAction = PauseIndexReplicationAction()
     }
 }

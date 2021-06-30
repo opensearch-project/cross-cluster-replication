@@ -5,7 +5,7 @@ import org.elasticsearch.action.support.master.AcknowledgedResponse
 
 class UpdateReplicationStateAction private constructor(): ActionType<AcknowledgedResponse>(NAME, ::AcknowledgedResponse) {
     companion object {
-        const val NAME = "internal:cluster:admin/opendistro/replication/index/state"
+        const val NAME = "internal:cluster:admin/plugins/replication/index/state"
         val INSTANCE: UpdateReplicationStateAction = UpdateReplicationStateAction()
     }
 }

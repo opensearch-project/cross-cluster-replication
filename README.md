@@ -99,7 +99,7 @@ curl -XPOST "http://${LEADER}/leader-01/_doc/1" -H 'Content-Type: application/js
 ### Step 4: Start replication
 
 ```bash
-curl -XPUT "http://${FOLLOWER}/_opendistro/_replication/follower-01/_start?pretty" \
+curl -XPUT "http://${FOLLOWER}/_plugins/_replication/follower-01/_start?pretty" \
 -H 'Content-type: application/json' \
 -d'{"remote_cluster":"leader-cluster", "remote_index": "leader-01"}'
 ```
@@ -137,7 +137,7 @@ At this point, any changes to leader-01 continues to be replicated to follower-0
 Stopping replication opens up the replicated index on the follower cluster for writes. This can be leveraged to failover to the follower cluster when the need arises.
 
 ```bash
-curl -XPOST "http://${FOLLOWER}/_opendistro/_replication/follower-01/_stop?pretty" \
+curl -XPOST "http://${FOLLOWER}/_plugins/_replication/follower-01/_stop?pretty" \
 -H 'Content-type: application/json' -d'{}'
 
 # You can confirm data isn't replicated any more by making modifications to

@@ -136,13 +136,13 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
     companion object {
         const val REPLICATION_EXECUTOR_NAME_LEADER = "replication_leader"
         const val REPLICATION_EXECUTOR_NAME_FOLLOWER = "replication_follower"
-        val REPLICATED_INDEX_SETTING: Setting<String> = Setting.simpleString("index.opendistro.replicated",
+        val REPLICATED_INDEX_SETTING: Setting<String> = Setting.simpleString("index.plugins.replication.replicated",
             Setting.Property.InternalIndex, Setting.Property.IndexScope)
-        val REPLICATION_CHANGE_BATCH_SIZE: Setting<Int> = Setting.intSetting("opendistro.replication.ops_batch_size", 512, 16,
+        val REPLICATION_CHANGE_BATCH_SIZE: Setting<Int> = Setting.intSetting("plugins.replication.ops_batch_size", 512, 16,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
-        val REPLICATION_LEADER_THREADPOOL_SIZE: Setting<Int> = Setting.intSetting("opendistro.replication.leader.size", 0, 0,
+        val REPLICATION_LEADER_THREADPOOL_SIZE: Setting<Int> = Setting.intSetting("plugins.replication.leader.size", 0, 0,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
-        val REPLICATION_LEADER_THREADPOOL_QUEUE_SIZE: Setting<Int> = Setting.intSetting("opendistro.replication.leader.queue_size", 1000, 0,
+        val REPLICATION_LEADER_THREADPOOL_QUEUE_SIZE: Setting<Int> = Setting.intSetting("plugins.replication.leader.queue_size", 1000, 0,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
     }
 

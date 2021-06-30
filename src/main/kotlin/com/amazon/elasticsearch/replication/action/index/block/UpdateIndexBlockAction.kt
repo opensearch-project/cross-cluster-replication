@@ -20,7 +20,7 @@ import org.elasticsearch.action.support.master.AcknowledgedResponse
 
 class UpdateIndexBlockAction private constructor(): ActionType<AcknowledgedResponse>(NAME, ::AcknowledgedResponse) {
     companion object {
-        const val NAME = "internal:indices/admin/opendistro/replication/index/add_block"
+        const val NAME = "internal:indices/admin/plugins/replication/index/add_block"
         val INSTANCE: UpdateIndexBlockAction = UpdateIndexBlockAction()
     }
 }

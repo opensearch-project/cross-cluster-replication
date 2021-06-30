@@ -20,7 +20,7 @@ import org.elasticsearch.action.ActionType
 class GetChangesAction private constructor() : ActionType<GetChangesResponse>(NAME, ::GetChangesResponse) {
 
     companion object {
-        const val NAME = "indices:data/read/opendistro/replication/changes"
+        const val NAME = "indices:data/read/plugins/replication/changes"
         val INSTANCE = GetChangesAction()
     }
 }

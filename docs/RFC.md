@@ -104,7 +104,7 @@ This API is used to initiate replication of an index from the leader cluster ont
 ```bash
 Request
 
-PUT $FOLLOWER/_opendistro/_replication/<index>/_start
+PUT $FOLLOWER/_plugins/_replication/<index>/_start
 Content-Type: application/json
 
 {  "remote_cluster" : "leader-cluster",  "remote_index": "<index>"}
@@ -125,7 +125,7 @@ Note that the follower index is NOT deleted on stopping replication.
 ```bash
 
 Request
-POST $FOLLOWER/_opendistro/<index>/replicate/_stop
+POST $FOLLOWER/_plugins/_replication/<index>/_stop
 Content-Type: application/json
 
 {}
@@ -144,7 +144,7 @@ AutoFollow makes it easy to automatically replicate multiple indices matching a 
 
 ```bash
 Request
-POST $FOLLOWER/_opendistro/_replication/_autofollow
+POST $FOLLOWER/_plugins/_replication/_autofollow
 Content-Type: application/json
 
 {
@@ -159,7 +159,7 @@ Content-Type: application/json
 AutoFollow can be removed by invoking API on the follower as follows. Invocation of the API is only to stop any new auto-follow activity and does NOT stop replication of indices already initiated by the auto-follow.
 
 ```bash
-DELETE $FOLLOWER/_opendistro/_replication/_autofollow
+DELETE $FOLLOWER/_plugins/_replication/_autofollow
 Content-Type: application/json
 
 {

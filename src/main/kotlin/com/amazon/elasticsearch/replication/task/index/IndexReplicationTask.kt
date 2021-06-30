@@ -591,7 +591,7 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
      * validation for the index before we allow the index replication to move to following state.
      * The validation done are:
      * 1. The index still exists and has been created using replication
-     *    workflow i.e. index settings contains 'index.opendistro.replicated'
+     *    workflow i.e. index settings contains 'index.plugins.replication.replicated'
      * 2. There shouldn't be any primary shard in active recovery.
      */
     private fun doesValidIndexExists(): Boolean {
