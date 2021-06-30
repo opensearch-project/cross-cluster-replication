@@ -25,6 +25,7 @@ import org.elasticsearch.client.Request
 import org.elasticsearch.client.RequestOptions
 import org.elasticsearch.client.Response
 import org.elasticsearch.client.RestHighLevelClient
+import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.unit.TimeValue
 import org.elasticsearch.common.xcontent.DeprecationHandler
 import org.elasticsearch.common.xcontent.NamedXContentRegistry
@@ -39,6 +40,7 @@ const val REST_REPLICATION_START = "$REST_REPLICATION_PREFIX{index}/_start"
 const val REST_REPLICATION_STOP = "$REST_REPLICATION_PREFIX{index}/_stop"
 const val REST_REPLICATION_PAUSE = "$REST_REPLICATION_PREFIX{index}/_pause"
 const val REST_REPLICATION_RESUME = "$REST_REPLICATION_PREFIX{index}/_resume"
+const val REST_REPLICATION_UPDATE = "$REST_REPLICATION_PREFIX{index}/_update"
 const val REST_AUTO_FOLLOW_PATTERN = "_opendistro/_replication/_autofollow"
 
 fun RestHighLevelClient.startReplication(request: StartReplicationRequest,
@@ -85,12 +87,20 @@ fun RestHighLevelClient.pauseReplication(index: String) {
 }
 
 fun RestHighLevelClient.resumeReplication(index: String) {
-    val lowLevelStopRequest = Request("POST", REST_REPLICATION_RESUME.replace("{index}", index,true))
+    val lowLevelStopRequest = Request("POST", REST_REPLICATION_RESUME.replace("{index}", index, true))
     lowLevelStopRequest.setJsonEntity("{}")
     val lowLevelStopResponse = lowLevelClient.performRequest(lowLevelStopRequest)
     val response = getAckResponse(lowLevelStopResponse)
     assertThat(response.isAcknowledged).withFailMessage("Replication could not be Resumed").isTrue()
     waitForReplicationStart(index, TimeValue.timeValueSeconds(10))
+}
+
+fun RestHighLevelClient.updateReplication(index: String, settings: Settings) {
+    val lowLevelRequest = Request("PUT", REST_REPLICATION_UPDATE.replace("{index}", index,true))
+    lowLevelRequest.setJsonEntity(settings.toString())
+    val lowLevelResponse = lowLevelClient.performRequest(lowLevelRequest)
+    val response = getAckResponse(lowLevelResponse)
+    assertThat(response.isAcknowledged).isTrue()
 }
 
 fun RestHighLevelClient.waitForReplicationStart(index: String, waitFor : TimeValue = TimeValue.timeValueSeconds(10)) {

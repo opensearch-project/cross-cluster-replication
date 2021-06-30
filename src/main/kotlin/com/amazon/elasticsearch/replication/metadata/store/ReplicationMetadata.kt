@@ -5,13 +5,17 @@ import org.elasticsearch.common.ParseField
 import org.elasticsearch.common.io.stream.StreamInput
 import org.elasticsearch.common.io.stream.StreamOutput
 import org.elasticsearch.common.io.stream.Writeable
+import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.xcontent.ObjectParser
 import org.elasticsearch.common.xcontent.ToXContent
 import org.elasticsearch.common.xcontent.XContentBuilder
 import org.elasticsearch.common.xcontent.XContentParser
 import java.io.IOException
+import java.util.*
 import java.util.function.BiConsumer
 import java.util.function.BiFunction
+
+const val KEY_SETTINGS = "settings"
 
 class ReplicationContext: ToXContent, Writeable {
     lateinit var resource: String
@@ -67,17 +71,21 @@ class ReplicationMetadata: ToXContent {
     lateinit var overallState: String
     lateinit var followerContext: ReplicationContext
     lateinit var leaderContext: ReplicationContext
+    lateinit var settings: Settings
+
 
     constructor(connectionName: String,
                 metadataType: String,
                 overallState: String,
                 followerContext: ReplicationContext,
-                leaderContext: ReplicationContext) {
+                leaderContext: ReplicationContext,
+                settings: Settings = Settings.EMPTY) {
         this.connectionName = connectionName
         this.metadataType = metadataType
         this.overallState = overallState
         this.followerContext = followerContext
         this.leaderContext = leaderContext
+        this.settings = settings
     }
 
     private constructor() {
@@ -93,6 +101,8 @@ class ReplicationMetadata: ToXContent {
                     ReplicationContext.REPLICATION_CONTEXT_PARSER, ParseField("follower_context"))
             METADATA_PARSER.declareObject(BiConsumer { metadata: ReplicationMetadata, context: ReplicationContext -> metadata.leaderContext = context},
                     ReplicationContext.REPLICATION_CONTEXT_PARSER, ParseField("leader_context"))
+            METADATA_PARSER.declareObject({ metadata: ReplicationMetadata, settings: Settings -> metadata.settings = settings}, { p: XContentParser?, c: Void? -> Settings.fromXContent(p) },
+                    ParseField(KEY_SETTINGS))
         }
 
         @Throws(IOException::class)
@@ -121,6 +131,10 @@ class ReplicationMetadata: ToXContent {
             builder.field("user", leaderContext.user)
         builder.endObject()
 
+        builder.startObject(KEY_SETTINGS)
+        settings.toXContent(builder, ToXContent.MapParams(Collections.singletonMap("flat_settings", "true")));
+        builder.endObject()
+
         builder.endObject()
 
         return builder
@@ -128,6 +142,7 @@ class ReplicationMetadata: ToXContent {
 
     override fun toString(): String {
         return "ReplicationMetadata - [connection_name: $connectionName, metadata_type: $metadataType, " +
-                "overall_state: $overallState, follower_context: ${followerContext.resource}, leader_context: ${leaderContext.resource}]"
+                "overall_state: $overallState, follower_context: ${followerContext.resource}, leader_context: ${leaderContext.resource}, " +
+                " settings: ${settings} ]"
     }
 }

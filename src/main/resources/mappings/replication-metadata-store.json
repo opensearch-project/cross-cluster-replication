@@ -95,6 +95,10 @@
         }
       }
     },
+    "settings": {
+      "dynamic": true,
+      "properties": {}
+    },
     "leader_context": {
       "type": "nested",
       "properties": {
