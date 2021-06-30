@@ -379,7 +379,7 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
 
     private fun getReplicationMetadata(followerIndex: String): ReplicationMetadata {
         return replicationMetadataManager.getIndexReplicationMetadata(followerIndex,
-                repositoryMetadata.remoteClusterName(), REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC)
+                repositoryMetadata.remoteClusterName(), fetch_from_primary = true)
     }
 
 

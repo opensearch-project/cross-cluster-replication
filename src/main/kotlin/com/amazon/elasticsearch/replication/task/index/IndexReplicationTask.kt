@@ -16,6 +16,7 @@
 package com.amazon.elasticsearch.replication.task.index
 
 import com.amazon.elasticsearch.replication.ReplicationException
+import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.REPLICATED_INDEX_SETTING
 import com.amazon.elasticsearch.replication.action.index.block.IndexBlockUpdateType
 import com.amazon.elasticsearch.replication.action.index.block.UpdateIndexBlockRequest
 import com.amazon.elasticsearch.replication.action.stop.StopIndexReplicationAction
@@ -70,6 +71,11 @@ import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
 import com.amazon.elasticsearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
 import com.amazon.elasticsearch.replication.util.suspendExecute
+import org.elasticsearch.action.admin.indices.exists.indices.IndicesExistsRequest
+import org.elasticsearch.action.admin.indices.exists.indices.IndicesExistsRequestBuilder
+import org.elasticsearch.action.admin.indices.settings.get.GetSettingsRequest
+import org.elasticsearch.indices.recovery.RecoveryState
+import kotlin.streams.toList
 
 class IndexReplicationTask(id: Long, type: String, action: String, description: String,
                            parentTask: TaskId,
@@ -256,6 +262,7 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
             restoreRequest.renamePattern(remoteIndex.name)
                 .renameReplacement(followerIndexName)
         }
+
         val response = client.suspending(client.admin().cluster()::restoreSnapshot, defaultContext = true)(restoreRequest)
         if (response.restoreInfo != null) {
             if (response.restoreInfo.failedShards() != 0) {
@@ -268,23 +275,35 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
     }
 
     private suspend fun waitForRestore(): IndexReplicationState {
-        var restore = inProgressRestore() ?: throw ResourceNotFoundException("""
-            Unable to find in progress restore for remote index: $remoteCluster:$remoteIndex. 
-            This can happen if there was a badly timed master node failure. 
-        """.trimIndent())
-        while (restore.state() != RestoreInProgress.State.FAILURE && restore.state() != RestoreInProgress.State.SUCCESS) {
+        var restore = inProgressRestore(clusterService.state())
+
+        // Waiting for snapshot restore to reach a terminal stage.
+        while (restore != null && restore.state() != RestoreInProgress.State.FAILURE && restore.state() != RestoreInProgress.State.SUCCESS) {
             try {
                 cso.waitForNextChange("remote restore finish")
             } catch(e: ElasticsearchTimeoutException) {
-                log.trace("Waiting for restore to complete")
+                log.info("Timed out while waiting for restore to complete.")
             }
-            restore = inProgressRestore() ?: throw ResourceNotFoundException("""
-            Unable to find in progress restore for remote index: $remoteCluster:$remoteIndex. 
-            This can happen if there was a badly timed master node failure. 
-        """.trimIndent())
+            restore = inProgressRestore(clusterService.state())
         }
 
-        if (restore.state() == RestoreInProgress.State.FAILURE) {
+        if (restore == null) {
+            /**
+             * At this point, we've already verified (during startRestore) that RestoreInProgress entry was
+             * added in cluster state. Now if the entry is not present, we validate that no primary shard
+             * is in recovery. Post validation we assume that restore is already completed and entry has been
+             * cleaned up from cluster state.
+             *
+             * This we've observed when we trigger the replication on multiple small indices(also autofollow) simultaneously.
+             */
+            if (doesValidIndexExists()) {
+                return InitFollowState
+            } else {
+                throw ResourceNotFoundException("""
+                    Unable to find in progress restore for remote index: $remoteCluster:$remoteIndex. 
+                    This can happen if there was a badly timed master node failure.""".trimIndent())
+            }
+        } else if (restore?.state() == RestoreInProgress.State.FAILURE) {
             val failureReason = restore.shards().values().find {
                 it.value.state() == RestoreInProgress.State.FAILURE
             }!!.value.reason()
@@ -294,7 +313,31 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
         }
     }
 
-    private fun inProgressRestore(cs: ClusterState = clusterService.state()): RestoreInProgress.Entry? {
+    /**
+     * In case the snapshot entry is not present in the cluster state, we assume that the task has
+     * been successful and has been cleaned up from cluster state. With this method, we do basic
+     * validation for the index before we allow the index replication to move to following state.
+     * The validation done are:
+     * 1. The index still exists and has been created using replication
+     *    workflow i.e. index settings contains 'index.opendistro.replicated'
+     * 2. There shouldn't be any primary shard in active recovery.
+     */
+    private fun doesValidIndexExists(): Boolean {
+        try {
+            client.admin().indices().prepareGetSettings(followerIndexName).get()
+                    .getSetting(followerIndexName, REPLICATED_INDEX_SETTING.key) ?: return false
+
+            val recoveries = client.admin().indices().prepareRecoveries(followerIndexName).get()
+                .shardRecoveryStates().get(followerIndexName)
+            val activeRecoveries = recoveries?.stream()?.filter(RecoveryState::getPrimary)?.filter {
+                    r -> r.stage != RecoveryState.Stage.DONE }?.toList()
+            return activeRecoveries?.size == 0
+        } catch (e: Exception) {
+            log.error("Error trying to validate the index. ${e.message}")
+            return false
+        }
+    }
+    private fun inProgressRestore(cs: ClusterState): RestoreInProgress.Entry? {
         return cs.custom<RestoreInProgress>(RestoreInProgress.TYPE).singleOrNull { entry ->
             entry.snapshot().repository == RemoteClusterRepository.repoForCluster(remoteCluster) &&
                 entry.indices().singleOrNull { idx -> idx == followerIndexName } != null

@@ -1,0 +1,75 @@
+package com.amazon.elasticsearch.replication.action.status
+
+
+import org.elasticsearch.action.support.DefaultShardOperationFailedException
+import org.elasticsearch.action.support.broadcast.BroadcastResponse
+import org.elasticsearch.common.io.stream.StreamInput
+import org.elasticsearch.common.io.stream.StreamOutput
+import org.elasticsearch.common.xcontent.ToXContent.Params
+import org.elasticsearch.common.xcontent.ToXContentObject
+import org.elasticsearch.common.xcontent.XContentBuilder
+import java.io.IOException
+
+class ReplicationStatusResponse : BroadcastResponse, ToXContentObject {
+
+    lateinit var shardInfoResponse: MutableList<ShardInfoResponse>
+    lateinit var status: String
+
+    @Throws(IOException::class)
+    constructor(inp: StreamInput) : super(inp) {
+        shardInfoResponse = inp.readList(::ShardInfoResponse)
+    }
+
+    constructor(
+            totalShards: Int,
+            successfulShards: Int,
+            failedShards: Int,
+            shardFailures: List<DefaultShardOperationFailedException>,
+            shardInfoRespons: List<ShardInfoResponse>
+    ) : super(
+            totalShards, successfulShards, failedShards, shardFailures
+    ) {
+        this.shardInfoResponse = shardInfoRespons.toMutableList()
+    }
+
+
+    constructor(
+            status : String
+    ) {
+        this.status = status
+    }
+
+    constructor(
+            totalShards: Int,
+            successfulShards: Int,
+            failedShards: Int,
+            shardFailures: List<DefaultShardOperationFailedException>,
+            shardInfoResponse: List<ShardInfoResponse>,
+            status : String
+    ) : super(
+            totalShards, successfulShards, failedShards, shardFailures
+    ) {
+        this.shardInfoResponse = shardInfoResponse.toMutableList()
+        this.status = status
+    }
+
+    @Throws(IOException::class)
+    override fun toXContent(builder: XContentBuilder, params: Params?): XContentBuilder {
+        builder.startObject()
+        if (::status.isInitialized)
+            builder.field("status",status)
+        if (::shardInfoResponse.isInitialized)
+            builder.field("replication_data",shardInfoResponse)
+        builder.endObject()
+        return builder
+    }
+
+    @Throws(IOException::class)
+    override fun writeTo(out: StreamOutput) {
+        super.writeTo(out)
+        if (::shardInfoResponse.isInitialized)
+            out.writeList(shardInfoResponse)
+        if (::status.isInitialized)
+            out.writeString(status)
+    }
+}

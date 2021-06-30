@@ -49,7 +49,11 @@ Content-Type: application/json
 
 {
   "remote_cluster": "remote-cluster",
-  "remote_index": "remote-index"
+  "remote_index": "remote-index",
+  "assume_roles": {
+    "remote_cluster_role": "all_access",
+    "local_cluster_role": "all_access"
+  }
 }
 
 ### Setup remote connection
@@ -150,6 +154,20 @@ Content-Type: application/json
   "connection": "source",
   "name": "test",
   "pattern": "*customer*"
+}
+
+### Add auto follow actions with Security plugin
+POST localhost:{{foll_port}}/_opendistro/_replication/_autofollow
+Content-Type: application/json
+
+{
+  "connection": "source",
+  "name": "test",
+  "pattern": "*customer*",
+  "assume_roles": {
+    "remote_cluster_role": "all_access",
+    "local_cluster_role": "all_access"
+  }
 }
 
 ### Delete the auto follow pattern
