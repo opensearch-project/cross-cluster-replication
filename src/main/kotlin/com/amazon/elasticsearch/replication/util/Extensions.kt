@@ -145,7 +145,7 @@ suspend fun RemoteClusterRepository.restoreShardWithRetries(
         retryOn: ArrayList<Class<*>> = ArrayList()
 ) {
     var currentBackoff = backoff
-    var retryCount = 1
+    var retryCount = 1 // we retry 4 times after first exception. In total we are running callable function 5 times.
     retryOn.addAll(defaultRetryableExceptions())
     repeat(numberOfRetries) {
         try {

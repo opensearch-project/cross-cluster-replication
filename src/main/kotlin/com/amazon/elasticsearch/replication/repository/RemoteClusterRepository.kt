@@ -258,6 +258,8 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
             store.incRef()
             restoreShardWithRetries(store, snapshotId, indexId, snapshotShardId,
                     recoveryState, listener, ::restoreShardUsingMultiChunkTransfer, log = log)
+            // We will do decRef and releaseResources ultimately, not while during our retries/restarts of
+            // restoreShard .
         }
     }
 
@@ -307,7 +309,7 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
                                         recoveryState, listener, ::restoreShardUsingMultiChunkTransfer, log = log)
                             }
                         } else {
-                            log.info("Not retrying restore shard for ${store.shardId()}")
+                            log.error("Not retrying restore shard for ${store.shardId()}")
                             store.decRef()
                             releaseLeaderResources(restoreUUID, remoteShardNode, remoteShardId, followerShardId, followerIndexName)
                             listener.onFailure(e)
