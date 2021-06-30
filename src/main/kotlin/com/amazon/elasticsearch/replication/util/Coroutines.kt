@@ -56,7 +56,7 @@ import kotlin.coroutines.*
  *
  * @param fn - a block of code that is passed an [ActionListener] that should be passed to the ES client API.
  */
-fun <Req, Resp> Client.suspending(fn: (Req, ActionListener<Resp>) -> Unit,
+suspend fun <Req, Resp> Client.suspending(fn: (Req, ActionListener<Resp>) -> Unit,
                                   injectSecurityContext: Boolean = false,
                                   defaultContext: Boolean = false): suspend (Req) -> Resp {
     return { req: Req ->
@@ -66,7 +66,7 @@ fun <Req, Resp> Client.suspending(fn: (Req, ActionListener<Resp>) -> Unit,
     }
 }
 
-fun <Req, Resp> Client.suspending(replicationMetadata: ReplicationMetadata,
+suspend fun <Req, Resp> Client.suspending(replicationMetadata: ReplicationMetadata,
                                   fn: (req: Req, ActionListener<Resp>) -> Unit,
                                   defaultContext: Boolean = false): suspend (Req) -> Resp {
     return { req: Req ->

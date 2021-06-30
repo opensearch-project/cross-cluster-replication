@@ -1,9 +1,7 @@
 package com.amazon.elasticsearch.replication.metadata.store
 
-import com.amazon.elasticsearch.replication.repository.RemoteClusterRepository
 import com.amazon.elasticsearch.replication.util.execute
 import com.amazon.elasticsearch.replication.util.suspending
-import com.amazon.opendistroforelasticsearch.commons.ConfigConstants
 import org.apache.logging.log4j.LogManager
 import org.elasticsearch.ExceptionsHelper
 import org.elasticsearch.ResourceAlreadyExistsException
@@ -59,40 +57,55 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
         return client.suspending(indexReqBuilder::execute, defaultContext = true)("replication")
     }
 
-    suspend fun getMetadata(getMetadataReq: GetReplicationMetadataRequest): GetReplicationMetadataResponse {
+    suspend fun getMetadata(getMetadataReq: GetReplicationMetadataRequest,
+                            fetch_from_primary: Boolean): GetReplicationMetadataResponse {
         val id = getId(getMetadataReq.metadataType, getMetadataReq.connectionName, getMetadataReq.resourceName)
 
         if(!configStoreExists()) {
             throw ResourceNotFoundException("Metadata for $id doesn't exist")
         }
 
-        // TODO: Specify routing to fetch the metadata from primary shard
         val getReq = GetRequest(REPLICATION_CONFIG_SYSTEM_INDEX, id)
         getReq.realtime(true)
         getReq.refresh(true)
+        if(fetch_from_primary) {
+            val preference = getPreferenceOnPrimaryNode() ?: throw throw IllegalStateException("Primary shard to fetch id[$id] in index[$REPLICATION_CONFIG_SYSTEM_INDEX] doesn't exist")
+            getReq.preference(preference)
+        }
 
         val getRes = client.suspending(client::get, defaultContext = true)(getReq)
+        if(getRes.sourceAsBytesRef == null) {
+            throw ResourceNotFoundException("Metadata for $id doesn't exist")
+        }
         val parser = XContentHelper.createParser(namedXContentRegistry, LoggingDeprecationHandler.INSTANCE,
                 getRes.sourceAsBytesRef, XContentType.JSON)
         return GetReplicationMetadataResponse(ReplicationMetadata.fromXContent(parser), getRes.seqNo, getRes.primaryTerm)
     }
 
     fun getMetadata(getMetadataReq: GetReplicationMetadataRequest,
-                    timeout: Long = RemoteClusterRepository.REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC): GetReplicationMetadataResponse {
+                    fetch_from_primary: Boolean,
+                    timeout: Long): GetReplicationMetadataResponse {
         val id = getId(getMetadataReq.metadataType, getMetadataReq.connectionName, getMetadataReq.resourceName)
 
         if(!configStoreExists()) {
             throw ResourceNotFoundException("Metadata for $id doesn't exist")
         }
 
-        // TODO: Specify routing to fetch the metadata from primary shard
         val getReq = GetRequest(REPLICATION_CONFIG_SYSTEM_INDEX, id)
         getReq.realtime(true)
         getReq.refresh(true)
+        if(fetch_from_primary) {
+            val preference = getPreferenceOnPrimaryNode() ?: throw IllegalStateException("Primary shard to fetch id[$id] in index[$REPLICATION_CONFIG_SYSTEM_INDEX] doesn't exist")
+            getReq.preference(preference)
+        }
+
         var storedContext: ThreadContext.StoredContext? = null
         try {
             storedContext = client.threadPool().threadContext.stashContext()
             val getRes = client.get(getReq).actionGet(timeout)
+            if(getRes.sourceAsBytesRef == null) {
+                throw ResourceNotFoundException("Metadata for $id doesn't exist")
+            }
             val parser = XContentHelper.createParser(namedXContentRegistry, LoggingDeprecationHandler.INSTANCE,
                     getRes.sourceAsBytesRef, XContentType.JSON)
             return GetReplicationMetadataResponse(ReplicationMetadata.fromXContent(parser), getRes.seqNo, getRes.primaryTerm)
@@ -100,6 +113,25 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
             storedContext?.close()
         }
 
+    }
+
+    /**
+     * Preference to set for the getMetadata requests
+     * - Fetch from the primary shards
+     */
+    private fun getPreferenceOnPrimaryNode(): String? {
+        // Only one primary shard for the store
+        clusterService.state().routingTable
+            .activePrimaryShardsGrouped(arrayOf(REPLICATION_CONFIG_SYSTEM_INDEX), false).forEach {
+                val shardRouting = it.shardRoutings.firstOrNull { shardRouting ->
+                    shardRouting.currentNodeId() != null
+                }
+                if(shardRouting != null) {
+                    log.debug("_only_nodes to fetch metdata[$REPLICATION_CONFIG_SYSTEM_INDEX] - ${shardRouting.currentNodeId()}")
+                    return "_only_nodes:${shardRouting.currentNodeId()}"
+                }
+            }
+        return null
     }
 
     suspend fun deleteMetadata(delMetadataReq: DeleteReplicationMetadataRequest): DeleteResponse {
