@@ -107,7 +107,7 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
     }
 
     override fun shards(state: ClusterState, request: InternalRequest): ShardsIterator {
-        // TODO: Investigate using any active shards instead of just primary
-        return state.routingTable().shardRoutingTable(request.request().shardId).primaryShardIt()
+        // Random active shards
+        return state.routingTable().shardRoutingTable(request.request().shardId).activeInitializingShardsRandomIt()
     }
 }

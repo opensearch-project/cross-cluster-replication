@@ -140,7 +140,6 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         log.info("Adding retentionlease at follower sequence number: ${indexShard.lastSyncedGlobalCheckpoint}")
         retentionLeaseHelper.addRetentionLease(remoteShardId, indexShard.lastSyncedGlobalCheckpoint , followerShardId)
 
-        var node = primaryShardNode()
         addListenerToInterruptTask()
 
         // Not really used yet as we only have one get changes action at a time.
@@ -154,7 +153,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         while (scope.isActive) {
             rateLimiter.acquire()
             try {
-                val changesResponse = getChanges(node, seqNo)
+                val changesResponse = getChanges(seqNo)
                 log.info("Got ${changesResponse.changes.size} changes starting from seqNo: $seqNo")
                 sequencer.send(changesResponse)
                 seqNo = changesResponse.changes.lastOrNull()?.seqNo()?.inc() ?: seqNo
@@ -165,7 +164,6 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
             } catch (e: NodeNotConnectedException) {
                 log.info("Node not connected. Retrying request using a different node. $e")
                 delay(backOffForNodeDiscovery)
-                node = primaryShardNode()
                 rateLimiter.release()
                 continue
             }
@@ -184,24 +182,9 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         sequencer.close()
     }
 
-    private suspend fun primaryShardNode(): DiscoveryNode {
-        val clusterStateRequest = remoteClient.admin().cluster().prepareState()
-            .clear()
-            .setIndices(remoteShardId.indexName)
-            .setRoutingTable(true)
-            .setNodes(true)
-            .setIndicesOptions(IndicesOptions.strictSingleIndexNoExpandForbidClosed())
-            .request()
-        val remoteState = remoteClient.suspending(remoteClient.admin().cluster()::state)(clusterStateRequest).state
-        val shardRouting = remoteState.routingNodes.activePrimary(remoteShardId)
-            ?: throw ShardNotFoundException(remoteShardId, "cluster: $remoteCluster")
-        return remoteState.nodes().get(shardRouting.currentNodeId())
-            ?: throw NoSuchNodeException("remote: $remoteCluster:${shardRouting.currentNodeId()}")
-    }
-
-    private suspend fun getChanges(remoteNode: DiscoveryNode, fromSeqNo: Long): GetChangesResponse {
+    private suspend fun getChanges(fromSeqNo: Long): GetChangesResponse {
         val remoteClient = client.getRemoteClusterClient(remoteCluster)
-        val request = GetChangesRequest(remoteNode, remoteShardId, fromSeqNo, fromSeqNo + batchSize)
+        val request = GetChangesRequest(remoteShardId, fromSeqNo, fromSeqNo + batchSize)
         return remoteClient.suspendExecuteWithRetries(replicationMetadata = replicationMetadata,
                 action = GetChangesAction.INSTANCE, req = request, log = log)
     }
