@@ -76,12 +76,12 @@ class TranportShardsInfoAction  @Inject constructor(clusterService: ClusterServi
         var seqNo = indexShard.localCheckpoint + 1
         if (indexShard.recoveryState().recoverySource.type.equals(org.elasticsearch.cluster.routing.RecoverySource.Type.SNAPSHOT) and
                 (indexState.recoveredBytesPercent() <100)) {
-            return ShardInfoResponse(shardRouting.shardId(),"BOOTSTRAPPING",
+            return ShardInfoResponse(shardRouting.shardId(),indexShard.docStats().count,"BOOTSTRAPPING",
                     RestoreDetails(indexState.totalBytes(), indexState.recoveredBytes(),
                             indexState.recoveredBytesPercent(), indexState.totalFileCount(), indexState.recoveredFileCount(),
                             indexState.recoveredFilesPercent(), indexState.startTime(), indexState.time()))
         }
-        return ShardInfoResponse(shardRouting.shardId(),"SYNCING", ReplayDetails(indexShard.lastKnownGlobalCheckpoint,
+        return ShardInfoResponse(shardRouting.shardId(),indexShard.docStats().count,"SYNCING", ReplayDetails(indexShard.lastKnownGlobalCheckpoint,
                 indexShard.lastSyncedGlobalCheckpoint, seqNo))
     }
 

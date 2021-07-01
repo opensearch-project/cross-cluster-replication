@@ -14,6 +14,9 @@ class ReplicationStatusResponse : BroadcastResponse, ToXContentObject {
 
     lateinit var shardInfoResponse: MutableList<ShardInfoResponse>
     lateinit var status: String
+    lateinit var connectionAlias: String
+    lateinit var leaderIndexName: String
+    lateinit var followerIndexName: String
 
     @Throws(IOException::class)
     constructor(inp: StreamInput) : super(inp) {
@@ -58,6 +61,12 @@ class ReplicationStatusResponse : BroadcastResponse, ToXContentObject {
         builder.startObject()
         if (::status.isInitialized)
             builder.field("status",status)
+        if (::connectionAlias.isInitialized)
+            builder.field("connection_alias",connectionAlias)
+        if (::leaderIndexName.isInitialized)
+            builder.field("leader_index",leaderIndexName)
+        if (::followerIndexName.isInitialized)
+            builder.field("follower_index",followerIndexName)
         if (::shardInfoResponse.isInitialized)
             builder.field("replication_data",shardInfoResponse)
         builder.endObject()
@@ -71,5 +80,11 @@ class ReplicationStatusResponse : BroadcastResponse, ToXContentObject {
             out.writeList(shardInfoResponse)
         if (::status.isInitialized)
             out.writeString(status)
+        if (::connectionAlias.isInitialized)
+            out.writeString(connectionAlias)
+        if (::leaderIndexName.isInitialized)
+            out.writeString(leaderIndexName)
+        if (::followerIndexName.isInitialized)
+            out.writeString(followerIndexName)
     }
 }
