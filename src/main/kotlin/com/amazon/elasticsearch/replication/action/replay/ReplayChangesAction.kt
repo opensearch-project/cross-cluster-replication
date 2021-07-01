@@ -20,7 +20,7 @@ import org.elasticsearch.action.ActionType
 class ReplayChangesAction private constructor() : ActionType<ReplayChangesResponse>(NAME, ::ReplayChangesResponse) {
 
     companion object {
-        const val NAME = "indices:data/write/opendistro/replication/changes"
+        const val NAME = "indices:data/write/plugins/replication/changes"
         val INSTANCE = ReplayChangesAction()
     }
 }

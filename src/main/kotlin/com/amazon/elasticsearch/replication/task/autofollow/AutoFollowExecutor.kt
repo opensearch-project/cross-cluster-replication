@@ -31,7 +31,7 @@ class AutoFollowExecutor(executor: String, private val clusterService: ClusterSe
     PersistentTasksExecutor<AutoFollowParams>(TASK_NAME, executor) {
 
     companion object {
-        const val TASK_NAME = "cluster:opendistro/admin/replication/autofollow"
+        const val TASK_NAME = "cluster:admin/plugins/replication/autofollow"
     }
 
     override fun nodeOperation(task: AllocatedPersistentTask, params: AutoFollowParams, state: PersistentTaskState?) {

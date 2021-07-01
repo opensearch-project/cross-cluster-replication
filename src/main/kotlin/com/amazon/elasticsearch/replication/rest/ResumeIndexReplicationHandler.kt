@@ -33,11 +33,11 @@ class ResumeIndexReplicationHandler : BaseRestHandler() {
     }
 
     override fun routes(): List<RestHandler.Route> {
-        return listOf(RestHandler.Route(RestRequest.Method.POST, "/_opendistro/_replication/{index}/_resume"))
+        return listOf(RestHandler.Route(RestRequest.Method.POST, "/_plugins/_replication/{index}/_resume"))
     }
 
     override fun getName(): String {
-        return "opendistro_index_resume_replicate_action"
+        return "plugins_index_resume_replicate_action"
     }
 
     @Throws(IOException::class)

@@ -136,11 +136,11 @@ indices:admin/close[s]
 indices:admin/create
 indices:admin/mapping/put
 indices:admin/open
-indices:admin/opendistro/replication/index/start
-indices:admin/opendistro/replication/index/stop
-indices:data/read/opendistro/replication/file_metadata
+indices:admin/plugins/replication/index/start
+indices:admin/plugins/replication/index/stop
+indices:data/read/plugins/replication/file_metadata
 indices:data/write/index
-indices:data/write/opendistro/replication/changes
+indices:data/write/plugins/replication/changes
 indices:data/write/replication
 indices:monitor/stats
 
@@ -148,17 +148,17 @@ indices:monitor/stats
 
 cluster:monitor/state
 cluster:admin/snapshot/restore
-cluster:admin/opendistro/replication/autofollow/update
+cluster:admin/plugins/replication/autofollow/update
 ```
 
 ### Required permissions on leader cluster
 
 ```
 # Index Level Permissions
-indices:data/read/opendistro/replication/file_chunk
-indices:data/read/opendistro/replication/file_metadata
-indices:admin/opendistro/replication/resources/release
-indices:data/read/opendistro/replication/changes
+indices:data/read/plugins/replication/file_chunk
+indices:data/read/plugins/replication/file_metadata
+indices:admin/plugins/replication/resources/release
+indices:data/read/plugins/replication/changes
 indices:admin/mappings/get
 indices:monitor/stats
 
@@ -184,7 +184,7 @@ This API is used to initiate replication of an index from the leader cluster ont
 ```bash
 # REQUEST
 
-PUT localhost:{{foll_port}}/_opendistro/_replication/<index>/_start
+PUT localhost:{{foll_port}}/_plugins/_replication/<index>/_start
 Content-Type: application/json
 
 {  "remote_cluster" : "leader-cluster",  "remote_index": "<index>"}
@@ -201,7 +201,7 @@ Content-Type: application/json
 **Example** 
 ```bash
 curl -k -u testuser:testuser -XPUT \
-"https://${FOLLOWER}/_opendistro/_replication/follower-01/_start?pretty" \
+"https://${FOLLOWER}/_plugins/_replication/follower-01/_start?pretty" \
 -H 'Content-type: application/json' \
 -d'{"remote_cluster":"leader-cluster", "remote_index": "leader-01"}'
 
@@ -220,7 +220,7 @@ Note that the follower index is NOT deleted on stopping replication.
 ```bash
 # REQUEST
 
-POST localhost:{{foll_port}}/_opendistro/<index>/replicate/_stop
+POST localhost:{{foll_port}}/_plugins/<index>/replicate/_stop
 Content-Type: application/json
 {}
 
@@ -234,7 +234,7 @@ Content-Type: application/json
 **Example**
 ```bash
 curl -k -u testuser:testuser -XPOST \
-"https://${FOLLOWER}/_opendistro/_replication/follower-01/_stop?pretty" \
+"https://${FOLLOWER}/_plugins/_replication/follower-01/_stop?pretty" \
 -H 'Content-type: application/json' -d'{}'
 
 # You can confirm data isn't replicated any more by making modifications to
@@ -250,7 +250,7 @@ AutoFollow API helps to automatically start replication on indices matching a pa
 ```bash
 # REQUEST
 
-POST localhost:{{foll_port}}/_opendistro/_replication/_autofollow
+POST localhost:{{foll_port}}/_plugins/_replication/_autofollow
 Content-Type: application/json
 
 {"connection" : "<remote cluster connection name>",  "pattern": "<index pattern>", "name": "<name to identify autofollow task>"}
@@ -265,7 +265,7 @@ Content-Type: application/json
 **Example**
 ```bash
 curl -k -u testuser:testuser -XPOST \
-"https://${FOLLOWER}/_opendistro/_replication/_autofollow?pretty" \
+"https://${FOLLOWER}/_plugins/_replication/_autofollow?pretty" \
 -H 'Content-type: application/json' \
 -d'{"connection":"leader-cluster","pattern":"leader-*", "name":"my-replication"}'
 ```
@@ -277,7 +277,7 @@ AutoFollow can be removed by invoking API on the follower as follows. Invocation
 **Signature**
 
 ```bash
-DELETE localhost:{{foll_port}}/_opendistro/_replication/_autofollow
+DELETE localhost:{{foll_port}}/_plugins/_replication/_autofollow
 Content-Type: application/json
 
 {
@@ -290,7 +290,7 @@ Content-Type: application/json
 
 ```bash
 curl -k -u testuser:testuser -XDELETE \
-"https://${FOLLOWER}/_opendistro/_replication/_autofollow?pretty" \
+"https://${FOLLOWER}/_plugins/_replication/_autofollow?pretty" \
 -H 'Content-type: application/json' \
 -d'{"connection":"leader-cluster", "name":"my-replication"}'
 ```

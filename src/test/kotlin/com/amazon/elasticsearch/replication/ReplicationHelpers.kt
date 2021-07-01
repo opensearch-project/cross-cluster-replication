@@ -35,13 +35,13 @@ import java.util.concurrent.TimeUnit
 
 data class StartReplicationRequest(val remoteClusterAlias: String, val remoteIndex: String, val toIndex: String)
 
-const val REST_REPLICATION_PREFIX = "/_opendistro/_replication/"
+const val REST_REPLICATION_PREFIX = "/_plugins/_replication/"
 const val REST_REPLICATION_START = "$REST_REPLICATION_PREFIX{index}/_start"
 const val REST_REPLICATION_STOP = "$REST_REPLICATION_PREFIX{index}/_stop"
 const val REST_REPLICATION_PAUSE = "$REST_REPLICATION_PREFIX{index}/_pause"
 const val REST_REPLICATION_RESUME = "$REST_REPLICATION_PREFIX{index}/_resume"
 const val REST_REPLICATION_UPDATE = "$REST_REPLICATION_PREFIX{index}/_update"
-const val REST_AUTO_FOLLOW_PATTERN = "_opendistro/_replication/_autofollow"
+const val REST_AUTO_FOLLOW_PATTERN = "${REST_REPLICATION_PREFIX}_autofollow"
 
 fun RestHighLevelClient.startReplication(request: StartReplicationRequest,
                                          waitFor: TimeValue = TimeValue.timeValueSeconds(10),

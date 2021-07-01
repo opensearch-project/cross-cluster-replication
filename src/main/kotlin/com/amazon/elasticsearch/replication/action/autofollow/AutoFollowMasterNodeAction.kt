@@ -5,7 +5,7 @@ import org.elasticsearch.action.support.master.AcknowledgedResponse
 
 class AutoFollowMasterNodeAction: ActionType<AcknowledgedResponse>(NAME, ::AcknowledgedResponse) {
     companion object {
-        const val NAME = "internal:cluster:admin/opendistro/replication/autofollow/update"
+        const val NAME = "internal:cluster:admin/plugins/replication/autofollow/update"
         val INSTANCE = AutoFollowMasterNodeAction()
     }
 }

@@ -19,7 +19,7 @@ import org.elasticsearch.action.ActionType
 
 class ReplicateIndexAction private constructor(): ActionType<ReplicateIndexResponse>(NAME, ::ReplicateIndexResponse) {
     companion object {
-        const val NAME = "indices:admin/opendistro/replication/index/start"
+        const val NAME = "indices:admin/plugins/replication/index/start"
         val INSTANCE: ReplicateIndexAction = ReplicateIndexAction()
     }
 }

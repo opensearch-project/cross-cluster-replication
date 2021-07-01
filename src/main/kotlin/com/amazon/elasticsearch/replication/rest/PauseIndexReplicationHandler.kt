@@ -33,11 +33,11 @@ class PauseIndexReplicationHandler : BaseRestHandler() {
     }
 
     override fun routes(): List<RestHandler.Route> {
-        return listOf(RestHandler.Route(RestRequest.Method.POST, "/_opendistro/_replication/{index}/_pause"))
+        return listOf(RestHandler.Route(RestRequest.Method.POST, "/_plugins/_replication/{index}/_pause"))
     }
 
     override fun getName(): String {
-        return "opendistro_index_pause_replicate_action"
+        return "plugins_index_pause_replicate_action"
     }
 
     @Throws(IOException::class)

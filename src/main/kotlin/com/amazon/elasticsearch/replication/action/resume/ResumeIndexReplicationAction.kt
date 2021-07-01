@@ -20,7 +20,7 @@ import org.elasticsearch.action.support.master.AcknowledgedResponse
 
 class ResumeIndexReplicationAction private constructor(): ActionType<AcknowledgedResponse>(NAME, ::AcknowledgedResponse) {
     companion object {
-        const val NAME = "indices:admin/opendistro/replication/index/resume"
+        const val NAME = "indices:admin/plugins/replication/index/resume"
         val INSTANCE: ResumeIndexReplicationAction = ResumeIndexReplicationAction()
     }
 }

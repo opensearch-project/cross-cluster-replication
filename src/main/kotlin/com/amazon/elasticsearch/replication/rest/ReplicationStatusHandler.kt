@@ -18,11 +18,11 @@ class ReplicationStatusHandler : BaseRestHandler() {
     }
 
     override fun routes(): List<RestHandler.Route> {
-        return listOf(RestHandler.Route(RestRequest.Method.GET, "/_opendistro/_replication/{index}/_status"))
+        return listOf(RestHandler.Route(RestRequest.Method.GET, "/_plugins/_replication/{index}/_status"))
     }
 
     override fun getName(): String {
-        return "opendistro_replication_status"
+        return "plugins_replication_status"
     }
 
     @Throws(IOException::class)
