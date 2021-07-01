@@ -12,20 +12,13 @@ import org.elasticsearch.action.delete.DeleteRequest
 import org.elasticsearch.action.delete.DeleteResponse
 import org.elasticsearch.action.get.GetRequest
 import org.elasticsearch.action.index.IndexResponse
-import org.elasticsearch.action.update.UpdateRequest
-import org.elasticsearch.action.update.UpdateResponse
 import org.elasticsearch.client.Client
 import org.elasticsearch.cluster.metadata.IndexMetadata
 import org.elasticsearch.cluster.service.ClusterService
 import org.elasticsearch.common.component.AbstractLifecycleComponent
 import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.util.concurrent.ThreadContext
-import org.elasticsearch.common.xcontent.LoggingDeprecationHandler
-import org.elasticsearch.common.xcontent.NamedXContentRegistry
-import org.elasticsearch.common.xcontent.ToXContent
-import org.elasticsearch.common.xcontent.XContentFactory
-import org.elasticsearch.common.xcontent.XContentHelper
-import org.elasticsearch.common.xcontent.XContentType
+import org.elasticsearch.common.xcontent.*
 
 
 class ReplicationMetadataStore constructor(val client: Client, val clusterService: ClusterService,
@@ -144,7 +137,7 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
         return client.suspending(client::delete, defaultContext = true)(delReq)
     }
 
-    suspend fun updateMetadata(updateMetadataReq: UpdateReplicationMetadataRequest): UpdateResponse {
+    suspend fun updateMetadata(updateMetadataReq: UpdateReplicationMetadataRequest): IndexResponse {
         val metadata = updateMetadataReq.replicationMetadata
         val id = getId(metadata.metadataType, metadata.connectionName, metadata.followerContext.resource)
         if(!configStoreExists()) {
@@ -152,11 +145,11 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
         }
         // TODO: Check and update if existing index needs mapping update
 
-        val updateReq = UpdateRequest(REPLICATION_CONFIG_SYSTEM_INDEX, id)
+        val indexReqBuilder = client.prepareIndex(REPLICATION_CONFIG_SYSTEM_INDEX, MAPPING_TYPE, id)
+                .setSource(updateMetadataReq.replicationMetadata.toXContent(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS))
                 .setIfSeqNo(updateMetadataReq.ifSeqno)
                 .setIfPrimaryTerm(updateMetadataReq.ifPrimaryTerm)
-                .doc(metadata.toXContent(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS))
-        return client.suspending(client::update, defaultContext = true)(updateReq)
+        return client.suspending(indexReqBuilder::execute, defaultContext = true)("replication")
     }
 
     private fun getId(metadataType: String, connectionName: String?, resourceName: String): String {

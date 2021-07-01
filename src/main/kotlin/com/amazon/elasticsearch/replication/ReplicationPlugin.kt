@@ -123,6 +123,9 @@ import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadataStore
 import com.amazon.elasticsearch.replication.rest.*
 import com.amazon.elasticsearch.replication.seqno.RemoteClusterTranslogService
+import com.amazon.elasticsearch.replication.action.update.TransportUpdateIndexReplicationAction
+import com.amazon.elasticsearch.replication.action.update.UpdateIndexReplicationAction
+import com.amazon.elasticsearch.replication.rest.UpdateIndexHandler
 
 internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin, RepositoryPlugin, EnginePlugin {
 
@@ -174,6 +177,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             ActionHandler(StopIndexReplicationAction.INSTANCE, TransportStopIndexReplicationAction::class.java),
             ActionHandler(PauseIndexReplicationAction.INSTANCE, TransportPauseIndexReplicationAction::class.java),
             ActionHandler(ResumeIndexReplicationAction.INSTANCE, TransportResumeIndexReplicationAction::class.java),
+            ActionHandler(UpdateIndexReplicationAction.INSTANCE, TransportUpdateIndexReplicationAction::class.java),
             ActionHandler(UpdateIndexBlockAction.INSTANCE, TransportUpddateIndexBlockAction::class.java),
             ActionHandler(ReleaseLeaderResourcesAction.INSTANCE, TransportReleaseLeaderResourcesAction::class.java),
             ActionHandler(UpdateMetadataAction.INSTANCE, TransportUpdateMetadataAction::class.java),
@@ -194,6 +198,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             UpdateAutoFollowPatternsHandler(),
             PauseIndexReplicationHandler(),
             ResumeIndexReplicationHandler(),
+            UpdateIndexHandler(),
             StopIndexReplicationHandler(),
             ReplicationStatusHandler())
     }

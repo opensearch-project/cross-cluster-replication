@@ -19,22 +19,13 @@ import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.REPLICAT
 import com.amazon.elasticsearch.replication.action.index.block.IndexBlockUpdateType
 import com.amazon.elasticsearch.replication.action.index.block.UpdateIndexBlockAction
 import com.amazon.elasticsearch.replication.action.index.block.UpdateIndexBlockRequest
-import com.amazon.elasticsearch.replication.metadata.INDEX_REPLICATION_BLOCK
 import com.amazon.elasticsearch.replication.metadata.*
-import com.amazon.elasticsearch.replication.seqno.RemoteClusterRetentionLeaseHelper
-import com.amazon.elasticsearch.replication.task.index.IndexReplicationParams
-import com.amazon.elasticsearch.replication.metadata.INDEX_REPLICATION_BLOCK
-import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
-import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
-import com.amazon.elasticsearch.replication.metadata.checkIfIndexBlockedWithLevel
 import com.amazon.elasticsearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
 import com.amazon.elasticsearch.replication.metadata.state.getReplicationStateParamsForIndex
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
-import com.amazon.elasticsearch.replication.util.completeWith
-import com.amazon.elasticsearch.replication.util.coroutineContext
-import com.amazon.elasticsearch.replication.util.suspendExecute
-import com.amazon.elasticsearch.replication.util.suspending
-import com.amazon.elasticsearch.replication.util.waitForClusterStateUpdate
+import com.amazon.elasticsearch.replication.seqno.RemoteClusterRetentionLeaseHelper
+import com.amazon.elasticsearch.replication.task.index.IndexReplicationParams
+import com.amazon.elasticsearch.replication.util.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
@@ -42,13 +33,13 @@ import kotlinx.coroutines.launch
 import org.apache.logging.log4j.LogManager
 import org.elasticsearch.ElasticsearchException
 import org.elasticsearch.action.ActionListener
-import org.elasticsearch.action.admin.indices.close.CloseIndexRequest
 import org.elasticsearch.action.admin.indices.open.OpenIndexRequest
 import org.elasticsearch.action.support.ActionFilters
 import org.elasticsearch.action.support.IndicesOptions
 import org.elasticsearch.action.support.master.AcknowledgedResponse
 import org.elasticsearch.action.support.master.TransportMasterNodeAction
 import org.elasticsearch.client.Client
+import org.elasticsearch.client.Requests
 import org.elasticsearch.cluster.AckedClusterStateUpdateTask
 import org.elasticsearch.cluster.ClusterState
 import org.elasticsearch.cluster.RestoreInProgress
@@ -97,7 +88,7 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                 val isPaused = validateStopReplicationRequest(request)
 
                 val updateIndexBlockRequest = UpdateIndexBlockRequest(request.indexName,IndexBlockUpdateType.REMOVE_BLOCK)
-                client.suspendExecute(UpdateIndexBlockAction.INSTANCE, updateIndexBlockRequest)
+                client.suspendExecute(UpdateIndexBlockAction.INSTANCE, updateIndexBlockRequest, injectSecurityContext = true)
 
                 // Index will be deleted if replication is stopped while it is restoring.  So no need to close/reopen
                 val restoring = clusterService.state().custom<RestoreInProgress>(RestoreInProgress.TYPE).any { entry ->
@@ -105,7 +96,9 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                 }
                 if (!restoring &&
                         state.routingTable.hasIndex(request.indexName)) {
-                    val closeResponse = client.suspending(client.admin().indices()::close)(CloseIndexRequest(request.indexName))
+
+                    var updateRequest = UpdateMetadataRequest(request.indexName, UpdateMetadataRequest.Type.CLOSE, Requests.closeIndexRequest(request.indexName))
+                    var closeResponse = client.suspendExecute(UpdateMetadataAction.INSTANCE, updateRequest, injectSecurityContext = true)
                     if (!closeResponse.isAcknowledged) {
                         throw ElasticsearchException("Unable to close index: ${request.indexName}")
                     }
@@ -125,7 +118,7 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                 // Index will be deleted if stop is called while it is restoring.  So no need to reopen
                 if (!restoring &&
                         state.routingTable.hasIndex(request.indexName)) {
-                    val reopenResponse = client.suspending(client.admin().indices()::open)(OpenIndexRequest(request.indexName))
+                    val reopenResponse = client.suspending(client.admin().indices()::open, injectSecurityContext = true)(OpenIndexRequest(request.indexName))
                     if (!reopenResponse.isAcknowledged) {
                         throw ElasticsearchException("Failed to reopen index: ${request.indexName}")
                     }
