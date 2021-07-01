@@ -15,11 +15,17 @@
 
 package com.amazon.elasticsearch.replication.util
 
+import com.amazon.elasticsearch.replication.action.autofollow.UpdateAutoFollowPatternAction
 import com.amazon.elasticsearch.replication.action.changes.GetChangesAction
 import com.amazon.elasticsearch.replication.action.index.ReplicateIndexAction
+import com.amazon.elasticsearch.replication.action.pause.PauseIndexReplicationAction
 import com.amazon.elasticsearch.replication.action.replay.ReplayChangesAction
 import com.amazon.elasticsearch.replication.action.repository.GetFileChunkAction
 import com.amazon.elasticsearch.replication.action.repository.GetStoreMetadataAction
+import com.amazon.elasticsearch.replication.action.resume.ResumeIndexReplicationAction
+import com.amazon.elasticsearch.replication.action.status.ReplicationStatusAction
+import com.amazon.elasticsearch.replication.action.stop.StopIndexReplicationAction
+import com.amazon.elasticsearch.replication.action.update.UpdateIndexReplicationAction
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationStoreMetadataType
@@ -44,7 +50,11 @@ class SecurityContext {
                 ConfigConstants.INJECTED_USER, OPENDISTRO_SECURITY_USER)
 
         val LEADER_USER_ACTIONS = listOf(GetChangesAction.NAME, GetFileChunkAction.NAME)
-        val FOLLOWER_USER_ACTIONS = listOf(ReplayChangesAction.NAME, ReplicateIndexAction.NAME)
+        val FOLLOWER_USER_ACTIONS = listOf(ReplayChangesAction.NAME,
+                ReplicateIndexAction.NAME, PauseIndexReplicationAction.NAME,
+                ResumeIndexReplicationAction.NAME, StopIndexReplicationAction.NAME,
+                UpdateIndexReplicationAction.NAME, ReplicationStatusAction.NAME,
+                UpdateAutoFollowPatternAction.NAME)
 
         fun fromSecurityThreadContext(threadContext: ThreadContext): User? {
             val userInfo = threadContext.getTransient<String?>(ConfigConstants.OPENDISTRO_SECURITY_USER_INFO_THREAD_CONTEXT)

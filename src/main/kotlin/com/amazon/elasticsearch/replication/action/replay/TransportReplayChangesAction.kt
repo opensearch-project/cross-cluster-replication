@@ -34,6 +34,7 @@ import org.elasticsearch.action.ActionListener
 import org.elasticsearch.action.admin.indices.mapping.get.GetMappingsRequest
 import org.elasticsearch.action.admin.indices.mapping.put.PutMappingRequest
 import org.elasticsearch.action.bulk.TransportShardBulkAction
+import org.elasticsearch.action.index.IndexRequest
 import org.elasticsearch.action.resync.TransportResyncReplicationAction
 import org.elasticsearch.action.support.ActionFilters
 import org.elasticsearch.action.support.IndicesOptions
@@ -74,12 +75,11 @@ class TransportReplayChangesAction @Inject constructor(settings: Settings, trans
                                                        // Unused for now because of a bug in creating the PutMappingRequest
                                                        private val mappingUpdatedAction: MappingUpdatedAction) :
     TransportWriteAction<ReplayChangesRequest, ReplayChangesRequest, ReplayChangesResponse>(
-        settings, ACTION_NAME, transportService, clusterService, indicesService, threadPool, shardStateAction,
+        settings, ReplayChangesAction.NAME, transportService, clusterService, indicesService, threadPool, shardStateAction,
         actionFilters, Writeable.Reader { inp -> ReplayChangesRequest(inp) }, Writeable.Reader { inp -> ReplayChangesRequest(inp) },
             EXECUTOR_NAME_FUNCTION, false, indexingPressure, systemIndices) {
 
     companion object {
-        const val ACTION_NAME = "indices:data/write/replication"
         private val log = LogManager.getLogger(TransportReplayChangesAction::class.java)!!
         private val EXECUTOR_NAME_FUNCTION = Function { shard: IndexShard ->
             if (shard.indexSettings().indexMetadata.isSystem) {
@@ -120,24 +120,17 @@ class TransportReplayChangesAction @Inject constructor(settings: Settings, trans
         checkIfIndexBlockedWithLevel(clusterService, request.index(), ClusterBlockLevel.WRITE)
         var location: Translog.Location? = null
         request.changes.asSequence().map {
-            it.withPrimaryTerm(primaryShard.operationPrimaryTerm)
+            it.withPrimaryTerm(primaryShard.operationPrimaryTerm).unSetAutoGenTimeStamp()
         }.forEach { op ->
             if(primaryShard.maxSeqNoOfUpdatesOrDeletes < request.maxSeqNoOfUpdatesOrDeletes) {
                 primaryShard.advanceMaxSeqNoOfUpdatesOrDeletes(request.maxSeqNoOfUpdatesOrDeletes)
             }
-            var eachOp = op
-            if(op.opType() == Translog.Operation.Type.INDEX) {
-                eachOp = op as Translog.Index
-                // Unset autogeneretedIdTimeStamp as we are using externel ID from the leader index
-                eachOp = Translog.Index(eachOp.docType(), eachOp.id(), eachOp.seqNo(),
-                        eachOp.primaryTerm(), eachOp.version(), eachOp.source().toBytesRef().bytes, eachOp.routing(), -1)
-            }
-            var result = primaryShard.applyTranslogOperation(eachOp, Engine.Operation.Origin.PRIMARY)
+            var result = primaryShard.applyTranslogOperation(op, Engine.Operation.Origin.PRIMARY)
             if (result.resultType == Engine.Result.Type.MAPPING_UPDATE_REQUIRED) {
                 waitForMappingUpdate {
                     // fetch mappings from the remote cluster when applying on PRIMARY...
                     syncRemoteMapping(request.remoteCluster, request.remoteIndex, request.shardId()!!.indexName,
-                            eachOp.docType())
+                            op.docType())
                 }
                 result = primaryShard.applyTranslogOperation(op, Engine.Operation.Origin.PRIMARY)
             }
@@ -157,7 +150,7 @@ class TransportReplayChangesAction @Inject constructor(settings: Settings, trans
         checkIfIndexBlockedWithLevel(clusterService, request.index(), ClusterBlockLevel.WRITE)
         var location: Translog.Location? = null
         request.changes.asSequence().map {
-            it.withPrimaryTerm(replicaShard.operationPrimaryTerm)
+            it.withPrimaryTerm(replicaShard.operationPrimaryTerm).unSetAutoGenTimeStamp()
         }.forEach { op ->
             var result = replicaShard.applyTranslogOperation(op, Engine.Operation.Origin.REPLICA)
             if (result.resultType == Engine.Result.Type.MAPPING_UPDATE_REQUIRED) {
@@ -234,6 +227,17 @@ class TransportReplayChangesAction @Inject constructor(settings: Settings, trans
                 Translog.NoOp(sourceOp.seqNo(), operationPrimaryTerm, sourceOp.reason())
             }
         }
+    }
+
+    private fun Translog.Operation.unSetAutoGenTimeStamp(): Translog.Operation {
+        // Unset auto gen timestamp as we use external Id from the leader index
+        if (opType()!! == Translog.Operation.Type.CREATE || opType()!! == Translog.Operation.Type.INDEX ) {
+            val sourceOp = this as Translog.Index
+            return Translog.Index(sourceOp.type(), sourceOp.id(), sourceOp.seqNo(), sourceOp.primaryTerm(),
+                    sourceOp.version(), BytesReference.toBytes(sourceOp.source()),
+                    sourceOp.routing(), IndexRequest.UNSET_AUTO_GENERATED_TIMESTAMP)
+        }
+        return this
     }
 
     override fun globalBlockLevel(): ClusterBlockLevel? {
