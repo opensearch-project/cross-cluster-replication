@@ -4,7 +4,14 @@ import com.amazon.elasticsearch.replication.ReplicationException
 import com.amazon.elasticsearch.replication.action.replicationstatedetails.UpdateReplicationStateAction
 import com.amazon.elasticsearch.replication.action.replicationstatedetails.UpdateReplicationStateDetailsRequest
 import com.amazon.elasticsearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
-import com.amazon.elasticsearch.replication.metadata.store.*
+import com.amazon.elasticsearch.replication.metadata.store.AddReplicationMetadataRequest
+import com.amazon.elasticsearch.replication.metadata.store.DeleteReplicationMetadataRequest
+import com.amazon.elasticsearch.replication.metadata.store.GetReplicationMetadataRequest
+import com.amazon.elasticsearch.replication.metadata.store.ReplicationContext
+import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
+import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadataStore
+import com.amazon.elasticsearch.replication.metadata.store.ReplicationStoreMetadataType
+import com.amazon.elasticsearch.replication.metadata.store.UpdateReplicationMetadataRequest
 import com.amazon.elasticsearch.replication.repository.RemoteClusterRepository
 import com.amazon.elasticsearch.replication.util.overrideFgacRole
 import com.amazon.elasticsearch.replication.util.suspendExecute
@@ -14,7 +21,6 @@ import org.elasticsearch.action.DocWriteResponse
 import org.elasticsearch.client.Client
 import org.elasticsearch.cluster.service.ClusterService
 import org.elasticsearch.common.inject.Singleton
-import org.elasticsearch.common.settings.Settings
 
 @Singleton
 class ReplicationMetadataManager constructor(private val clusterService: ClusterService,
@@ -86,14 +92,6 @@ class ReplicationMetadataManager constructor(private val clusterService: Cluster
             log.error("Encountered error with result - ${response.result}, while updating metadata")
             throw ReplicationException("Error updating replication metadata")
         }
-    }
-
-    suspend fun updateSettings(followerIndex: String, settings: Settings) {
-        val getReq = GetReplicationMetadataRequest(ReplicationStoreMetadataType.INDEX.name, null, followerIndex)
-        val getRes = replicaionMetadataStore.getMetadata(getReq, false)
-        val metadata = getRes.replicationMetadata
-        metadata.settings = settings
-        updateMetadata(UpdateReplicationMetadataRequest(metadata, getRes.seqNo, getRes.primaryTerm))
     }
 
     suspend fun deleteIndexReplicationMetadata(followerIndex: String) {
