@@ -108,8 +108,8 @@ class TransportReplicateIndexMasterNodeAction @Inject constructor(transportServi
 
                 replicationMetadataManager.addIndexReplicationMetadata(replicateIndexReq.followerIndex,
                         replicateIndexReq.remoteCluster, replicateIndexReq.remoteIndex,
-                        ReplicationOverallState.RUNNING, user, replicateIndexReq.assumeRoles?.getOrDefault(ReplicateIndexRequest.LEADER_FGAC_ROLE, null),
-                        replicateIndexReq.assumeRoles?.getOrDefault(ReplicateIndexRequest.FOLLOWER_FGAC_ROLE, null))
+                        ReplicationOverallState.RUNNING, user, replicateIndexReq.assumeRoles?.getOrDefault(ReplicateIndexRequest.FOLLOWER_FGAC_ROLE, null),
+                        replicateIndexReq.assumeRoles?.getOrDefault(ReplicateIndexRequest.LEADER_FGAC_ROLE, null))
 
                 val task = persistentTasksService.startTask("replication:index:${replicateIndexReq.followerIndex}",
                         IndexReplicationExecutor.TASK_NAME, params)

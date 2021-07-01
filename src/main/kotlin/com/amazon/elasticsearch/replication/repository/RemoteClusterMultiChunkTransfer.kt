@@ -89,7 +89,7 @@ class RemoteClusterMultiChunkTransfer(val logger: Logger,
         launch(Dispatchers.IO + remoteClusterClient.threadPool().coroutineContext()) {
             try {
                 val response = remoteClusterClient.suspendExecuteWithRetries(replMetadata, GetFileChunkAction.INSTANCE,
-                        getFileChunkRequest, defaultContext = true, log = logger)
+                        getFileChunkRequest, log = logger)
                 logger.debug("Filename: ${request.storeFileMetadata.name()}, " +
                         "response_size: ${response.data.length()}, response_offset: ${response.offset}")
                 mutex.withLock {
