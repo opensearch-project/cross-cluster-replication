@@ -74,6 +74,8 @@ import com.amazon.elasticsearch.replication.util.suspendExecute
 import org.elasticsearch.action.admin.indices.exists.indices.IndicesExistsRequest
 import org.elasticsearch.action.admin.indices.exists.indices.IndicesExistsRequestBuilder
 import org.elasticsearch.action.admin.indices.settings.get.GetSettingsRequest
+import org.elasticsearch.common.settings.Settings
+import org.elasticsearch.index.IndexSettings
 import org.elasticsearch.indices.recovery.RecoveryState
 import kotlin.streams.toList
 
@@ -117,7 +119,7 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
                         log.debug("Resuming tasks now.")
                         InitFollowState
                     } else {
-                        startRestore()
+                        setupAndStartRestore()
                     }
                 }
                 ReplicationState.RESTORING -> {
@@ -253,7 +255,16 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
         client.suspending(client.admin().indices()::delete, defaultContext = true)(DeleteIndexRequest(followerIndexName))
     }
 
-    private suspend fun startRestore(): IndexReplicationState {
+    private suspend fun setupAndStartRestore(): IndexReplicationState {
+        // Enable translog based fetch on the leader(remote) cluster
+        val remoteClient = client.getRemoteClusterClient(remoteCluster)
+        val settingsBuilder = Settings.builder().put(IndexSettings.INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key, true)
+        val updateSettingsRequest = remoteClient.admin().indices().prepareUpdateSettings().setSettings(settingsBuilder).setIndices(remoteIndex.name).request()
+        val updateResponse = remoteClient.suspending(remoteClient.admin().indices()::updateSettings, injectSecurityContext = true)(updateSettingsRequest)
+        if(!updateResponse.isAcknowledged) {
+            log.error("Unable to update setting for translog pruning based on retention lease")
+        }
+
         val restoreRequest = client.admin().cluster()
             .prepareRestoreSnapshot(RemoteClusterRepository.repoForCluster(remoteCluster), REMOTE_SNAPSHOT_NAME)
             .setIndices(remoteIndex.name)
