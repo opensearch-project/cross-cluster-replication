@@ -15,29 +15,34 @@ import java.io.IOException
 class ShardInfoResponse : BroadcastShardResponse, ToXContentObject {
 
     val status: String
+    val docCount: Long
     lateinit var replayDetails: ReplayDetails
     lateinit var restoreDetails: RestoreDetails
 
     constructor(si: StreamInput) : super(si) {
         this.status = si.readString()
+        this.docCount = si.readLong()
         if (status.equals("SYNCING"))
             this.replayDetails = ReplayDetails(si)
         if (status.equals("BOOTSTRAPPING"))
             this.restoreDetails = RestoreDetails(si)
     }
 
-    constructor(shardId: ShardId, status :String, restoreDetailsShard : RestoreDetails) : super(shardId) {
+    constructor(shardId: ShardId, docCount: Long, status :String, restoreDetailsShard : RestoreDetails) : super(shardId) {
         this.status = status
+        this.docCount = docCount
         this.restoreDetails = restoreDetailsShard
     }
 
-    constructor(shardId: ShardId, status :String, replayDetailsShard : ReplayDetails) : super(shardId) {
+    constructor(shardId: ShardId, docCount: Long, status :String, replayDetailsShard : ReplayDetails) : super(shardId) {
         this.status = status
+        this.docCount = docCount
         this.replayDetails = replayDetailsShard
     }
 
-    constructor(shardId: ShardId, status :String, replayDetailsShard : ReplayDetails, restoreDetailsShard : RestoreDetails) : super(shardId) {
+    constructor(shardId: ShardId, docCount: Long, status :String, replayDetailsShard : ReplayDetails, restoreDetailsShard : RestoreDetails) : super(shardId) {
         this.status = status
+        this.docCount = docCount
         this.replayDetails = replayDetailsShard
         this.restoreDetails = restoreDetailsShard
     }
@@ -46,6 +51,7 @@ class ShardInfoResponse : BroadcastShardResponse, ToXContentObject {
     override fun writeTo(out: StreamOutput) {
         super.writeTo(out)
         out.writeString(status)
+        out.writeLong(docCount)
         if (::replayDetails.isInitialized)
             replayDetails.writeTo(out)
         if (::restoreDetails.isInitialized)
@@ -53,6 +59,7 @@ class ShardInfoResponse : BroadcastShardResponse, ToXContentObject {
     }
 
     private val SHARDID = ParseField("shard_id")
+    private val DOCCOUNT = ParseField("doc_count")
     private val REPLAYDETAILS = ParseField("syncing_task_details")
     private val RESTOREDETAILS = ParseField("bootstrap_task_details")
 
@@ -61,6 +68,7 @@ class ShardInfoResponse : BroadcastShardResponse, ToXContentObject {
     override fun toXContent(builder: XContentBuilder, params: ToXContent.Params?): XContentBuilder? {
         builder!!.startObject()
         builder.field(SHARDID.preferredName, shardId)
+        builder.field(DOCCOUNT.preferredName, docCount)
         if (::replayDetails.isInitialized)
             builder.field(REPLAYDETAILS.preferredName, replayDetails)
         if (::restoreDetails.isInitialized)

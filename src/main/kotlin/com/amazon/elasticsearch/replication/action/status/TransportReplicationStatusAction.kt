@@ -59,6 +59,9 @@ class TransportReplicationStatusAction @Inject constructor(transportService: Tra
                             followerResponse.shardInfoResponse = shardResponses
                         }
                     }
+                    followerResponse.connectionAlias = metadata.connectionName
+                    followerResponse.followerIndexName = metadata.followerContext.resource
+                    followerResponse.leaderIndexName = metadata.leaderContext.resource
                     followerResponse.status = status
                     followerResponse
                 } catch(e : Exception) {
