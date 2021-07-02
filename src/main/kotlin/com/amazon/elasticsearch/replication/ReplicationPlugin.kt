@@ -133,15 +133,112 @@ import com.amazon.elasticsearch.replication.seqno.RemoteClusterTranslogService
 import com.amazon.elasticsearch.replication.action.update.TransportUpdateIndexReplicationAction
 import com.amazon.elasticsearch.replication.action.update.UpdateIndexReplicationAction
 import com.amazon.elasticsearch.replication.rest.UpdateIndexHandler
+import kotlinx.coroutines.sync.withLock
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.min
+
+
+class TranslogBuffer(percentOfHeap: Int) {
+    val FIRST_FETCH = -1L
+    val SLEEP_MILLISECONDS = 500L
+    val MAX_SLEEP_MILLISECONDS = 10_000L
+
+    var translogBufferMutex = Mutex()
+
+    /** Variable translogBuffer captures the size of buffer which will hold the in-flight translog batches, which are
+     * fetched from leader but yet to be applied to follower. All changes to translogBuffer must happen after acquiring
+     * a lock on [translogBufferMutex]. */
+    private val translogBuffer = AtomicLong(JvmInfo.jvmInfo().getMem().getHeapMax().getBytes() * percentOfHeap / 100)
+
+    /** We keep estimate of size of a translog batch in [batchSizeEstimate] map, so that we can use it as a guess of
+     *  how much a to-be fetched batch is going to consume.
+     *  Note that all mutating operations to this map should be done after acquiring lock on [translogBufferMutex].
+     *  Key is index name, value is estimate size of one batch
+     */
+    private var batchSizeEstimate = ConcurrentHashMap<String, Long>()
+
+    // If no estimate is present (i.e. first fetch has not yet happened), returns -1 by taking a lock
+    public suspend fun getBatchSizeEstimateOrFirstFetch(followerIndexName: String) : Long {
+        translogBufferMutex.withLock {
+            if (batchSizeEstimate.containsKey(followerIndexName)) {
+                return batchSizeEstimate[followerIndexName]!!
+            }
+        }
+        return FIRST_FETCH
+    }
+
+    private fun getSizeEstimateWithoutLock(followerIndexName: String): Long {
+        if (batchSizeEstimate.containsKey(followerIndexName)) {
+            return batchSizeEstimate[followerIndexName]!!
+        } else {
+            // TODO: rename to 'empty'/'not_present'?
+            return FIRST_FETCH
+        }
+    }
+    public suspend fun getBatchSizeEstimate(followerIndexName: String, keepLocked: Boolean): Long {
+        if (keepLocked) {
+            translogBufferMutex.lock()
+            return getSizeEstimateWithoutLock(followerIndexName)
+        } else {
+            translogBufferMutex.withLock {
+                return getSizeEstimateWithoutLock(followerIndexName)
+            }
+        }
+    }
+
+    // returns true if batch is added, else false
+//    public suspend fun addBatch(followerIndexName: String): Boolean {
+//        var sleepSoFar = 0L
+//        while (true) {
+//            translogBufferMutex.withLock {
+//                if (batchSizeEstimate.containsKey(followerIndexName) && translogBuffer.get() > batchSizeEstimate[followerIndexName]!!) {
+//                    translogBuffer.addAndGet(-1 * batchSizeEstimate[followerIndexName]!!)
+//                    return true
+//                }
+//            }
+//            if (sleepSoFar >= MAX_SLEEP_MILLISECONDS) {
+//                return false
+//            }
+//            delay(SLEEP_MILLISECONDS)
+//            sleepSoFar += SLEEP_MILLISECONDS
+//        }
+//    }
+
+    public suspend fun addBatch(followerIndexName: String): Boolean {
+        translogBufferMutex.withLock {
+            if (batchSizeEstimate.containsKey(followerIndexName) && translogBuffer.get() > batchSizeEstimate[followerIndexName]!!) {
+                translogBuffer.addAndGet(-1 * batchSizeEstimate[followerIndexName]!!)
+                return true
+            }
+        }
+        return false
+    }
+
+    suspend fun refillBuffer(followerIndexName: String) {
+        translogBufferMutex.withLock {
+            translogBuffer.addAndGet(batchSizeEstimate[followerIndexName]!!)
+        }
+    }
+
+    suspend inline fun <T> withLock(action: () -> T): T {
+        translogBufferMutex.withLock {
+            return action()
+        }
+    }
+}
+
+
+
+
 
 internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin, RepositoryPlugin, EnginePlugin {
 
     private lateinit var client: Client
     private lateinit var threadPool: ThreadPool
     private lateinit var replicationMetadataManager: ReplicationMetadataManager
+
+    private var translogBufferNew = TranslogBuffer(min(DEFAULT_TRANSLOG_BUFFER_PERCENT, MAX_TRANSLOG_BUFFER_PERCENT))
 
     private var translogBufferMutex = Mutex()
 
@@ -265,7 +362,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
         : List<PersistentTasksExecutor<*>> {
         return listOf(
             ShardReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager,
-                    this.translogBuffer, this.translogBufferMutex, this.batchSizeEstimate),
+                    this.translogBuffer, this.translogBufferMutex, this.batchSizeEstimate, translogBufferNew),
             IndexReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager),
             AutoFollowExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager))
     }

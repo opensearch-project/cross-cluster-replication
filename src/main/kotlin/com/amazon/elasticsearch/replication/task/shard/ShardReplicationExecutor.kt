@@ -15,6 +15,7 @@
 
 package com.amazon.elasticsearch.replication.task.shard
 
+import com.amazon.elasticsearch.replication.TranslogBuffer
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
 import com.amazon.elasticsearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
@@ -40,7 +41,8 @@ class ShardReplicationExecutor(executor: String, private val clusterService : Cl
                                private val replicationMetadataManager: ReplicationMetadataManager,
                                private val translogBuffer: AtomicLong,
                                private val translogBufferMutex: Mutex,
-                               private val batchSizeEstimate: ConcurrentHashMap<String, Long>):
+                               private val batchSizeEstimate: ConcurrentHashMap<String, Long>,
+                               private val translogBufferNew: TranslogBuffer):
     PersistentTasksExecutor<ShardReplicationParams>(TASK_NAME, executor) {
 
     companion object {
@@ -82,7 +84,7 @@ class ShardReplicationExecutor(executor: String, private val clusterService : Cl
                             headers: Map<String, String>): AllocatedPersistentTask {
         return ShardReplicationTask(id, type, action, getDescription(taskInProgress), parentTaskId,
                                     taskInProgress.params!!, executor, clusterService, threadPool, client, replicationMetadataManager,
-                                    translogBuffer, translogBufferMutex, batchSizeEstimate)
+                                    translogBuffer, translogBufferMutex, batchSizeEstimate, translogBufferNew)
     }
 
     override fun getDescription(taskInProgress: PersistentTask<ShardReplicationParams>): String {

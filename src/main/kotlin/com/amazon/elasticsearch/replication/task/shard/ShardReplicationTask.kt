@@ -17,6 +17,7 @@ package com.amazon.elasticsearch.replication.task.shard
 
 import com.amazon.elasticsearch.replication.ReplicationException
 import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.REPLICATION_CHANGE_BATCH_SIZE
+import com.amazon.elasticsearch.replication.TranslogBuffer
 import com.amazon.elasticsearch.replication.action.changes.GetChangesAction
 import com.amazon.elasticsearch.replication.action.changes.GetChangesRequest
 import com.amazon.elasticsearch.replication.action.changes.GetChangesResponse
@@ -33,10 +34,7 @@ import com.amazon.elasticsearch.replication.util.indicesService
 import com.amazon.elasticsearch.replication.util.suspendExecute
 import com.amazon.elasticsearch.replication.util.suspendExecuteWithRetries
 import com.amazon.elasticsearch.replication.util.suspending
-import kotlinx.coroutines.ObsoleteCoroutinesApi
-import kotlinx.coroutines.cancel
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.isActive
+import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
 import org.elasticsearch.ElasticsearchException
@@ -68,7 +66,8 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                            threadPool: ThreadPool, client: Client, replicationMetadataManager: ReplicationMetadataManager,
                            private val translogBuffer: AtomicLong,
                            private val translogBufferMutex: Mutex,
-                           private val batchSizeEstimate: ConcurrentHashMap<String, Long>)
+                           private val batchSizeEstimate: ConcurrentHashMap<String, Long>,
+                           private val translogBufferNew: TranslogBuffer)
     : CrossClusterReplicationTask(id, type, action, description, parentTask, emptyMap(),
                                   executor, clusterService, threadPool, client, replicationMetadataManager) {
 
@@ -80,7 +79,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     private val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
     private var paused = false
     val backOffForNodeDiscovery = 1000L
-    private var isFirstFetch = true
+    @Volatile private var isFirstFetch = true
 
     private val clusterStateListenerForTaskInterruption = ClusterStateListenerForTaskInterruption()
 
@@ -159,7 +158,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                 if (currBufferSize <= indexBatchSizeEstimate) {
                     // Buffer is low on free memory
                     translogBufferMutex.unlock()
-                    delay(200)
+                    delay(500)
                 } else {
                     val bufferSize = translogBuffer.get()
                     val updatedBufferSize = translogBuffer.addAndGet(-1 * indexBatchSizeEstimate)
@@ -230,38 +229,40 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
 
         // TODO: Redesign this to avoid sharing the rateLimiter between this block and the sequencer.
         //       This was done as a stopgap to work around a concurrency bug that needed to be fixed fast.
-        while (scope.isActive) {
-            rateLimiter.acquire()
-            try {
-                preFetchBufferUpdate()
-                val startTime = System.nanoTime()
-                val changesResponse = getChanges(seqNo)
-                val endTime = System.nanoTime()
-                log.info("Got ${changesResponse.changes.size} changes starting from seqNo: $seqNo in " +
-                        "${(endTime - startTime)/1000000} ms")
-                sequencer.send(changesResponse)
-                seqNo = changesResponse.changes.lastOrNull()?.seqNo()?.inc() ?: seqNo
-                postFetchBufferUpdate(changesResponse)
-            } catch (e: ElasticsearchTimeoutException) {
-                log.info("Timed out waiting for new changes. Current seqNo: $seqNo")
-                postErrorBufferUpdate()
-                rateLimiter.release()
-                continue
-            } catch (e: NodeNotConnectedException) {
-                log.info("Node not connected. Retrying request using a different node. $e")
-                delay(backOffForNodeDiscovery)
-                rateLimiter.release()
-                continue
-            }
-            //renew retention lease with global checkpoint so that any shard that picks up shard replication task has data until then.
-            try {
-                retentionLeaseHelper.renewRetentionLease(remoteShardId, indexShard.lastSyncedGlobalCheckpoint, followerShardId)
-            } catch (ex: Exception) {
-                when (ex) {
-                    is RetentionLeaseInvalidRetainingSeqNoException, is RetentionLeaseNotFoundException -> {
-                        throw ex
+        coroutineScope {
+            while (scope.isActive) {
+                launch {
+                    rateLimiter.acquire()
+                    try {
+                        preFetchBufferUpdate()
+                        val startTime = System.nanoTime()
+                        val changesResponse = getChanges(seqNo)
+                        val endTime = System.nanoTime()
+                        log.info("Got ${changesResponse.changes.size} changes starting from seqNo: $seqNo in " +
+                                "${(endTime - startTime)/1000000} ms")
+                        sequencer.send(changesResponse)
+                        seqNo = changesResponse.changes.lastOrNull()?.seqNo()?.inc() ?: seqNo
+                        postFetchBufferUpdate(changesResponse)
+                    } catch (e: ElasticsearchTimeoutException) {
+                        log.info("Timed out waiting for new changes. Current seqNo: $seqNo")
+                        postErrorBufferUpdate()
+                        rateLimiter.release()
+                    } catch (e: NodeNotConnectedException) {
+                        log.info("Node not connected. Retrying request using a different node. $e")
+                        delay(backOffForNodeDiscovery)
+                        rateLimiter.release()
                     }
-                    else -> log.info("Exception renewing retention lease. Not an issue", ex);
+                    //renew retention lease with global checkpoint so that any shard that picks up shard replication task has data until then.
+                    try {
+                        retentionLeaseHelper.renewRetentionLease(remoteShardId, indexShard.lastSyncedGlobalCheckpoint, followerShardId)
+                    } catch (ex: Exception) {
+                        when (ex) {
+                            is RetentionLeaseInvalidRetainingSeqNoException, is RetentionLeaseNotFoundException -> {
+                                throw ex
+                            }
+                            else -> log.info("Exception renewing retention lease. Not an issue", ex);
+                        }
+                    }
                 }
             }
         }
