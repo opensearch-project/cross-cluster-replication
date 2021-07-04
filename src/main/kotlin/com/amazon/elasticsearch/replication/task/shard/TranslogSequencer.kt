@@ -50,7 +50,7 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
                         private val followerShardId: ShardId,
                         private val remoteCluster: String, private val remoteIndexName: String,
                         private val parentTaskId: TaskId, private val client: Client,
-                        private val rateLimiter: Semaphore, initialSeqNo: Long) {
+                        initialSeqNo: Long) {
 
     private val unAppliedChanges = ConcurrentHashMap<Long, GetChangesResponse>()
     private val log = Loggers.getLogger(javaClass, followerShardId)!!

@@ -166,18 +166,6 @@ class TranslogBuffer(percentOfHeap: Int) {
     private var batchSizeEstimate = ConcurrentHashMap<String, Long>()
 
     suspend fun getBatchSizeEstimateOrLockIfFirstFetch(followerIndexName: String): Long {
-        // possibly a better approach, but not doign it for now
-        // var retval = FIRST_FETCH
-        // translogBufferMutex.withLock {
-        //     if (batchSizeEstimate.containsKey(followerIndexName)) {
-        //         retval = batchSizeEstimate[followerIndexName]!!
-        //     }
-        // }
-        // if (retval == FIRST_FETCH) {
-        //     translogBufferMutex.lock()
-        // }
-        // return retval
-
         log.info("getbatchsize locking")
         translogBufferMutex.lock()
         log.info("getbatchsize locked")
@@ -196,10 +184,6 @@ class TranslogBuffer(percentOfHeap: Int) {
        if (!translogBufferMutex.isLocked) {
            throw IllegalStateException("Translog buffer mutex should be locked but it isn't")
        }
-//       if (batchSizeEstimate.containsKey(followerIndexName)) {
-//           // log.warn("Estimate shouldn't be present for follower index $followerIndexName but is present")
-//           // shouldn't happen, update
-//       }
        batchSizeEstimate[followerIndexName] = estimate
        translogBufferMutex.unlock()
    }
@@ -234,86 +218,7 @@ class TranslogBuffer(percentOfHeap: Int) {
             translogBufferMutex.unlock()
         }
     }
-
-
-
-
-
-    // If no estimate is present (i.e. first fetch has not yet happened), returns -1 by taking a lock
-    public suspend fun getBatchSizeEstimateOrFirstFetch(followerIndexName: String) : Long {
-        translogBufferMutex.withLock {
-            if (batchSizeEstimate.containsKey(followerIndexName)) {
-                return batchSizeEstimate[followerIndexName]!!
-            }
-        }
-        return FIRST_FETCH
-    }
-
-    private fun getSizeEstimateWithoutLock(followerIndexName: String): Long {
-        if (batchSizeEstimate.containsKey(followerIndexName)) {
-            return batchSizeEstimate[followerIndexName]!!
-        } else {
-            // TODO: rename to 'empty'/'not_present'?
-            return FIRST_FETCH
-        }
-    }
-
-
-    public suspend fun getBatchSizeEstimate(followerIndexName: String, keepLocked: Boolean): Long {
-        if (keepLocked) {
-            translogBufferMutex.lock()
-            return getSizeEstimateWithoutLock(followerIndexName)
-        } else {
-            translogBufferMutex.withLock {
-                return getSizeEstimateWithoutLock(followerIndexName)
-            }
-        }
-    }
-
-    // returns true if batch is added, else false
-//    public suspend fun addBatch(followerIndexName: String): Boolean {
-//        var sleepSoFar = 0L
-//        while (true) {
-//            translogBufferMutex.withLock {
-//                if (batchSizeEstimate.containsKey(followerIndexName) && translogBuffer.get() > batchSizeEstimate[followerIndexName]!!) {
-//                    translogBuffer.addAndGet(-1 * batchSizeEstimate[followerIndexName]!!)
-//                    return true
-//                }
-//            }
-//            if (sleepSoFar >= MAX_SLEEP_MILLISECONDS) {
-//                return false
-//            }
-//            delay(SLEEP_MILLISECONDS)
-//            sleepSoFar += SLEEP_MILLISECONDS
-//        }
-//    }
-
-//    public suspend fun addBatch(followerIndexName: String): Boolean {
-//        translogBufferMutex.withLock {
-//            if (batchSizeEstimate.containsKey(followerIndexName) && translogBuffer.get() > batchSizeEstimate[followerIndexName]!!) {
-//                translogBuffer.addAndGet(-1 * batchSizeEstimate[followerIndexName]!!)
-//                return true
-//            }
-//        }
-//        return false
-//    }
-//
-    suspend fun refillBuffer(followerIndexName: String) {
-        translogBufferMutex.withLock {
-            translogBuffer.addAndGet(batchSizeEstimate[followerIndexName]!!)
-        }
-    }
-
-    suspend inline fun <T> withLock(action: () -> T): T {
-        translogBufferMutex.withLock {
-            return action()
-        }
-    }
 }
-
-
-
-
 
 internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin, RepositoryPlugin, EnginePlugin {
 

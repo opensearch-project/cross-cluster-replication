@@ -171,51 +171,6 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
             delay(delayInterval)
             totalDelay += delayInterval
         }
-
-
-
-        /*
-        val indexBatchSizeEstimate: Long
-        translogBufferMutex.lock()
-
-        // If it is the first fetch, we hold the lock, else we release it.
-        if (batchSizeEstimate.containsKey(followerIndexName)) {
-            indexBatchSizeEstimate = batchSizeEstimate[followerIndexName]!!
-            log.info("First fetch for index $followerIndexName already finished. " +
-                    "Batch size guess is ${indexBatchSizeEstimate.toDouble()/1024/1024} MB.")
-            isFirstFetch = false
-            translogBufferMutex.unlock() // unlocking now and re-locking again in while loop
-            while (true) {
-                translogBufferMutex.lock()
-                val currBufferSize = translogBuffer.get()
-                if (currBufferSize <= indexBatchSizeEstimate) {
-                    // Buffer is low on free memory
-                    translogBufferMutex.unlock()
-                    delay(500)
-                } else {
-                    val bufferSize = translogBuffer.get()
-                    val updatedBufferSize = translogBuffer.addAndGet(-1 * indexBatchSizeEstimate)
-                    log.info("Translog buffer size updated from ${bufferSize.toDouble()/1024/1024} MB to " +
-                            "${updatedBufferSize.toDouble()/1024/1024} MB after estimating that batch would be " +
-                            "of size ${indexBatchSizeEstimate.toDouble()/1024/1024} MB.")
-                    translogBufferMutex.unlock()
-                    break
-                }
-            }
-        }
-         */
-    }
-
-    private suspend fun reFillBuffer() {
-        translogBufferNew.removeBatch(followerIndexName)
-        /*
-        translogBufferMutex.lock()
-        val guess = batchSizeEstimate[followerIndexName]!!
-        val currBufferSize = translogBuffer.addAndGet(guess)
-        log.info("Guessed size of batch was ${guess.toDouble()/1024/1024} MB, so updated buffer back by same value. " +
-                "Buffer is now ${currBufferSize.toDouble()/1024/1024} MB.")
-        translogBufferMutex.unlock()
-         */
     }
 
     private suspend fun postFetchBufferUpdate(changesResponse: GetChangesResponse) {
@@ -229,21 +184,6 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
             translogBufferNew.removeBatch(followerIndexName)
         }
         log.info("postupdate finished")
-
-        /*
-        if (isFirstFetch) {
-            val perOperationSize = changesResponse.changesSizeEstimate/changesResponse.changes.size
-            batchSizeEstimate[followerIndexName] = perOperationSize.toInt().times(
-                    clusterService.clusterSettings.get(REPLICATION_CHANGE_BATCH_SIZE)).toLong()
-            log.info("First fetch completed. Batch size is " +
-                    "${changesResponse.changesSizeEstimate.toDouble()/1024/1024} MB and # of operations " +
-                    "are ${changesResponse.changes.size}, so setting buffer size to " +
-                    "${batchSizeEstimate[followerIndexName]!!/1024/1024} MB.")
-            translogBufferMutex.unlock()
-        } else {
-            reFillBuffer()
-        }
-         */
     }
 
     private suspend fun postErrorBufferUpdate() {
@@ -255,19 +195,11 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
             translogBufferNew.removeBatch(followerIndexName)
         }
         log.info("postupdate error finished")
-        /*
-        if (isFirstFetch && translogBufferMutex.isLocked) {
-            translogBufferMutex.unlock()
-        } else {
-            reFillBuffer()
-        }
-         */
     }
 
     @ObsoleteCoroutinesApi
     private suspend fun replicate() {
         updateTaskState(FollowingState)
-        // log.info("Starting with translog buffer size ${translogBuffer.get().toDouble()/1024/1024} MB")
         val followerIndexService = indicesService.indexServiceSafe(followerShardId.index)
         val indexShard = followerIndexService.getShard(followerShardId.id)
         // Adding retention lease at local checkpoint of a node. This makes sure
@@ -277,19 +209,15 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
 
         addListenerToInterruptTask()
 
-        // Not really used yet as we only have one get changes action at a time.
-        val rateLimiter = Semaphore(CONCURRENT_REQUEST_RATE_LIMIT)
         var seqNo = indexShard.localCheckpoint + 1
         val sequencer = TranslogSequencer(scope, replicationMetadata, followerShardId, remoteCluster, remoteShardId.indexName,
-                                          TaskId(clusterService.nodeName, id), client, rateLimiter, seqNo - 1)
+                                          TaskId(clusterService.nodeName, id), client, seqNo - 1)
 
         coroutineScope {
             for (i in 1..5) {
                 launch {
                     while (true) {
                         log.info("coroutine got launched")
-                        // rateLimiter.acquire()
-                        // log.info("coroutine past reatelimiter")
                         try {
                             preFetchBufferUpdate()
                             val startTime = System.nanoTime()
@@ -303,11 +231,9 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                         } catch (e: ElasticsearchTimeoutException) {
                             log.info("Timed out waiting for new changes. Current seqNo: $seqNo")
                             postErrorBufferUpdate()
-                            // rateLimiter.release()
                         } catch (e: NodeNotConnectedException) {
                             log.info("Node not connected. Retrying request using a different node. $e")
                             delay(backOffForNodeDiscovery)
-                            // rateLimiter.release()
                         }
                         //renew retention lease with global checkpoint so that any shard that picks up shard replication task has data until then.
                         try {
