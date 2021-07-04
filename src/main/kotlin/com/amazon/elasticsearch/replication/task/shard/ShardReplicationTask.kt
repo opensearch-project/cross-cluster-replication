@@ -92,7 +92,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
 
     companion object {
         fun taskIdForShard(shardId: ShardId) = "replication:${shardId}"
-        const val CONCURRENT_REQUEST_RATE_LIMIT = 10
+        const val CONCURRENT_REQUEST_RATE_LIMIT = 2
     }
 
     @ObsoleteCoroutinesApi
@@ -148,7 +148,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         // If it is the first fetch, we hold the lock, else we release it.
         if (batchSizeEstimate.containsKey(followerIndexName)) {
             indexBatchSizeEstimate = batchSizeEstimate[followerIndexName]!!
-            log.debug("First fetch for index $followerIndexName already finished. " +
+            log.info("First fetch for index $followerIndexName already finished. " +
                     "Batch size guess is ${indexBatchSizeEstimate.toDouble()/1024/1024} MB.")
             isFirstFetch = false
             translogBufferMutex.unlock() // unlocking now and re-locking again in while loop
@@ -162,7 +162,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                 } else {
                     val bufferSize = translogBuffer.get()
                     val updatedBufferSize = translogBuffer.addAndGet(-1 * indexBatchSizeEstimate)
-                    log.debug("Translog buffer size updated from ${bufferSize.toDouble()/1024/1024} MB to " +
+                    log.info("Translog buffer size updated from ${bufferSize.toDouble()/1024/1024} MB to " +
                             "${updatedBufferSize.toDouble()/1024/1024} MB after estimating that batch would be " +
                             "of size ${indexBatchSizeEstimate.toDouble()/1024/1024} MB.")
                     translogBufferMutex.unlock()
@@ -176,7 +176,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         translogBufferMutex.lock()
         val guess = batchSizeEstimate[followerIndexName]!!
         val currBufferSize = translogBuffer.addAndGet(guess)
-        log.debug("Guessed size of batch was ${guess.toDouble()/1024/1024} MB, so updated buffer back by same value. " +
+        log.info("Guessed size of batch was ${guess.toDouble()/1024/1024} MB, so updated buffer back by same value. " +
                 "Buffer is now ${currBufferSize.toDouble()/1024/1024} MB.")
         translogBufferMutex.unlock()
     }
@@ -190,10 +190,10 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
             val perOperationSize = changesResponse.changesSizeEstimate/changesResponse.changes.size
             batchSizeEstimate[followerIndexName] = perOperationSize.toInt().times(
                     clusterService.clusterSettings.get(REPLICATION_CHANGE_BATCH_SIZE)).toLong()
-            log.debug("First fetch completed. Batch size is " +
+            log.info("First fetch completed. Batch size is " +
                     "${changesResponse.changesSizeEstimate.toDouble()/1024/1024} MB and # of operations " +
                     "are ${changesResponse.changes.size}, so setting buffer size to " +
-                    "${batchSizeEstimate[followerIndexName]} MB.")
+                    "${batchSizeEstimate[followerIndexName]}/1024/1024 MB.")
             translogBufferMutex.unlock()
         } else {
             reFillBuffer()
@@ -232,7 +232,9 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         coroutineScope {
             while (scope.isActive) {
                 launch {
+                    log.info("coroutine got launched")
                     rateLimiter.acquire()
+                    log.info("coroutine past reatelimiter")
                     try {
                         preFetchBufferUpdate()
                         val startTime = System.nanoTime()
