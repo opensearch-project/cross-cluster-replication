@@ -143,7 +143,10 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
     private lateinit var threadPool: ThreadPool
     private lateinit var replicationMetadataManager: ReplicationMetadataManager
 
-    private var translogBufferNew = TranslogBuffer(min(DEFAULT_TRANSLOG_BUFFER_PERCENT, MAX_TRANSLOG_BUFFER_PERCENT))
+    val bufferSize = JvmInfo.jvmInfo().getMem().getHeapMax().getBytes() *
+            min(DEFAULT_TRANSLOG_BUFFER_PERCENT, MAX_TRANSLOG_BUFFER_PERCENT)/ 100
+
+    private var translogBufferNew = TranslogBuffer(bufferSize)
 
     private var translogBufferMutex = Mutex()
 

@@ -33,26 +33,17 @@ import com.amazon.elasticsearch.replication.task.ReplicationState
 import com.amazon.elasticsearch.replication.util.indicesService
 import com.amazon.elasticsearch.replication.util.suspendExecute
 import com.amazon.elasticsearch.replication.util.suspendExecuteWithRetries
-import com.amazon.elasticsearch.replication.util.suspending
 import kotlinx.coroutines.*
 import kotlinx.coroutines.sync.Mutex
-import kotlinx.coroutines.sync.Semaphore
-import org.elasticsearch.ElasticsearchException
 import org.elasticsearch.ElasticsearchTimeoutException
-import org.elasticsearch.action.NoSuchNodeException
-import org.elasticsearch.action.support.IndicesOptions
-import org.elasticsearch.action.support.TransportActions
 import org.elasticsearch.client.Client
 import org.elasticsearch.cluster.ClusterChangedEvent
 import org.elasticsearch.cluster.ClusterStateListener
-import org.elasticsearch.cluster.node.DiscoveryNode
 import org.elasticsearch.cluster.service.ClusterService
 import org.elasticsearch.common.logging.Loggers
-import org.elasticsearch.index.seqno.RetentionLeaseActions
 import org.elasticsearch.index.seqno.RetentionLeaseInvalidRetainingSeqNoException
 import org.elasticsearch.index.seqno.RetentionLeaseNotFoundException
 import org.elasticsearch.index.shard.ShardId
-import org.elasticsearch.index.shard.ShardNotFoundException
 import org.elasticsearch.persistent.PersistentTaskState
 import org.elasticsearch.persistent.PersistentTasksNodeService
 import org.elasticsearch.tasks.TaskId
@@ -82,6 +73,13 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     val backOffForNodeDiscovery = 1000L
     @Volatile private var isFirstFetch = true
 
+//    val bleh = params.followerShardId.
+    private val PARALLEL_FETCHES = 5
+
+    // TODO finish this comment
+    // When we perform fetch of translog batch from leader, we do so by blocking buffer. TODO: finish this comment
+    private var lastFetchTimedOut = ConcurrentHashMap<Int, Boolean>()
+
     private val clusterStateListenerForTaskInterruption = ClusterStateListenerForTaskInterruption()
 
     @Volatile private var batchSize = clusterService.clusterSettings.get(REPLICATION_CHANGE_BATCH_SIZE)
@@ -102,7 +100,8 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     }
 
     override suspend fun cleanup() {
-        postErrorBufferUpdate()
+        // TODO: see if this is required really
+        // postErrorBufferUpdate()
         /* This is to minimise overhead of calling an additional listener as
         * it continues to be called even after the task is completed.
          */
@@ -138,7 +137,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
 
     override fun indicesOrShards() = listOf(followerShardId)
 
-    private suspend fun preFetchBufferUpdate() {
+    private suspend fun preFetchBufferUpdate(): Boolean {
         // If this is the first fetch for the index, then ony one thread of execution is allowed to proceed to
         // fetch the translog batch. After the first fetch is complete, any number of shards of an index can fetch
         // translog batches in parallel, provided there is enough space in the buffer 'translogBuffer'.
@@ -149,7 +148,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         val batchSizeEstimate = translogBufferNew.getBatchSizeEstimateOrLockIfFirstFetch(followerIndexName)
         if (batchSizeEstimate == translogBufferNew.FIRST_FETCH) {
             log.info("first fetch")
-            return
+            return false
         }
         log.info("not first fetch")
         isFirstFetch = false
@@ -161,10 +160,10 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
 
         while (true) {
             log.info("adding batch to buffer")
-            val ok = translogBufferNew.addBatch(followerIndexName)
+            val (ok, isInactive) = translogBufferNew.addBatch(followerIndexName)
             log.info("adding batch to buffer done with output ok? $ok")
             if (ok) {
-                break
+                return isInactive
             }
             if (totalDelay >= maxDelayBeforeWarnLog) {
                 log.warn("Not able to consume buffer to fetch translog batch for ${totalDelay/1000}s now.")
@@ -178,7 +177,8 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         }
     }
 
-    private suspend fun postFetchBufferUpdate(changesResponse: GetChangesResponse) {
+    // TODO: isIndexInactive/indexInactiveCurrently aren't intuitive. Come up with a better name
+    private suspend fun postFetchBufferUpdate(changesResponse: GetChangesResponse, isIndexInactive: Boolean) {
         log.info("postupdate invoked")
         if (isFirstFetch) {
             val perOperationSize = (changesResponse.changesSizeEstimate/changesResponse.changes.size).toInt()
@@ -186,18 +186,20 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
             translogBufferNew.addEstimateAndUnlock(followerIndexName, estimate)
             log.info("first fetch finished and unlocked")
         } else {
-            translogBufferNew.removeBatch(followerIndexName)
+            translogBufferNew.removeBatch(followerIndexName, false, isIndexInactive)
         }
         log.info("postupdate finished")
     }
 
-    private suspend fun postErrorBufferUpdate() {
+    private suspend fun postErrorBufferUpdate(markIndexInactive: Boolean, indexInactiveCurrently: Boolean) {
         log.info("postupdate error involed")
         // We keep the mutex locked for extended periods of time only for the first fetch, so check locking only in the case
         if (isFirstFetch) {
             translogBufferNew.unlockIfLocked()
         } else {
-            translogBufferNew.removeBatch(followerIndexName)
+            // Only when it is NOT the first fetch do we need to reset the index in buffer.
+            /// TODO update this comment
+            translogBufferNew.removeBatch(followerIndexName, markIndexInactive, indexInactiveCurrently)
         }
         log.info("postupdate error finished")
     }
@@ -214,17 +216,23 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
 
         addListenerToInterruptTask()
 
+        // TODO: make atomic, as updated by many threads?
         var seqNo = indexShard.localCheckpoint + 1
         val sequencer = TranslogSequencer(scope, replicationMetadata, followerShardId, remoteCluster, remoteShardId.indexName,
                                           TaskId(clusterService.nodeName, id), client, seqNo - 1)
 
+
         coroutineScope {
-            for (i in 1..5) {
+            for (i in 1..PARALLEL_FETCHES) {
                 launch {
                     while (true) {
                         log.info("coroutine got launched")
+                        var markIndexInactive = false
+                        var timeOutEncountered = false
+                        var indexInactiveCurrently = false
+                        var fetchSuccessful = false
                         try {
-                            preFetchBufferUpdate()
+                            indexInactiveCurrently = preFetchBufferUpdate()
                             val startTime = System.nanoTime()
                             val changesResponse = getChanges(seqNo)
                             val endTime = System.nanoTime()
@@ -232,14 +240,36 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                                     "${(endTime - startTime)/1000000} ms")
                             sequencer.send(changesResponse)
                             seqNo = changesResponse.changes.lastOrNull()?.seqNo()?.inc() ?: seqNo
-                            postFetchBufferUpdate(changesResponse)
+                            fetchSuccessful = true
+                            postFetchBufferUpdate(changesResponse, indexInactiveCurrently)
                         } catch (e: ElasticsearchTimeoutException) {
                             log.info("Timed out waiting for new changes. Current seqNo: $seqNo")
-                            postErrorBufferUpdate()
+                            // TODO: move inside posterrorbufferudpate?
+                            timeOutEncountered = true
+                            if (!lastFetchTimedOut.contains(i)) {
+                                lastFetchTimedOut[i] = true
+                            }
+                            var numTimeOuts = 0
+                            val it = lastFetchTimedOut.elements().asIterator()
+                            while(it.hasNext()) {
+                                val value = it.next()
+                                if (value) {
+                                    numTimeOuts++
+                                }
+                            }
+                            if (numTimeOuts == PARALLEL_FETCHES) {
+                                markIndexInactive = true
+                            }
                         } catch (e: NodeNotConnectedException) {
                             log.info("Node not connected. Retrying request using a different node. $e")
                             delay(backOffForNodeDiscovery)
+                        } finally {
+                            lastFetchTimedOut[i] = timeOutEncountered
+                            if (!fetchSuccessful) {
+                                postErrorBufferUpdate(markIndexInactive, indexInactiveCurrently)
+                            }
                         }
+
                         //renew retention lease with global checkpoint so that any shard that picks up shard replication task has data until then.
                         try {
                             retentionLeaseHelper.renewRetentionLease(remoteShardId, indexShard.lastSyncedGlobalCheckpoint, followerShardId)
