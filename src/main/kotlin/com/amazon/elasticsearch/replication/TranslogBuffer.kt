@@ -63,6 +63,7 @@ class TranslogBuffer(sizeBytes: Long) {
         }
     }
 
+    // TODO: place below addbatch
     // false, true
     // TODO: better name for previousIndexInactiveState -> indexInactiveWhenBatchAdded
     suspend fun removeBatch(followerIndexName: String, markIndexInactive: Boolean, previousIndexInactiveState: Boolean): Boolean {
@@ -70,10 +71,17 @@ class TranslogBuffer(sizeBytes: Long) {
         translogBufferMutex.withLock {
             log.info("removebatch took lock")
             log.info("buffer size is ${translogBuffer.get()}, estimate is ${batchSizeEstimate[followerIndexName]} and initial buffer size is $bufferInitialSize")
+            if (markIndexInactive) {
+                log.info("marking index as inactive now!!!!")
+            } else {
+                log.info("marking index as active now!!!!")
+            }
             indexInactive[followerIndexName] = markIndexInactive
-            if (batchSizeEstimate.containsKey(followerIndexName) &&
-                    translogBuffer.get() + batchSizeEstimate[followerIndexName]!! <= bufferInitialSize &&
-                    !previousIndexInactiveState) {
+            if (previousIndexInactiveState) {
+                // No need to remove from buffer if the index was inactive when batch was added to buffer
+                return true
+            }
+            if (batchSizeEstimate.containsKey(followerIndexName) && translogBuffer.get() + batchSizeEstimate[followerIndexName]!! <= bufferInitialSize) {
                 log.info("removebatch condition satisfied")
                 translogBuffer.addAndGet(batchSizeEstimate[followerIndexName]!!)
                 return true
@@ -90,9 +98,11 @@ class TranslogBuffer(sizeBytes: Long) {
             if (indexInactive.containsKey(followerIndexName)) {
                 isIndexInactive = indexInactive[followerIndexName]!!
             }
-            if (batchSizeEstimate.containsKey(followerIndexName) &&
-                    translogBuffer.get() > batchSizeEstimate[followerIndexName]!! &&
-                    !isIndexInactive) {
+            if (isIndexInactive) {
+                // No need to add to buffer if the index is inactive
+                return Pair(true, isIndexInactive)
+            }
+            if (batchSizeEstimate.containsKey(followerIndexName) && translogBuffer.get() > batchSizeEstimate[followerIndexName]!!) {
                 translogBuffer.addAndGet(-1 * batchSizeEstimate[followerIndexName]!!)
                 return Pair(true, isIndexInactive)
             }

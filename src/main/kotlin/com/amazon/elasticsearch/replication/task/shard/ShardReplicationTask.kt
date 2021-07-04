@@ -221,7 +221,6 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         val sequencer = TranslogSequencer(scope, replicationMetadata, followerShardId, remoteCluster, remoteShardId.indexName,
                                           TaskId(clusterService.nodeName, id), client, seqNo - 1)
 
-
         coroutineScope {
             for (i in 1..PARALLEL_FETCHES) {
                 launch {
@@ -246,9 +245,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                             log.info("Timed out waiting for new changes. Current seqNo: $seqNo")
                             // TODO: move inside posterrorbufferudpate?
                             timeOutEncountered = true
-                            if (!lastFetchTimedOut.contains(i)) {
-                                lastFetchTimedOut[i] = true
-                            }
+                            lastFetchTimedOut[i] = timeOutEncountered
                             var numTimeOuts = 0
                             val it = lastFetchTimedOut.elements().asIterator()
                             while(it.hasNext()) {
@@ -258,6 +255,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                                 }
                             }
                             if (numTimeOuts == PARALLEL_FETCHES) {
+                                log.info("timeouts count = number of parallelism, marking index as inactive")
                                 markIndexInactive = true
                             }
                         } catch (e: NodeNotConnectedException) {
