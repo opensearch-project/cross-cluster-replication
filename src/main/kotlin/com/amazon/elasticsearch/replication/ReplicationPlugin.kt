@@ -242,6 +242,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
 
     private var translogBufferMutex = Mutex()
 
+    // TODO: add info that this buffer is only for 'fetch'. There's no buffer in sequencer
     /** Variable translogBuffer captures the size of buffer which will hold the in-flight translog batches, which are
     fetched from leader but yet to be applied to follower. All changes to translogBuffer must happen after acquiring a
     lock on [translogBufferMutex].

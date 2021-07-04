@@ -79,7 +79,7 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
                     }
                     highWatermark = next.changes.lastOrNull()?.seqNo() ?: highWatermark
                 } finally {
-                    rateLimiter.release()
+//                    rateLimiter.release()
                 }
             }
         }
