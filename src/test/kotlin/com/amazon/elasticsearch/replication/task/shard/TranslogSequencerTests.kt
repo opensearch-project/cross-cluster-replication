@@ -85,19 +85,17 @@ class TranslogSequencerTests : ESTestCase() {
     @ExperimentalCoroutinesApi
     fun `test sequencer out of order`() = runBlockingTest {
         val startSeqNo = randomNonNegativeLong()
-        val rateLimiter = Semaphore(10)
         val sequencer = TranslogSequencer(this, replicationMetadata, followerShardId, remoteCluster, remoteIndex, EMPTY_TASK_ID,
-                                          client, rateLimiter, startSeqNo)
+                                          client, startSeqNo)
 
         // Send requests out of order (shuffled seqNo) and await for them to be processed.
         var batchSeqNo = startSeqNo
-        val batches = randomList(1, rateLimiter.availablePermits) {
+        val batches = randomList(1) {
             val (batch, lastSeqNo) = randomChangesResponse(batchSeqNo)
             batchSeqNo = lastSeqNo
             batch
         }
         batches.shuffled().forEach {
-            rateLimiter.acquire()
             sequencer.send(it)
         }
         sequencer.close()
