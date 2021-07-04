@@ -154,8 +154,9 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         log.info("not first fetch")
         isFirstFetch = false
 
-        val maxDelay = 60_000L   // 60 seconds
-        val delayInterval = 500L // 500ms
+        val maxDelayBeforeWarnLog = 60_000L         // 60 seconds
+        val maxDelayBeforeError = 10 * 60_000L      // 10 minutes
+        val delayInterval = 500L                    // 500ms
         var totalDelay = 0L
 
         while (true) {
@@ -165,7 +166,11 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
             if (ok) {
                 break
             }
-            if (totalDelay >= maxDelay) {
+            if (totalDelay >= maxDelayBeforeWarnLog) {
+                log.warn("Not able to consume buffer to fetch translog batch for ${totalDelay/1000}s now.")
+            }
+            if (totalDelay >= maxDelayBeforeError) {
+                log.warn("Not able to consume buffer to fetch translog batch for ${totalDelay/1000}s. Giving up..")
                 throw TimeoutException()
             }
             delay(delayInterval)
