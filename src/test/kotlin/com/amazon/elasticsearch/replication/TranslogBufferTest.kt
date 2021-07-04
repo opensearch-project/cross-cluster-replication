@@ -19,7 +19,6 @@ import org.elasticsearch.test.ESTestCase
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.ObsoleteCoroutinesApi
 import kotlinx.coroutines.test.runBlockingTest
-import org.junit.Assert
 
 @ObsoleteCoroutinesApi
 class TranslogBufferTests : ESTestCase() {
@@ -31,7 +30,7 @@ class TranslogBufferTests : ESTestCase() {
         // perform first fetch and finish the first fetch
         val estimate = tlb.getBatchSizeEstimateOrLockIfFirstFetch("idx1")
         assert(estimate == tlb.FIRST_FETCH)
-        tlb.addEstimateAndUnlock("idx1", 30)
+        tlb.addEstimateAfterFirstFetchAndUnlock("idx1", 30)
 
         // perform next 'normal' fetch by occupying buffer
         var (ok, inactive) = tlb.addBatch("idx1")

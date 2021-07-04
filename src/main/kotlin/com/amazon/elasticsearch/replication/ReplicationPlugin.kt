@@ -114,7 +114,6 @@ import com.amazon.elasticsearch.replication.rest.ReplicateIndexHandler
 import com.amazon.elasticsearch.replication.rest.ResumeIndexReplicationHandler
 import com.amazon.elasticsearch.replication.rest.StopIndexReplicationHandler
 import com.amazon.elasticsearch.replication.rest.UpdateAutoFollowPatternsHandler
-import kotlinx.coroutines.sync.Mutex
 import org.elasticsearch.common.util.concurrent.EsExecutors
 import org.elasticsearch.monitor.jvm.JvmInfo
 import org.elasticsearch.threadpool.FixedExecutorBuilder
@@ -133,8 +132,6 @@ import com.amazon.elasticsearch.replication.seqno.RemoteClusterTranslogService
 import com.amazon.elasticsearch.replication.action.update.TransportUpdateIndexReplicationAction
 import com.amazon.elasticsearch.replication.action.update.UpdateIndexReplicationAction
 import com.amazon.elasticsearch.replication.rest.UpdateIndexHandler
-import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.min
 
 internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin, RepositoryPlugin, EnginePlugin {
@@ -146,24 +143,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
     val bufferSize = JvmInfo.jvmInfo().getMem().getHeapMax().getBytes() *
             min(DEFAULT_TRANSLOG_BUFFER_PERCENT, MAX_TRANSLOG_BUFFER_PERCENT)/ 100
 
-    private var translogBufferNew = TranslogBuffer(bufferSize)
-
-    private var translogBufferMutex = Mutex()
-
-    // TODO: add info that this buffer is only for 'fetch'. There's no buffer in sequencer
-    /** Variable translogBuffer captures the size of buffer which will hold the in-flight translog batches, which are
-    fetched from leader but yet to be applied to follower. All changes to translogBuffer must happen after acquiring a
-    lock on [translogBufferMutex].
-     */
-    val translogBuffer = AtomicLong(JvmInfo.jvmInfo().getMem().getHeapMax().getBytes() *
-            min(DEFAULT_TRANSLOG_BUFFER_PERCENT, MAX_TRANSLOG_BUFFER_PERCENT) / 100)
-
-    /** We keep estimate of size of a translog batch in [batchSizeEstimate] map, so that we can use it as a guess of
-     *  how much a to-be fetched batch is going to consume.
-     *  Note that all mutating operations to this map should be done after acquiring lock on [translogBufferMutex].
-     *  Key is index name, value is estimate size of one batch
-     */
-    private var batchSizeEstimate = ConcurrentHashMap<String, Long>()
+    private var translogBuffer = TranslogBuffer(bufferSize)
 
     companion object {
         const val DEFAULT_TRANSLOG_BUFFER_PERCENT = 10
@@ -270,8 +250,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                                             expressionResolver: IndexNameExpressionResolver)
         : List<PersistentTasksExecutor<*>> {
         return listOf(
-            ShardReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager,
-                    this.translogBuffer, this.translogBufferMutex, this.batchSizeEstimate, translogBufferNew),
+            ShardReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager, translogBuffer),
             IndexReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager),
             AutoFollowExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager))
     }

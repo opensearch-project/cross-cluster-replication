@@ -39,10 +39,7 @@ import java.util.concurrent.atomic.AtomicLong
 class ShardReplicationExecutor(executor: String, private val clusterService : ClusterService,
                                private val threadPool: ThreadPool, private val client: Client,
                                private val replicationMetadataManager: ReplicationMetadataManager,
-                               private val translogBuffer: AtomicLong,
-                               private val translogBufferMutex: Mutex,
-                               private val batchSizeEstimate: ConcurrentHashMap<String, Long>,
-                               private val translogBufferNew: TranslogBuffer):
+                               private val translogBuffer: TranslogBuffer):
     PersistentTasksExecutor<ShardReplicationParams>(TASK_NAME, executor) {
 
     companion object {
@@ -84,7 +81,7 @@ class ShardReplicationExecutor(executor: String, private val clusterService : Cl
                             headers: Map<String, String>): AllocatedPersistentTask {
         return ShardReplicationTask(id, type, action, getDescription(taskInProgress), parentTaskId,
                                     taskInProgress.params!!, executor, clusterService, threadPool, client, replicationMetadataManager,
-                                    translogBuffer, translogBufferMutex, batchSizeEstimate, translogBufferNew)
+                                    translogBuffer)
     }
 
     override fun getDescription(taskInProgress: PersistentTask<ShardReplicationParams>): String {
