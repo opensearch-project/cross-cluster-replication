@@ -60,6 +60,7 @@ import org.elasticsearch.threadpool.ThreadPool
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import org.elasticsearch.transport.NodeNotConnectedException
+import java.util.concurrent.TimeoutException
 
 class ShardReplicationTask(id: Long, type: String, action: String, description: String, parentTask: TaskId,
                            params: ShardReplicationParams, executor: String, clusterService: ClusterService,
@@ -135,6 +136,8 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         }
     }
 
+    override fun indicesOrShards() = listOf(followerShardId)
+
     private suspend fun preFetchBufferUpdate() {
         // If this is the first fetch for the index, then ony one thread of execution is allowed to proceed to
         // fetch the translog batch. After the first fetch is complete, any number of shards of an index can fetch
@@ -142,6 +145,36 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         // Important point to note: The first fetch doesn't check buffer size and can happen even if the buffer is
         // full (by another index).
 
+        log.info("getting batch size or locking if first fetch")
+        val batchSizeEstimate = translogBufferNew.getBatchSizeEstimateOrLockIfFirstFetch(followerIndexName)
+        if (batchSizeEstimate == translogBufferNew.FIRST_FETCH) {
+            log.info("first fetch")
+            return
+        }
+        log.info("not first fetch")
+        isFirstFetch = false
+
+        val maxDelay = 60_000L   // 60 seconds
+        val delayInterval = 500L // 500ms
+        var totalDelay = 0L
+
+        while (true) {
+            log.info("adding batch to buffer")
+            val ok = translogBufferNew.addBatch(followerIndexName)
+            log.info("adding batch to buffer done with output ok? $ok")
+            if (ok) {
+                break
+            }
+            if (totalDelay >= maxDelay) {
+                throw TimeoutException()
+            }
+            delay(delayInterval)
+            totalDelay += delayInterval
+        }
+
+
+
+        /*
         val indexBatchSizeEstimate: Long
         translogBufferMutex.lock()
 
@@ -170,23 +203,35 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                 }
             }
         }
+         */
     }
 
     private suspend fun reFillBuffer() {
+        translogBufferNew.removeBatch(followerIndexName)
+        /*
         translogBufferMutex.lock()
         val guess = batchSizeEstimate[followerIndexName]!!
         val currBufferSize = translogBuffer.addAndGet(guess)
         log.info("Guessed size of batch was ${guess.toDouble()/1024/1024} MB, so updated buffer back by same value. " +
                 "Buffer is now ${currBufferSize.toDouble()/1024/1024} MB.")
         translogBufferMutex.unlock()
+         */
     }
 
-    override fun indicesOrShards() = listOf(followerShardId)
-
     private suspend fun postFetchBufferUpdate(changesResponse: GetChangesResponse) {
+        log.info("postupdate invoked")
         if (isFirstFetch) {
-            // TODO: don't wait for first fetch to be written, before letting fetching happen in
-            //  parallel?
+            val perOperationSize = (changesResponse.changesSizeEstimate/changesResponse.changes.size).toInt()
+            val estimate = perOperationSize.times(clusterService.clusterSettings.get(REPLICATION_CHANGE_BATCH_SIZE)).toLong()
+            translogBufferNew.addEstimateAndUnlock(followerIndexName, estimate)
+            log.info("first fetch finished and unlocked")
+        } else {
+            translogBufferNew.removeBatch(followerIndexName)
+        }
+        log.info("postupdate finished")
+
+        /*
+        if (isFirstFetch) {
             val perOperationSize = changesResponse.changesSizeEstimate/changesResponse.changes.size
             batchSizeEstimate[followerIndexName] = perOperationSize.toInt().times(
                     clusterService.clusterSettings.get(REPLICATION_CHANGE_BATCH_SIZE)).toLong()
@@ -198,20 +243,31 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         } else {
             reFillBuffer()
         }
+         */
     }
 
     private suspend fun postErrorBufferUpdate() {
+        log.info("postupdate error involed")
+        // We keep the mutex locked for extended periods of time only for the first fetch, so check locking only in the case
+        if (isFirstFetch) {
+            translogBufferNew.unlockIfLocked()
+        } else {
+            translogBufferNew.removeBatch(followerIndexName)
+        }
+        log.info("postupdate error finished")
+        /*
         if (isFirstFetch && translogBufferMutex.isLocked) {
             translogBufferMutex.unlock()
         } else {
             reFillBuffer()
         }
+         */
     }
 
     @ObsoleteCoroutinesApi
     private suspend fun replicate() {
         updateTaskState(FollowingState)
-        log.info("Starting with translog buffer size ${translogBuffer.get().toDouble()/1024/1024} MB")
+        // log.info("Starting with translog buffer size ${translogBuffer.get().toDouble()/1024/1024} MB")
         val followerIndexService = indicesService.indexServiceSafe(followerShardId.index)
         val indexShard = followerIndexService.getShard(followerShardId.id)
         // Adding retention lease at local checkpoint of a node. This makes sure
@@ -233,7 +289,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                     while (true) {
                         log.info("coroutine got launched")
                         // rateLimiter.acquire()
-                        log.info("coroutine past reatelimiter")
+                        // log.info("coroutine past reatelimiter")
                         try {
                             preFetchBufferUpdate()
                             val startTime = System.nanoTime()

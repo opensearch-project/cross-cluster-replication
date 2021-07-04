@@ -64,6 +64,7 @@ import org.elasticsearch.common.ParseField
 import org.elasticsearch.common.component.LifecycleComponent
 import org.elasticsearch.common.io.stream.NamedWriteableRegistry
 import org.elasticsearch.common.io.stream.Writeable
+import org.elasticsearch.common.logging.Loggers
 import org.elasticsearch.common.settings.ClusterSettings
 import org.elasticsearch.common.settings.IndexScopedSettings
 import org.elasticsearch.common.settings.Setting
@@ -134,17 +135,23 @@ import com.amazon.elasticsearch.replication.action.update.TransportUpdateIndexRe
 import com.amazon.elasticsearch.replication.action.update.UpdateIndexReplicationAction
 import com.amazon.elasticsearch.replication.rest.UpdateIndexHandler
 import kotlinx.coroutines.sync.withLock
+import java.lang.IllegalStateException
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.math.min
 
 
 class TranslogBuffer(percentOfHeap: Int) {
+    // TODO: rename to 'empty'/'not_present'?
     val FIRST_FETCH = -1L
     val SLEEP_MILLISECONDS = 500L
     val MAX_SLEEP_MILLISECONDS = 10_000L
 
+    val log = Loggers.getLogger(javaClass, "translogbuffer")!!
+
     var translogBufferMutex = Mutex()
+
+    val bufferInitialSize = AtomicLong(JvmInfo.jvmInfo().getMem().getHeapMax().getBytes() * percentOfHeap / 100).get()
 
     /** Variable translogBuffer captures the size of buffer which will hold the in-flight translog batches, which are
      * fetched from leader but yet to be applied to follower. All changes to translogBuffer must happen after acquiring
@@ -157,6 +164,80 @@ class TranslogBuffer(percentOfHeap: Int) {
      *  Key is index name, value is estimate size of one batch
      */
     private var batchSizeEstimate = ConcurrentHashMap<String, Long>()
+
+    suspend fun getBatchSizeEstimateOrLockIfFirstFetch(followerIndexName: String): Long {
+        // possibly a better approach, but not doign it for now
+        // var retval = FIRST_FETCH
+        // translogBufferMutex.withLock {
+        //     if (batchSizeEstimate.containsKey(followerIndexName)) {
+        //         retval = batchSizeEstimate[followerIndexName]!!
+        //     }
+        // }
+        // if (retval == FIRST_FETCH) {
+        //     translogBufferMutex.lock()
+        // }
+        // return retval
+
+        log.info("getbatchsize locking")
+        translogBufferMutex.lock()
+        log.info("getbatchsize locked")
+        if (!batchSizeEstimate.containsKey(followerIndexName)) {
+            log.info("getbatchsize key not found")
+            return FIRST_FETCH
+        }
+        log.info("getbatchsize key found")
+        val retval = batchSizeEstimate[followerIndexName]!!
+        translogBufferMutex.unlock()
+        log.info("getbatchsize unlocked")
+        return retval
+    }
+
+   fun addEstimateAndUnlock(followerIndexName: String, estimate: Long) {
+       if (!translogBufferMutex.isLocked) {
+           throw IllegalStateException("Translog buffer mutex should be locked but it isn't")
+       }
+//       if (batchSizeEstimate.containsKey(followerIndexName)) {
+//           // log.warn("Estimate shouldn't be present for follower index $followerIndexName but is present")
+//           // shouldn't happen, update
+//       }
+       batchSizeEstimate[followerIndexName] = estimate
+       translogBufferMutex.unlock()
+   }
+
+    suspend fun removeBatch(followerIndexName: String): Boolean {
+        log.info("removebatch started")
+        translogBufferMutex.withLock {
+            log.info("removebatch took lock")
+            log.info("buffer size is ${translogBuffer.get()}, estimate is ${batchSizeEstimate[followerIndexName]} and initial buffer size is $bufferInitialSize")
+            if (batchSizeEstimate.containsKey(followerIndexName) && translogBuffer.get() + batchSizeEstimate[followerIndexName]!! <= bufferInitialSize) {
+                log.info("removebatch condition satisfied")
+                translogBuffer.addAndGet(batchSizeEstimate[followerIndexName]!!)
+                return true
+            }
+        }
+        log.info("removebatch condition not satisfied")
+        return false
+    }
+
+    suspend fun addBatch(followerIndexName: String): Boolean {
+        translogBufferMutex.withLock {
+            if (batchSizeEstimate.containsKey(followerIndexName) && translogBuffer.get() > batchSizeEstimate[followerIndexName]!!) {
+                translogBuffer.addAndGet(-1 * batchSizeEstimate[followerIndexName]!!)
+                return true
+            }
+        }
+        return false
+    }
+
+    fun unlockIfLocked() {
+        if (translogBufferMutex.isLocked) {
+            translogBufferMutex.unlock()
+        }
+    }
+
+
+
+
 
     // If no estimate is present (i.e. first fetch has not yet happened), returns -1 by taking a lock
     public suspend fun getBatchSizeEstimateOrFirstFetch(followerIndexName: String) : Long {
@@ -176,6 +257,8 @@ class TranslogBuffer(percentOfHeap: Int) {
             return FIRST_FETCH
         }
     }
+
+
     public suspend fun getBatchSizeEstimate(followerIndexName: String, keepLocked: Boolean): Long {
         if (keepLocked) {
             translogBufferMutex.lock()
@@ -205,16 +288,16 @@ class TranslogBuffer(percentOfHeap: Int) {
 //        }
 //    }
 
-    public suspend fun addBatch(followerIndexName: String): Boolean {
-        translogBufferMutex.withLock {
-            if (batchSizeEstimate.containsKey(followerIndexName) && translogBuffer.get() > batchSizeEstimate[followerIndexName]!!) {
-                translogBuffer.addAndGet(-1 * batchSizeEstimate[followerIndexName]!!)
-                return true
-            }
-        }
-        return false
-    }
-
+//    public suspend fun addBatch(followerIndexName: String): Boolean {
+//        translogBufferMutex.withLock {
+//            if (batchSizeEstimate.containsKey(followerIndexName) && translogBuffer.get() > batchSizeEstimate[followerIndexName]!!) {
+//                translogBuffer.addAndGet(-1 * batchSizeEstimate[followerIndexName]!!)
+//                return true
+//            }
+//        }
+//        return false
+//    }
+//
     suspend fun refillBuffer(followerIndexName: String) {
         translogBufferMutex.withLock {
             translogBuffer.addAndGet(batchSizeEstimate[followerIndexName]!!)
