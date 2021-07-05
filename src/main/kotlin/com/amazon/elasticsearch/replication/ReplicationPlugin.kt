@@ -153,7 +153,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
         val REPLICATION_LEADER_THREADPOOL_QUEUE_SIZE: Setting<Int> = Setting.intSetting("plugins.replication.leader.queue_size", 1000, 0,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
         val REPLICATION_TRANSLOG_BUFFER_PERCENT: Setting<Int> = Setting.intSetting(
-                "opendistro.replication.translog_buffer_percent", 10, 1,
+                "opendistro.replication.translog_buffer_percent", 20, 1,
                 Setting.Property.Dynamic, Setting.Property.NodeScope)
     }
 
