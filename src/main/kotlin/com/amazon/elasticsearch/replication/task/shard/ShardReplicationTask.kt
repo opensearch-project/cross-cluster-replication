@@ -202,10 +202,9 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
 
         addListenerToInterruptTask()
 
-        // TODO: make atomic, as updated by many threads?
-        var seqNo = indexShard.localCheckpoint + 1
+        val seqNo = AtomicLong(indexShard.localCheckpoint + 1)
         val sequencer = TranslogSequencer(scope, replicationMetadata, followerShardId, remoteCluster, remoteShardId.indexName,
-                                          TaskId(clusterService.nodeName, id), client, seqNo - 1)
+                                          TaskId(clusterService.nodeName, id), client, seqNo.get() - 1)
 
         coroutineScope {
             for (i in 1..PARALLEL_FETCHES) {
