@@ -59,9 +59,6 @@ class TranslogBuffer(sizeBytes: Long) {
    }
 
     fun unlockIfLocked() {
-        // TODO: can there still be issue here? What if this is a second index for which replication is started on this
-        //  node, and the lock is acquired by the first index, but there is an error in the first fetch of this second
-        //  index. If that happens, we'll likely be accidentally unlocking this lock which was actually held by the first index
         if (mutex.isLocked) {
             mutex.unlock()
         }

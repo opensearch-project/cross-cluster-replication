@@ -50,6 +50,7 @@ import org.elasticsearch.threadpool.ThreadPool
 import java.util.concurrent.ConcurrentHashMap
 import org.elasticsearch.transport.NodeNotConnectedException
 import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 class ShardReplicationTask(id: Long, type: String, action: String, description: String, parentTask: TaskId,
@@ -67,7 +68,8 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     private val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
     private var paused = false
     val backOffForNodeDiscovery = 1000L
-    @Volatile private var isFirstFetch = true
+    @Volatile private var isFirstFetch = AtomicBoolean(true)
+    @Volatile private var isFirstFetchStarted = AtomicBoolean(false)
 
     private val PARALLEL_FETCHES = 5
 
@@ -141,10 +143,11 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
 
         val batchSizeEstimate = translogBuffer.getBatchSizeEstimateOrLockIfFirstFetch(followerIndexName)
         if (batchSizeEstimate == translogBuffer.FIRST_FETCH) {
+            isFirstFetchStarted.set(true)
             log.info("First fetch started for index $followerIndexName.")
             return false
         }
-        isFirstFetch = false
+        isFirstFetch.set(false)
 
         val maxDelayBeforeWarnLog = 60_000L         // 60 seconds
         val maxDelayBeforeError = 10 * 60_000L      // 10 minutes
@@ -169,7 +172,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     }
 
     private suspend fun postFetchBufferUpdate(changesResponse: GetChangesResponse, inactiveWhenBatchAdded: Boolean) {
-        if (isFirstFetch) {
+        if (isFirstFetch.get()) {
             val perOperationSize = (changesResponse.changesSizeEstimate/changesResponse.changes.size).toInt()
             val estimate = perOperationSize.times(clusterService.clusterSettings.get(REPLICATION_CHANGE_BATCH_SIZE)).toLong()
             translogBuffer.addEstimateAfterFirstFetchAndUnlock(followerIndexName, estimate)
@@ -183,7 +186,9 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         // that case. Once isFirstFetch is set to false, all accesses to translogBuffer's mutex happens inside a
         // `withLock` construct, which automatically takes care of unlocking in case of errors, exceptions and
         // cancellations.
-        if (isFirstFetch) {
+        if (isFirstFetch.get() && isFirstFetchStarted.get()) {
+            // With the above two conditions, we can be very confident that the first fetch has now started, and the lock, if
+            // acquired, is acquired by the current shard's first fetch only
             translogBuffer.unlockIfLocked()
         } else {
             translogBuffer.removeBatch(followerIndexName, followerShardId.toString(), markShardInactive, inactiveWhenBatchAdded)
