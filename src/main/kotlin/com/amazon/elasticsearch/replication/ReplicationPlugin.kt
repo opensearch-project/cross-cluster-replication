@@ -140,13 +140,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
     private lateinit var threadPool: ThreadPool
     private lateinit var replicationMetadataManager: ReplicationMetadataManager
 
-    val bufferSize = JvmInfo.jvmInfo().getMem().getHeapMax().getBytes() *
-            min(DEFAULT_TRANSLOG_BUFFER_PERCENT, MAX_TRANSLOG_BUFFER_PERCENT)/ 100
-
-    private var translogBuffer = TranslogBuffer(bufferSize)
-
     companion object {
-        const val DEFAULT_TRANSLOG_BUFFER_PERCENT = 10
         const val MAX_TRANSLOG_BUFFER_PERCENT = 50
         const val REPLICATION_EXECUTOR_NAME_LEADER = "replication_leader"
         const val REPLICATION_EXECUTOR_NAME_FOLLOWER = "replication_follower"
@@ -159,7 +153,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
         val REPLICATION_LEADER_THREADPOOL_QUEUE_SIZE: Setting<Int> = Setting.intSetting("plugins.replication.leader.queue_size", 1000, 0,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
         val REPLICATION_TRANSLOG_BUFFER_PERCENT: Setting<Int> = Setting.intSetting(
-                "opendistro.replication.translog_buffer_percent", DEFAULT_TRANSLOG_BUFFER_PERCENT, 1,
+                "opendistro.replication.translog_buffer_percent", 10, 1,
                 Setting.Property.Dynamic, Setting.Property.NodeScope)
     }
 
@@ -249,6 +243,10 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                                             settingsModule: SettingsModule,
                                             expressionResolver: IndexNameExpressionResolver)
         : List<PersistentTasksExecutor<*>> {
+
+        val bufferSize = JvmInfo.jvmInfo().getMem().getHeapMax().getBytes() *
+                min(clusterService.clusterSettings.get(REPLICATION_TRANSLOG_BUFFER_PERCENT), MAX_TRANSLOG_BUFFER_PERCENT)/ 100
+        val translogBuffer = TranslogBuffer(bufferSize)
         return listOf(
             ShardReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager, translogBuffer),
             IndexReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager),
@@ -303,7 +301,11 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
     }
 
     override fun getSettings(): List<Setting<*>> {
-        return listOf(REPLICATED_INDEX_SETTING, REPLICATION_CHANGE_BATCH_SIZE, REPLICATION_LEADER_THREADPOOL_SIZE, REPLICATION_LEADER_THREADPOOL_QUEUE_SIZE)
+        return listOf(REPLICATED_INDEX_SETTING,
+                REPLICATION_CHANGE_BATCH_SIZE,
+                REPLICATION_LEADER_THREADPOOL_SIZE,
+                REPLICATION_LEADER_THREADPOOL_QUEUE_SIZE,
+                REPLICATION_TRANSLOG_BUFFER_PERCENT)
     }
 
     override fun getInternalRepositories(env: Environment, namedXContentRegistry: NamedXContentRegistry,
