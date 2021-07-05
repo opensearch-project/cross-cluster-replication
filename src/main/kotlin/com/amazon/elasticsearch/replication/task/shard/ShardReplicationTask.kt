@@ -90,7 +90,6 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
 
     companion object {
         fun taskIdForShard(shardId: ShardId) = "replication:${shardId}"
-        const val CONCURRENT_REQUEST_RATE_LIMIT = 2
     }
 
     @ObsoleteCoroutinesApi
