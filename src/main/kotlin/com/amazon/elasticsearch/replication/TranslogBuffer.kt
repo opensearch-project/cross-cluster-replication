@@ -32,12 +32,11 @@ class TranslogBuffer(sizeBytes: Long) {
      */
     private var batchSizeEstimate = ConcurrentHashMap<String, Long>()
 
-    /** Map to keep track of which indices are inactive. Calls to fetch translog for inactive indices doesn't consume
-     * memory from buffer. But once translogs started arriving, the index should be marked active again. Using negation
+    /** Map to keep track of which shards are inactive. Calls to fetch translog for inactive shards doesn't consume
+     * memory from buffer. But once translogs started arriving, the shards should be marked active again. Using negation
      * ('inactive') here as we want to use Boolean default of 'false' for normal case.
-     *
      */
-    private var indexInactive = ConcurrentHashMap<String, Boolean>()
+    private var shardInactive = ConcurrentHashMap<String, Boolean>()
 
     /**  Return batch size estimate for the provided index. If this is the first fetch, don't release the lock and
      * return [FIRST_FETCH] */
@@ -68,34 +67,34 @@ class TranslogBuffer(sizeBytes: Long) {
         }
     }
 
-    /** Add batch to buffer. If the index is inactive, make it active again */
-    suspend fun addBatch(followerIndexName: String): Pair<Boolean, Boolean> {
-        var isIndexInactive = false
+    /** Add batch to buffer. If the shard is inactive, make it active again */
+    suspend fun addBatch(followerIndexName: String, shardName: String): Pair<Boolean, Boolean> {
+        var isShardInactive = false
         mutex.withLock {
-            if (indexInactive.containsKey(followerIndexName)) {
-                isIndexInactive = indexInactive[followerIndexName]!!
+            if (shardInactive.containsKey(shardName)) {
+                isShardInactive = shardInactive[shardName]!!
             }
-            if (isIndexInactive) {
-                // No need to add to buffer if the index is inactive
-                return Pair(true, isIndexInactive)
+            if (isShardInactive) {
+                // No need to add to buffer if the shard is inactive
+                return Pair(true, isShardInactive)
             }
             if (batchSizeEstimate.containsKey(followerIndexName) && buffer.get() > batchSizeEstimate[followerIndexName]!!) {
                 val currSize = buffer.addAndGet(-1 * batchSizeEstimate[followerIndexName]!!)
                 log.debug("${batchSizeEstimate[followerIndexName]!!} bytes added to buffer. Buffer is now $currSize bytes")
-                return Pair(true, isIndexInactive)
+                return Pair(true, isShardInactive)
             }
         }
-        return Pair(false, isIndexInactive)
+        return Pair(false, isShardInactive)
     }
 
-    /** Method to remove batch from buffer. [inactiveWhenBatchAdded] tells whether the index was inactive at the time
+    /** Method to remove batch from buffer. [inactiveWhenBatchAdded] tells whether the shard was inactive at the time
      * when this batch was added to buffer.
      */
-    suspend fun removeBatch(followerIndexName: String, markIndexInactive: Boolean, inactiveWhenBatchAdded: Boolean): Boolean {
+    suspend fun removeBatch(followerIndexName: String, shardName: String, markShardInactive: Boolean, inactiveWhenBatchAdded: Boolean): Boolean {
         mutex.withLock {
-            indexInactive[followerIndexName] = markIndexInactive
+            shardInactive[shardName] = markShardInactive
             if (inactiveWhenBatchAdded) {
-                // No need to remove from buffer if the index was inactive when batch was added to buffer
+                // No need to remove from buffer if the shard was inactive when batch was added to buffer
                 return true
             }
             if (batchSizeEstimate.containsKey(followerIndexName) && buffer.get() + batchSizeEstimate[followerIndexName]!! <= bufferInitialSize) {

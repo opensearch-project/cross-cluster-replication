@@ -34,7 +34,6 @@ import com.amazon.elasticsearch.replication.util.indicesService
 import com.amazon.elasticsearch.replication.util.suspendExecute
 import com.amazon.elasticsearch.replication.util.suspendExecuteWithRetries
 import kotlinx.coroutines.*
-import kotlinx.coroutines.sync.Mutex
 import org.elasticsearch.ElasticsearchTimeoutException
 import org.elasticsearch.client.Client
 import org.elasticsearch.cluster.ClusterChangedEvent
@@ -49,9 +48,9 @@ import org.elasticsearch.persistent.PersistentTasksNodeService
 import org.elasticsearch.tasks.TaskId
 import org.elasticsearch.threadpool.ThreadPool
 import java.util.concurrent.ConcurrentHashMap
-import java.util.concurrent.atomic.AtomicLong
 import org.elasticsearch.transport.NodeNotConnectedException
 import java.util.concurrent.TimeoutException
+import java.util.concurrent.atomic.AtomicLong
 
 class ShardReplicationTask(id: Long, type: String, action: String, description: String, parentTask: TaskId,
                            params: ShardReplicationParams, executor: String, clusterService: ClusterService,
@@ -153,7 +152,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         var totalDelay = 0L
 
         while (true) {
-            val (ok, isInactive) = translogBuffer.addBatch(followerIndexName)
+            val (ok, isInactive) = translogBuffer.addBatch(followerIndexName, followerShardId.toString())
             if (ok) {
                 return isInactive
             }
@@ -175,11 +174,11 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
             val estimate = perOperationSize.times(clusterService.clusterSettings.get(REPLICATION_CHANGE_BATCH_SIZE)).toLong()
             translogBuffer.addEstimateAfterFirstFetchAndUnlock(followerIndexName, estimate)
         } else {
-            translogBuffer.removeBatch(followerIndexName, false, inactiveWhenBatchAdded)
+            translogBuffer.removeBatch(followerIndexName, followerShardId.toString(), false, inactiveWhenBatchAdded)
         }
     }
 
-    private suspend fun postErrorBufferUpdate(markIndexInactive: Boolean, inactiveWhenBatchAdded: Boolean) {
+    private suspend fun postErrorBufferUpdate(markShardInactive: Boolean, inactiveWhenBatchAdded: Boolean) {
         // We keep the mutex locked for extended periods of time only for the first fetch, so check locking only in
         // that case. Once isFirstFetch is set to false, all accesses to translogBuffer's mutex happens inside a
         // `withLock` construct, which automatically takes care of unlocking in case of errors, exceptions and
@@ -187,7 +186,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         if (isFirstFetch) {
             translogBuffer.unlockIfLocked()
         } else {
-            translogBuffer.removeBatch(followerIndexName, markIndexInactive, inactiveWhenBatchAdded)
+            translogBuffer.removeBatch(followerIndexName, followerShardId.toString(), markShardInactive, inactiveWhenBatchAdded)
         }
     }
 
@@ -214,21 +213,22 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                     while (true) {
                         log.info("Fetching translog batch from leader...")
                         // We mark shard inactive when we have seen a timeout from all the parallel coroutines for the current shard
-                        var markIndexInactive = false
+                        var markShardInactive = false
                         var timeOutEncountered = false
-                        var indexInactiveWhenBatchAdded = false
+                        var shardInactiveWhenBatchAdded = false
                         var fetchSuccessful = false
                         try {
-                            indexInactiveWhenBatchAdded = preFetchBufferUpdate()
+                            shardInactiveWhenBatchAdded = preFetchBufferUpdate()
                             val startTime = System.nanoTime()
-                            val changesResponse = getChanges(seqNo)
+                            val changesResponse = getChanges(seqNo.get())
                             val endTime = System.nanoTime()
                             log.info("Got ${changesResponse.changes.size} changes starting from seqNo: $seqNo in " +
                                     "${(endTime - startTime)/1000000} ms")
                             sequencer.send(changesResponse)
-                            seqNo = changesResponse.changes.lastOrNull()?.seqNo()?.inc() ?: seqNo
+                            val newSeqNo = changesResponse.changes.lastOrNull()?.seqNo()?.inc() ?: seqNo
+                            seqNo.getAndSet(newSeqNo.toLong())
                             fetchSuccessful = true
-                            postFetchBufferUpdate(changesResponse, indexInactiveWhenBatchAdded)
+                            postFetchBufferUpdate(changesResponse, shardInactiveWhenBatchAdded)
                         } catch (e: ElasticsearchTimeoutException) {
                             log.info("Timed out waiting for new changes. Current seqNo: $seqNo")
                             timeOutEncountered = true
@@ -243,7 +243,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                             }
                             if (numTimeOuts == PARALLEL_FETCHES) {
                                 log.info("Timeout count = parallelism. Marking index $followerIndexName shard $followerShardId as inactive")
-                                markIndexInactive = true
+                                markShardInactive = true
                             }
                         } catch (e: NodeNotConnectedException) {
                             log.info("Node not connected. Retrying request using a different node. $e")
@@ -251,7 +251,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                         } finally {
                             lastFetchTimedOut[i] = timeOutEncountered
                             if (!fetchSuccessful) {
-                                postErrorBufferUpdate(markIndexInactive, indexInactiveWhenBatchAdded)
+                                postErrorBufferUpdate(markShardInactive, shardInactiveWhenBatchAdded)
                             }
                         }
 
