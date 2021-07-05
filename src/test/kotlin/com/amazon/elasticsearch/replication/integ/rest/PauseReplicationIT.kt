@@ -16,15 +16,13 @@
 package com.amazon.elasticsearch.replication.integ.rest
 
 import com.amazon.elasticsearch.replication.*
+import com.amazon.elasticsearch.replication.action.status.ReplicationStatusResponse
 import org.apache.http.util.EntityUtils
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
-import org.elasticsearch.ElasticsearchStatusException
 import org.elasticsearch.action.DocWriteResponse
-import org.elasticsearch.action.admin.indices.delete.DeleteIndexRequest
 import org.elasticsearch.action.admin.indices.flush.FlushRequest
 import org.elasticsearch.action.index.IndexRequest
-import org.elasticsearch.client.Request
 import org.elasticsearch.client.RequestOptions
 import org.elasticsearch.client.ResponseException
 import org.elasticsearch.client.RestHighLevelClient
@@ -35,8 +33,9 @@ import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.unit.TimeValue
 import org.elasticsearch.index.mapper.MapperService
 import org.elasticsearch.test.ESTestCase.assertBusy
-import java.util.concurrent.TimeUnit
-
+import org.elasticsearch.test.rest.ESRestTestCase
+import org.junit.Assert
+import java.io.ObjectInputStream
 
 
 @MultiClusterAnnotations.ClusterConfigurations(
@@ -148,6 +147,8 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
         assertThat(createIndexResponse.isAcknowledged).isTrue()
         assertThatThrownBy {
             followerClient.pauseReplication(randomIndex)
+            var statusResp = followerClient.replicationStatus(followerIndexName)
+            Assert.assertEquals(statusResp.getValue("status"),"PAUSED")
         }.isInstanceOf(ResponseException::class.java)
                 .hasMessageContaining("No replication in progress for index:$randomIndex")
     }
@@ -167,6 +168,8 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
             and verify the same
              */
             followerClient.pauseReplication(followerIndexName)
+            var statusResp = followerClient.replicationStatus(followerIndexName)
+            Assert.assertEquals(statusResp.getValue("status"),"PAUSED")
             // Since, we were still in FOLLOWING phase when pause was called, the index
             // in follower index should not have been deleted in follower cluster
             assertBusy {

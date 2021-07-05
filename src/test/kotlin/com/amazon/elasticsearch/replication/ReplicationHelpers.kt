@@ -15,8 +15,11 @@
 
 package com.amazon.elasticsearch.replication
 
+import com.amazon.elasticsearch.replication.action.resume.TransportResumeIndexReplicationAction
+import com.amazon.elasticsearch.replication.action.status.ReplicationStatusResponse
 import com.amazon.elasticsearch.replication.task.index.IndexReplicationExecutor
 import com.amazon.elasticsearch.replication.task.shard.ShardReplicationExecutor
+import org.apache.logging.log4j.LogManager
 import org.assertj.core.api.Assertions.assertThat
 import org.elasticsearch.action.admin.cluster.health.ClusterHealthRequest
 import org.elasticsearch.action.admin.cluster.node.tasks.list.ListTasksRequest
@@ -31,6 +34,7 @@ import org.elasticsearch.common.xcontent.DeprecationHandler
 import org.elasticsearch.common.xcontent.NamedXContentRegistry
 import org.elasticsearch.common.xcontent.XContentType
 import org.elasticsearch.test.ESTestCase.assertBusy
+import org.elasticsearch.test.rest.ESRestTestCase
 import java.util.concurrent.TimeUnit
 
 data class StartReplicationRequest(val remoteClusterAlias: String, val remoteIndex: String, val toIndex: String)
@@ -41,7 +45,9 @@ const val REST_REPLICATION_STOP = "$REST_REPLICATION_PREFIX{index}/_stop"
 const val REST_REPLICATION_PAUSE = "$REST_REPLICATION_PREFIX{index}/_pause"
 const val REST_REPLICATION_RESUME = "$REST_REPLICATION_PREFIX{index}/_resume"
 const val REST_REPLICATION_UPDATE = "$REST_REPLICATION_PREFIX{index}/_update"
+const val REST_REPLICATION_STATUS = "$REST_REPLICATION_PREFIX{index}/_status"
 const val REST_AUTO_FOLLOW_PATTERN = "${REST_REPLICATION_PREFIX}_autofollow"
+
 
 fun RestHighLevelClient.startReplication(request: StartReplicationRequest,
                                          waitFor: TimeValue = TimeValue.timeValueSeconds(10),
@@ -61,6 +67,15 @@ fun RestHighLevelClient.startReplication(request: StartReplicationRequest,
     if (waitForShardsInit)
         waitForNoInitializingShards()
 }
+
+fun RestHighLevelClient.replicationStatus(index: String) : Map<String, Any> {
+    val lowLevelStopRequest = Request("GET", REST_REPLICATION_STATUS.replace("{index}", index,true))
+    lowLevelStopRequest.setJsonEntity("{}")
+    val lowLevelStatusResponse = lowLevelClient.performRequest(lowLevelStopRequest)
+    val statusResponse: Map<String, Any> = ESRestTestCase.entityAsMap(lowLevelStatusResponse)
+    return statusResponse
+}
+
 fun getAckResponse(lowLevelResponse: Response): AcknowledgedResponse {
     val xContentType = XContentType.fromMediaTypeOrFormat(lowLevelResponse.entity.contentType.value)
     val xcp = xContentType.xContent().createParser(NamedXContentRegistry.EMPTY, DeprecationHandler.IGNORE_DEPRECATIONS,

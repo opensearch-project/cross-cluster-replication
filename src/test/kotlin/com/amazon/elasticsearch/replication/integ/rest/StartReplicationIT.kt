@@ -64,6 +64,8 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         assertThat(createIndexResponse.isAcknowledged).isTrue()
         try {
             followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
+            var statusResp = followerClient.replicationStatus(followerIndexName)
+            assertThat(statusResp.getValue("status")).isIn(("SYNCING"),("BOOTSTRAPPING"),("RUNNING"))
             assertBusy {
                 assertThat(followerClient.indices().exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT)).isEqualTo(true)
             }

@@ -87,4 +87,10 @@ class ReplicationStatusResponse : BroadcastResponse, ToXContentObject {
         if (::followerIndexName.isInitialized)
             out.writeString(followerIndexName)
     }
+
+    override fun toString(): String {
+        return "ReplicationStatusResponse(shardInfoResponse=$shardInfoResponse, status='$status', connectionAlias='$connectionAlias', leaderIndexName='$leaderIndexName', followerIndexName='$followerIndexName')"
+    }
+
+
 }

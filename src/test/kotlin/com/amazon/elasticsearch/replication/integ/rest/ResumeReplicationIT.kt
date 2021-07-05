@@ -37,6 +37,7 @@ import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.unit.TimeValue
 import org.elasticsearch.index.mapper.MapperService
 import org.elasticsearch.test.ESTestCase.assertBusy
+import org.junit.Assert
 import java.util.concurrent.TimeUnit
 
 
@@ -64,7 +65,11 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
             and verify the same
              */
             followerClient.pauseReplication(followerIndexName)
+            var statusResp = followerClient.replicationStatus(followerIndexName)
+            Assert.assertEquals(statusResp.getValue("status"),"PAUSED")
             followerClient.resumeReplication(followerIndexName)
+            statusResp = followerClient.replicationStatus(followerIndexName)
+            Assert.assertNotEquals(statusResp.getValue("status"),"PAUSED")
         } finally {
             followerClient.stopReplication(followerIndexName)
         }
@@ -139,7 +144,11 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
             leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
             leaderClient.indices().open(OpenIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
 
+            var statusResp = followerClient.replicationStatus(followerIndexName)
+            Assert.assertEquals(statusResp.getValue("status"),"PAUSED")
             followerClient.resumeReplication(followerIndexName)
+            statusResp = followerClient.replicationStatus(followerIndexName)
+            Assert.assertNotEquals(statusResp.getValue("status"),"PAUSED")
         } finally {
             followerClient.stopReplication(followerIndexName)
         }
