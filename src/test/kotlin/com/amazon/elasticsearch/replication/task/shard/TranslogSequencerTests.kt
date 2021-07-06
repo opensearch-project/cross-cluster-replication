@@ -33,6 +33,7 @@ import org.elasticsearch.action.ActionRequest
 import org.elasticsearch.action.ActionResponse
 import org.elasticsearch.action.ActionType
 import org.elasticsearch.action.support.replication.ReplicationResponse.ShardInfo
+import org.elasticsearch.common.lease.Releasable
 import org.elasticsearch.index.shard.ShardId
 import org.elasticsearch.index.translog.Translog
 import org.elasticsearch.tasks.TaskId.EMPTY_TASK_ID
@@ -96,7 +97,7 @@ class TranslogSequencerTests : ESTestCase() {
             batch
         }
         batches.shuffled().forEach {
-            sequencer.send(it)
+            sequencer.send(it, MyCloseable())
         }
         sequencer.close()
 
@@ -116,4 +117,8 @@ class TranslogSequencerTests : ESTestCase() {
         }
         return Pair(GetChangesResponse(changes, startSeqNo.inc(), startSeqNo, 12345), seqNo)
     }
+}
+
+private class MyCloseable() : Releasable {
+    override fun close() { }
 }

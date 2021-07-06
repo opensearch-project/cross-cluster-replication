@@ -246,7 +246,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
 
         val bufferSize = JvmInfo.jvmInfo().getMem().getHeapMax().getBytes() *
                 min(clusterService.clusterSettings.get(REPLICATION_TRANSLOG_BUFFER_PERCENT), MAX_TRANSLOG_BUFFER_PERCENT)/ 100
-        val translogBuffer = TranslogBuffer(bufferSize)
+        // TODO: remove hardcoding
+        val translogBuffer = TranslogBuffer(bufferSize, 5)
         return listOf(
             ShardReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager, translogBuffer),
             IndexReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager),

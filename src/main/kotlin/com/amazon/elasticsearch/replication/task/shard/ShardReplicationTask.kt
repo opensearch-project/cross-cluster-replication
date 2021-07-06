@@ -39,6 +39,7 @@ import org.elasticsearch.client.Client
 import org.elasticsearch.cluster.ClusterChangedEvent
 import org.elasticsearch.cluster.ClusterStateListener
 import org.elasticsearch.cluster.service.ClusterService
+import org.elasticsearch.common.lease.Releasable
 import org.elasticsearch.common.logging.Loggers
 import org.elasticsearch.common.util.concurrent.EsRejectedExecutionException
 import org.elasticsearch.index.seqno.RetentionLeaseInvalidRetainingSeqNoException
@@ -69,16 +70,8 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     private val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
     private var paused = false
     val backOffForNodeDiscovery = 1000L
-    @Volatile private var isFirstFetch = AtomicBoolean(true)
-    @Volatile private var isFirstFetchStarted = AtomicBoolean(false)
 
     private val PARALLEL_FETCHES = 5
-
-    // When we perform fetch of translog batch from leader, we do so by blocking buffer. Now when replication of a shard
-    // finishes, the request to fetch batch keeps blocking for 60 seconds and then gives up.
-    // Map to keep track of how many of the parallel fetches experienced timeouts when making call to fetch translog. An
-    // example when timeout happens is when replication has finished on the follower
-    private var lastFetchTimedOut = ConcurrentHashMap<Int, Boolean>()
 
     private val clusterStateListenerForTaskInterruption = ClusterStateListenerForTaskInterruption()
 
@@ -134,68 +127,6 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
 
     override fun indicesOrShards() = listOf(followerShardId)
 
-    private suspend fun preFetchBufferUpdate(): Boolean {
-
-        // If this is the first fetch for the index, then ony one thread of execution is allowed to proceed to
-        // fetch the translog batch. After the first fetch is complete, any number of shards of an index can fetch
-        // translog batches in parallel, provided there is enough space in the buffer 'translogBuffer'.
-        // Important point to note: The first fetch doesn't check buffer size and can happen even if the buffer is
-        // full (by another index).
-
-        val batchSizeEstimate = translogBuffer.getBatchSizeEstimateOrLockIfFirstFetch(followerIndexName)
-        if (batchSizeEstimate == translogBuffer.FIRST_FETCH) {
-            isFirstFetchStarted.set(true)
-            log.info("First fetch started for index $followerIndexName.")
-            return false
-        }
-        isFirstFetch.set(false)
-
-        val maxDelayBeforeWarnLog = 60_000L         // 60 seconds
-        val maxDelayBeforeError = 10 * 60_000L      // 10 minutes
-        val delayInterval = 500L                    // 500ms
-        var totalDelay = 0L
-
-        while (true) {
-            val (ok, isInactive) = translogBuffer.addBatch(followerIndexName, followerShardId.toString())
-            if (ok) {
-                return isInactive
-            }
-            if (totalDelay >= maxDelayBeforeWarnLog) {
-                log.warn("Not able to consume buffer to fetch translog batch for ${totalDelay/1000}s now.")
-            }
-            if (totalDelay >= maxDelayBeforeError) {
-                log.warn("Not able to consume buffer to fetch translog batch for ${totalDelay/1000}s. Giving up..")
-                throw TimeoutException()
-            }
-            delay(delayInterval)
-            totalDelay += delayInterval
-        }
-    }
-
-    private suspend fun postFetchBufferUpdate(changesResponse: GetChangesResponse, inactiveWhenBatchAdded: Boolean) {
-        if (isFirstFetch.get()) {
-            val perOperationSize = (changesResponse.changesSizeEstimate/changesResponse.changes.size).toInt()
-            val estimate = perOperationSize.times(clusterService.clusterSettings.get(REPLICATION_CHANGE_BATCH_SIZE)).toLong()
-            translogBuffer.addEstimateAfterFirstFetchAndUnlock(followerIndexName, estimate)
-        } else {
-            translogBuffer.removeBatch(followerIndexName, followerShardId.toString(), false, inactiveWhenBatchAdded)
-        }
-    }
-
-    private suspend fun postErrorBufferUpdate(markShardInactive: Boolean, inactiveWhenBatchAdded: Boolean) {
-        // We keep the mutex locked for extended periods of time only for the first fetch, so check locking only in
-        // that case. Once isFirstFetch is set to false, all accesses to translogBuffer's mutex happens inside a
-        // `withLock` construct, which automatically takes care of unlocking in case of errors, exceptions and
-        // cancellations.
-        if (isFirstFetch.get() && isFirstFetchStarted.get()) {
-            // With the above two conditions, we can be very confident that the first fetch has now started, and the lock, if
-            // acquired, is acquired by the current shard's first fetch only
-            translogBuffer.unlockIfLocked()
-        } else {
-            translogBuffer.removeBatch(followerIndexName, followerShardId.toString(), markShardInactive, inactiveWhenBatchAdded)
-        }
-    }
-
     @ObsoleteCoroutinesApi
     private suspend fun replicate() {
         updateTaskState(FollowingState)
@@ -218,13 +149,8 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                     while (true) {
                         log.info("Fetching translog batch from leader...")
                         // We mark shard inactive when we have seen a timeout from all the parallel coroutines for the current shard
-                        var markShardInactive = false
-                        var timeOutEncountered = false
-                        var shardInactiveWhenBatchAdded = false
-                        var fetchSuccessful = false
+                        var errorEncountered = true
                         try {
-                            shardInactiveWhenBatchAdded = preFetchBufferUpdate()
-
                             translogBuffer.acquireRateLimiter(followerShardId)
 
                             val startTime = System.nanoTime()
@@ -233,43 +159,19 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                             log.info("Got ${changesResponse.changes.size} changes starting from seqNo: $seqNo in " +
                                     "${(endTime - startTime)/1000000} ms")
                             val closeable = translogBuffer.markBatchAdded(changesResponse.changesSizeEstimate)
-                            sequencer.send(changesResponse)
+                            sequencer.send(changesResponse, closeable)
                             val newSeqNo = changesResponse.changes.lastOrNull()?.seqNo()?.inc() ?: seqNo
                             seqNo.getAndSet(newSeqNo.toLong())
-                            fetchSuccessful = true
-                            postFetchBufferUpdate(changesResponse, shardInactiveWhenBatchAdded)
-                            closeable.close()
-                            translogBuffer.releaseRateLimiter(followerShardId, true)
+                            errorEncountered = false
                         } catch (e: EsRejectedExecutionException) {
-                            // buffer full, so retry with delay
-                            delay(5000)
-                            translogBuffer.releaseRateLimiter(followerShardId, false)
+                            log.info("Buffer full. Retrying")
                         } catch (e: ElasticsearchTimeoutException) {
-                            translogBuffer.releaseRateLimiter(followerShardId, false)
                             log.info("Timed out waiting for new changes. Current seqNo: $seqNo")
-                            timeOutEncountered = true
-                            lastFetchTimedOut[i] = timeOutEncountered
-                            var numTimeOuts = 0
-                            val it = lastFetchTimedOut.elements().asIterator()
-                            while(it.hasNext()) {
-                                val value = it.next()
-                                if (value) {
-                                    numTimeOuts++
-                                }
-                            }
-                            if (numTimeOuts == PARALLEL_FETCHES) {
-                                log.info("Timeout count = parallelism. Marking index $followerIndexName shard $followerShardId as inactive")
-                                markShardInactive = true
-                            }
                         } catch (e: NodeNotConnectedException) {
                             log.info("Node not connected. Retrying request using a different node. $e")
                             delay(backOffForNodeDiscovery)
-                            translogBuffer.releaseRateLimiter(followerShardId, false)
                         } finally {
-                            lastFetchTimedOut[i] = timeOutEncountered
-                            if (!fetchSuccessful) {
-                                postErrorBufferUpdate(markShardInactive, shardInactiveWhenBatchAdded)
-                            }
+                            translogBuffer.releaseRateLimiter(followerShardId, errorEncountered)
                         }
 
                         //renew retention lease with global checkpoint so that any shard that picks up shard replication task has data until then.
