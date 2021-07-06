@@ -40,6 +40,7 @@ import org.elasticsearch.cluster.ClusterChangedEvent
 import org.elasticsearch.cluster.ClusterStateListener
 import org.elasticsearch.cluster.service.ClusterService
 import org.elasticsearch.common.logging.Loggers
+import org.elasticsearch.common.util.concurrent.EsRejectedExecutionException
 import org.elasticsearch.index.seqno.RetentionLeaseInvalidRetainingSeqNoException
 import org.elasticsearch.index.seqno.RetentionLeaseNotFoundException
 import org.elasticsearch.index.shard.ShardId
@@ -134,6 +135,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     override fun indicesOrShards() = listOf(followerShardId)
 
     private suspend fun preFetchBufferUpdate(): Boolean {
+
         // If this is the first fetch for the index, then ony one thread of execution is allowed to proceed to
         // fetch the translog batch. After the first fetch is complete, any number of shards of an index can fetch
         // translog batches in parallel, provided there is enough space in the buffer 'translogBuffer'.
@@ -222,17 +224,28 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                         var fetchSuccessful = false
                         try {
                             shardInactiveWhenBatchAdded = preFetchBufferUpdate()
+
+                            translogBuffer.acquireRateLimiter(followerShardId)
+
                             val startTime = System.nanoTime()
                             val changesResponse = getChanges(seqNo.get())
                             val endTime = System.nanoTime()
                             log.info("Got ${changesResponse.changes.size} changes starting from seqNo: $seqNo in " +
                                     "${(endTime - startTime)/1000000} ms")
+                            val closeable = translogBuffer.markBatchAdded(changesResponse.changesSizeEstimate)
                             sequencer.send(changesResponse)
                             val newSeqNo = changesResponse.changes.lastOrNull()?.seqNo()?.inc() ?: seqNo
                             seqNo.getAndSet(newSeqNo.toLong())
                             fetchSuccessful = true
                             postFetchBufferUpdate(changesResponse, shardInactiveWhenBatchAdded)
+                            closeable.close()
+                            translogBuffer.releaseRateLimiter(followerShardId, true)
+                        } catch (e: EsRejectedExecutionException) {
+                            // buffer full, so retry with delay
+                            delay(5000)
+                            translogBuffer.releaseRateLimiter(followerShardId, false)
                         } catch (e: ElasticsearchTimeoutException) {
+                            translogBuffer.releaseRateLimiter(followerShardId, false)
                             log.info("Timed out waiting for new changes. Current seqNo: $seqNo")
                             timeOutEncountered = true
                             lastFetchTimedOut[i] = timeOutEncountered
@@ -251,6 +264,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                         } catch (e: NodeNotConnectedException) {
                             log.info("Node not connected. Retrying request using a different node. $e")
                             delay(backOffForNodeDiscovery)
+                            translogBuffer.releaseRateLimiter(followerShardId, false)
                         } finally {
                             lastFetchTimedOut[i] = timeOutEncountered
                             if (!fetchSuccessful) {
@@ -280,6 +294,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         val remoteClient = client.getRemoteClusterClient(remoteCluster)
         val request = GetChangesRequest(remoteShardId, fromSeqNo, fromSeqNo + batchSize)
         return remoteClient.suspendExecuteWithRetries(replicationMetadata = replicationMetadata,
+                // action = GetChangesAction.INSTANCE, req = request, log = log, numberOfRetries = 0)
                 action = GetChangesAction.INSTANCE, req = request, log = log)
     }
 
