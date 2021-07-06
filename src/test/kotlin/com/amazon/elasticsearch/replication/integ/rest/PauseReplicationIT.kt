@@ -35,6 +35,7 @@ import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.unit.TimeValue
 import org.elasticsearch.index.mapper.MapperService
 import org.elasticsearch.test.ESTestCase.assertBusy
+import org.junit.Assert
 import java.util.concurrent.TimeUnit
 
 
@@ -148,6 +149,8 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
         assertThat(createIndexResponse.isAcknowledged).isTrue()
         assertThatThrownBy {
             followerClient.pauseReplication(randomIndex)
+            var statusResp = followerClient.replicationStatus(followerIndexName)
+            `validate paused status resposne`(statusResp)
         }.isInstanceOf(ResponseException::class.java)
                 .hasMessageContaining("No replication in progress for index:$randomIndex")
     }
@@ -167,6 +170,8 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
             and verify the same
              */
             followerClient.pauseReplication(followerIndexName)
+            var statusResp = followerClient.replicationStatus(followerIndexName)
+            `validate paused status resposne`(statusResp)
             // Since, we were still in FOLLOWING phase when pause was called, the index
             // in follower index should not have been deleted in follower cluster
             assertBusy {

@@ -31,6 +31,8 @@ import org.elasticsearch.common.xcontent.DeprecationHandler
 import org.elasticsearch.common.xcontent.NamedXContentRegistry
 import org.elasticsearch.common.xcontent.XContentType
 import org.elasticsearch.test.ESTestCase.assertBusy
+import org.elasticsearch.test.rest.ESRestTestCase
+import org.junit.Assert
 import java.util.concurrent.TimeUnit
 
 data class StartReplicationRequest(val remoteClusterAlias: String, val remoteIndex: String, val toIndex: String)
@@ -41,6 +43,7 @@ const val REST_REPLICATION_STOP = "$REST_REPLICATION_PREFIX{index}/_stop"
 const val REST_REPLICATION_PAUSE = "$REST_REPLICATION_PREFIX{index}/_pause"
 const val REST_REPLICATION_RESUME = "$REST_REPLICATION_PREFIX{index}/_resume"
 const val REST_REPLICATION_UPDATE = "$REST_REPLICATION_PREFIX{index}/_update"
+const val REST_REPLICATION_STATUS = "$REST_REPLICATION_PREFIX{index}/_status"
 const val REST_AUTO_FOLLOW_PATTERN = "${REST_REPLICATION_PREFIX}_autofollow"
 
 fun RestHighLevelClient.startReplication(request: StartReplicationRequest,
@@ -66,6 +69,35 @@ fun getAckResponse(lowLevelResponse: Response): AcknowledgedResponse {
     val xcp = xContentType.xContent().createParser(NamedXContentRegistry.EMPTY, DeprecationHandler.IGNORE_DEPRECATIONS,
             lowLevelResponse.entity.content)
     return AcknowledgedResponse.fromXContent(xcp)
+}
+
+fun RestHighLevelClient.replicationStatus(index: String) : Map<String, Any> {
+    val lowLevelStopRequest = Request("GET", REST_REPLICATION_STATUS.replace("{index}", index,true))
+    lowLevelStopRequest.setJsonEntity("{}")
+    val lowLevelStatusResponse = lowLevelClient.performRequest(lowLevelStopRequest)
+    val statusResponse: Map<String, Any> = ESRestTestCase.entityAsMap(lowLevelStatusResponse)
+    return statusResponse
+}
+
+fun `validate status syncing resposne`(statusResp: Map<String, Any>) {
+    Assert.assertEquals(statusResp.getValue("status"),"SYNCING")
+    Assert.assertTrue((statusResp.getValue("replication_data")).toString().contains("syncing_task_details"))
+    Assert.assertTrue((statusResp.getValue("replication_data")).toString().contains("local_checkpoint"))
+    Assert.assertTrue((statusResp.getValue("replication_data")).toString().contains("remote_checkpoint"))
+}
+
+fun `validate not paused status resposne`(statusResp: Map<String, Any>) {
+    Assert.assertNotEquals(statusResp.getValue("status"),"PAUSED")
+    Assert.assertTrue((statusResp.getValue("replication_data")).toString().contains("syncing_task_details"))
+    Assert.assertTrue((statusResp.getValue("replication_data")).toString().contains("local_checkpoint"))
+    Assert.assertTrue((statusResp.getValue("replication_data")).toString().contains("remote_checkpoint"))
+}
+
+fun `validate paused status resposne`(statusResp: Map<String, Any>) {
+    Assert.assertEquals(statusResp.getValue("status"),"PAUSED")
+    Assert.assertTrue((statusResp.getValue("replication_data")).toString().contains("syncing_task_details"))
+    Assert.assertTrue((statusResp.getValue("replication_data")).toString().contains("local_checkpoint"))
+    Assert.assertTrue((statusResp.getValue("replication_data")).toString().contains("remote_checkpoint"))
 }
 
 fun RestHighLevelClient.stopReplication(index: String, shouldWait: Boolean = true) {
