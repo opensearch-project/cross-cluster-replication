@@ -153,7 +153,10 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
         val REPLICATION_LEADER_THREADPOOL_QUEUE_SIZE: Setting<Int> = Setting.intSetting("plugins.replication.leader.queue_size", 1000, 0,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
         val REPLICATION_TRANSLOG_BUFFER_PERCENT: Setting<Int> = Setting.intSetting(
-                "opendistro.replication.translog_buffer_percent", 20, 1,
+                "plugins.replication.translog_buffer_percent", 10, 1,
+                Setting.Property.Dynamic, Setting.Property.NodeScope)
+        val REPLICATION_TRANSLOG_FETCH_PARALLELISM: Setting<Int> = Setting.intSetting(
+                "plugins.replication.translog_fetch_parallelism", -1, -1,
                 Setting.Property.Dynamic, Setting.Property.NodeScope)
     }
 
@@ -244,12 +247,15 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                                             expressionResolver: IndexNameExpressionResolver)
         : List<PersistentTasksExecutor<*>> {
 
-        val bufferSize = JvmInfo.jvmInfo().getMem().getHeapMax().getBytes() *
-                min(clusterService.clusterSettings.get(REPLICATION_TRANSLOG_BUFFER_PERCENT), MAX_TRANSLOG_BUFFER_PERCENT)/ 100
-        // TODO: remove hardcoding
-        val translogBuffer = TranslogBuffer(bufferSize, 5)
+        val bufferSizePercent = min(clusterService.clusterSettings.get(REPLICATION_TRANSLOG_BUFFER_PERCENT), MAX_TRANSLOG_BUFFER_PERCENT)
+        var parallelism = Runtime.getRuntime().availableProcessors()
+        val parallelismSetting = clusterService.clusterSettings.get(REPLICATION_TRANSLOG_FETCH_PARALLELISM)
+        if (parallelismSetting != -1) {
+            parallelism = parallelismSetting
+        }
         return listOf(
-            ShardReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager, translogBuffer),
+            ShardReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager,
+                    TranslogBuffer(bufferSizePercent, parallelism)),
             IndexReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager),
             AutoFollowExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager))
     }
@@ -306,7 +312,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                 REPLICATION_CHANGE_BATCH_SIZE,
                 REPLICATION_LEADER_THREADPOOL_SIZE,
                 REPLICATION_LEADER_THREADPOOL_QUEUE_SIZE,
-                REPLICATION_TRANSLOG_BUFFER_PERCENT)
+                REPLICATION_TRANSLOG_BUFFER_PERCENT,
+                REPLICATION_TRANSLOG_FETCH_PARALLELISM)
     }
 
     override fun getInternalRepositories(env: Environment, namedXContentRegistry: NamedXContentRegistry,

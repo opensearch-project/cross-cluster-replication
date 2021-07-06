@@ -59,7 +59,7 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
     }
 
     companion object {
-        val WAIT_FOR_NEW_OPS_TIMEOUT = TimeValue.timeValueMinutes(1)!!
+        val WAIT_FOR_NEW_OPS_TIMEOUT = TimeValue.timeValueSeconds(10)
         private val log = LogManager.getLogger(TransportGetChangesAction::class.java)
     }
 

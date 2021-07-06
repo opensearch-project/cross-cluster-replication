@@ -17,6 +17,8 @@ package com.amazon.elasticsearch.replication.task.shard
 
 import com.amazon.elasticsearch.replication.ReplicationException
 import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.REPLICATION_CHANGE_BATCH_SIZE
+import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.REPLICATION_TRANSLOG_BUFFER_PERCENT
+import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.REPLICATION_TRANSLOG_FETCH_PARALLELISM
 import com.amazon.elasticsearch.replication.TranslogBuffer
 import com.amazon.elasticsearch.replication.action.changes.GetChangesAction
 import com.amazon.elasticsearch.replication.action.changes.GetChangesRequest
@@ -45,6 +47,7 @@ import org.elasticsearch.common.util.concurrent.EsRejectedExecutionException
 import org.elasticsearch.index.seqno.RetentionLeaseInvalidRetainingSeqNoException
 import org.elasticsearch.index.seqno.RetentionLeaseNotFoundException
 import org.elasticsearch.index.shard.ShardId
+import org.elasticsearch.monitor.jvm.JvmInfo
 import org.elasticsearch.persistent.PersistentTaskState
 import org.elasticsearch.persistent.PersistentTasksNodeService
 import org.elasticsearch.tasks.TaskId
@@ -76,8 +79,11 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     private val clusterStateListenerForTaskInterruption = ClusterStateListenerForTaskInterruption()
 
     @Volatile private var batchSize = clusterService.clusterSettings.get(REPLICATION_CHANGE_BATCH_SIZE)
+
     init {
         clusterService.clusterSettings.addSettingsUpdateConsumer(REPLICATION_CHANGE_BATCH_SIZE) { batchSize = it }
+        clusterService.clusterSettings.addSettingsUpdateConsumer(REPLICATION_TRANSLOG_BUFFER_PERCENT) { translogBuffer.updateBufferSize(it) }
+        clusterService.clusterSettings.addSettingsUpdateConsumer(REPLICATION_TRANSLOG_FETCH_PARALLELISM) { translogBuffer.updateParallelism(it) }
     }
 
     override val log = Loggers.getLogger(javaClass, followerShardId)!!
@@ -146,10 +152,10 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         coroutineScope {
             for (i in 1..PARALLEL_FETCHES) {
                 launch {
+                    delay((Math.random()*10_000).toLong()) // random initial jitter of up to 10 seconds
                     while (true) {
                         log.info("Fetching translog batch from leader...")
-                        // We mark shard inactive when we have seen a timeout from all the parallel coroutines for the current shard
-                        var errorEncountered = true
+                        var fetchSuccess = false
                         try {
                             translogBuffer.acquireRateLimiter(followerShardId)
 
@@ -162,7 +168,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                             sequencer.send(changesResponse, closeable)
                             val newSeqNo = changesResponse.changes.lastOrNull()?.seqNo()?.inc() ?: seqNo
                             seqNo.getAndSet(newSeqNo.toLong())
-                            errorEncountered = false
+                            fetchSuccess = true
                         } catch (e: EsRejectedExecutionException) {
                             log.info("Buffer full. Retrying")
                         } catch (e: ElasticsearchTimeoutException) {
@@ -171,7 +177,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                             log.info("Node not connected. Retrying request using a different node. $e")
                             delay(backOffForNodeDiscovery)
                         } finally {
-                            translogBuffer.releaseRateLimiter(followerShardId, errorEncountered)
+                            translogBuffer.releaseRateLimiter(followerShardId, fetchSuccess)
                         }
 
                         //renew retention lease with global checkpoint so that any shard that picks up shard replication task has data until then.
@@ -196,8 +202,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         val remoteClient = client.getRemoteClusterClient(remoteCluster)
         val request = GetChangesRequest(remoteShardId, fromSeqNo, fromSeqNo + batchSize)
         return remoteClient.suspendExecuteWithRetries(replicationMetadata = replicationMetadata,
-                // action = GetChangesAction.INSTANCE, req = request, log = log, numberOfRetries = 0)
-                action = GetChangesAction.INSTANCE, req = request, log = log)
+                 action = GetChangesAction.INSTANCE, req = request, log = log, maxTimeOut = 10_000)
     }
 
     override fun toString(): String {
