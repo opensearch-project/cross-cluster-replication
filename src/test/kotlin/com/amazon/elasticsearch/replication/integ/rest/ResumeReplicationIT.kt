@@ -16,6 +16,8 @@
 package com.amazon.elasticsearch.replication.integ.rest
 
 import com.amazon.elasticsearch.replication.*
+import com.amazon.elasticsearch.replication.action.status.ReplicationStatusResponse
+import com.amazon.elasticsearch.replication.action.status.ShardInfoResponse
 import org.apache.http.util.EntityUtils
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -37,6 +39,7 @@ import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.unit.TimeValue
 import org.elasticsearch.index.mapper.MapperService
 import org.elasticsearch.test.ESTestCase.assertBusy
+import org.junit.Assert
 import java.util.concurrent.TimeUnit
 
 
@@ -64,6 +67,8 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
             and verify the same
              */
             followerClient.pauseReplication(followerIndexName)
+            var statusResp = followerClient.replicationStatus(followerIndexName)
+            `validate paused status resposne`(statusResp)
             followerClient.resumeReplication(followerIndexName)
         } finally {
             followerClient.stopReplication(followerIndexName)
@@ -74,7 +79,6 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
     fun `test resume without pause `() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
-
         createConnectionBetweenClusters(FOLLOWER, LEADER)
 
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
@@ -83,7 +87,11 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
             followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
 
             assertThatThrownBy {
+                var statusResp = followerClient.replicationStatus(followerIndexName)
+                `validate status syncing resposne`(statusResp)
                 followerClient.resumeReplication(followerIndexName)
+                statusResp = followerClient.replicationStatus(followerIndexName)
+                `validate not paused status resposne`(statusResp)
             }.isInstanceOf(ResponseException::class.java)
                     .hasMessageContaining("Replication on Index ${followerIndexName} is already running")
         } finally {

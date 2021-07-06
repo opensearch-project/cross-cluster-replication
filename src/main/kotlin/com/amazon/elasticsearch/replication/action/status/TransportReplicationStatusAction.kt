@@ -49,14 +49,18 @@ class TransportReplicationStatusAction @Inject constructor(transportService: Tra
                         var shardResponses = followerResponse.shardInfoResponse
                         leaderResponse.shardInfoResponse.listIterator().forEach {
                             val leaderShardName = it.shardId.toString()
-                            val remoteCheckPoint = it.replayDetails.remoteCheckpoint
-                            shardResponses.listIterator().forEach {
-                                if (leaderShardName.equals(it.shardId.toString()
-                                                .replace(metadata.followerContext.resource, metadata.leaderContext.resource))) {
-                                    it.replayDetails.remoteCheckpoint = remoteCheckPoint
+                            if (it.isReplayDetailsInitialized()) {
+                                val remoteCheckPoint = it.replayDetails.remoteCheckpoint
+                                shardResponses.listIterator().forEach {
+                                    if (it.isReplayDetailsInitialized()) {
+                                        if (leaderShardName.equals(it.shardId.toString()
+                                                        .replace(metadata.followerContext.resource, metadata.leaderContext.resource))) {
+                                            it.replayDetails.remoteCheckpoint = remoteCheckPoint
+                                        }
+                                    }
                                 }
+                                followerResponse.shardInfoResponse = shardResponses
                             }
-                            followerResponse.shardInfoResponse = shardResponses
                         }
                     }
                     followerResponse.connectionAlias = metadata.connectionName
