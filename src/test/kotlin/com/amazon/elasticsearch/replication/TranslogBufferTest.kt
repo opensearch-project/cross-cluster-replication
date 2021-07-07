@@ -18,7 +18,6 @@ package com.amazon.elasticsearch.replication
 import org.elasticsearch.test.ESTestCase
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.ObsoleteCoroutinesApi
-import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runBlockingTest
 import org.elasticsearch.monitor.jvm.JvmInfo
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -50,10 +49,10 @@ class TranslogBufferTests : ESTestCase() {
         val parallelism = tlb.getParallelism()
         val tempShard = ShardId("testIndex", "testUUID", 1234)
         for (i in 1..parallelism) {
-            tlb.acquireRateLimiter(tempShard)
+            tlb.acquireFetchRateLimiter(tempShard)
         }
         for (i in 1..parallelism) {
-            tlb.releaseRateLimiter(tempShard, true)
+            tlb.releaseFetchRateLimiter(tempShard, true)
         }
 
         // test increasing parallelism
@@ -61,24 +60,24 @@ class TranslogBufferTests : ESTestCase() {
         tlb.updateParallelism(newParallelism)
         val closeables: ArrayList<Releasable> = arrayListOf()
         for (i in 1..newParallelism) {
-            tlb.acquireRateLimiter(tempShard)
+            tlb.acquireFetchRateLimiter(tempShard)
             closeables.add( tlb.markBatchAdded(1))
         }
         for (i in 1..newParallelism) {
             closeables.removeAt(0).close()
-            tlb.releaseRateLimiter(tempShard, true)
+            tlb.releaseFetchRateLimiter(tempShard, true)
         }
 
         // test decreasing parallelism
         newParallelism = newParallelism-3
         tlb.updateParallelism(newParallelism)
         for (i in 1..newParallelism) {
-            tlb.acquireRateLimiter(tempShard)
+            tlb.acquireFetchRateLimiter(tempShard)
             closeables.add( tlb.markBatchAdded(1))
         }
         for (i in 1..newParallelism) {
             closeables.removeAt(0).close()
-            tlb.releaseRateLimiter(tempShard, true)
+            tlb.releaseFetchRateLimiter(tempShard, true)
         }
     }
 }

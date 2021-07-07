@@ -41,21 +41,16 @@ import org.elasticsearch.client.Client
 import org.elasticsearch.cluster.ClusterChangedEvent
 import org.elasticsearch.cluster.ClusterStateListener
 import org.elasticsearch.cluster.service.ClusterService
-import org.elasticsearch.common.lease.Releasable
 import org.elasticsearch.common.logging.Loggers
 import org.elasticsearch.common.util.concurrent.EsRejectedExecutionException
 import org.elasticsearch.index.seqno.RetentionLeaseInvalidRetainingSeqNoException
 import org.elasticsearch.index.seqno.RetentionLeaseNotFoundException
 import org.elasticsearch.index.shard.ShardId
-import org.elasticsearch.monitor.jvm.JvmInfo
 import org.elasticsearch.persistent.PersistentTaskState
 import org.elasticsearch.persistent.PersistentTasksNodeService
 import org.elasticsearch.tasks.TaskId
 import org.elasticsearch.threadpool.ThreadPool
-import java.util.concurrent.ConcurrentHashMap
 import org.elasticsearch.transport.NodeNotConnectedException
-import java.util.concurrent.TimeoutException
-import java.util.concurrent.atomic.AtomicBoolean
 import java.util.concurrent.atomic.AtomicLong
 
 class ShardReplicationTask(id: Long, type: String, action: String, description: String, parentTask: TaskId,
@@ -157,7 +152,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                         log.info("Fetching translog batch from leader...")
                         var fetchSuccess = false
                         try {
-                            translogBuffer.acquireRateLimiter(followerShardId)
+                            translogBuffer.acquireFetchRateLimiter(followerShardId)
 
                             val startTime = System.nanoTime()
                             val changesResponse = getChanges(seqNo.get())
@@ -177,7 +172,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                             log.info("Node not connected. Retrying request using a different node. $e")
                             delay(backOffForNodeDiscovery)
                         } finally {
-                            translogBuffer.releaseRateLimiter(followerShardId, fetchSuccess)
+                            translogBuffer.releaseFetchRateLimiter(followerShardId, fetchSuccess)
                         }
 
                         //renew retention lease with global checkpoint so that any shard that picks up shard replication task has data until then.
