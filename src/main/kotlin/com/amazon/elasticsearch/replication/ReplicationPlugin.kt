@@ -126,12 +126,15 @@ import com.amazon.elasticsearch.replication.seqno.RemoteClusterTranslogService
 import com.amazon.elasticsearch.replication.action.update.TransportUpdateIndexReplicationAction
 import com.amazon.elasticsearch.replication.action.update.UpdateIndexReplicationAction
 import com.amazon.elasticsearch.replication.rest.UpdateIndexHandler
+import org.elasticsearch.common.unit.ByteSizeUnit
+import org.elasticsearch.common.unit.ByteSizeValue
 
 internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin, RepositoryPlugin, EnginePlugin {
 
     private lateinit var client: Client
     private lateinit var threadPool: ThreadPool
     private lateinit var replicationMetadataManager: ReplicationMetadataManager
+    private lateinit var replicationSettings: ReplicationSettings
 
     companion object {
         const val REPLICATION_EXECUTOR_NAME_LEADER = "replication_leader"
@@ -144,6 +147,11 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
         val REPLICATION_LEADER_THREADPOOL_QUEUE_SIZE: Setting<Int> = Setting.intSetting("plugins.replication.leader.queue_size", 1000, 0,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
+        val REPLICATION_FOLLOWER_RECOVERY_CHUNK_SIZE: Setting<ByteSizeValue> = Setting.byteSizeSetting("plugins.replication.index.recovery.chunk_size", ByteSizeValue(5, ByteSizeUnit.MB),
+                ByteSizeValue(1, ByteSizeUnit.MB), ByteSizeValue(1, ByteSizeUnit.GB),
+                Setting.Property.Dynamic, Setting.Property.NodeScope)
+        val REPLICATION_FOLLOWER_RECOVERY_PARALLEL_CHUNKS: Setting<Int> = Setting.intSetting("plugins.replication.index.recovery.max_concurrent_file_chunks", 5, 1,
+                Setting.Property.Dynamic, Setting.Property.NodeScope)
     }
 
     override fun createComponents(client: Client, clusterService: ClusterService, threadPool: ThreadPool,
@@ -157,7 +165,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
         this.threadPool = threadPool
         this.replicationMetadataManager = ReplicationMetadataManager(clusterService, client,
                 ReplicationMetadataStore(client, clusterService, xContentRegistry))
-        return listOf(RemoteClusterRepositoriesService(repositoriesService, clusterService), replicationMetadataManager)
+        this.replicationSettings = ReplicationSettings(clusterService)
+        return listOf(RemoteClusterRepositoriesService(repositoriesService, clusterService), replicationMetadataManager, replicationSettings)
     }
 
     override fun getGuiceServiceClasses(): Collection<Class<out LifecycleComponent>> {
@@ -189,7 +198,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
         )
     }
 
-    override fun getRestHandlers(settings: Settings?, restController: RestController,
+    override fun getRestHandlers(settings: Settings, restController: RestController,
                                  clusterSettings: ClusterSettings?, indexScopedSettings: IndexScopedSettings,
                                  settingsFilter: SettingsFilter?,
                                  indexNameExpressionResolver: IndexNameExpressionResolver,
@@ -224,6 +233,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
 
         return FixedExecutorBuilder(settings, REPLICATION_EXECUTOR_NAME_LEADER, leaderThreadPoolSize, leaderThreadPoolQueueSize, REPLICATION_EXECUTOR_NAME_LEADER)
     }
+
     fun leaderThreadPoolSize(allocatedProcessors: Int): Int {
         return allocatedProcessors * 3 / 2 + 1
     }
@@ -286,13 +296,15 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
     }
 
     override fun getSettings(): List<Setting<*>> {
-        return listOf(REPLICATED_INDEX_SETTING, REPLICATION_CHANGE_BATCH_SIZE, REPLICATION_LEADER_THREADPOOL_SIZE, REPLICATION_LEADER_THREADPOOL_QUEUE_SIZE)
+        return listOf(REPLICATED_INDEX_SETTING, REPLICATION_CHANGE_BATCH_SIZE,
+                REPLICATION_LEADER_THREADPOOL_SIZE, REPLICATION_LEADER_THREADPOOL_QUEUE_SIZE,
+                REPLICATION_FOLLOWER_RECOVERY_CHUNK_SIZE, REPLICATION_FOLLOWER_RECOVERY_PARALLEL_CHUNKS)
     }
 
     override fun getInternalRepositories(env: Environment, namedXContentRegistry: NamedXContentRegistry,
                                          clusterService: ClusterService, recoverySettings: RecoverySettings): Map<String, Repository.Factory> {
         val repoFactory = Repository.Factory { repoMetadata: RepositoryMetadata ->
-            RemoteClusterRepository(repoMetadata, client, clusterService, recoverySettings, replicationMetadataManager) }
+            RemoteClusterRepository(repoMetadata, client, clusterService, recoverySettings, replicationMetadataManager, replicationSettings) }
         return mapOf(REMOTE_REPOSITORY_TYPE to repoFactory)
     }
 
