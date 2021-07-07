@@ -104,6 +104,18 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
     }
 
     suspend fun send(changes : GetChangesResponse, closeable: Releasable) {
+        if (unAppliedChanges.containsKey(changes.fromSeqNo)) {
+            val existingBatch = unAppliedChanges[changes.fromSeqNo]!!
+            if (existingBatch.first.maxSeqNoOfUpdatesOrDeletes > changes.maxSeqNoOfUpdatesOrDeletes) {
+                // discard current batch as an already existing batch is already present which contains all the changes
+                // in the incoming batch
+                closeable.close()
+            } else {
+                // there's a batch existing which has same starting seq no but has changes till less seq no, so we're
+                // overwriting that batch, so call its closable
+                existingBatch.second.close()
+            }
+        }
         unAppliedChanges[changes.fromSeqNo] = Pair(changes, closeable)
         sequencer.send(Unit)
     }
