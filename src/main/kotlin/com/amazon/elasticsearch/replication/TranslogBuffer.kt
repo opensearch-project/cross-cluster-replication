@@ -14,13 +14,18 @@ class TranslogBuffer(val percentOfHeap: Int, val fetchParallelism: Int) {
 
     val SEMAPHORE_PERMITS_UPPER_CAP = 500
     val log = Loggers.getLogger(javaClass, "translogbuffer")!!
-    val inFlightTranslogBytesLimit = AtomicLong(JvmInfo.jvmInfo().getMem().getHeapMax().getBytes() * percentOfHeap/100)
+    private val inFlightTranslogBytesLimit = AtomicLong(JvmInfo.jvmInfo().getMem().getHeapMax().getBytes() * percentOfHeap/100)
     private val inFlightTranslogBytes = AtomicLong(0)
     private val rateLimiter = Semaphore(SEMAPHORE_PERMITS_UPPER_CAP, SEMAPHORE_PERMITS_UPPER_CAP-fetchParallelism)
     /** update to parallelism will reflect here first, which will then later be applied to [parallelism] */
     private var parallelismNewVal = fetchParallelism
     private var parallelism = fetchParallelism
     private val shardToDelay = ConcurrentHashMap<String, AtomicLong>()
+
+    // Only used in tests at the moment
+    fun getParallelism(): Int {
+        return parallelism
+    }
 
     fun updateParallelism(value: Int) {
         parallelismNewVal = value
@@ -41,17 +46,16 @@ class TranslogBuffer(val percentOfHeap: Int, val fetchParallelism: Int) {
             for (i in 1..diff) {
                 rateLimiter.acquire()
             }
-            log.info("Parallelism decreased by $diff")
+            log.info("Parallelism decreased by $diff, was $parallelism")
         } else if (parallelism < parallelismNewVal) {
             val diff = parallelismNewVal-parallelism
             for (i in 1..diff) {
                 rateLimiter.release()
             }
-            log.info("Parallelism increased by $diff")
+            log.info("Parallelism increased by $diff, was $parallelism")
         }
         parallelism = parallelismNewVal
     }
-
 
     fun updateBufferSize(percentOfHeap: Int) {
         val bytes = JvmInfo.jvmInfo().getMem().getHeapMax().getBytes() * percentOfHeap/100
