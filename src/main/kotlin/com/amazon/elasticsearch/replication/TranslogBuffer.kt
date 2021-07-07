@@ -70,7 +70,7 @@ class TranslogBuffer(val percentOfHeap: Int, val fetchParallelism: Int) {
 
     suspend fun markBatchAdded(bytes: Long): Releasable {
         updateParallelismIfChanged()
-        log.info("adding $bytes bytes")
+        log.debug("adding $bytes bytes")
         val newBytes = inFlightTranslogBytes.addAndGet(bytes)
         if (newBytes > inFlightTranslogBytesLimit.get()) {
             inFlightTranslogBytes.addAndGet(-bytes)
@@ -78,9 +78,9 @@ class TranslogBuffer(val percentOfHeap: Int, val fetchParallelism: Int) {
             throw EsRejectedExecutionException("Translog buffer is full. Buffer capacity: " +
                     "${inFlightTranslogBytesLimit.get()}, current size ${inFlightTranslogBytes.get()}, request size $bytes")
         } else {
-            log.info("$bytes bytes addition succeeded")
+            log.debug("$bytes bytes addition succeeded")
             return Releasable {
-                log.info("$bytes bytes released now")
+                log.debug("$bytes bytes released now")
                 inFlightTranslogBytes.addAndGet(-bytes)
             }
         }
@@ -91,18 +91,18 @@ class TranslogBuffer(val percentOfHeap: Int, val fetchParallelism: Int) {
         if (shardToDelay.containsKey(shardId.toString())) {
             val delayMs = shardToDelay[shardId.toString()]!!.get()
             if (delayMs > 0) {
-                log.info("delaying rate limiter acquisition by $delayMs ms")
+                log.debug("delaying rate limiter acquisition by $delayMs ms")
                 delay(delayMs)
             }
         }
-        log.info("acquiring ratelimiter for shard ${shardId.toString()}")
+        log.debug("acquiring ratelimiter for shard ${shardId.toString()}")
         fetchRateLimiter.acquire()
     }
 
     fun releaseFetchRateLimiter(shardId: ShardId, operationSuccessful: Boolean) {
         if (operationSuccessful) {
             shardToDelay[shardId.toString()] = AtomicLong(0)
-            log.info("Successful operation. Now releasing ratelimiter for shard ${shardId.toString()}")
+            log.debug("Successful operation. Now releasing ratelimiter for shard ${shardId.toString()}")
             fetchRateLimiter.release()
             return
         }
@@ -111,25 +111,25 @@ class TranslogBuffer(val percentOfHeap: Int, val fetchParallelism: Int) {
         }
         val maxDelay = 60_000L              // 1 minute
         val delayIncrementStep = 10_000L    // 10 seconds
-        log.info("adding delay ${delayIncrementStep} ms to shard ${shardId}")
+        log.debug("adding delay ${delayIncrementStep} ms to shard ${shardId}")
         shardToDelay[shardId.toString()]!!.getAndAdd(delayIncrementStep)
 
         if (shardToDelay[shardId.toString()]!!.get() > maxDelay) {
             shardToDelay[shardId.toString()]!!.set(maxDelay)
-            log.info("updating delay ${maxDelay} to shard ${shardId}")
+            log.debug("updating delay ${maxDelay} to shard ${shardId}")
         }
-        log.info("now releasing ratelimiter for shard ${shardId.toString()}")
+        log.debug("now releasing ratelimiter for shard ${shardId.toString()}")
         fetchRateLimiter.release()
     }
 
     suspend fun acquireApplyRateLimiter() {
         updateParallelismIfChanged()
-        log.info("acquiring ratelimiter2")
+        log.debug("acquiring apply ratelimiter")
         applyRateLimiter.acquire()
     }
 
     fun releaseApplyRateLimiter() {
-        log.info("releasing ratelimiter2")
+        log.debug("releasing apply ratelimiter")
         applyRateLimiter.release()
     }
 }
