@@ -16,6 +16,8 @@
 package com.amazon.elasticsearch.replication.repository
 
 import com.amazon.elasticsearch.replication.ReplicationPlugin
+import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.REPLICATION_FOLLOWER_RECOVERY_CHUNK_SIZE
+import com.amazon.elasticsearch.replication.ReplicationSettings
 import com.amazon.elasticsearch.replication.action.repository.GetStoreMetadataAction
 import com.amazon.elasticsearch.replication.action.repository.GetStoreMetadataRequest
 import com.amazon.elasticsearch.replication.action.repository.ReleaseLeaderResourcesAction
@@ -52,6 +54,7 @@ import org.elasticsearch.common.Nullable
 import org.elasticsearch.common.UUIDs
 import org.elasticsearch.common.component.AbstractLifecycleComponent
 import org.elasticsearch.common.metrics.CounterMetric
+import org.elasticsearch.common.settings.ClusterSettings
 import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.index.IndexSettings
 import org.elasticsearch.index.mapper.MapperService
@@ -84,7 +87,8 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
                               private val client: Client,
                               private val clusterService: ClusterService,
                               private val recoverySettings: RecoverySettings,
-                              private val replicationMetadataManager: ReplicationMetadataManager) : AbstractLifecycleComponent(), Repository, CoroutineScope by GlobalScope {
+                              private val replicationMetadataManager: ReplicationMetadataManager,
+                              private val replicationSettings: ReplicationSettings) : AbstractLifecycleComponent(), Repository, CoroutineScope by GlobalScope {
 
     // Lazy init because we initialize when a remote cluster seed setting is added at which point the remote
     // cluster connection might not be available yet
@@ -101,11 +105,7 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         fun repoForCluster(remoteClusterName: String): String = REMOTE_REPOSITORY_PREFIX + remoteClusterName
     }
 
-    @Volatile
-    private var parallelChunks = recoverySettings.maxConcurrentFileChunks
 
-    @Volatile
-    private var chunkSize = recoverySettings.chunkSize
 
     override fun getRestoreThrottleTimeInNanos(): Long {
         return restoreRateLimitingTimeInNanos.count()
@@ -301,8 +301,8 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         // make sure the store is not released until we are done.
         val fileMetadata = ArrayList(metadataSnapshot.asMap().values)
         multiChunkTransfer = RemoteClusterMultiChunkTransfer(log, clusterService.clusterName.value(), client.threadPool().threadContext,
-                store, parallelChunks, restoreUUID, replMetadata, remoteShardNode,
-                remoteShardId, fileMetadata, remoteClusterClient, recoveryState, chunkSize,
+                store, replicationSettings.concurrentFileChunks, restoreUUID, replMetadata, remoteShardNode,
+                remoteShardId, fileMetadata, remoteClusterClient, recoveryState, replicationSettings.chunkSize,
                 object : ActionListener<Void> {
                     override fun onFailure(e: java.lang.Exception?) {
                         log.error("Restore of ${store.shardId()} failed due to $e")
