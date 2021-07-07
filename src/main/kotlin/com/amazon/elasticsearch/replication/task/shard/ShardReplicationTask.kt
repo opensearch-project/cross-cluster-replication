@@ -128,6 +128,25 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
 
     override fun indicesOrShards() = listOf(followerShardId)
 
+    private suspend fun updateMonotonicallyIncreasing(atomicLong: AtomicLong, newVal: Long) {
+        var currVal = atomicLong.get()
+        if (currVal >= newVal) {
+            return
+        }
+        val retryCount = 10
+        for (i in 1..retryCount) {
+            val successful = atomicLong.compareAndSet(currVal, newVal)
+            if (successful) {
+                return
+            }
+            currVal = atomicLong.get()
+            delay(10)
+        }
+        // This should happen in extremely rare case, so we give up updating the variable
+        log.warn("Not able to update sequence number in monotonically increasing fashion, from $currVal to " +
+                "$newVal. Giving up.")
+    }
+
     @ObsoleteCoroutinesApi
     private suspend fun replicate() {
         updateTaskState(FollowingState)
@@ -162,7 +181,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                             val closeable = translogBuffer.markBatchAdded(changesResponse.changesSizeEstimate)
                             sequencer.send(changesResponse, closeable)
                             val newSeqNo = changesResponse.changes.lastOrNull()?.seqNo()?.inc() ?: seqNo
-                            seqNo.getAndSet(newSeqNo.toLong())
+                            updateMonotonicallyIncreasing(seqNo, newSeqNo.toLong())
                             fetchSuccess = true
                         } catch (e: EsRejectedExecutionException) {
                             log.info("Buffer full. Retrying")
