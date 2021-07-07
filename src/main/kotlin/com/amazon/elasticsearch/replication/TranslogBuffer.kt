@@ -17,6 +17,7 @@ class TranslogBuffer(val percentOfHeap: Int, val fetchParallelism: Int) {
     private val inFlightTranslogBytesLimit = AtomicLong(JvmInfo.jvmInfo().getMem().getHeapMax().getBytes() * percentOfHeap/100)
     private val inFlightTranslogBytes = AtomicLong(0)
     private val rateLimiter = Semaphore(SEMAPHORE_PERMITS_UPPER_CAP, SEMAPHORE_PERMITS_UPPER_CAP-fetchParallelism)
+    private val rateLimiter2 = Semaphore(SEMAPHORE_PERMITS_UPPER_CAP, SEMAPHORE_PERMITS_UPPER_CAP-fetchParallelism)
     /** update to parallelism will reflect here first, which will then later be applied to [parallelism] */
     private var parallelismNewVal = fetchParallelism
     private var parallelism = fetchParallelism
@@ -45,12 +46,14 @@ class TranslogBuffer(val percentOfHeap: Int, val fetchParallelism: Int) {
             val diff = parallelism-parallelismNewVal
             for (i in 1..diff) {
                 rateLimiter.acquire()
+                rateLimiter2.acquire()
             }
             log.info("Parallelism decreased by $diff, was $parallelism")
         } else if (parallelism < parallelismNewVal) {
             val diff = parallelismNewVal-parallelism
             for (i in 1..diff) {
                 rateLimiter.release()
+                rateLimiter2.release()
             }
             log.info("Parallelism increased by $diff, was $parallelism")
         }
@@ -117,5 +120,16 @@ class TranslogBuffer(val percentOfHeap: Int, val fetchParallelism: Int) {
         }
         log.debug("now releasing ratelimiter for shard ${shardId.toString()}")
         rateLimiter.release()
+    }
+
+    suspend fun acquireRateLimiter2() {
+        updateParallelismIfChanged()
+        log.debug("acquiring ratelimiter2")
+        rateLimiter2.acquire()
+    }
+
+    fun releaseRateLimiter2() {
+        log.debug("releasing ratelimiter2")
+        rateLimiter2.release()
     }
 }

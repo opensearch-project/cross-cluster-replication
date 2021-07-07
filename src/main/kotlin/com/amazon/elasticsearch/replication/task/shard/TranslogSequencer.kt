@@ -16,6 +16,7 @@
 package com.amazon.elasticsearch.replication.task.shard
 
 import com.amazon.elasticsearch.replication.ReplicationException
+import com.amazon.elasticsearch.replication.TranslogBuffer
 import com.amazon.elasticsearch.replication.action.changes.GetChangesResponse
 import com.amazon.elasticsearch.replication.action.replay.ReplayChangesAction
 import com.amazon.elasticsearch.replication.action.replay.ReplayChangesRequest
@@ -53,7 +54,7 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
                         private val followerShardId: ShardId,
                         private val remoteCluster: String, private val remoteIndexName: String,
                         private val parentTaskId: TaskId, private val client: Client,
-                        initialSeqNo: Long) {
+                        initialSeqNo: Long, private val translogBuffer: TranslogBuffer) {
 
     private val unAppliedChanges = ConcurrentHashMap<Long, Pair<GetChangesResponse, Releasable> >()
     private val log = Loggers.getLogger(javaClass, followerShardId)!!
@@ -66,24 +67,29 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
         // raise the same exception.  See [SendChannel.close] method for details.
         var highWatermark = initialSeqNo
         for (m in channel) {
-            while (unAppliedChanges.containsKey(highWatermark + 1)) {
-                val next = unAppliedChanges.remove(highWatermark + 1)!!
-                val replayRequest = ReplayChangesRequest(followerShardId, next.first.changes, next.first.maxSeqNoOfUpdatesOrDeletes,
-                                                         remoteCluster, remoteIndexName)
-                replayRequest.parentTask = parentTaskId
-                val replayResponse : ReplayChangesResponse
-                try {
-                    replayResponse = client.suspendExecute(replicationMetadata, ReplayChangesAction.INSTANCE, replayRequest)
-                } finally {
-                    next.second.close()
-                }
-                if (replayResponse.shardInfo.failed > 0) {
-                    replayResponse.shardInfo.failures.forEachIndexed { i, failure ->
-                        log.error("Failed replaying changes. Failure:$i:$failure")
+            translogBuffer.acquireRateLimiter2()
+            try {
+                while (unAppliedChanges.containsKey(highWatermark + 1)) {
+                    val next = unAppliedChanges.remove(highWatermark + 1)!!
+                    val replayRequest = ReplayChangesRequest(followerShardId, next.first.changes, next.first.maxSeqNoOfUpdatesOrDeletes,
+                            remoteCluster, remoteIndexName)
+                    replayRequest.parentTask = parentTaskId
+                    val replayResponse : ReplayChangesResponse
+                    try {
+                        replayResponse = client.suspendExecute(replicationMetadata, ReplayChangesAction.INSTANCE, replayRequest)
+                    } finally {
+                        next.second.close()
                     }
-                    throw ReplicationException("failed to replay changes", replayResponse.shardInfo.failures)
+                    if (replayResponse.shardInfo.failed > 0) {
+                        replayResponse.shardInfo.failures.forEachIndexed { i, failure ->
+                            log.error("Failed replaying changes. Failure:$i:$failure")
+                        }
+                        throw ReplicationException("failed to replay changes", replayResponse.shardInfo.failures)
+                    }
+                    highWatermark = next.first.changes.lastOrNull()?.seqNo() ?: highWatermark
                 }
-                highWatermark = next.first.changes.lastOrNull()?.seqNo() ?: highWatermark
+            } finally {
+                translogBuffer.releaseRateLimiter2()
             }
         }
         completed.complete(Unit)

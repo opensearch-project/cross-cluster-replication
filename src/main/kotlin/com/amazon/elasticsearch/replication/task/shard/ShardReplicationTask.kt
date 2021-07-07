@@ -147,7 +147,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
 
         val seqNo = AtomicLong(indexShard.localCheckpoint + 1)
         val sequencer = TranslogSequencer(scope, replicationMetadata, followerShardId, remoteCluster, remoteShardId.indexName,
-                                          TaskId(clusterService.nodeName, id), client, seqNo.get() - 1)
+                                          TaskId(clusterService.nodeName, id), client, seqNo.get() - 1, translogBuffer)
 
         coroutineScope {
             for (i in 1..PARALLEL_FETCHES) {

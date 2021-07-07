@@ -15,6 +15,7 @@
 
 package com.amazon.elasticsearch.replication.task.shard
 
+import com.amazon.elasticsearch.replication.TranslogBuffer
 import com.amazon.elasticsearch.replication.action.changes.GetChangesResponse
 import com.amazon.elasticsearch.replication.action.replay.ReplayChangesAction
 import com.amazon.elasticsearch.replication.action.replay.ReplayChangesRequest
@@ -86,8 +87,9 @@ class TranslogSequencerTests : ESTestCase() {
     @ExperimentalCoroutinesApi
     fun `test sequencer out of order`() = runBlockingTest {
         val startSeqNo = randomNonNegativeLong()
+        val translogBuffer = TranslogBuffer(10, 10)
         val sequencer = TranslogSequencer(this, replicationMetadata, followerShardId, remoteCluster, remoteIndex, EMPTY_TASK_ID,
-                                          client, startSeqNo)
+                                          client, startSeqNo, translogBuffer)
 
         // Send requests out of order (shuffled seqNo) and await for them to be processed.
         var batchSeqNo = startSeqNo
