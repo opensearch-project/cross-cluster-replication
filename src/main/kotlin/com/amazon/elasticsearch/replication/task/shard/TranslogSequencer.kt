@@ -29,14 +29,12 @@ import kotlinx.coroutines.ObsoleteCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.actor
 import kotlinx.coroutines.launch
-import kotlinx.coroutines.sync.Semaphore
 import org.elasticsearch.client.Client
 import org.elasticsearch.common.lease.Releasable
 import org.elasticsearch.common.logging.Loggers
 import org.elasticsearch.index.shard.ShardId
 import org.elasticsearch.index.translog.Translog
 import org.elasticsearch.tasks.TaskId
-import java.io.Closeable
 import java.util.concurrent.ConcurrentHashMap
 
 /**
@@ -69,7 +67,7 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
         var highWatermark = initialSeqNo
         for (m in channel) {
             launch {
-                translogBuffer.acquireRateLimiter2()
+                translogBuffer.acquireApplyRateLimiter()
                 try {
                     while (unAppliedChanges.containsKey(highWatermark + 1)) {
                         val next = unAppliedChanges.remove(highWatermark + 1)!!
@@ -91,7 +89,7 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
                         highWatermark = next.first.changes.lastOrNull()?.seqNo() ?: highWatermark
                     }
                 } finally {
-                    translogBuffer.releaseRateLimiter2()
+                    translogBuffer.releaseApplyRateLimiter()
                 }
             }
         }

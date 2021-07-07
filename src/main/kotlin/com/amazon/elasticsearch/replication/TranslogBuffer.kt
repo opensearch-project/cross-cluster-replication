@@ -122,13 +122,13 @@ class TranslogBuffer(val percentOfHeap: Int, val fetchParallelism: Int) {
         fetchRateLimiter.release()
     }
 
-    suspend fun acquireRateLimiter2() {
+    suspend fun acquireApplyRateLimiter() {
         updateParallelismIfChanged()
         log.info("acquiring ratelimiter2")
         applyRateLimiter.acquire()
     }
 
-    fun releaseRateLimiter2() {
+    fun releaseApplyRateLimiter() {
         log.info("releasing ratelimiter2")
         applyRateLimiter.release()
     }
