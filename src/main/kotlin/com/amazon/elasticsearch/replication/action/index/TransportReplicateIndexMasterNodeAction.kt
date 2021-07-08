@@ -15,22 +15,16 @@
 
 package com.amazon.elasticsearch.replication.action.index
 
-import com.amazon.elasticsearch.replication.action.replay.TransportReplayChangesAction
-import com.amazon.elasticsearch.replication.action.replicationstatedetails.UpdateReplicationStateDetailsRequest
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
 import com.amazon.elasticsearch.replication.task.ReplicationState
 import com.amazon.elasticsearch.replication.task.index.IndexReplicationExecutor
 import com.amazon.elasticsearch.replication.task.index.IndexReplicationParams
 import com.amazon.elasticsearch.replication.task.index.IndexReplicationState
-import com.amazon.elasticsearch.replication.util.SecurityContext
 import com.amazon.elasticsearch.replication.util.coroutineContext
 import com.amazon.elasticsearch.replication.util.startTask
-import com.amazon.elasticsearch.replication.util.submitClusterStateUpdateTask
 import com.amazon.elasticsearch.replication.util.suspending
-import com.amazon.elasticsearch.replication.util.waitForClusterStateUpdate
 import com.amazon.elasticsearch.replication.util.waitForTaskCondition
-import com.amazon.opendistroforelasticsearch.commons.authuser.User
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
@@ -39,12 +33,10 @@ import org.apache.logging.log4j.LogManager
 import org.elasticsearch.action.ActionListener
 import org.elasticsearch.action.support.ActionFilters
 import org.elasticsearch.action.support.IndicesOptions
-import org.elasticsearch.action.support.master.AcknowledgedRequest
 import org.elasticsearch.action.support.master.AcknowledgedResponse
 import org.elasticsearch.action.support.master.TransportMasterNodeAction
 import org.elasticsearch.client.node.NodeClient
 import org.elasticsearch.cluster.ClusterState
-import org.elasticsearch.cluster.ClusterStateTaskExecutor
 import org.elasticsearch.cluster.block.ClusterBlockException
 import org.elasticsearch.cluster.block.ClusterBlockLevel
 import org.elasticsearch.cluster.metadata.IndexMetadata
@@ -100,8 +92,8 @@ class TransportReplicateIndexMasterNodeAction @Inject constructor(transportServi
                 val remoteMetadata = getRemoteIndexMetadata(replicateIndexReq.remoteCluster, replicateIndexReq.remoteIndex)
 
                 if (state.routingTable.hasIndex(replicateIndexReq.followerIndex)) {
-                    throw IllegalArgumentException("Cant use same index again for replication. Either close or " +
-                    "delete the index:${replicateIndexReq.followerIndex}")
+                    throw IllegalArgumentException("Cant use same index again for replication. " +
+                    "Delete the index:${replicateIndexReq.followerIndex}")
                 }
 
                 val params = IndexReplicationParams(replicateIndexReq.remoteCluster, remoteMetadata.index, replicateIndexReq.followerIndex)

@@ -84,7 +84,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         assertThatThrownBy {
             followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
         }.isInstanceOf(ResponseException::class.java).hasMessageContaining("Cant use same index again for replication." +
-                " Either close or delete the index:$followerIndexName")
+                " Delete the index:$followerIndexName")
     }
 
     fun `test start replication fails when remote cluster alias does not exist`() {
