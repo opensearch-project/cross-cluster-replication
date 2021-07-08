@@ -142,8 +142,11 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
 
     companion object {
         const val MAX_TRANSLOG_BUFFER_PERCENT = 50
+        const val DEFAULT_TRANSLOG_BUFFER_PERCENT = 10
         const val REPLICATION_EXECUTOR_NAME_LEADER = "replication_leader"
         const val REPLICATION_EXECUTOR_NAME_FOLLOWER = "replication_follower"
+        val NUM_AVAILABLE_PROCESSORS = Runtime.getRuntime().availableProcessors()
+
         val REPLICATED_INDEX_SETTING: Setting<String> = Setting.simpleString("index.plugins.replication.replicated",
             Setting.Property.InternalIndex, Setting.Property.IndexScope)
         val REPLICATION_CHANGE_BATCH_SIZE: Setting<Int> = Setting.intSetting("plugins.replication.ops_batch_size", 512, 16,
@@ -156,7 +159,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                 "plugins.replication.translog_buffer_percent", 10, 1,
                 Setting.Property.Dynamic, Setting.Property.NodeScope)
         val REPLICATION_TRANSLOG_FETCH_PARALLELISM: Setting<Int> = Setting.intSetting(
-                "plugins.replication.translog_fetch_parallelism", -1, -1,
+                "plugins.replication.translog_fetch_parallelism", NUM_AVAILABLE_PROCESSORS, 1,
                 Setting.Property.Dynamic, Setting.Property.NodeScope)
     }
 
@@ -247,15 +250,19 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                                             expressionResolver: IndexNameExpressionResolver)
         : List<PersistentTasksExecutor<*>> {
 
-        val bufferSizePercent = min(clusterService.clusterSettings.get(REPLICATION_TRANSLOG_BUFFER_PERCENT), MAX_TRANSLOG_BUFFER_PERCENT)
-        var parallelism = Runtime.getRuntime().availableProcessors()
-        val parallelismSetting = clusterService.clusterSettings.get(REPLICATION_TRANSLOG_FETCH_PARALLELISM)
-        if (parallelismSetting != -1) {
-            parallelism = parallelismSetting
+        var bufferPercentSetting = clusterService.clusterSettings.get(REPLICATION_TRANSLOG_BUFFER_PERCENT)
+        if (bufferPercentSetting == null) {
+            bufferPercentSetting = DEFAULT_TRANSLOG_BUFFER_PERCENT
+        }
+        bufferPercentSetting = min(bufferPercentSetting, MAX_TRANSLOG_BUFFER_PERCENT)
+
+        var parallelismSetting = clusterService.clusterSettings.get(REPLICATION_TRANSLOG_FETCH_PARALLELISM)
+        if (parallelismSetting == null || parallelismSetting <= 0) {
+            parallelismSetting = NUM_AVAILABLE_PROCESSORS
         }
         return listOf(
             ShardReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager,
-                    TranslogBuffer(bufferSizePercent, parallelism)),
+                    TranslogBuffer(bufferPercentSetting, parallelismSetting)),
             IndexReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager),
             AutoFollowExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager))
     }

@@ -128,6 +128,14 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
 
     override fun indicesOrShards() = listOf(followerShardId)
 
+    /** We try to make sure that updates to the sequence number is done in a monotonically increasing manner. This is
+     * because updates to the AtomicLong variable are happening in parallel across multiple coroutines, which might
+     * create a situation where the counter decreases. E.g.: Two threads, one fetches changes from 1 to 10, and another
+     * one fetches changes from 1 to 5, but the first one updates the sequence number to 10, and later the second thread
+     * updates the sequence number back to 10. This might cause unnecessary fetching of translog operations, which we're
+     * trying to avoid here. If after enough retries, we're not able to update, we give up on updating, and do a
+     * re-fetch again, but it should be extremely unlikely that this happens.
+     */
     private suspend fun updateMonotonicallyIncreasing(atomicLong: AtomicLong, newVal: Long) {
         var currVal = atomicLong.get()
         if (currVal >= newVal) {
