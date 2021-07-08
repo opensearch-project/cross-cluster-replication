@@ -62,7 +62,7 @@ class ReplicationStatusResponse : BroadcastResponse, ToXContentObject {
         if (::status.isInitialized)
             builder.field("status",status)
         if (::connectionAlias.isInitialized)
-            builder.field("connection_alias",connectionAlias)
+            builder.field("remote_cluster",connectionAlias)
         if (::leaderIndexName.isInitialized)
             builder.field("leader_index",leaderIndexName)
         if (::followerIndexName.isInitialized)
