@@ -22,9 +22,9 @@ import com.amazon.elasticsearch.replication.action.changes.GetChangesRequest
 import com.amazon.elasticsearch.replication.action.changes.GetChangesResponse
 import com.amazon.elasticsearch.replication.action.pause.PauseIndexReplicationAction
 import com.amazon.elasticsearch.replication.action.pause.PauseIndexReplicationRequest
-import com.amazon.elasticsearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
+import com.amazon.elasticsearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
 import com.amazon.elasticsearch.replication.metadata.state.getReplicationStateParamsForIndex
 import com.amazon.elasticsearch.replication.seqno.RemoteClusterRetentionLeaseHelper
 import com.amazon.elasticsearch.replication.task.CrossClusterReplicationTask
@@ -32,28 +32,20 @@ import com.amazon.elasticsearch.replication.task.ReplicationState
 import com.amazon.elasticsearch.replication.util.indicesService
 import com.amazon.elasticsearch.replication.util.suspendExecute
 import com.amazon.elasticsearch.replication.util.suspendExecuteWithRetries
-import com.amazon.elasticsearch.replication.util.suspending
 import kotlinx.coroutines.ObsoleteCoroutinesApi
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Semaphore
-import org.elasticsearch.ElasticsearchException
 import org.elasticsearch.ElasticsearchTimeoutException
-import org.elasticsearch.action.NoSuchNodeException
-import org.elasticsearch.action.support.IndicesOptions
-import org.elasticsearch.action.support.TransportActions
 import org.elasticsearch.client.Client
 import org.elasticsearch.cluster.ClusterChangedEvent
 import org.elasticsearch.cluster.ClusterStateListener
-import org.elasticsearch.cluster.node.DiscoveryNode
 import org.elasticsearch.cluster.service.ClusterService
 import org.elasticsearch.common.logging.Loggers
-import org.elasticsearch.index.seqno.RetentionLeaseActions
 import org.elasticsearch.index.seqno.RetentionLeaseInvalidRetainingSeqNoException
 import org.elasticsearch.index.seqno.RetentionLeaseNotFoundException
 import org.elasticsearch.index.shard.ShardId
-import org.elasticsearch.index.shard.ShardNotFoundException
 import org.elasticsearch.persistent.PersistentTaskState
 import org.elasticsearch.persistent.PersistentTasksNodeService
 import org.elasticsearch.tasks.TaskId
@@ -160,12 +152,10 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
             } catch (e: ElasticsearchTimeoutException) {
                 log.info("Timed out waiting for new changes. Current seqNo: $seqNo")
                 rateLimiter.release()
-                continue
             } catch (e: NodeNotConnectedException) {
-                log.info("Node not connected. Retrying request using a different node. $e")
+                log.info("Node not connected. Request will be retried using a different node. $e")
                 delay(backOffForNodeDiscovery)
                 rateLimiter.release()
-                continue
             }
             //renew retention lease with global checkpoint so that any shard that picks up shard replication task has data until then.
             try {
