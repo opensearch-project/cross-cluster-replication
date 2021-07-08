@@ -64,6 +64,7 @@ import org.elasticsearch.common.xcontent.ToXContentObject
 import org.elasticsearch.common.xcontent.XContentBuilder
 import org.elasticsearch.index.Index
 import org.elasticsearch.index.IndexSettings
+import org.elasticsearch.index.IndexSettings.INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING
 import org.elasticsearch.index.shard.ShardId
 import org.elasticsearch.indices.recovery.RecoveryState
 import org.elasticsearch.persistent.PersistentTaskState
@@ -78,7 +79,6 @@ import java.util.stream.Collectors
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
-import com.amazon.elasticsearch.replication.util.suspendExecute
 import kotlin.streams.toList
 
 class IndexReplicationTask(id: Long, type: String, action: String, description: String,
@@ -109,6 +109,7 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
 
     companion object {
         val blSettings  : Set<Setting<*>> = setOf(
+                INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING,
                 IndexMetadata.INDEX_READ_ONLY_SETTING,
                 IndexMetadata.INDEX_BLOCKS_READ_SETTING,
                 IndexMetadata.INDEX_BLOCKS_WRITE_SETTING,

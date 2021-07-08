@@ -38,6 +38,7 @@ import org.elasticsearch.cluster.metadata.IndexNameExpressionResolver
 import org.elasticsearch.cluster.service.ClusterService
 import org.elasticsearch.common.inject.Inject
 import org.elasticsearch.common.io.stream.StreamInput
+import org.elasticsearch.common.settings.IndexScopedSettings
 import org.elasticsearch.threadpool.ThreadPool
 import org.elasticsearch.transport.TransportService
 import java.io.IOException
@@ -78,6 +79,11 @@ class TransportUpdateIndexReplicationAction @Inject constructor(transportService
     }
 
     private fun validateUpdateReplicationRequest(request: UpdateIndexReplicationRequest) {
+        IndexScopedSettings.DEFAULT_SCOPED_SETTINGS.validate(
+                request.settings,  // don't validate wildcards
+                false,  // don't validate dependencies here we check it below never allow to change the number of shards
+                false)
+
         val replicationStateParams = getReplicationStateParamsForIndex(clusterService, request.indexName)
                 ?:
                 throw IllegalArgumentException("No replication in progress for index:${request.indexName}")
@@ -91,6 +97,7 @@ class TransportUpdateIndexReplicationAction @Inject constructor(transportService
     override fun executor(): String {
         return ThreadPool.Names.SAME
     }
+
 
     @Throws(IOException::class)
     override fun read(inp: StreamInput): AcknowledgedResponse {

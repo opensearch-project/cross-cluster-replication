@@ -16,32 +16,18 @@
 package com.amazon.elasticsearch.replication.integ.rest
 
 import com.amazon.elasticsearch.replication.*
-import com.amazon.elasticsearch.replication.action.status.ReplicationStatusResponse
-import com.amazon.elasticsearch.replication.action.status.ShardInfoResponse
-import org.apache.http.util.EntityUtils
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
-import org.elasticsearch.ElasticsearchStatusException
 import org.elasticsearch.action.DocWriteResponse
 import org.elasticsearch.action.admin.indices.delete.DeleteIndexRequest
-import org.elasticsearch.action.admin.indices.flush.FlushRequest
 import org.elasticsearch.action.admin.indices.open.OpenIndexRequest
 import org.elasticsearch.action.index.IndexRequest
-import org.elasticsearch.client.Request
 import org.elasticsearch.client.RequestOptions
 import org.elasticsearch.client.ResponseException
-import org.elasticsearch.client.RestHighLevelClient
 import org.elasticsearch.client.indices.CloseIndexRequest
 import org.elasticsearch.client.indices.CreateIndexRequest
-import org.elasticsearch.client.indices.GetIndexRequest
-import org.elasticsearch.cluster.metadata.IndexMetadata
-import org.elasticsearch.common.settings.Settings
-import org.elasticsearch.common.unit.TimeValue
-import org.elasticsearch.index.mapper.MapperService
-import org.elasticsearch.test.ESTestCase.assertBusy
 import org.junit.Assert
-import java.util.concurrent.TimeUnit
-
+import org.elasticsearch.client.indices.GetMappingsRequest
 
 
 @MultiClusterAnnotations.ClusterConfigurations(
@@ -148,6 +134,20 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
             leaderClient.indices().open(OpenIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
 
             followerClient.resumeReplication(followerIndexName)
+
+            //Update mapping post resume assert
+            val sourceMap : MutableMap<String, String> = HashMap()
+            sourceMap["x"] = "y"
+            val indexResponse = leaderClient.index(IndexRequest(leaderIndexName).id("2").source(sourceMap), RequestOptions.DEFAULT)
+            assertThat(indexResponse.result).isIn(DocWriteResponse.Result.CREATED, DocWriteResponse.Result.UPDATED)
+            Thread.sleep(1000)
+            Assert.assertEquals(
+                    leaderClient.indices().getMapping(GetMappingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
+                            .mappings()[leaderIndexName],
+                    followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
+                            .mappings()[followerIndexName]
+            )
+
         } finally {
             followerClient.stopReplication(followerIndexName)
         }
