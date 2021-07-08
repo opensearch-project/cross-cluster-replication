@@ -1,12 +1,14 @@
 package com.amazon.elasticsearch.replication.action.status
 
 
+import com.amazon.elasticsearch.replication.ReplicationException
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.util.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import org.apache.logging.log4j.LogManager
+import org.elasticsearch.ResourceNotFoundException
 import org.elasticsearch.action.ActionListener
 import org.elasticsearch.action.support.ActionFilters
 import org.elasticsearch.action.support.HandledTransportAction
@@ -68,10 +70,12 @@ class TransportReplicationStatusAction @Inject constructor(transportService: Tra
                     followerResponse.leaderIndexName = metadata.leaderContext.resource
                     followerResponse.status = status
                     followerResponse
-                } catch(e : Exception) {
-                    // TODO : when we get resoucenotfound exception show replication status
-                    //  as not in progess and in case of generic excpetion, throw replication_exception.
+                } catch (e : ResourceNotFoundException) {
+                    log.error("got ResourceNotFoundException while querying for status ",e)
                     ReplicationStatusResponse("REPLICATION NOT IN PROGRESS")
+                } catch(e : Exception) {
+                    log.error("got Exception while querying for status ",e)
+                    throw ReplicationException("failed to fetch replication status")
                 }
             }
         }
