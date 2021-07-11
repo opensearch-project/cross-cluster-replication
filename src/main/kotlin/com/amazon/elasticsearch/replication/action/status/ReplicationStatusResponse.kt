@@ -17,6 +17,9 @@ class ReplicationStatusResponse : BroadcastResponse, ToXContentObject {
     lateinit var connectionAlias: String
     lateinit var leaderIndexName: String
     lateinit var followerIndexName: String
+    lateinit var aggregatedReplayDetails: ReplayDetails
+    lateinit var aggregatedRestoreDetails: RestoreDetails
+    var isVerbose: Boolean = true
 
     @Throws(IOException::class)
     constructor(inp: StreamInput) : super(inp) {
@@ -67,8 +70,12 @@ class ReplicationStatusResponse : BroadcastResponse, ToXContentObject {
             builder.field("leader_index",leaderIndexName)
         if (::followerIndexName.isInitialized)
             builder.field("follower_index",followerIndexName)
-        if (::shardInfoResponse.isInitialized)
-            builder.field("replication_data",shardInfoResponse)
+        if (::aggregatedReplayDetails.isInitialized)
+            builder.field("syncing_details",aggregatedReplayDetails)
+        if (::aggregatedRestoreDetails.isInitialized)
+            builder.field("bootstrap_details",aggregatedRestoreDetails)
+        if (isVerbose and ::shardInfoResponse.isInitialized)
+            builder.field("shard_replication_details",shardInfoResponse)
         builder.endObject()
         return builder
     }
