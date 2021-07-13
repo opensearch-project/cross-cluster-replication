@@ -151,6 +151,8 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
             followerClient.pauseReplication(randomIndex)
             var statusResp = followerClient.replicationStatus(followerIndexName)
             `validate paused status resposne`(statusResp)
+            statusResp = followerClient.replicationStatus(followerIndexName,false)
+            `validate aggregated paused status resposne`(statusResp)
         }.isInstanceOf(ResponseException::class.java)
                 .hasMessageContaining("No replication in progress for index:$randomIndex")
     }
@@ -172,6 +174,8 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
             followerClient.pauseReplication(followerIndexName)
             var statusResp = followerClient.replicationStatus(followerIndexName)
             `validate paused status resposne`(statusResp)
+            statusResp = followerClient.replicationStatus(followerIndexName,false)
+            `validate aggregated paused status resposne`(statusResp)
             // Since, we were still in FOLLOWING phase when pause was called, the index
             // in follower index should not have been deleted in follower cluster
             assertBusy {

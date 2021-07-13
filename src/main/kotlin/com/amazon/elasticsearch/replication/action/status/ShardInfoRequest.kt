@@ -12,9 +12,15 @@ import org.elasticsearch.common.xcontent.XContentBuilder
 class ShardInfoRequest : BroadcastRequest<ShardInfoRequest> , ToXContentObject {
 
     var indexName: String
+    var verbose: Boolean = false
 
     constructor(indexName: String) {
         this.indexName = indexName
+    }
+
+    constructor(indexName: String,verbose: Boolean) {
+        this.indexName = indexName
+        this.verbose = verbose
     }
 
     constructor(inp: StreamInput): super(inp) {

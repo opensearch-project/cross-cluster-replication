@@ -55,6 +55,8 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
             followerClient.pauseReplication(followerIndexName)
             var statusResp = followerClient.replicationStatus(followerIndexName)
             `validate paused status resposne`(statusResp)
+            statusResp = followerClient.replicationStatus(followerIndexName,false)
+            `validate aggregated paused status resposne`(statusResp)
             followerClient.resumeReplication(followerIndexName)
         } finally {
             followerClient.stopReplication(followerIndexName)
@@ -75,9 +77,13 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
             assertThatThrownBy {
                 var statusResp = followerClient.replicationStatus(followerIndexName)
                 `validate status syncing resposne`(statusResp)
+                statusResp = followerClient.replicationStatus(followerIndexName,false)
+                `validate status syncing aggregated resposne`(statusResp)
                 followerClient.resumeReplication(followerIndexName)
                 statusResp = followerClient.replicationStatus(followerIndexName)
                 `validate not paused status resposne`(statusResp)
+                statusResp = followerClient.replicationStatus(followerIndexName,false)
+                `validate not paused status aggregated resposne`(statusResp)
             }.isInstanceOf(ResponseException::class.java)
                     .hasMessageContaining("Replication on Index ${followerIndexName} is already running")
         } finally {

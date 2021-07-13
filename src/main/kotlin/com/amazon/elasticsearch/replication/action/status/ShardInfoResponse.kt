@@ -53,7 +53,6 @@ class ShardInfoResponse : BroadcastShardResponse, ToXContentObject {
     }
 
     private val SHARDID = ParseField("shard_id")
-    private val DOCCOUNT = ParseField("doc_count")
     private val REPLAYDETAILS = ParseField("syncing_task_details")
     private val RESTOREDETAILS = ParseField("bootstrap_task_details")
 
@@ -72,6 +71,9 @@ class ShardInfoResponse : BroadcastShardResponse, ToXContentObject {
 
     fun isReplayDetailsInitialized(): Boolean {
         return ::replayDetails.isInitialized
+    }
+    fun isRestoreDetailsInitialized(): Boolean {
+        return ::restoreDetails.isInitialized
     }
 }
 

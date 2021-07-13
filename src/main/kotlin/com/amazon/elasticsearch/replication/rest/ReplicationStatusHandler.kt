@@ -1,11 +1,12 @@
 package com.amazon.elasticsearch.replication.rest
 
 
-import com.amazon.elasticsearch.replication.action.status.ShardInfoRequest
 import com.amazon.elasticsearch.replication.action.status.ReplicationStatusAction
+import com.amazon.elasticsearch.replication.action.status.ShardInfoRequest
 import org.apache.logging.log4j.LogManager
 import org.elasticsearch.client.node.NodeClient
 import org.elasticsearch.rest.BaseRestHandler
+import org.elasticsearch.rest.BaseRestHandler.RestChannelConsumer
 import org.elasticsearch.rest.RestHandler
 import org.elasticsearch.rest.RestRequest
 import org.elasticsearch.rest.action.RestToXContentListener
@@ -28,7 +29,8 @@ class ReplicationStatusHandler : BaseRestHandler() {
     @Throws(IOException::class)
     override fun prepareRequest(request: RestRequest, client: NodeClient): RestChannelConsumer {
         val index = request.param("index")
-        val indexReplicationStatusRequest = ShardInfoRequest(index)
+        var isVerbose = (request.paramAsBoolean("verbose", false))
+        val indexReplicationStatusRequest = ShardInfoRequest(index,isVerbose)
         return RestChannelConsumer {
             channel ->
             client.execute(ReplicationStatusAction.INSTANCE, indexReplicationStatusRequest, RestToXContentListener(channel))
