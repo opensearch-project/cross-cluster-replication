@@ -26,7 +26,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ObsoleteCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.actor
-import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.launch
 import org.elasticsearch.client.Client
 import org.elasticsearch.common.logging.Loggers
 import org.elasticsearch.index.shard.ShardId
@@ -49,27 +49,23 @@ import java.util.concurrent.ConcurrentHashMap
 class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: ReplicationMetadata,
                         private val followerShardId: ShardId,
                         private val remoteCluster: String, private val remoteIndexName: String,
-                        private val parentTaskId: TaskId, private val client: Client,
-                        private val rateLimiter: Semaphore, initialSeqNo: Long) {
+                        private val parentTaskId: TaskId, private val client: Client, initialSeqNo: Long) {
 
     private val unAppliedChanges = ConcurrentHashMap<Long, GetChangesResponse>()
     private val log = Loggers.getLogger(javaClass, followerShardId)!!
     private val completed = CompletableDeferred<Unit>()
 
-    // Channel is unlimited capacity as changes can arrive out of order but must be applied in-order.  If the channel
-    // had limited capacity it could deadlock.  Instead we use a separate rate limiter Semaphore whose permits are
-    // always acquired in order of sequence number to avoid deadlock.
     private val sequencer = scope.actor<Unit>(capacity = Channel.UNLIMITED) {
         // Exceptions thrown here will mark the channel as failed and the next attempt to send to the channel will
         // raise the same exception.  See [SendChannel.close] method for details.
         var highWatermark = initialSeqNo
         for (m in channel) {
             while (unAppliedChanges.containsKey(highWatermark + 1)) {
-                try {
-                    val next = unAppliedChanges.remove(highWatermark + 1)!!
-                    val replayRequest = ReplayChangesRequest(followerShardId, next.changes, next.maxSeqNoOfUpdatesOrDeletes,
-                                                             remoteCluster, remoteIndexName)
-                    replayRequest.parentTask = parentTaskId
+                val next = unAppliedChanges.remove(highWatermark + 1)!!
+                val replayRequest = ReplayChangesRequest(followerShardId, next.changes, next.maxSeqNoOfUpdatesOrDeletes,
+                                                         remoteCluster, remoteIndexName)
+                replayRequest.parentTask = parentTaskId
+                launch {
                     val replayResponse = client.suspendExecute(replicationMetadata, ReplayChangesAction.INSTANCE, replayRequest)
                     if (replayResponse.shardInfo.failed > 0) {
                         replayResponse.shardInfo.failures.forEachIndexed { i, failure ->
@@ -77,10 +73,8 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
                         }
                         throw ReplicationException("failed to replay changes", replayResponse.shardInfo.failures)
                     }
-                    highWatermark = next.changes.lastOrNull()?.seqNo() ?: highWatermark
-                } finally {
-                    rateLimiter.release()
                 }
+                highWatermark = next.changes.lastOrNull()?.seqNo() ?: highWatermark
             }
         }
         completed.complete(Unit)

@@ -113,7 +113,7 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
                         }
                     }
                 }
-                GetChangesResponse(ops, request.fromSeqNo, indexShard.maxSeqNoOfUpdatesOrDeletes)
+                GetChangesResponse(ops, request.fromSeqNo, indexShard.maxSeqNoOfUpdatesOrDeletes, indexShard.lastSyncedGlobalCheckpoint)
             }
         }
     }
