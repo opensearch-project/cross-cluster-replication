@@ -40,6 +40,8 @@ import org.elasticsearch.snapshots.SnapshotId
 import org.elasticsearch.transport.ConnectTransportException
 import org.elasticsearch.transport.NodeDisconnectedException
 import org.elasticsearch.transport.NodeNotConnectedException
+import java.io.PrintWriter
+import java.io.StringWriter
 
 /*
  * Extension function to use the store object
@@ -189,4 +191,12 @@ fun User.toInjectedUser(): String? {
 
 fun User.toInjectedRoles(): String? {
     return "${name}|${roles.joinToString(separator=",")}"
+}
+
+fun Exception.stackTraceToString(): String {
+    val sw = StringWriter()
+    val pw = PrintWriter(sw)
+    printStackTrace(pw)
+    pw.flush()
+    return sw.toString()
 }

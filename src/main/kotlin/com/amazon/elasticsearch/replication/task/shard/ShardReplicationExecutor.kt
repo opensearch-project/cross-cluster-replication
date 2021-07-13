@@ -15,6 +15,7 @@
 
 package com.amazon.elasticsearch.replication.task.shard
 
+import com.amazon.elasticsearch.replication.ReplicationSettings
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
 import com.amazon.elasticsearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
@@ -34,7 +35,8 @@ import org.elasticsearch.threadpool.ThreadPool
 
 class ShardReplicationExecutor(executor: String, private val clusterService : ClusterService,
                                private val threadPool: ThreadPool, private val client: Client,
-                               private val replicationMetadataManager: ReplicationMetadataManager) :
+                               private val replicationMetadataManager: ReplicationMetadataManager,
+                               private val replicationSettings: ReplicationSettings) :
     PersistentTasksExecutor<ShardReplicationParams>(TASK_NAME, executor) {
 
     companion object {
@@ -75,7 +77,8 @@ class ShardReplicationExecutor(executor: String, private val clusterService : Cl
                             taskInProgress: PersistentTask<ShardReplicationParams>,
                             headers: Map<String, String>): AllocatedPersistentTask {
         return ShardReplicationTask(id, type, action, getDescription(taskInProgress), parentTaskId,
-                                    taskInProgress.params!!, executor, clusterService, threadPool, client, replicationMetadataManager)
+                                    taskInProgress.params!!, executor, clusterService, threadPool,
+                                    client, replicationMetadataManager, replicationSettings)
     }
 
     override fun getDescription(taskInProgress: PersistentTask<ShardReplicationParams>): String {
