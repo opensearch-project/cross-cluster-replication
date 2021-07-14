@@ -16,21 +16,17 @@
 package com.amazon.elasticsearch.replication.action.index
 
 import com.amazon.elasticsearch.replication.ReplicationException
+import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.REPLICATED_INDEX_SETTING
 import com.amazon.elasticsearch.replication.action.setup.SetupChecksAction
 import com.amazon.elasticsearch.replication.action.setup.SetupChecksRequest
-import com.amazon.elasticsearch.replication.action.setup.TransportSetupChecksAction
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationContext
-import com.amazon.elasticsearch.replication.util.SecurityContext
-import com.amazon.elasticsearch.replication.util.completeWith
-import com.amazon.elasticsearch.replication.util.coroutineContext
-import com.amazon.elasticsearch.replication.util.overrideFgacRole
-import com.amazon.elasticsearch.replication.util.suspendExecute
-import com.amazon.opendistroforelasticsearch.commons.authuser.User
+import com.amazon.elasticsearch.replication.util.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import org.apache.logging.log4j.LogManager
 import org.elasticsearch.action.ActionListener
+import org.elasticsearch.action.admin.indices.settings.get.GetSettingsRequest
 import org.elasticsearch.action.support.ActionFilters
 import org.elasticsearch.action.support.HandledTransportAction
 import org.elasticsearch.action.support.master.AcknowledgedResponse
@@ -58,6 +54,13 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
         val user = SecurityContext.fromSecurityThreadContext(threadPool.threadContext)
         launch(threadPool.coroutineContext()) {
             listener.completeWith {
+                val remoteClient = client.getRemoteClusterClient(request.remoteCluster)
+                val getSettingsRequest = GetSettingsRequest().includeDefaults(false).indices(request.remoteIndex)
+                val settingsResponse = remoteClient.suspending(remoteClient.admin().indices()::getSettings, injectSecurityContext = true)(getSettingsRequest)
+                val leaderSettings = settingsResponse.indexToSettings.get(request.remoteIndex)
+                if (leaderSettings.keySet().contains(REPLICATED_INDEX_SETTING.key) and !leaderSettings.get(REPLICATED_INDEX_SETTING.key).isNullOrBlank()) {
+                    throw IllegalArgumentException("Cannot Replicate a Replicated Index ${request.remoteIndex}")
+                }
                 val followerReplContext = ReplicationContext(request.followerIndex,
                         user?.overrideFgacRole(request.assumeRoles?.get(ReplicateIndexRequest.FOLLOWER_FGAC_ROLE)))
                 val leaderReplContext = ReplicationContext(request.remoteIndex,
