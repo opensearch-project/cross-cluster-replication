@@ -33,6 +33,7 @@ import org.elasticsearch.action.support.master.AcknowledgedResponse
 import org.elasticsearch.client.Client
 import org.elasticsearch.common.inject.Inject
 import org.elasticsearch.common.util.concurrent.ThreadContext
+import org.elasticsearch.indices.InvalidIndexNameException
 import org.elasticsearch.tasks.Task
 import org.elasticsearch.threadpool.ThreadPool
 import org.elasticsearch.transport.TransportService
@@ -54,6 +55,9 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
         val user = SecurityContext.fromSecurityThreadContext(threadPool.threadContext)
         launch(threadPool.coroutineContext()) {
             listener.completeWith {
+                if(request.remoteIndex.startsWith(".")) {
+                    throw InvalidIndexNameException(request.remoteIndex,"Cannot start replication for an index starting with '.'")
+                }
                 val remoteClient = client.getRemoteClusterClient(request.remoteCluster)
                 val getSettingsRequest = GetSettingsRequest().includeDefaults(false).indices(request.remoteIndex)
                 val settingsResponse = remoteClient.suspending(remoteClient.admin().indices()::getSettings, injectSecurityContext = true)(getSettingsRequest)
