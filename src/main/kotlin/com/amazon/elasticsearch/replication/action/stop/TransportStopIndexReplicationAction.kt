@@ -91,7 +91,7 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                 client.suspendExecute(UpdateIndexBlockAction.INSTANCE, updateIndexBlockRequest, injectSecurityContext = true)
 
                 // Index will be deleted if replication is stopped while it is restoring.  So no need to close/reopen
-                val restoring = clusterService.state().custom<RestoreInProgress>(RestoreInProgress.TYPE).any { entry ->
+                val restoring = clusterService.state().custom<RestoreInProgress>(RestoreInProgress.TYPE, RestoreInProgress.EMPTY).any { entry ->
                     entry.indices().any { it == request.indexName }
                 }
                 if (!restoring &&
