@@ -70,7 +70,7 @@ class TranslogSequencerTests : ESTestCase() {
     val remoteCluster = "remoteCluster"
     val remoteIndex = "remoteIndex"
     val followerShardId = ShardId("follower", "follower_uuid", 0)
-    val replicationMetadata = ReplicationMetadata(remoteCluster, ReplicationStoreMetadataType.INDEX.name, ReplicationOverallState.RUNNING.name,
+    val replicationMetadata = ReplicationMetadata(remoteCluster, ReplicationStoreMetadataType.INDEX.name, ReplicationOverallState.RUNNING.name, "test user",
             ReplicationContext(followerShardId.indexName, null), ReplicationContext(remoteIndex, null))
     val client = RequestCapturingClient()
     init {

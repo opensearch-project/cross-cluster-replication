@@ -47,6 +47,8 @@ const val REST_REPLICATION_STATUS_VERBOSE = "$REST_REPLICATION_PREFIX{index}/_st
 const val REST_REPLICATION_STATUS = "$REST_REPLICATION_PREFIX{index}/_status"
 const val REST_AUTO_FOLLOW_PATTERN = "${REST_REPLICATION_PREFIX}_autofollow"
 
+const val STATUS_REASON_USER_INITIATED = "User initiated"
+
 fun RestHighLevelClient.startReplication(request: StartReplicationRequest,
                                          waitFor: TimeValue = TimeValue.timeValueSeconds(10),
                                          waitForShardsInit: Boolean = true,
@@ -82,6 +84,7 @@ fun RestHighLevelClient.replicationStatus(index: String,verbose: Boolean = true)
 
 fun `validate status syncing resposne`(statusResp: Map<String, Any>) {
     Assert.assertEquals(statusResp.getValue("status"),"SYNCING")
+    Assert.assertEquals(statusResp.getValue("reason"), STATUS_REASON_USER_INITIATED)
     Assert.assertTrue((statusResp.getValue("shard_replication_details")).toString().contains("syncing_task_details"))
     Assert.assertTrue((statusResp.getValue("shard_replication_details")).toString().contains("local_checkpoint"))
     Assert.assertTrue((statusResp.getValue("shard_replication_details")).toString().contains("remote_checkpoint"))
@@ -89,12 +92,14 @@ fun `validate status syncing resposne`(statusResp: Map<String, Any>) {
 
 fun `validate status syncing aggregated resposne`(statusResp: Map<String, Any>) {
     Assert.assertEquals(statusResp.getValue("status"),"SYNCING")
+    Assert.assertEquals(statusResp.getValue("reason"), STATUS_REASON_USER_INITIATED)
     Assert.assertTrue((statusResp.getValue("syncing_details")).toString().contains("local_checkpoint"))
     Assert.assertTrue((statusResp.getValue("syncing_details")).toString().contains("remote_checkpoint"))
 }
 
 fun `validate not paused status resposne`(statusResp: Map<String, Any>) {
     Assert.assertNotEquals(statusResp.getValue("status"),"PAUSED")
+    Assert.assertEquals(statusResp.getValue("reason"), STATUS_REASON_USER_INITIATED)
     Assert.assertTrue((statusResp.getValue("shard_replication_details")).toString().contains("syncing_task_details"))
     Assert.assertTrue((statusResp.getValue("shard_replication_details")).toString().contains("local_checkpoint"))
     Assert.assertTrue((statusResp.getValue("shard_replication_details")).toString().contains("remote_checkpoint"))
@@ -102,12 +107,14 @@ fun `validate not paused status resposne`(statusResp: Map<String, Any>) {
 
 fun `validate not paused status aggregated resposne`(statusResp: Map<String, Any>) {
     Assert.assertNotEquals(statusResp.getValue("status"),"PAUSED")
+    Assert.assertEquals(statusResp.getValue("reason"), STATUS_REASON_USER_INITIATED)
     Assert.assertTrue((statusResp.getValue("syncing_details")).toString().contains("local_checkpoint"))
     Assert.assertTrue((statusResp.getValue("syncing_details")).toString().contains("remote_checkpoint"))
 }
 
 fun `validate paused status resposne`(statusResp: Map<String, Any>) {
     Assert.assertEquals(statusResp.getValue("status"),"PAUSED")
+    Assert.assertEquals(statusResp.getValue("reason"), STATUS_REASON_USER_INITIATED)
     Assert.assertTrue((statusResp.getValue("shard_replication_details")).toString().contains("syncing_task_details"))
     Assert.assertTrue((statusResp.getValue("shard_replication_details")).toString().contains("local_checkpoint"))
     Assert.assertTrue((statusResp.getValue("shard_replication_details")).toString().contains("remote_checkpoint"))
@@ -115,6 +122,7 @@ fun `validate paused status resposne`(statusResp: Map<String, Any>) {
 
 fun `validate aggregated paused status resposne`(statusResp: Map<String, Any>) {
     Assert.assertEquals(statusResp.getValue("status"),"PAUSED")
+    Assert.assertEquals(statusResp.getValue("reason"), STATUS_REASON_USER_INITIATED)
     Assert.assertTrue((statusResp.getValue("syncing_details")).toString().contains("local_checkpoint"))
     Assert.assertTrue((statusResp.getValue("syncing_details")).toString().contains("remote_checkpoint"))
 }

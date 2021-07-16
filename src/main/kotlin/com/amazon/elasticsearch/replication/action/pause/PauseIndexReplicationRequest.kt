@@ -15,6 +15,7 @@
 
 package com.amazon.elasticsearch.replication.action.pause
 
+import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import org.elasticsearch.action.ActionRequestValidationException
 import org.elasticsearch.action.IndicesRequest
 import org.elasticsearch.action.support.IndicesOptions
@@ -27,7 +28,7 @@ import org.elasticsearch.common.xcontent.*
 class PauseIndexReplicationRequest : AcknowledgedRequest<PauseIndexReplicationRequest>, IndicesRequest.Replaceable, ToXContentObject {
 
     lateinit var indexName: String
-    var reason = "User initiated"
+    var reason = ReplicationMetadataManager.CUSTOMER_INITIATED_ACTION
 
     constructor(indexName: String, reason: String) {
         this.indexName = indexName
