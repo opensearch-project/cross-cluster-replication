@@ -95,7 +95,7 @@ class TransportReplicateIndexMasterNodeAction @Inject constructor(transportServi
 
                 if (state.routingTable.hasIndex(replicateIndexReq.followerIndex)) {
                     throw IllegalArgumentException("Cant use same index again for replication. " +
-                    "Delete the index:${replicateIndexReq.followerIndex}")
+                            "Delete the index:${replicateIndexReq.followerIndex}")
                 }
 
                 indexScopedSettings.validate(replicateIndexReq.settings,

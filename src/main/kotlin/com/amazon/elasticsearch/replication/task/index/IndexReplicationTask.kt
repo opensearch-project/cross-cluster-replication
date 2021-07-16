@@ -23,6 +23,10 @@ import com.amazon.elasticsearch.replication.action.index.block.UpdateIndexBlockA
 import com.amazon.elasticsearch.replication.action.index.block.UpdateIndexBlockRequest
 import com.amazon.elasticsearch.replication.action.pause.PauseIndexReplicationAction
 import com.amazon.elasticsearch.replication.action.pause.PauseIndexReplicationRequest
+import com.amazon.elasticsearch.replication.action.status.ReplicationStatusAction
+import com.amazon.elasticsearch.replication.action.status.ShardInfoRequest
+import com.amazon.elasticsearch.replication.action.stop.StopIndexReplicationAction
+import com.amazon.elasticsearch.replication.action.stop.StopIndexReplicationRequest
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
 import com.amazon.elasticsearch.replication.metadata.UpdateMetadataAction
@@ -43,6 +47,7 @@ import com.amazon.elasticsearch.replication.util.startTask
 import com.amazon.elasticsearch.replication.util.suspendExecute
 import com.amazon.elasticsearch.replication.util.suspending
 import com.amazon.elasticsearch.replication.util.waitForNextChange
+import com.amazon.elasticsearch.replication.util.getDisallowedSettings
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
@@ -149,7 +154,6 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
 
         const val SLEEP_TIME_BETWEEN_POLL_MS = 5000L
     }
-
 
     override fun indicesOrShards(): List<Any> = listOf(followerIndexName)
 
@@ -365,8 +369,29 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
                 // 1. Include this in GetChanges and communicate it to IndexTask via Metadata
                 // 2. Add another API to retrieve version of settings & aliases. Persist current version in Metadata
                 var leaderSettings = settingsResponse.indexToSettings.get(this.remoteIndex.name)
+
+                log.debug("Checking for disallowed settings for remote index ${this.remoteIndex.name}")
+                val disallowedSettings = getDisallowedSettings(leaderSettings, replicationSettings)
+                if (disallowedSettings.isNotEmpty()){
+                    log.warn("Disallowed settings found for remote index ${this.remoteIndex.name}: $disallowedSettings")
+                    val statusResponse = client.suspendExecute(
+                            replicationMetadata,
+                            ReplicationStatusAction.INSTANCE, ShardInfoRequest(followerIndexName, false),
+                             defaultContext = true
+                    )
+                    if (statusResponse.aggregatedReplayDetails.localCheckpoint == statusResponse.aggregatedReplayDetails.remoteCheckpoint) {
+                        log.warn("Follower caught up, and disallowed settings $disallowedSettings found, so stopping replication for follower index $followerIndexName")
+                        stopReplication()
+                    } else {
+                        log.info("Follower not caught up yet: Local and remote checkpoints: " +
+                                "[${statusResponse.aggregatedReplayDetails.localCheckpoint}]" +
+                                "[${statusResponse.aggregatedReplayDetails.remoteCheckpoint}], continuing replication " +
+                                "for follower index $followerIndexName")
+                    }
+                }
+
                 leaderSettings = leaderSettings.filter { k: String? ->
-                    !blockListedSettings.contains(k)
+                    !blockListedSettings.contains(k) && !replicationSettings.disallowedKeys.contains(k)
                 }
 
                 gsr = GetSettingsRequest().includeDefaults(false).indices(this.followerIndexName)
@@ -566,6 +591,28 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
         }
         val updateRequest = UpdateMetadataRequest(followerIndexName, UpdateMetadataRequest.Type.ALIAS, request)
         client.suspendExecute(UpdateMetadataAction.INSTANCE, updateRequest, injectSecurityContext = true)
+    }
+
+    private suspend fun stopReplication() {
+        try {
+            log.info("Going to initiate stop of $followerIndexName")
+            val stopReplicationResponse = client.suspendExecute(
+                    replicationMetadata,
+                    StopIndexReplicationAction.INSTANCE, StopIndexReplicationRequest(followerIndexName),
+                    defaultContext = true
+            )
+            if (!stopReplicationResponse.isAcknowledged) {
+                throw ReplicationException(
+                        "Failed to gracefully stop replication after one or more shard tasks failed. " +
+                                "Replication tasks may need to be stopped manually."
+                )
+            }
+        } catch (e: CancellationException) {
+            // If stop completed before and this co-routine was cancelled
+            throw e
+        } catch (e: Exception) {
+            log.error("Encountered exception while auto-stopping $followerIndexName", e)
+        }
     }
 
     private suspend fun pauseReplication(state: FailedState): IndexReplicationState {

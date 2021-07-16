@@ -17,6 +17,7 @@ package com.amazon.elasticsearch.replication.action.index
 
 import com.amazon.elasticsearch.replication.ReplicationException
 import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.REPLICATED_INDEX_SETTING
+import com.amazon.elasticsearch.replication.ReplicationSettings
 import com.amazon.elasticsearch.replication.action.setup.SetupChecksAction
 import com.amazon.elasticsearch.replication.action.setup.SetupChecksRequest
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationContext
@@ -27,6 +28,7 @@ import com.amazon.elasticsearch.replication.util.coroutineContext
 import com.amazon.elasticsearch.replication.util.overrideFgacRole
 import com.amazon.elasticsearch.replication.util.suspendExecute
 import com.amazon.elasticsearch.replication.util.suspending
+import com.amazon.elasticsearch.replication.util.getDisallowedSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
@@ -48,7 +50,8 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
                                                         val threadPool: ThreadPool,
                                                         actionFilters: ActionFilters,
                                                         private val client : Client,
-                                                        private val environment: Environment) :
+                                                        private val environment: Environment,
+                                                        val replicationSettings: ReplicationSettings):
         HandledTransportAction<ReplicateIndexRequest, ReplicateIndexResponse>(ReplicateIndexAction.NAME,
                 transportService, actionFilters, ::ReplicateIndexRequest),
     CoroutineScope by GlobalScope {
@@ -79,6 +82,11 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
                         user?.overrideFgacRole(request.assumeRoles?.get(ReplicateIndexRequest.FOLLOWER_FGAC_ROLE)))
                 val leaderReplContext = ReplicationContext(request.remoteIndex,
                         user?.overrideFgacRole(request.assumeRoles?.get(ReplicateIndexRequest.LEADER_FGAC_ROLE)))
+
+                val disallowedSettings = getDisallowedSettings(leaderSettings, replicationSettings)
+                if (disallowedSettings.isNotEmpty()){
+                    throw ReplicationException("Index ${request.remoteIndex} has disallowed settings: $disallowedSettings.")
+                }
 
                 // For autofollow request, setup checks are already made during addition of the pattern with
                 // original user

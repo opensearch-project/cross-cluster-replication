@@ -15,6 +15,8 @@
 
 package com.amazon.elasticsearch.replication.action.resume
 
+import com.amazon.elasticsearch.replication.ReplicationException
+import com.amazon.elasticsearch.replication.ReplicationSettings
 import com.amazon.elasticsearch.replication.action.index.ReplicateIndexResponse
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
@@ -32,6 +34,7 @@ import com.amazon.elasticsearch.replication.util.persistentTasksService
 import com.amazon.elasticsearch.replication.util.startTask
 import com.amazon.elasticsearch.replication.util.suspending
 import com.amazon.elasticsearch.replication.util.waitForTaskCondition
+import com.amazon.elasticsearch.replication.util.getDisallowedSettings
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
@@ -68,7 +71,8 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
                                                                 indexNameExpressionResolver: IndexNameExpressionResolver,
                                                                 val client: Client,
                                                                 val replicationMetadataManager: ReplicationMetadataManager,
-                                                                private val environment: Environment) :
+                                                                private val environment: Environment,
+                                                                val replicationSettings: ReplicationSettings) :
     TransportMasterNodeAction<ResumeIndexReplicationRequest, AcknowledgedResponse> (ResumeIndexReplicationAction.NAME,
             transportService, clusterService, threadPool, actionFilters, ::ResumeIndexReplicationRequest,
             indexNameExpressionResolver), CoroutineScope by GlobalScope {
@@ -104,6 +108,13 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
                 ValidationUtil.validateAnalyzerSettings(environment, settingsResponse.indexToSettings.get(params.remoteIndex.name), replMetdata.settings)
 
                 replicationMetadataManager.updateIndexReplicationState(request.indexName, ReplicationOverallState.RUNNING)
+                val leaderSettings = settingsResponse.indexToSettings.get(params.remoteIndex.name)
+
+                val disallowedSettings = getDisallowedSettings(leaderSettings, replicationSettings)
+                if (disallowedSettings.isNotEmpty()){
+                    throw ReplicationException("Replication can't be resumed for ${request.indexName}: Disallowed settings found: $disallowedSettings.")
+                }
+
                 val task = persistentTasksService.startTask("replication:index:${request.indexName}",
                         IndexReplicationExecutor.TASK_NAME, params)
 

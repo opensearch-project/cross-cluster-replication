@@ -132,6 +132,8 @@ import org.elasticsearch.threadpool.ScalingExecutorBuilder
 import org.elasticsearch.threadpool.ThreadPool
 import org.elasticsearch.watcher.ResourceWatcherService
 import java.util.Optional
+import java.util.Arrays
+import java.util.function.Function.identity
 import java.util.function.Supplier
 
 internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin, RepositoryPlugin, EnginePlugin {
@@ -168,6 +170,17 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
         val REPLICATION_METADATA_SYNC_INTERVAL = Setting.timeSetting("plugins.replication.metadata_sync",
                 TimeValue.timeValueSeconds(60), TimeValue.timeValueSeconds(5),
                 Setting.Property.Dynamic, Setting.Property.NodeScope)
+
+        // If keys are key1, key2 and key3, and values are val1, val2 and val3, then if the leader index has any of the
+        // three settings key1=val1, key2=val2 or key3=val3, then replication will not be performed on that index.
+        // If the length of keys and values list don't match, for the shorter list, we duplicate the last field multiple
+        // times to match the longer list. E.g. if REPLICATION_DISALLOWED_KEYS is ["key1", "key2"] and
+        // REPLICATION_DISALLOWED_VALUES is ["val1"], then we consider these two disallowed key-values: key1=val1 and
+        // key2=val1.
+        val REPLICATION_DISALLOWED_KEYS = Setting.listSetting("plugins.replication.index_disallowed_keys",
+                listOf(), identity(), Setting.Property.Dynamic, Setting.Property.NodeScope)
+        val REPLICATION_DISALLOWED_VALUES = Setting.listSetting("plugins.replication.index_disallowed_values",
+                listOf(), identity(), Setting.Property.Dynamic, Setting.Property.NodeScope)
     }
 
     override fun createComponents(client: Client, clusterService: ClusterService, threadPool: ThreadPool,
@@ -316,7 +329,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                 REPLICATION_LEADER_THREADPOOL_QUEUE_SIZE, REPLICATION_PARALLEL_READ_PER_SHARD,
                 REPLICATION_FOLLOWER_RECOVERY_CHUNK_SIZE, REPLICATION_FOLLOWER_RECOVERY_PARALLEL_CHUNKS,
                 REPLICATION_PARALLEL_READ_POLL_DURATION, REPLICATION_AUTOFOLLOW_REMOTE_INDICES_POLL_DURATION,
-                REPLICATION_AUTOFOLLOW_REMOTE_INDICES_RETRY_POLL_DURATION, REPLICATION_METADATA_SYNC_INTERVAL)
+                REPLICATION_AUTOFOLLOW_REMOTE_INDICES_RETRY_POLL_DURATION, REPLICATION_METADATA_SYNC_INTERVAL,
+                REPLICATION_DISALLOWED_KEYS, REPLICATION_DISALLOWED_VALUES)
     }
 
     override fun getInternalRepositories(env: Environment, namedXContentRegistry: NamedXContentRegistry,
