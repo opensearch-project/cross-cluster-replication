@@ -21,21 +21,24 @@ import com.amazon.elasticsearch.replication.StartReplicationRequest
 import com.amazon.elasticsearch.replication.deleteAutoFollowPattern
 import com.amazon.elasticsearch.replication.startReplication
 import com.amazon.elasticsearch.replication.stopReplication
+import com.amazon.elasticsearch.replication.updateAutoFollowPattern
 import com.amazon.elasticsearch.replication.task.autofollow.AutoFollowExecutor
 import com.amazon.elasticsearch.replication.task.index.IndexReplicationExecutor
-import com.amazon.elasticsearch.replication.updateAutoFollowPattern
 import org.apache.http.HttpStatus
 import org.apache.http.entity.ContentType
 import org.apache.http.nio.entity.NStringEntity
 import org.assertj.core.api.Assertions
+import org.elasticsearch.action.admin.cluster.settings.ClusterUpdateSettingsRequest
 import org.elasticsearch.client.Request
 import org.elasticsearch.client.RequestOptions
 import org.elasticsearch.client.ResponseException
 import org.elasticsearch.client.RestHighLevelClient
 import org.elasticsearch.client.indices.CreateIndexRequest
 import org.elasticsearch.client.indices.GetIndexRequest
+import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.unit.TimeValue
 import org.elasticsearch.tasks.TaskInfo
+import org.junit.Assert
 import java.util.Locale
 
 import java.util.concurrent.TimeUnit
@@ -75,10 +78,36 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
                 Assertions.assertThat(followerClient.indices()
                         .exists(GetIndexRequest(leaderIndexNameNew), RequestOptions.DEFAULT))
                         .isEqualTo(true)
-            }, 30, TimeUnit.SECONDS)
+            }, 60, TimeUnit.SECONDS)
         } finally {
             followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
             followerClient.stopReplication(leaderIndexName, false)
+            followerClient.stopReplication(leaderIndexNameNew)
+        }
+    }
+
+    fun `test auto follow pattern with updated delay for poll`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        var leaderIndexNameNew = ""
+        createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
+
+        try {
+            // Set poll duration to 30sec from 60sec (default)
+            val settings = Settings.builder().put("plugins.replication.autofollow.remote.fetch_poll_duration", TimeValue.timeValueSeconds(30))
+            val clusterUpdateSetttingsReq = ClusterUpdateSettingsRequest().persistentSettings(settings)
+            val clusterUpdateResponse = followerClient.cluster().putSettings(clusterUpdateSetttingsReq, RequestOptions.DEFAULT)
+            Assert.assertTrue(clusterUpdateResponse.isAcknowledged)
+            followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern)
+            leaderIndexNameNew = createRandomIndex(leaderClient)
+            // Verify that newly created index on leader which match the pattern are also replicated.
+            assertBusy ({
+                Assertions.assertThat(followerClient.indices()
+                        .exists(GetIndexRequest(leaderIndexNameNew), RequestOptions.DEFAULT))
+                        .isEqualTo(true)
+            }, 30, TimeUnit.SECONDS)
+        } finally {
+            followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
             followerClient.stopReplication(leaderIndexNameNew)
         }
     }

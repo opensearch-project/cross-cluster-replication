@@ -218,4 +218,3 @@ fun RestHighLevelClient.deleteAutoFollowPattern(connection: String, patternName:
     assertThat(response.isAcknowledged).isTrue()
 }
 
-

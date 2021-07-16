@@ -15,6 +15,7 @@
 
 package com.amazon.elasticsearch.replication.task.index
 
+import com.amazon.elasticsearch.replication.ReplicationSettings
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
 import com.amazon.elasticsearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
@@ -33,7 +34,8 @@ import org.elasticsearch.threadpool.ThreadPool
 
 class IndexReplicationExecutor(executor: String, private val clusterService: ClusterService,
                                private val threadPool: ThreadPool, private val client: Client,
-                               private val replicationMetadataManager: ReplicationMetadataManager)
+                               private val replicationMetadataManager: ReplicationMetadataManager,
+                               private val replicationSettings: ReplicationSettings)
     : PersistentTasksExecutor<IndexReplicationParams>(TASK_NAME, executor) {
 
     companion object {
@@ -66,7 +68,7 @@ class IndexReplicationExecutor(executor: String, private val clusterService: Clu
                             headers: MutableMap<String, String>?): AllocatedPersistentTask {
         return IndexReplicationTask(id, type, action, getDescription(taskInProgress), parentTaskId,
                                     executor, clusterService, threadPool, client, requireNotNull(taskInProgress.params),
-                                    persistentTasksService, replicationMetadataManager)
+                                    persistentTasksService, replicationMetadataManager, replicationSettings)
     }
 
     override fun getDescription(taskInProgress: PersistentTask<IndexReplicationParams>): String {

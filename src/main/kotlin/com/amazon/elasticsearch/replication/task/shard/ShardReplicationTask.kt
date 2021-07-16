@@ -60,9 +60,9 @@ import org.elasticsearch.transport.NodeNotConnectedException
 class ShardReplicationTask(id: Long, type: String, action: String, description: String, parentTask: TaskId,
                            params: ShardReplicationParams, executor: String, clusterService: ClusterService,
                            threadPool: ThreadPool, client: Client, replicationMetadataManager: ReplicationMetadataManager,
-                           private val replicationSettings: ReplicationSettings)
+                           replicationSettings: ReplicationSettings)
     : CrossClusterReplicationTask(id, type, action, description, parentTask, emptyMap(),
-                                  executor, clusterService, threadPool, client, replicationMetadataManager) {
+                                  executor, clusterService, threadPool, client, replicationMetadataManager, replicationSettings) {
 
     override val remoteCluster: String = params.remoteCluster
     override val followerIndexName: String = params.followerShardId.indexName

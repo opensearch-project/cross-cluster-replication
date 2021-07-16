@@ -156,6 +156,10 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
         val REPLICATION_PARALLEL_READ_POLL_DURATION = Setting.timeSetting ("plugins.replication.parallel_reads_poll_duration", TimeValue.timeValueMillis(50), TimeValue.timeValueMillis(1),
             TimeValue.timeValueSeconds(1), Setting.Property.Dynamic, Setting.Property.NodeScope)
+        val REPLICATION_AUTOFOLLOW_REMOTE_INDICES_POLL_DURATION = Setting.timeSetting ("plugins.replication.autofollow.remote.fetch_poll_duration", TimeValue.timeValueSeconds(60), TimeValue.timeValueSeconds(30),
+                TimeValue.timeValueHours(1), Setting.Property.Dynamic, Setting.Property.NodeScope)
+        val REPLICATION_AUTOFOLLOW_REMOTE_INDICES_RETRY_POLL_DURATION = Setting.timeSetting ("plugins.replication.autofollow.remote.retry_poll_duration", TimeValue.timeValueHours(1), TimeValue.timeValueMinutes(30),
+                TimeValue.timeValueHours(4), Setting.Property.Dynamic, Setting.Property.NodeScope)
     }
 
     override fun createComponents(client: Client, clusterService: ClusterService, threadPool: ThreadPool,
@@ -248,8 +252,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
         : List<PersistentTasksExecutor<*>> {
         return listOf(
             ShardReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager, replicationSettings),
-            IndexReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager),
-            AutoFollowExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager))
+            IndexReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager, replicationSettings),
+            AutoFollowExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager, replicationSettings))
     }
 
     override fun getNamedWriteables(): List<NamedWriteableRegistry.Entry> {
@@ -303,7 +307,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
         return listOf(REPLICATED_INDEX_SETTING, REPLICATION_CHANGE_BATCH_SIZE, REPLICATION_LEADER_THREADPOOL_SIZE,
                 REPLICATION_LEADER_THREADPOOL_QUEUE_SIZE, REPLICATION_PARALLEL_READ_PER_SHARD,
                 REPLICATION_FOLLOWER_RECOVERY_CHUNK_SIZE, REPLICATION_FOLLOWER_RECOVERY_PARALLEL_CHUNKS,
-                REPLICATION_PARALLEL_READ_POLL_DURATION)
+                REPLICATION_PARALLEL_READ_POLL_DURATION, REPLICATION_AUTOFOLLOW_REMOTE_INDICES_POLL_DURATION,
+                REPLICATION_AUTOFOLLOW_REMOTE_INDICES_RETRY_POLL_DURATION)
     }
 
     override fun getInternalRepositories(env: Environment, namedXContentRegistry: NamedXContentRegistry,

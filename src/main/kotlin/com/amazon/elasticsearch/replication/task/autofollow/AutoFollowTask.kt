@@ -15,24 +15,29 @@
 
 package com.amazon.elasticsearch.replication.task.autofollow
 
+import com.amazon.elasticsearch.replication.ReplicationException
+import com.amazon.elasticsearch.replication.ReplicationSettings
 import com.amazon.elasticsearch.replication.action.index.ReplicateIndexAction
 import com.amazon.elasticsearch.replication.action.index.ReplicateIndexRequest
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.task.CrossClusterReplicationTask
 import com.amazon.elasticsearch.replication.task.ReplicationState
+import com.amazon.elasticsearch.replication.util.stackTraceToString
 import com.amazon.elasticsearch.replication.util.suspendExecute
 import com.amazon.elasticsearch.replication.util.suspending
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import org.elasticsearch.ElasticsearchSecurityException
 import org.elasticsearch.action.admin.indices.get.GetIndexRequest
 import org.elasticsearch.action.support.IndicesOptions
 import org.elasticsearch.client.Client
 import org.elasticsearch.cluster.service.ClusterService
 import org.elasticsearch.common.logging.Loggers
-import org.elasticsearch.common.unit.TimeValue
 import org.elasticsearch.persistent.PersistentTaskState
 import org.elasticsearch.tasks.TaskId
+import org.elasticsearch.threadpool.Scheduler
 import org.elasticsearch.threadpool.ThreadPool
+import java.util.concurrent.ConcurrentSkipListSet
 
 class AutoFollowTask(id: Long, type: String, action: String, description: String, parentTask: TaskId,
                      headers: Map<String, String>,
@@ -41,26 +46,42 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
                      threadPool: ThreadPool,
                      client: Client,
                      replicationMetadataManager: ReplicationMetadataManager,
-                     val params: AutoFollowParams) :
+                     val params: AutoFollowParams,
+                     replicationSettings: ReplicationSettings) :
     CrossClusterReplicationTask(id, type, action, description, parentTask, headers,
-                                executor, clusterService, threadPool, client, replicationMetadataManager) {
+                                executor, clusterService, threadPool, client, replicationMetadataManager, replicationSettings) {
 
     override val remoteCluster = params.remoteCluster
     val patternName = params.patternName
     override val followerIndexName: String = params.patternName //Special case for auto follow
     override val log = Loggers.getLogger(javaClass, remoteCluster)
     private var trackingIndicesOnTheCluster = setOf<String>()
-
-    companion object {
-        //TODO: Convert to setting
-        val AUTO_FOLLOW_CHECK_DELAY = TimeValue.timeValueSeconds(30)!!
-    }
+    private var failedIndices = ConcurrentSkipListSet<String>() // Failed indices for replication from this autofollow task
+    private var retryScheduler: Scheduler.ScheduledCancellable? = null
+    private var failureCount = 0
 
     override suspend fun execute(initialState: PersistentTaskState?) {
         while (scope.isActive) {
+            addRetryScheduler()
             autoFollow()
-            delay(AUTO_FOLLOW_CHECK_DELAY.millis)
+            delay(replicationSettings.autofollowFetchPollDuration.millis)
         }
+    }
+
+    private fun addRetryScheduler() {
+        if(retryScheduler != null && !retryScheduler!!.isCancelled) {
+            return
+        }
+        retryScheduler = try {
+            threadPool.schedule({ failedIndices.clear() }, replicationSettings.autofollowRetryPollDuration, ThreadPool.Names.GENERIC)
+        } catch (e: Exception) {
+            log.error("Error scheduling retry on failed autofollow indices ${e.stackTraceToString()}")
+            null
+        }
+    }
+
+    override suspend fun cleanup() {
+        retryScheduler?.cancel()
     }
 
     private suspend fun autoFollow() {
@@ -68,12 +89,24 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
         val entry = replicationMetadata.leaderContext.resource
 
         // Fetch remote indices matching auto follow pattern
-        val remoteClient = client.getRemoteClusterClient(remoteCluster)
-        val indexReq = GetIndexRequest().features(*emptyArray())
-                .indices(entry)
-                .indicesOptions(IndicesOptions.lenientExpandOpen())
-        val response = remoteClient.suspending(remoteClient.admin().indices()::getIndex, true)(indexReq)
-        var remoteIndices = response.indices.asIterable()
+        var remoteIndices = Iterable { emptyArray<String>().iterator() }
+        try {
+            val remoteClient = client.getRemoteClusterClient(remoteCluster)
+            val indexReq = GetIndexRequest().features(*emptyArray())
+                    .indices(entry)
+                    .indicesOptions(IndicesOptions.lenientExpandOpen())
+            val response = remoteClient.suspending(remoteClient.admin().indices()::getIndex, true)(indexReq)
+            remoteIndices = response.indices.asIterable()
+
+        } catch (e: Exception) {
+            // Ideally, Calls to the remote cluster shouldn't fail and autofollow task should be able to pick-up the newly created indices
+            // matching the pattern. Should be safe to retry after configured delay.
+            failureCount++
+            if(failureCount > 10) {
+                log.error("Fetching remote indices failed with error - ${e.stackTraceToString()}")
+                failureCount = 0;
+            }
+        }
 
         var currentIndices = clusterService.state().metadata().concreteAllIndices.asIterable() // All indices - open and closed on the cluster
         if(remoteIndices.intersect(currentIndices).isNotEmpty()) {
@@ -84,7 +117,7 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
                 trackingIndicesOnTheCluster = currentIndices.toSet()
             }
         }
-        remoteIndices = remoteIndices.minus(currentIndices)
+        remoteIndices = remoteIndices.minus(currentIndices).minus(failedIndices)
 
         for (newRemoteIndex in remoteIndices) {
             startReplication(newRemoteIndex)
@@ -111,9 +144,14 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
             }
             val response = client.suspendExecute(replicationMetadata, ReplicateIndexAction.INSTANCE, request)
             if (!response.isAcknowledged) {
-                log.warn("Failed to auto follow remote index $remoteIndex")
+                throw ReplicationException("Failed to auto follow remote index $remoteIndex")
             }
+        } catch (e: ElasticsearchSecurityException) {
+            // For permission related failures, Adding as part of failed indices as autofollow role doesn't have required permissions.
+            log.trace("Cannot start replication on $remoteIndex due to missing permissions $e")
+            failedIndices.add(remoteIndex)
         } catch (e: Exception) {
+            // Any failure other than security exception can be safely retried and not adding to the failed indices
             log.warn("Failed to start replication for $remoteCluster:$remoteIndex -> $remoteIndex.", e)
         }
     }

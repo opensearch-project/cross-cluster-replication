@@ -17,6 +17,7 @@ package com.amazon.elasticsearch.replication.task.index
 
 import com.amazon.elasticsearch.replication.ReplicationException
 import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.REPLICATED_INDEX_SETTING
+import com.amazon.elasticsearch.replication.ReplicationSettings
 import com.amazon.elasticsearch.replication.action.index.block.IndexBlockUpdateType
 import com.amazon.elasticsearch.replication.action.index.block.UpdateIndexBlockAction
 import com.amazon.elasticsearch.replication.action.index.block.UpdateIndexBlockRequest
@@ -89,9 +90,10 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
                            client: Client,
                            params: IndexReplicationParams,
                            private val persistentTasksService: PersistentTasksService,
-                           replicationMetadataManager: ReplicationMetadataManager)
+                           replicationMetadataManager: ReplicationMetadataManager,
+                           replicationSettings: ReplicationSettings)
     : CrossClusterReplicationTask(id, type, action, description, parentTask, emptyMap(), executor,
-                                  clusterService, threadPool, client, replicationMetadataManager), ClusterStateListener {
+                                  clusterService, threadPool, client, replicationMetadataManager, replicationSettings), ClusterStateListener {
     private lateinit var currentTaskState : IndexReplicationState
     private lateinit var followingTaskState : IndexReplicationState
 

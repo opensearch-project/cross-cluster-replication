@@ -43,8 +43,9 @@ class SecurityContext {
         private val log = LogManager.getLogger(SecurityContext::class.java)
         const val OPENDISTRO_SECURITY_USER = "_opendistro_security_user"
         const val OPENDISTRO_SECURITY_ASSUME_ROLES = "opendistro_security_assume_roles"
+        const val REPLICATION_PLUGIN_USER = "ccr_user"
 
-        val ADMIN_USER = User("ccr_user", null, listOf("all_access"), null)
+        val ADMIN_USER = User(REPLICATION_PLUGIN_USER, null, listOf("all_access"), null)
 
         val ALL_TRANSIENTS = listOf(ConfigConstants.OPENDISTRO_SECURITY_INJECTED_ROLES,
                 ConfigConstants.INJECTED_USER, OPENDISTRO_SECURITY_USER)
