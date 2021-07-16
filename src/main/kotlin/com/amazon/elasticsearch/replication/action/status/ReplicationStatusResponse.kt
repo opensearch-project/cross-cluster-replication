@@ -14,6 +14,7 @@ class ReplicationStatusResponse : BroadcastResponse, ToXContentObject {
 
     lateinit var shardInfoResponse: MutableList<ShardInfoResponse>
     lateinit var status: String
+    lateinit var reason: String
     lateinit var connectionAlias: String
     lateinit var leaderIndexName: String
     lateinit var followerIndexName: String
@@ -51,12 +52,14 @@ class ReplicationStatusResponse : BroadcastResponse, ToXContentObject {
             failedShards: Int,
             shardFailures: List<DefaultShardOperationFailedException>,
             shardInfoResponse: List<ShardInfoResponse>,
-            status : String
+            status : String,
+            reason: String
     ) : super(
             totalShards, successfulShards, failedShards, shardFailures
     ) {
         this.shardInfoResponse = shardInfoResponse.toMutableList()
         this.status = status
+        this.reason = reason
     }
 
     @Throws(IOException::class)
@@ -64,6 +67,8 @@ class ReplicationStatusResponse : BroadcastResponse, ToXContentObject {
         builder.startObject()
         if (::status.isInitialized)
             builder.field("status",status)
+        if (::reason.isInitialized)
+            builder.field("reason", reason)
         if (::connectionAlias.isInitialized)
             builder.field("remote_cluster",connectionAlias)
         if (::leaderIndexName.isInitialized)
@@ -83,10 +88,13 @@ class ReplicationStatusResponse : BroadcastResponse, ToXContentObject {
     @Throws(IOException::class)
     override fun writeTo(out: StreamOutput) {
         super.writeTo(out)
+        // TODO: Modify this to have predictable fields
         if (::shardInfoResponse.isInitialized)
             out.writeList(shardInfoResponse)
         if (::status.isInitialized)
             out.writeString(status)
+        if (::reason.isInitialized)
+            out.writeString(reason)
         if (::connectionAlias.isInitialized)
             out.writeString(connectionAlias)
         if (::leaderIndexName.isInitialized)

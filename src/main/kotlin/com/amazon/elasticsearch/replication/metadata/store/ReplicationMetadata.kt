@@ -69,6 +69,7 @@ class ReplicationMetadata: ToXContent {
     lateinit var connectionName: String
     lateinit var metadataType: String
     lateinit var overallState: String
+    lateinit var reason: String
     lateinit var followerContext: ReplicationContext
     lateinit var leaderContext: ReplicationContext
     lateinit var settings: Settings
@@ -77,12 +78,14 @@ class ReplicationMetadata: ToXContent {
     constructor(connectionName: String,
                 metadataType: String,
                 overallState: String,
+                reason: String,
                 followerContext: ReplicationContext,
                 leaderContext: ReplicationContext,
                 settings: Settings = Settings.EMPTY) {
         this.connectionName = connectionName
         this.metadataType = metadataType
         this.overallState = overallState
+        this.reason = reason
         this.followerContext = followerContext
         this.leaderContext = leaderContext
         this.settings = settings
@@ -97,6 +100,7 @@ class ReplicationMetadata: ToXContent {
             METADATA_PARSER.declareString(ReplicationMetadata::connectionName::set, ParseField( "connection_name"))
             METADATA_PARSER.declareString(ReplicationMetadata::metadataType::set, ParseField( "metadata_type"))
             METADATA_PARSER.declareString(ReplicationMetadata::overallState::set, ParseField( "overall_state"))
+            METADATA_PARSER.declareString(ReplicationMetadata::reason::set, ParseField( "reason"))
             METADATA_PARSER.declareObject(BiConsumer { metadata: ReplicationMetadata, context: ReplicationContext -> metadata.followerContext = context},
                     ReplicationContext.REPLICATION_CONTEXT_PARSER, ParseField("follower_context"))
             METADATA_PARSER.declareObject(BiConsumer { metadata: ReplicationMetadata, context: ReplicationContext -> metadata.leaderContext = context},
@@ -116,6 +120,7 @@ class ReplicationMetadata: ToXContent {
         builder.field("connection_name", connectionName)
         builder.field("metadata_type", metadataType)
         builder.field("overall_state", overallState)
+        builder.field("reason", reason)
 
         builder.field("follower_context")
         builder.startObject()
@@ -142,7 +147,7 @@ class ReplicationMetadata: ToXContent {
 
     override fun toString(): String {
         return "ReplicationMetadata - [connection_name: $connectionName, metadata_type: $metadataType, " +
-                "overall_state: $overallState, follower_context: ${followerContext.resource}, leader_context: ${leaderContext.resource}, " +
+                "overall_state: $overallState, reason: $reason, follower_context: ${followerContext.resource}, leader_context: ${leaderContext.resource}, " +
                 " settings: ${settings} ]"
     }
 }

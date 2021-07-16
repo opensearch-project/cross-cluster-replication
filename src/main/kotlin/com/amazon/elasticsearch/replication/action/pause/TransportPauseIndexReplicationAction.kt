@@ -84,7 +84,7 @@ class TransportPauseIndexReplicationAction @Inject constructor(transportService:
                 }
 
                 // If the index is not in bootstrap phase, bring down the tasks and persist the info
-                replicationMetadataManager.updateIndexReplicationState(request.indexName, ReplicationOverallState.PAUSED)
+                replicationMetadataManager.updateIndexReplicationState(request.indexName, ReplicationOverallState.PAUSED, request.reason)
 
                 AcknowledgedResponse(true)
             }

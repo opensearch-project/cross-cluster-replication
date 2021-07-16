@@ -31,6 +31,15 @@
         }
       }
     },
+    "reason": {
+      "type" : "text",
+      "fields": {
+        "keyword": {
+          "type": "keyword",
+          "ignore_above": 1024
+        }
+      }
+    },
     "follower_context": {
       "type": "nested",
       "properties": {

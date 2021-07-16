@@ -39,6 +39,7 @@ class TransportReplicationStatusAction @Inject constructor(transportService: Tra
                     val metadata = replicationMetadataManager.getIndexReplicationMetadata(request!!.indices()[0])
                     val remoteClient = client.getRemoteClusterClient(metadata.connectionName)
                     var status = if (metadata.overallState.isNullOrEmpty()) "STOPPED" else metadata.overallState
+                    var reason = metadata.reason
                     var followerResponse = client.suspendExecute(ShardsInfoAction.INSTANCE,
                             ShardInfoRequest(metadata.followerContext.resource),true)
                     var leaderResponse = remoteClient.suspendExecute(ShardsInfoAction.INSTANCE,
@@ -69,6 +70,7 @@ class TransportReplicationStatusAction @Inject constructor(transportService: Tra
                     followerResponse.followerIndexName = metadata.followerContext.resource
                     followerResponse.leaderIndexName = metadata.leaderContext.resource
                     followerResponse.status = status
+                    followerResponse.reason = reason
                     populateAggregatedResponse(followerResponse)
                     if (!request.verbose) {
                         followerResponse.isVerbose = false

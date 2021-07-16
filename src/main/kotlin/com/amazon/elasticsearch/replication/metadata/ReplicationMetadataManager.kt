@@ -23,6 +23,7 @@ class ReplicationMetadataManager constructor(private val clusterService: Cluster
 
     companion object {
         private val log = LogManager.getLogger(ReplicationMetadataManager::class.java)
+        const val CUSTOMER_INITIATED_ACTION = "User initiated"
     }
 
     suspend fun addIndexReplicationMetadata(followerIndex: String,
@@ -33,7 +34,7 @@ class ReplicationMetadataManager constructor(private val clusterService: Cluster
                                             follower_fgac_role: String?,
                                             leader_fgac_role: String?) {
         val replicationMetadata = ReplicationMetadata(connectionName,
-                ReplicationStoreMetadataType.INDEX.name, overallState.name,
+                ReplicationStoreMetadataType.INDEX.name, overallState.name, CUSTOMER_INITIATED_ACTION,
                 ReplicationContext(followerIndex, user?.overrideFgacRole(follower_fgac_role)),
                 ReplicationContext(leaderIndex, user?.overrideFgacRole(leader_fgac_role)))
         addMetadata(AddReplicationMetadataRequest(replicationMetadata))
@@ -44,7 +45,7 @@ class ReplicationMetadataManager constructor(private val clusterService: Cluster
                                       overallState: ReplicationOverallState, user: User?,
                                       follower_fgac_role: String?, leader_fgac_role: String?) {
         val replicationMetadata = ReplicationMetadata(connectionName,
-                ReplicationStoreMetadataType.AUTO_FOLLOW.name, overallState.name,
+                ReplicationStoreMetadataType.AUTO_FOLLOW.name, overallState.name, CUSTOMER_INITIATED_ACTION,
                 ReplicationContext(patternName, user?.overrideFgacRole(follower_fgac_role)),
                 ReplicationContext(pattern, user?.overrideFgacRole(leader_fgac_role)))
         addMetadata(AddReplicationMetadataRequest(replicationMetadata))
@@ -60,22 +61,26 @@ class ReplicationMetadataManager constructor(private val clusterService: Cluster
     }
 
     suspend fun updateIndexReplicationState(followerIndex: String,
-                                            overallState: ReplicationOverallState) {
+                                            overallState: ReplicationOverallState,
+                                            reason: String = CUSTOMER_INITIATED_ACTION) {
         val getReq = GetReplicationMetadataRequest(ReplicationStoreMetadataType.INDEX.name, null, followerIndex)
         val getRes = replicaionMetadataStore.getMetadata(getReq, false)
         val updatedMetadata = getRes.replicationMetadata
         updatedMetadata.overallState = overallState.name
+        updatedMetadata.reason = reason
         updateMetadata(UpdateReplicationMetadataRequest(updatedMetadata, getRes.seqNo, getRes.primaryTerm))
         updateReplicationState(followerIndex, overallState)
     }
 
     suspend fun updateAutofollowMetadata(patternName: String,
                                          connectionName: String,
-                                         pattern: String) {
+                                         pattern: String,
+                                         reason: String = CUSTOMER_INITIATED_ACTION) {
         val getReq = GetReplicationMetadataRequest(ReplicationStoreMetadataType.AUTO_FOLLOW.name, connectionName, patternName)
         val getRes = replicaionMetadataStore.getMetadata(getReq, false)
         val updatedMetadata = getRes.replicationMetadata
         updatedMetadata.leaderContext.resource = pattern
+        updatedMetadata.reason = reason
         updateMetadata(UpdateReplicationMetadataRequest(updatedMetadata, getRes.seqNo, getRes.primaryTerm))
     }
 
