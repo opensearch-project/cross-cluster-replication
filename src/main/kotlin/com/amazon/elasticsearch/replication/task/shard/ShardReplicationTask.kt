@@ -15,33 +15,33 @@
 
 package com.amazon.elasticsearch.replication.task.shard
 
-import com.amazon.elasticsearch.replication.ReplicationException
-import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.REPLICATION_CHANGE_BATCH_SIZE
-import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.REPLICATION_PARALLEL_READ_PER_SHARD
 import com.amazon.elasticsearch.replication.ReplicationSettings
 import com.amazon.elasticsearch.replication.action.changes.GetChangesAction
 import com.amazon.elasticsearch.replication.action.changes.GetChangesRequest
 import com.amazon.elasticsearch.replication.action.changes.GetChangesResponse
-import com.amazon.elasticsearch.replication.action.pause.PauseIndexReplicationAction
-import com.amazon.elasticsearch.replication.action.pause.PauseIndexReplicationRequest
-import com.amazon.elasticsearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
+import com.amazon.elasticsearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
 import com.amazon.elasticsearch.replication.metadata.state.getReplicationStateParamsForIndex
 import com.amazon.elasticsearch.replication.seqno.RemoteClusterRetentionLeaseHelper
 import com.amazon.elasticsearch.replication.task.CrossClusterReplicationTask
 import com.amazon.elasticsearch.replication.task.ReplicationState
 import com.amazon.elasticsearch.replication.util.indicesService
 import com.amazon.elasticsearch.replication.util.stackTraceToString
-import com.amazon.elasticsearch.replication.util.suspendExecute
 import com.amazon.elasticsearch.replication.util.suspendExecuteWithRetries
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineExceptionHandler
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.ObsoleteCoroutinesApi
-import kotlinx.coroutines.cancel
 import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.withContext
+import org.elasticsearch.ElasticsearchException
 import org.elasticsearch.ElasticsearchTimeoutException
 import org.elasticsearch.client.Client
 import org.elasticsearch.cluster.ClusterChangedEvent
@@ -56,6 +56,8 @@ import org.elasticsearch.persistent.PersistentTasksNodeService
 import org.elasticsearch.tasks.TaskId
 import org.elasticsearch.threadpool.ThreadPool
 import org.elasticsearch.transport.NodeNotConnectedException
+import java.time.Duration
+
 
 class ShardReplicationTask(id: Long, type: String, action: String, description: String, parentTask: TaskId,
                            params: ShardReplicationParams, executor: String, clusterService: ClusterService,
@@ -71,7 +73,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     private val remoteClient = client.getRemoteClusterClient(remoteCluster)
     private val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
     private var paused = false
-    val backOffForNodeDiscovery = 1000L
+    private val backOffForNodeDiscovery = 1000L
 
     private val clusterStateListenerForTaskInterruption = ClusterStateListenerForTaskInterruption()
 
@@ -82,9 +84,77 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     }
 
     @ObsoleteCoroutinesApi
-    override suspend fun execute(initialState: PersistentTaskState?) {
-        replicate()
+    override suspend fun execute(scope: CoroutineScope, initialState: PersistentTaskState?) {
+        try {
+            // The CoroutineExceptionHandler installed is mainly used to catch the exception from replication replay
+            // logic and persist the failure reason.
+            var downstreamException: Throwable? = null
+            val handler = CoroutineExceptionHandler { _, exception ->
+                logError("ShardReplicationTask: Caught downstream exception ${exception.stackTraceToString()}")
+                downstreamException = exception
+            }
+
+            // Wrap the actual replication replay logic in SupervisorCoroutine and an inner coroutine so that we have
+            // better control over exception propagation. Essentially any failures from inner replication logic will
+            // not cancel the parent coroutine and the exception is caught by the installed CoroutineExceptionHandler
+            //
+            // The only path for cancellation of this outer coroutine is external explicit cancellation (pause logic,
+            // task being cancelled by API etc)
+            //
+            // Checkout out the following for details
+            // https://kotlinlang.org/docs/exception-handling.html#supervision-scope
+            supervisorScope {
+                launch(handler) {
+                    replicate(this)
+                }
+            }
+
+            // Non-null downstreamException implies, exception in inner replication code. In such cases we mark and
+            // capture the FailedState and wait for parent IndexReplicationTask to take action.
+            //
+            // Note that we don't take the action to pause/stop directly from this ShardReplicationTask since
+            // IndexReplicationTask can choose the appropriate action based on failures seen from multiple shards. This
+            // approach also avoids contention due to concurrency. Finally it keeps the scope of responsibility of
+            // ShardReplicationTask to ShardReplicationTask alone.
+            if (null != downstreamException) {
+                // Explicit cast is required for changing closures
+                val throwable: Throwable = downstreamException as Throwable
+
+                withContext(NonCancellable) {
+                    logInfo("Going to mark ShardReplicationTask as Failed with ${throwable.stackTraceToString()}")
+                    try {
+                        updateTaskState(FailedState(toESException(throwable)))
+                    } catch (inner: Exception) {
+                        logInfo("Encountered exception while trying to persist failed state ${inner.stackTraceToString()}")
+                        // We are not propagating failure here and will let the shard task be failed after waiting.
+                    }
+                }
+
+                // After marking FailedState, IndexReplicationTask will action on it by pausing or stopping all shard
+                // replication tasks. This ShardReplicationTask should also thus receive the pause/stop via
+                // cancellation. We thus wait for waitMillis duration.
+                val waitMillis = Duration.ofMinutes(1).toMillis()
+                logInfo("Waiting $waitMillis millis for IndexReplicationTask to respond to failure of shard task")
+                delay(waitMillis)
+
+                // If nothing happened, we propagate exception and mark the task as failed.
+                throw throwable
+            }
+
+        } catch (e: CancellationException) {
+            // Nothing to do here and we don't propagate cancellation exception further
+            logInfo("Received cancellation of ShardReplicationTask ${e.stackTraceToString()}")
+        }
     }
+
+    private fun toESException(t: Throwable?): ElasticsearchException {
+        if (t is ElasticsearchException) {
+            return t
+        }
+        val msg = t?.message ?: t?.javaClass?.name ?: "Unknown failure encountered"
+        return ElasticsearchException(msg, t)
+    }
+
 
     override suspend fun cleanup() {
         /* This is to minimise overhead of calling an additional listener as
@@ -92,11 +162,10 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
          */
         clusterService.removeListener(clusterStateListenerForTaskInterruption)
         if (paused) {
-            log.debug("Pausing and not removing lease for index $followerIndexName and shard $followerShardId task")
+            logDebug("Pausing and not removing lease for index $followerIndexName and shard $followerShardId task")
             return
         }
         retentionLeaseHelper.removeRetentionLease(remoteShardId, followerShardId)
-
     }
 
     private fun addListenerToInterruptTask() {
@@ -105,16 +174,16 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
 
     inner class ClusterStateListenerForTaskInterruption : ClusterStateListener {
         override fun clusterChanged(event: ClusterChangedEvent) {
-            log.debug("Cluster metadata listener invoked on shard task...")
+            logDebug("Cluster metadata listener invoked on shard task...")
             if (event.metadataChanged()) {
                 val replicationStateParams = getReplicationStateParamsForIndex(clusterService, followerShardId.indexName)
                 if (replicationStateParams == null) {
                     if (PersistentTasksNodeService.Status(State.STARTED) == status)
-                        scope.cancel("Shard replication task received an interrupt.")
+                        cancelTask("Shard replication task received an interrupt.")
                 } else if (replicationStateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE] == ReplicationOverallState.PAUSED.name){
-                    log.info("Pause state received for index $followerIndexName. Cancelling $followerShardId task")
+                    logInfo("Pause state received for index $followerIndexName. Cancelling $followerShardId task")
                     paused = true
-                    scope.cancel("Shard replication task received pause.")
+                    cancelTask("Shard replication task received pause.")
                 }
             }
         }
@@ -123,13 +192,13 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     override fun indicesOrShards() = listOf(followerShardId)
 
     @ObsoleteCoroutinesApi
-    private suspend fun replicate() {
+    private suspend fun replicate(scope: CoroutineScope) {
         updateTaskState(FollowingState)
         val followerIndexService = indicesService.indexServiceSafe(followerShardId.index)
         val indexShard = followerIndexService.getShard(followerShardId.id)
         // Adding retention lease at local checkpoint of a node. This makes sure
         // new tasks spawned after node changes/shard movements are handled properly
-        log.info("Adding retentionlease at follower sequence number: ${indexShard.lastSyncedGlobalCheckpoint}")
+        logInfo("Adding retentionlease at follower sequence number: ${indexShard.lastSyncedGlobalCheckpoint}")
         retentionLeaseHelper.addRetentionLease(remoteShardId, indexShard.lastSyncedGlobalCheckpoint , followerShardId)
         addListenerToInterruptTask()
 
@@ -141,7 +210,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         val changeTracker = ShardReplicationChangesTracker(indexShard, replicationSettings)
 
         coroutineScope {
-            while (scope.isActive) {
+            while (isActive) {
                 rateLimiter.acquire()
                 launch {
                     logDebug("Spawning the reader")
@@ -166,6 +235,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                     } catch (e: Exception) {
                         logInfo("Unable to get changes from seqNo: $fromSeqNo. ${e.stackTraceToString()}")
                         changeTracker.updateBatchFetched(false, fromSeqNo, toSeqNo, fromSeqNo - 1,-1)
+                        //TODO: Exception should be thrown after some retries as otherwise the task becomes stuck.
                     } finally {
                         rateLimiter.release()
                     }
@@ -179,7 +249,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                         is RetentionLeaseInvalidRetainingSeqNoException, is RetentionLeaseNotFoundException -> {
                             throw ex
                         }
-                        else -> log.info("Exception renewing retention lease. Not an issue", ex);
+                        else -> logInfo("Exception renewing retention lease. Not an issue - ${ex.stackTraceToString()}")
                     }
                 }
             }
@@ -199,6 +269,9 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     private fun logInfo(msg: String) {
         log.info("${Thread.currentThread().name}: $msg")
     }
+    private fun logError(msg: String) {
+        log.error("${Thread.currentThread().name}: $msg")
+    }
 
     override fun toString(): String {
         return "ShardReplicationTask(from=${remoteCluster}$remoteShardId to=$followerShardId)"
@@ -207,13 +280,5 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     override fun replicationTaskResponse(): CrossClusterReplicationTaskResponse {
         // Cancellation and valid executions are marked as completed
         return CrossClusterReplicationTaskResponse(ReplicationState.COMPLETED.name)
-    }
-
-    // ToDo : Use in case of non retriable errors
-    private suspend fun pauseReplicationTasks(reason: String) {
-        val pauseReplicationResponse = client.suspendExecute(PauseIndexReplicationAction.INSTANCE,
-                PauseIndexReplicationRequest(followerIndexName, reason))
-        if (!pauseReplicationResponse.isAcknowledged)
-            throw ReplicationException("Failed to pause replication")
     }
 }

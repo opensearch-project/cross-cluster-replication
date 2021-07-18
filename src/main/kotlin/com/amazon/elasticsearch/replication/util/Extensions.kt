@@ -193,7 +193,7 @@ fun User.toInjectedRoles(): String? {
     return "${name}|${roles.joinToString(separator=",")}"
 }
 
-fun Exception.stackTraceToString(): String {
+fun Throwable.stackTraceToString(): String {
     val sw = StringWriter()
     val pw = PrintWriter(sw)
     printStackTrace(pw)

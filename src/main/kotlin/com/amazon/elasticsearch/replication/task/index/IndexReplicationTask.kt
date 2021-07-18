@@ -20,8 +20,8 @@ import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.REPLICAT
 import com.amazon.elasticsearch.replication.action.index.block.IndexBlockUpdateType
 import com.amazon.elasticsearch.replication.action.index.block.UpdateIndexBlockAction
 import com.amazon.elasticsearch.replication.action.index.block.UpdateIndexBlockRequest
-import com.amazon.elasticsearch.replication.action.stop.StopIndexReplicationAction
-import com.amazon.elasticsearch.replication.action.stop.StopIndexReplicationRequest
+import com.amazon.elasticsearch.replication.action.pause.PauseIndexReplicationAction
+import com.amazon.elasticsearch.replication.action.pause.PauseIndexReplicationRequest
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
 import com.amazon.elasticsearch.replication.metadata.UpdateMetadataAction
@@ -36,10 +36,18 @@ import com.amazon.elasticsearch.replication.task.ReplicationState
 import com.amazon.elasticsearch.replication.task.shard.ShardReplicationExecutor
 import com.amazon.elasticsearch.replication.task.shard.ShardReplicationParams
 import com.amazon.elasticsearch.replication.task.shard.ShardReplicationTask
-import com.amazon.elasticsearch.replication.util.*
-import kotlinx.coroutines.cancel
+import com.amazon.elasticsearch.replication.util.removeTask
+import com.amazon.elasticsearch.replication.util.startTask
+import com.amazon.elasticsearch.replication.util.suspendExecute
+import com.amazon.elasticsearch.replication.util.suspending
+import com.amazon.elasticsearch.replication.util.waitForNextChange
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import kotlinx.coroutines.withContext
+import org.elasticsearch.ElasticsearchException
 import org.elasticsearch.ElasticsearchTimeoutException
 import org.elasticsearch.ResourceNotFoundException
 import org.elasticsearch.action.ActionListener
@@ -50,7 +58,11 @@ import org.elasticsearch.action.admin.indices.delete.DeleteIndexRequest
 import org.elasticsearch.action.admin.indices.settings.get.GetSettingsRequest
 import org.elasticsearch.client.Client
 import org.elasticsearch.client.Requests
-import org.elasticsearch.cluster.*
+import org.elasticsearch.cluster.ClusterChangedEvent
+import org.elasticsearch.cluster.ClusterState
+import org.elasticsearch.cluster.ClusterStateListener
+import org.elasticsearch.cluster.ClusterStateObserver
+import org.elasticsearch.cluster.RestoreInProgress
 import org.elasticsearch.cluster.metadata.IndexMetadata
 import org.elasticsearch.cluster.routing.allocation.decider.EnableAllocationDecider
 import org.elasticsearch.cluster.service.ClusterService
@@ -128,7 +140,7 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
 
     override fun indicesOrShards(): List<Any> = listOf(followerIndexName)
 
-    override suspend fun execute(initialState: PersistentTaskState?) {
+    override suspend fun execute(scope: CoroutineScope, initialState: PersistentTaskState?) {
         checkNotNull(initialState) { "Missing initial state" }
         followingTaskState = FollowingState(emptyMap())
         currentTaskState = initialState as IndexReplicationState
@@ -160,20 +172,28 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
                 }
                 ReplicationState.MONITORING -> {
                     var state = evalMonitoringState()
-                    if (state != MonitoringState) {
+                    if (state !is MonitoringState) {
                         // Tasks need to be started
                         state
                     } else {
                         state = pollShardTaskStatus((followingTaskState as FollowingState).shardReplicationTasks)
-                        if (state == MonitoringState) {
-                            updateMetadata()
-                        } else {
-                            state
+                        when (state) {
+                            is MonitoringState -> {
+                                updateMetadata()
+                            }
+                            is FailedState -> {
+                                // Try pausing first if we get Failed state. This returns failed state if pause failed
+                                pauseReplication(state)
+                            }
+                            else -> {
+                                state
+                            }
                         }
                     }
                 }
                 ReplicationState.FAILED -> {
-                    stopReplicationTasks()
+                    assert(currentTaskState is FailedState)
+                    failReplication(currentTaskState as FailedState)
                     currentTaskState
                 }
                 ReplicationState.COMPLETED -> {
@@ -188,14 +208,44 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
         }
     }
 
+    private suspend fun failReplication(failedState: FailedState) {
+        withContext(NonCancellable) {
+            val reason = failedState.errorMsg
+            try {
+                replicationMetadataManager.updateIndexReplicationState(
+                    followerIndexName,
+                    ReplicationOverallState.FAILED,
+                    reason
+                )
+            } catch (e: Exception) {
+                log.error("Encountered exception while marking IndexReplicationTask:$id as failed", e)
+            } finally {
+                // This is required to end the state-machine loop
+                markAsFailed(RuntimeException(reason))
+            }
+        }
+    }
+
     private fun addListenerToInterruptTask() {
         clusterService.addListener(this)
     }
 
     private suspend fun pollShardTaskStatus(shardTasks: Map<ShardId, PersistentTask<ShardReplicationParams>>): IndexReplicationState {
-        val failedShardTasks = findFailedShardTasks(shardTasks, clusterService.state())
-        if (failedShardTasks.isNotEmpty())
-            return FailedState(failedShardTasks, "At least one of the shard replication task has failed")
+        val failedShardTasks = findFailedOrMissingShardTasks(shardTasks, clusterService.state())
+        if (failedShardTasks.isNotEmpty()) {
+            log.info("Failed shard tasks - ", failedShardTasks)
+            var msg = ""
+            for ((shard, task) in failedShardTasks) {
+                val taskState = task.state
+                if (taskState is com.amazon.elasticsearch.replication.task.shard.FailedState) {
+                    val exception: ElasticsearchException? = taskState.exception
+                    msg += "[${shard} - ${exception?.javaClass?.name} - \"${exception?.message}\"], "
+                } else {
+                    msg += "[${shard} - \"Shard task killed or cancelled.\"], "
+                }
+            }
+            return FailedState(failedShardTasks, msg)
+        }
         delay(SLEEP_TIME_BETWEEN_POLL_MS)
         return MonitoringState
     }
@@ -428,28 +478,56 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
             val updateRequest = UpdateMetadataRequest(followerIndexName, UpdateMetadataRequest.Type.ALIAS, request)
             client.suspendExecute(UpdateMetadataAction.INSTANCE, updateRequest, injectSecurityContext = true)
         } catch (e: Exception) {
-            log.error("Got an error while updating alias ${followerIndexName} - $e ")
+            log.error("Got an error while updating alias ${followerIndexName}", e)
         }
 
     }
 
-    private suspend fun stopReplicationTasks() {
-        val stopReplicationResponse = client.suspendExecute(replicationMetadata,
-                StopIndexReplicationAction.INSTANCE, StopIndexReplicationRequest(followerIndexName), defaultContext = true)
-        if (!stopReplicationResponse.isAcknowledged)
-            throw ReplicationException("Failed to gracefully stop replication after one or more shard tasks failed. " +
-                    "Replication tasks may need to be stopped manually.")
+    private suspend fun pauseReplication(state: FailedState): IndexReplicationState {
+        try {
+            log.info("Going to initiate auto-pause of $followerIndexName due to shard failures - $state")
+            val pauseReplicationResponse = client.suspendExecute(
+                replicationMetadata,
+                PauseIndexReplicationAction.INSTANCE, PauseIndexReplicationRequest(followerIndexName, state.errorMsg),
+                defaultContext = true
+            )
+            if (!pauseReplicationResponse.isAcknowledged) {
+                throw ReplicationException(
+                    "Failed to gracefully pause replication after one or more shard tasks failed. " +
+                            "Replication tasks may need to be paused manually."
+                )
+            }
+        } catch (e: CancellationException) {
+            // If pause completed before and this co-routine was cancelled
+            throw e
+        } catch (e: Exception) {
+            log.error("Encountered exception while auto-pausing $followerIndexName", e)
+            return FailedState(state.failedShards,
+                "Pause failed with \"${e.message}\". Original failure for initiating pause - ${state.errorMsg}")
+        }
+        return MonitoringState
     }
 
-    private fun findFailedShardTasks(shardTasks: Map<ShardId, PersistentTask<ShardReplicationParams>>, clusterState: ClusterState)
+    private fun findFailedOrMissingShardTasks(shardTasks: Map<ShardId, PersistentTask<ShardReplicationParams>>, clusterState: ClusterState)
         :Map<ShardId, PersistentTask<ShardReplicationParams>> {
 
         val persistentTasks = clusterState.metadata.custom<PersistentTasksCustomMetadata>(PersistentTasksCustomMetadata.TYPE)
+
+        val failedShardTasks = persistentTasks.findTasks(ShardReplicationExecutor.TASK_NAME, Predicate { true }).stream()
+            .filter { task -> task.state is com.amazon.elasticsearch.replication.task.shard.FailedState }
+            .map { task -> task as PersistentTask<ShardReplicationParams> }
+            .collect(Collectors.toMap(
+                {t: PersistentTask<ShardReplicationParams> -> t.params!!.followerShardId},
+                {t: PersistentTask<ShardReplicationParams> -> t}))
+
         val runningShardTasks = persistentTasks.findTasks(ShardReplicationExecutor.TASK_NAME, Predicate { true }).stream()
-                .map { task -> task.params as ShardReplicationParams }
-                .collect(Collectors.toList())
-        return shardTasks.filterKeys { shardId ->
+            .map { task -> task.params as ShardReplicationParams }
+            .collect(Collectors.toList())
+
+        val missingShardTasks = shardTasks.filterKeys { shardId ->
             runningShardTasks.find { task -> task.followerShardId == shardId } == null}
+
+        return failedShardTasks + missingShardTasks
     }
 
     override suspend fun cleanup() {
@@ -576,7 +654,7 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
                     Unable to find in progress restore for remote index: $remoteCluster:$remoteIndex. 
                     This can happen if there was a badly timed master node failure.""".trimIndent())
             }
-        } else if (restore?.state() == RestoreInProgress.State.FAILURE) {
+        } else if (restore.state() == RestoreInProgress.State.FAILURE) {
             val failureReason = restore.shards().values().find {
                 it.value.state() == RestoreInProgress.State.FAILURE
             }!!.value.reason()
@@ -629,10 +707,10 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
             val replicationStateParams = getReplicationStateParamsForIndex(clusterService, followerIndexName)
             if (replicationStateParams == null) {
                 if (PersistentTasksNodeService.Status(State.STARTED) == status)
-                    scope.cancel("Index replication task received an interrupt.")
+                    cancelTask("Index replication task received an interrupt.")
             } else if (replicationStateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE] == ReplicationOverallState.PAUSED.name){
                 log.info("Pause state received for index $followerIndexName task")
-                scope.cancel("Index replication task received a pause.")
+                cancelTask("Index replication task received a pause.")
             }
         }
     }
