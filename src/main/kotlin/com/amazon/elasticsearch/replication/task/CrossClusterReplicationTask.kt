@@ -17,16 +17,14 @@ package com.amazon.elasticsearch.replication.task
 
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
-import com.amazon.elasticsearch.replication.metadata.store.ReplicationStoreMetadataType
 import com.amazon.elasticsearch.replication.task.autofollow.AutoFollowTask
-import com.amazon.elasticsearch.replication.util.SecurityContext
 import com.amazon.elasticsearch.replication.util.coroutineContext
 import com.amazon.elasticsearch.replication.util.suspending
-import com.amazon.elasticsearch.replication.util.toInjectedUser
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
@@ -56,7 +54,7 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
                                            protected val replicationMetadataManager: ReplicationMetadataManager) :
     AllocatedPersistentTask(id, type, action, description, parentTask, headers) {
 
-    protected val scope = CoroutineScope(threadPool.coroutineContext(executor))
+    private val overallTaskScope = CoroutineScope(threadPool.coroutineContext(executor))
     protected abstract val log : Logger
     protected abstract val followerIndexName: String
     protected abstract val remoteCluster: String
@@ -71,18 +69,24 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
 
     override fun onCancelled() {
         super.onCancelled()
-        scope.cancel()
+        cancelTask("Cancelled by Elasticsearch Cancellable Task invocation.")
+    }
+
+    protected fun cancelTask(message: String) {
+        overallTaskScope.cancel(message)
     }
 
     fun run(initialState: PersistentTaskState? = null) {
-        scope.launch {
+        overallTaskScope.launch {
             var exception : Throwable? = null
             try {
                 registerCloseListeners()
                 setReplicationMetadata()
-                execute(initialState)
+                execute(this, initialState)
                 markAsCompleted()
             } catch (e: Exception) {
+                log.error(
+                    "Exception encountered in CrossClusterReplicationTask - coroutine:isActive=${isActive} Context=${coroutineContext}", e)
                 if (isCancelled || e is CancellationException) {
                     markAsCompleted()
                     log.info("Completed the task with id:$id")
@@ -106,6 +110,7 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
     protected abstract fun replicationTaskResponse(): CrossClusterReplicationTaskResponse
 
     override fun markAsCompleted() {
+        log.info("Going to mark ${this.javaClass.simpleName}:${this.id} task as completed")
         taskManager.storeResult(this, replicationTaskResponse(), ActionListener.wrap(
                 {log.info("Successfully persisted task status")},
                 {e -> log.warn("Error storing result $e")}
@@ -140,7 +145,7 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
     }
 
     fun onIndexOrShardClosed(indexOrShardId: Any) {
-        scope.cancel("$indexOrShardId was closed.")
+        cancelTask("$indexOrShardId was closed.")
     }
 
     /**
@@ -151,7 +156,7 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
         client.suspending(::updatePersistentTaskState)(state)
     }
 
-    protected abstract suspend fun execute(initialState: PersistentTaskState?)
+    protected abstract suspend fun execute(scope: CoroutineScope, initialState: PersistentTaskState?)
 
     protected open suspend fun cleanup() {}
 

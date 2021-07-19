@@ -16,6 +16,8 @@
 package com.amazon.elasticsearch.replication.task.shard
 
 import com.amazon.elasticsearch.replication.task.ReplicationState
+import com.amazon.elasticsearch.replication.task.index.IndexReplicationState
+import org.elasticsearch.ElasticsearchException
 import org.elasticsearch.common.ParseField
 import org.elasticsearch.common.io.stream.StreamInput
 import org.elasticsearch.common.io.stream.StreamOutput
@@ -23,7 +25,9 @@ import org.elasticsearch.common.xcontent.ObjectParser
 import org.elasticsearch.common.xcontent.ToXContent
 import org.elasticsearch.common.xcontent.XContentBuilder
 import org.elasticsearch.common.xcontent.XContentParser
+import org.elasticsearch.index.shard.ShardId
 import org.elasticsearch.persistent.PersistentTaskState
+import org.elasticsearch.persistent.PersistentTasksCustomMetadata
 import java.io.IOException
 import java.lang.IllegalArgumentException
 import java.lang.IllegalStateException
@@ -40,6 +44,7 @@ sealed class ShardReplicationState : PersistentTaskState {
                 ReplicationState.RESTORING -> throw IllegalStateException("RESTORING - Illegal state for shard replication task")
                 ReplicationState.INIT_FOLLOW -> throw IllegalStateException("INIT_FOLLOW - Illegal state for shard replication task")
                 ReplicationState.FOLLOWING -> FollowingState
+                ReplicationState.FAILED -> FailedState(inp)
                 ReplicationState.COMPLETED -> CompletedState
                 else -> throw IllegalArgumentException("$state - Not a valid state for shard replication task")
             }
@@ -87,6 +92,7 @@ sealed class ShardReplicationState : PersistentTaskState {
                 ReplicationState.INIT_FOLLOW.name -> throw IllegalArgumentException("INIT_FOLLOW - Illegal state for shard replication task")
                 ReplicationState.FOLLOWING.name -> FollowingState
                 ReplicationState.COMPLETED.name -> CompletedState
+                ReplicationState.FAILED.name -> FailedState(null)
                 else -> throw IllegalArgumentException("$state - Not a valid state for shard replication task")
             }
         }
@@ -96,4 +102,26 @@ sealed class ShardReplicationState : PersistentTaskState {
 
 object FollowingState : ShardReplicationState(ReplicationState.FOLLOWING)
 object CompletedState : ShardReplicationState(ReplicationState.COMPLETED)
+
+/**
+ * State when shard task is in failed state.
+ */
+data class FailedState(val exception: ElasticsearchException?)
+    : ShardReplicationState(ReplicationState.FAILED) {
+    constructor(inp: StreamInput) : this(inp.readException<ElasticsearchException>())
+
+    override fun writeTo(out: StreamOutput) {
+        super.writeTo(out)
+        out.writeException(exception)
+    }
+
+    override fun toXContent(builder: XContentBuilder, params: ToXContent.Params?): XContentBuilder {
+        builder.startObject()
+        builder.field("exception")
+        builder.startObject()
+        exception?.toXContent(builder, params)
+        builder.endObject()
+        return builder.endObject()
+    }
+}
 

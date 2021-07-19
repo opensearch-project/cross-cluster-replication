@@ -22,6 +22,7 @@ import com.amazon.elasticsearch.replication.task.CrossClusterReplicationTask
 import com.amazon.elasticsearch.replication.task.ReplicationState
 import com.amazon.elasticsearch.replication.util.suspendExecute
 import com.amazon.elasticsearch.replication.util.suspending
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import org.elasticsearch.action.admin.indices.get.GetIndexRequest
@@ -56,7 +57,7 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
         val AUTO_FOLLOW_CHECK_DELAY = TimeValue.timeValueSeconds(30)!!
     }
 
-    override suspend fun execute(initialState: PersistentTaskState?) {
+    override suspend fun execute(scope: CoroutineScope, initialState: PersistentTaskState?) {
         while (scope.isActive) {
             autoFollow()
             delay(AUTO_FOLLOW_CHECK_DELAY.millis)
