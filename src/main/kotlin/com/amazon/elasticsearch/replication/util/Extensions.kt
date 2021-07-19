@@ -186,11 +186,11 @@ fun User.overrideFgacRole(fgacRole: String?): User? {
 }
 
 fun User.toInjectedUser(): String? {
-    return "${name}|${backendRoles.joinToString(separator=",")}"
+    return "${SecurityContext.REPLICATION_PLUGIN_USER}|${backendRoles.joinToString(separator=",")}"
 }
 
 fun User.toInjectedRoles(): String? {
-    return "${name}|${roles.joinToString(separator=",")}"
+    return "${SecurityContext.REPLICATION_PLUGIN_USER}|${roles.joinToString(separator=",")}"
 }
 
 fun Throwable.stackTraceToString(): String {

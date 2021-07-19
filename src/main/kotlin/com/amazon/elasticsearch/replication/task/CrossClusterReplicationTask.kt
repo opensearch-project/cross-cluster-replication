@@ -15,6 +15,7 @@
 
 package com.amazon.elasticsearch.replication.task
 
+import com.amazon.elasticsearch.replication.ReplicationSettings
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
 import com.amazon.elasticsearch.replication.task.autofollow.AutoFollowTask
@@ -51,7 +52,8 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
                                            protected val clusterService: ClusterService,
                                            protected val threadPool: ThreadPool,
                                            protected val client: Client,
-                                           protected val replicationMetadataManager: ReplicationMetadataManager) :
+                                           protected val replicationMetadataManager: ReplicationMetadataManager,
+                                           protected val replicationSettings: ReplicationSettings) :
     AllocatedPersistentTask(id, type, action, description, parentTask, headers) {
 
     private val overallTaskScope = CoroutineScope(threadPool.coroutineContext(executor))
