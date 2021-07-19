@@ -53,6 +53,7 @@ import org.elasticsearch.index.seqno.RetentionLeaseNotFoundException
 import org.elasticsearch.index.shard.ShardId
 import org.elasticsearch.persistent.PersistentTaskState
 import org.elasticsearch.persistent.PersistentTasksNodeService
+import org.elasticsearch.rest.RestStatus
 import org.elasticsearch.tasks.TaskId
 import org.elasticsearch.threadpool.ThreadPool
 import org.elasticsearch.transport.NodeNotConnectedException
@@ -235,7 +236,14 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                     } catch (e: Exception) {
                         logInfo("Unable to get changes from seqNo: $fromSeqNo. ${e.stackTraceToString()}")
                         changeTracker.updateBatchFetched(false, fromSeqNo, toSeqNo, fromSeqNo - 1,-1)
-                        //TODO: Exception should be thrown after some retries as otherwise the task becomes stuck.
+
+                        // Propagate 4xx exceptions up the chain and halt replication as they are irrecoverable
+                        val range4xx = 400.rangeTo(499)
+                        if (e is ElasticsearchException &&
+                            range4xx.contains(e.status().status) &&
+                            e.status().status != RestStatus.TOO_MANY_REQUESTS.status) {
+                            throw e
+                        }
                     } finally {
                         rateLimiter.release()
                     }
