@@ -5,18 +5,23 @@ import com.amazon.elasticsearch.replication.metadata.store.ReplicationContext
 import com.amazon.elasticsearch.replication.util.SecurityContext
 import org.apache.logging.log4j.LogManager
 import org.elasticsearch.ElasticsearchSecurityException
+import org.elasticsearch.ExceptionsHelper
 import org.elasticsearch.action.ActionListener
+import org.elasticsearch.action.StepListener
 import org.elasticsearch.action.support.ActionFilters
 import org.elasticsearch.action.support.HandledTransportAction
 import org.elasticsearch.action.support.master.AcknowledgedResponse
 import org.elasticsearch.client.Client
 import org.elasticsearch.cluster.service.ClusterService
+import org.elasticsearch.common.CheckedConsumer
 import org.elasticsearch.common.inject.Inject
 import org.elasticsearch.common.util.concurrent.ThreadContext
 import org.elasticsearch.rest.RestStatus
 import org.elasticsearch.tasks.Task
 import org.elasticsearch.threadpool.ThreadPool
 import org.elasticsearch.transport.TransportService
+import java.util.function.Consumer
+import java.util.function.Predicate
 
 class TransportSetupChecksAction @Inject constructor(transportService: TransportService,
                                                     val threadPool: ThreadPool,
@@ -28,6 +33,16 @@ class TransportSetupChecksAction @Inject constructor(transportService: Transport
 
     companion object {
         private val log = LogManager.getLogger(TransportSetupChecksAction::class.java)
+        fun unwrapSecurityExceptionIfPresent(e: Exception): Exception {
+            val ex = ExceptionsHelper.unwrapCausesAndSuppressed<Exception>(e) { cause ->
+                cause is ElasticsearchSecurityException
+            }
+            if(!ex.isPresent) {
+                return e
+            }
+            val securityException = ex.get()
+            return ElasticsearchSecurityException(securityException.message, RestStatus.FORBIDDEN, securityException.cause)
+        }
     }
 
     override fun doExecute(task: Task, request: SetupChecksRequest, listener: ActionListener<AcknowledgedResponse>) {
@@ -55,36 +70,71 @@ class TransportSetupChecksAction @Inject constructor(transportService: Transport
             return
         }
 
-        // Validate permissions at both follower and leader cluster
-        triggerPermissionsValidation(client, localClusterName, request.followerContext,
-                object: ActionListener<AcknowledgedResponse> {
-                        override fun onFailure(e: Exception) {
-                            log.error("Permissions validation failed for [local:$localClusterName, " +
-                                    "resource:${request.followerContext.resource}] with $e")
-                            listener.onFailure(e)
-                        }
-                        override fun onResponse(response: AcknowledgedResponse) {
-                            triggerPermissionsValidation(remoteClusterClient!!, request.connectionName,
-                                    request.leaderContext,
-                                    object : ActionListener<AcknowledgedResponse>{
-                                        override fun onFailure(e: Exception) {
-                                            log.error("Permissions validation failed for [connection:${request.connectionName}, " +
-                                                    "resource:${request.leaderContext.resource}] with $e")
-                                            listener.onFailure(e)
-                                        }
+        val userPermissionsValidationAtLocal = StepListener<AcknowledgedResponse>()
+        val userPermissionsValidationAtRemote = StepListener<AcknowledgedResponse>()
+        val rolePermissionsValidationAtLocal = StepListener<AcknowledgedResponse>()
+        val rolePermissionsValidationAtRemote = StepListener<AcknowledgedResponse>()
 
-                                        override fun onResponse(response: AcknowledgedResponse) {
-                                            listener.onResponse(response)
-                                        }
-                                    })
-                        }
-                })
+        rolePermissionsValidationAtRemote.whenComplete(
+                { r ->
+                    log.info("Permissions validation successful for role [connection:${request.connectionName}, " +
+                            "resource:${request.leaderContext.resource}]")
+                    listener.onResponse(r)
+                },
+                { e ->
+                    log.error("Permissions validation failed for role [connection:${request.connectionName}, " +
+                            "resource:${request.leaderContext.resource}] with $e")
+                    listener.onFailure(unwrapSecurityExceptionIfPresent(e))
+                }
+        )
+
+        rolePermissionsValidationAtLocal.whenComplete(
+                {
+                    log.info("Permissions validation successful for User [connection:${request.connectionName}, " +
+                            "resource:${request.leaderContext.resource}]")
+                    triggerPermissionsValidation(remoteClusterClient!!, request.connectionName, request.leaderContext, true, rolePermissionsValidationAtRemote)
+                },
+                { e ->
+                    log.error("Permissions validation failed for role [local:$localClusterName, " +
+                            "resource:${request.followerContext.resource}] with $e")
+                    listener.onFailure(unwrapSecurityExceptionIfPresent(e))
+                }
+        )
+
+        userPermissionsValidationAtRemote.whenComplete(
+                {
+                    log.info("Permissions validation successful for User [connection:${request.connectionName}, " +
+                            "resource:${request.leaderContext.resource}]")
+                    triggerPermissionsValidation(client, localClusterName, request.followerContext, true, rolePermissionsValidationAtLocal)
+                },
+                { e ->
+                    log.error("Permissions validation failed for User [connection:${request.connectionName}, " +
+                            "resource:${request.leaderContext.resource}] with $e")
+                    listener.onFailure(unwrapSecurityExceptionIfPresent(e))
+                }
+        )
+
+        userPermissionsValidationAtLocal.whenComplete(
+                {
+                    log.info("Permissions validation successful for User [local:$localClusterName, " +
+                            "resource:${request.followerContext.resource}]")
+                    triggerPermissionsValidation(remoteClusterClient!!, request.connectionName, request.leaderContext, false, userPermissionsValidationAtRemote)
+                },
+                { e ->
+                    log.error("Permissions validation failed for User [local:$localClusterName, " +
+                            "resource:${request.followerContext.resource}] with $e")
+                    listener.onFailure(unwrapSecurityExceptionIfPresent(e))
+                }
+        )
+
+        triggerPermissionsValidation(client, localClusterName, request.followerContext, false, userPermissionsValidationAtLocal)
 
     }
 
     private fun triggerPermissionsValidation(client: Client,
                                              cluster: String,
                                              replContext: ReplicationContext,
+                                             shouldAssumeRole: Boolean,
                                              permissionListener: ActionListener<AcknowledgedResponse>) {
 
         var storedContext: ThreadContext.StoredContext? = null
@@ -95,7 +145,9 @@ class TransportSetupChecksAction @Inject constructor(transportService: Transport
             val assumeRole = replContext.user?.roles?.get(0)
             val inThreadContextRole = client.threadPool().threadContext.getTransient<String?>(SecurityContext.OPENDISTRO_SECURITY_ASSUME_ROLES)
             log.debug("assume role is $inThreadContextRole for $cluster")
-            client.threadPool().threadContext.putTransient(SecurityContext.OPENDISTRO_SECURITY_ASSUME_ROLES, assumeRole)
+            if(shouldAssumeRole) {
+                client.threadPool().threadContext.putTransient(SecurityContext.OPENDISTRO_SECURITY_ASSUME_ROLES, assumeRole)
+            }
             val validateReq = ValidatePermissionsRequest(cluster, replContext.resource, assumeRole)
             client.execute(ValidatePermissionsAction.INSTANCE, validateReq, permissionListener)
         } finally {
