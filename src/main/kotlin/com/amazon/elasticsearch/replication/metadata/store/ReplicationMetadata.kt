@@ -81,7 +81,7 @@ class ReplicationMetadata: ToXContent {
                 reason: String,
                 followerContext: ReplicationContext,
                 leaderContext: ReplicationContext,
-                settings: Settings = Settings.EMPTY) {
+                settings: Settings) {
         this.connectionName = connectionName
         this.metadataType = metadataType
         this.overallState = overallState

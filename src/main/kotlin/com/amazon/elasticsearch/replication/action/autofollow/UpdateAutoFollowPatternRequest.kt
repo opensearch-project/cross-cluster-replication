@@ -15,19 +15,23 @@
 
 package com.amazon.elasticsearch.replication.action.autofollow
 
+import com.amazon.elasticsearch.replication.action.index.ReplicateIndexRequest
+import com.amazon.elasticsearch.replication.metadata.store.KEY_SETTINGS
 import org.elasticsearch.action.ActionRequestValidationException
 import org.elasticsearch.action.support.master.AcknowledgedRequest
 import org.elasticsearch.common.ParseField
 import org.elasticsearch.common.io.stream.StreamInput
 import org.elasticsearch.common.io.stream.StreamOutput
+import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.xcontent.ObjectParser
-import org.elasticsearch.common.xcontent.XContentParser
-import com.amazon.elasticsearch.replication.action.index.ReplicateIndexRequest
-import org.elasticsearch.action.index.IndexRequestBuilder
 import org.elasticsearch.common.xcontent.ToXContent
 import org.elasticsearch.common.xcontent.ToXContentObject
 import org.elasticsearch.common.xcontent.XContentBuilder
+import org.elasticsearch.common.xcontent.XContentParser
+import java.util.Collections
 import java.util.function.BiConsumer
+import java.util.function.BiFunction
+import kotlin.collections.HashMap
 
 class UpdateAutoFollowPatternRequest: AcknowledgedRequest<UpdateAutoFollowPatternRequest>, ToXContentObject {
 
@@ -35,6 +39,7 @@ class UpdateAutoFollowPatternRequest: AcknowledgedRequest<UpdateAutoFollowPatter
     lateinit var patternName: String
     var pattern: String? = null
     var assumeRoles: HashMap<String, String>? = null // roles to assume - {leader_fgac_role: role1, follower_fgac_role: role2}
+    var settings : Settings = Settings.EMPTY
 
     enum class Action {
         ADD, REMOVE
@@ -53,6 +58,8 @@ class UpdateAutoFollowPatternRequest: AcknowledgedRequest<UpdateAutoFollowPatter
             AUTOFOLLOW_REQ_PARSER.declareObjectOrDefault(BiConsumer { reqParser: UpdateAutoFollowPatternRequest,
                                                                       roles: HashMap<String, String> -> reqParser.assumeRoles = roles},
                     ReplicateIndexRequest.FGAC_ROLES_PARSER, null, ParseField("assume_roles"))
+            AUTOFOLLOW_REQ_PARSER.declareObjectOrDefault(BiConsumer{ request: UpdateAutoFollowPatternRequest, settings: Settings -> request.settings = settings}, BiFunction{ p: XContentParser?, c: Void? -> Settings.fromXContent(p) },
+                    null, ParseField(KEY_SETTINGS))
         }
         fun fromXContent(xcp: XContentParser, action: Action) : UpdateAutoFollowPatternRequest {
             val updateAutofollowReq = AUTOFOLLOW_REQ_PARSER.parse(xcp, null)
@@ -60,16 +67,20 @@ class UpdateAutoFollowPatternRequest: AcknowledgedRequest<UpdateAutoFollowPatter
             if(updateAutofollowReq.assumeRoles?.size == 0) {
                 updateAutofollowReq.assumeRoles = null
             }
+            if (updateAutofollowReq.settings == null) {
+                updateAutofollowReq.settings = Settings.EMPTY
+            }
             return updateAutofollowReq
         }
     }
 
 
-    constructor(connection: String, patternName: String, pattern: String?, action: Action) {
+    constructor(connection: String, patternName: String, pattern: String?, action: Action, settings: Settings) {
         this.connection = connection
         this.patternName = patternName
         this.pattern = pattern
         this.action = action
+        this.settings = settings
     }
 
     constructor(inp: StreamInput) : super(inp) {
@@ -82,10 +93,12 @@ class UpdateAutoFollowPatternRequest: AcknowledgedRequest<UpdateAutoFollowPatter
         assumeRoles = HashMap()
         if(leaderFgacRole != null) assumeRoles!![ReplicateIndexRequest.LEADER_FGAC_ROLE] = leaderFgacRole
         if(followerFgacRole != null) assumeRoles!![ReplicateIndexRequest.FOLLOWER_FGAC_ROLE] = followerFgacRole
+        settings = Settings.readSettingsFromStream(inp)
     }
 
 
     override fun validate(): ActionRequestValidationException? {
+
         var validationException = ActionRequestValidationException()
         if(!this::connection.isInitialized ||
                 !this::patternName.isInitialized) {
@@ -117,6 +130,7 @@ class UpdateAutoFollowPatternRequest: AcknowledgedRequest<UpdateAutoFollowPatter
         out.writeEnum(action)
         out.writeOptionalString(assumeRoles?.get(ReplicateIndexRequest.LEADER_FGAC_ROLE))
         out.writeOptionalString(assumeRoles?.get(ReplicateIndexRequest.FOLLOWER_FGAC_ROLE))
+        Settings.writeSettingsToStream(settings, out)
     }
 
     override fun toXContent(builder: XContentBuilder, params: ToXContent.Params): XContentBuilder {
@@ -132,6 +146,11 @@ class UpdateAutoFollowPatternRequest: AcknowledgedRequest<UpdateAutoFollowPatter
             builder.field("local_fgac_role", assumeRoles!!.get(ReplicateIndexRequest.FOLLOWER_FGAC_ROLE))
             builder.endObject()
         }
+
+        builder.startObject(KEY_SETTINGS)
+        settings.toXContent(builder, ToXContent.MapParams(Collections.singletonMap("flat_settings", "true")));
+        builder.endObject()
+
         return builder.endObject()
     }
 }

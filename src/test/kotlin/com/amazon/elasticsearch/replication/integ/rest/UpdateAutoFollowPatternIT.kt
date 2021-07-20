@@ -29,6 +29,7 @@ import org.apache.http.entity.ContentType
 import org.apache.http.nio.entity.NStringEntity
 import org.assertj.core.api.Assertions
 import org.elasticsearch.action.admin.cluster.settings.ClusterUpdateSettingsRequest
+import org.elasticsearch.action.admin.indices.settings.get.GetSettingsRequest
 import org.elasticsearch.client.Request
 import org.elasticsearch.client.RequestOptions
 import org.elasticsearch.client.ResponseException
@@ -40,7 +41,8 @@ import org.elasticsearch.common.unit.TimeValue
 import org.elasticsearch.tasks.TaskInfo
 import org.junit.Assert
 import java.util.Locale
-
+import org.elasticsearch.cluster.metadata.IndexMetadata
+import org.elasticsearch.test.ESTestCase.assertBusy
 import java.util.concurrent.TimeUnit
 
 
@@ -101,7 +103,7 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
             followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern)
             leaderIndexNameNew = createRandomIndex(leaderClient)
             // Verify that newly created index on leader which match the pattern are also replicated.
-            assertBusy ({
+            assertBusy({
                 Assertions.assertThat(followerClient.indices()
                         .exists(GetIndexRequest(leaderIndexNameNew), RequestOptions.DEFAULT))
                         .isEqualTo(true)
@@ -109,6 +111,47 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
         } finally {
             followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
             followerClient.stopReplication(leaderIndexNameNew)
+        }
+    }
+
+    fun `test auto follow pattern with settings`() {
+        setMetadataSyncDelay()
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        val leaderIndexName = createRandomIndex(leaderClient)
+        createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
+
+        try {
+            val settings = Settings.builder()
+                    .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 3)
+                    .build()
+
+            followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern, settings)
+
+            // Verify that existing index matching the pattern are replicated.
+            assertBusy ({
+                Assertions.assertThat(followerClient.indices()
+                        .exists(GetIndexRequest(leaderIndexName), RequestOptions.DEFAULT))
+                        .isEqualTo(true)
+            }, 30, TimeUnit.SECONDS)
+            Assertions.assertThat(getAutoFollowTasks(FOLLOWER).size).isEqualTo(1)
+
+
+            val getSettingsRequest = GetSettingsRequest()
+            getSettingsRequest.indices(leaderIndexName)
+            getSettingsRequest.includeDefaults(true)
+            assertBusy ({
+                Assert.assertEquals(
+                        "3",
+                        followerClient.indices()
+                                .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
+                                .indexToSettings[leaderIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+                )
+            }, 15, TimeUnit.SECONDS)
+
+        } finally {
+            followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
+            followerClient.stopReplication(leaderIndexName, false)
         }
     }
 

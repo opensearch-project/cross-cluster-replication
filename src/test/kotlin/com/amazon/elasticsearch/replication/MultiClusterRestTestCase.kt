@@ -18,8 +18,7 @@ package com.amazon.elasticsearch.replication
 import com.amazon.elasticsearch.replication.MultiClusterAnnotations.ClusterConfiguration
 import com.amazon.elasticsearch.replication.MultiClusterAnnotations.ClusterConfigurations
 import com.amazon.elasticsearch.replication.MultiClusterAnnotations.getAnnotationsFromClass
-import com.amazon.elasticsearch.replication.task.index.IndexReplicationExecutor
-import com.amazon.elasticsearch.replication.task.shard.ShardReplicationExecutor
+import com.amazon.elasticsearch.replication.integ.rest.FOLLOWER
 import org.apache.http.Header
 import org.apache.http.HttpHost
 import org.apache.http.HttpStatus
@@ -32,9 +31,14 @@ import org.apache.http.nio.entity.NStringEntity
 import org.apache.http.ssl.SSLContexts
 import org.apache.lucene.util.SetOnce
 import org.elasticsearch.action.admin.cluster.node.tasks.list.ListTasksRequest
-import org.elasticsearch.action.admin.cluster.node.tasks.list.ListTasksRequestBuilder
+import org.elasticsearch.action.admin.cluster.settings.ClusterUpdateSettingsRequest
 import org.elasticsearch.bootstrap.BootstrapInfo
-import org.elasticsearch.client.*
+import org.elasticsearch.client.Request
+import org.elasticsearch.client.RequestOptions
+import org.elasticsearch.client.ResponseException
+import org.elasticsearch.client.RestClient
+import org.elasticsearch.client.RestClientBuilder
+import org.elasticsearch.client.RestHighLevelClient
 import org.elasticsearch.common.Strings
 import org.elasticsearch.common.io.PathUtils
 import org.elasticsearch.common.settings.Settings
@@ -60,6 +64,7 @@ import java.security.NoSuchAlgorithmException
 import java.security.cert.CertificateException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
+import java.util.Collections
 
 /**
  * This class provides basic support of managing life-cyle of
@@ -135,6 +140,7 @@ abstract class MultiClusterRestTestCase : ESTestCase() {
             }
             return builder.build()
         }
+
 
         /* Copied this method from [ESRestCase] */
         protected fun configureClient(builder: RestClientBuilder, settings: Settings) {
@@ -333,5 +339,12 @@ abstract class MultiClusterRestTestCase : ESTestCase() {
         val request = ListTasksRequest().setDetailed(true).setActions(action)
         val response = client.tasks().list(request,RequestOptions.DEFAULT)
         return response.tasks
+    }
+
+    protected fun setMetadataSyncDelay() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val updateSettingsRequest = ClusterUpdateSettingsRequest()
+        updateSettingsRequest.transientSettings(Collections.singletonMap<String, String?>("plugins.replication.metadata_sync", "5s"))
+        followerClient.cluster().putSettings(updateSettingsRequest, RequestOptions.DEFAULT)
     }
 }

@@ -2,20 +2,15 @@ package com.amazon.elasticsearch.replication.action.autofollow
 
 import com.amazon.elasticsearch.replication.ReplicationException
 import com.amazon.elasticsearch.replication.action.index.ReplicateIndexRequest
-import com.amazon.elasticsearch.replication.action.setup.SetupChecksAction
-import com.amazon.elasticsearch.replication.action.setup.SetupChecksRequest
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
-import com.amazon.elasticsearch.replication.metadata.store.ReplicationContext
 import com.amazon.elasticsearch.replication.task.autofollow.AutoFollowExecutor
 import com.amazon.elasticsearch.replication.task.autofollow.AutoFollowParams
 import com.amazon.elasticsearch.replication.util.completeWith
 import com.amazon.elasticsearch.replication.util.coroutineContext
-import com.amazon.elasticsearch.replication.util.overrideFgacRole
 import com.amazon.elasticsearch.replication.util.persistentTasksService
 import com.amazon.elasticsearch.replication.util.removeTask
 import com.amazon.elasticsearch.replication.util.startTask
-import com.amazon.elasticsearch.replication.util.suspendExecute
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
@@ -35,12 +30,14 @@ import org.elasticsearch.cluster.metadata.IndexNameExpressionResolver
 import org.elasticsearch.cluster.service.ClusterService
 import org.elasticsearch.common.inject.Inject
 import org.elasticsearch.common.io.stream.StreamInput
+import org.elasticsearch.common.settings.IndexScopedSettings
 import org.elasticsearch.threadpool.ThreadPool
 import org.elasticsearch.transport.TransportService
 
 class TransportAutoFollowMasterNodeAction @Inject constructor(transportService: TransportService, clusterService: ClusterService, threadPool: ThreadPool,
                                                               actionFilters: ActionFilters, indexNameExpressionResolver: IndexNameExpressionResolver,
-                                                              private val client: NodeClient, private val metadataManager: ReplicationMetadataManager) :
+                                                              private val client: NodeClient, private val metadataManager: ReplicationMetadataManager,
+                                                              val indexScopedSettings: IndexScopedSettings) :
         TransportMasterNodeAction<AutoFollowMasterNodeRequest, AcknowledgedResponse>(
         AutoFollowMasterNodeAction.NAME, true, transportService, clusterService, threadPool, actionFilters,
         ::AutoFollowMasterNodeRequest, indexNameExpressionResolver), CoroutineScope by GlobalScope {
@@ -74,8 +71,12 @@ class TransportAutoFollowMasterNodeAction @Inject constructor(transportService: 
                     val followerFgacRole = request.assumeRoles?.get(ReplicateIndexRequest.FOLLOWER_FGAC_ROLE)
                     val leaderFgacRole = request.assumeRoles?.get(ReplicateIndexRequest.LEADER_FGAC_ROLE)
 
+                    indexScopedSettings.validate(request.settings,
+                            false,
+                            false)
+
                     metadataManager.addAutofollowMetadata(request.patternName, request.connection, request.pattern!!,
-                            ReplicationOverallState.RUNNING, user, followerFgacRole, leaderFgacRole)
+                            ReplicationOverallState.RUNNING, user, followerFgacRole, leaderFgacRole, request.settings)
                     startAutoFollowTask(request.connection, request.patternName)
                 }
                 AcknowledgedResponse(true)

@@ -15,7 +15,7 @@
 
 package com.amazon.elasticsearch.replication.action.index
 
-import com.amazon.elasticsearch.replication.metadata.state.FollowIndexName
+import com.amazon.elasticsearch.replication.metadata.store.KEY_SETTINGS
 import org.elasticsearch.action.ActionRequestValidationException
 import org.elasticsearch.action.IndicesRequest
 import org.elasticsearch.action.support.IndicesOptions
@@ -23,13 +23,18 @@ import org.elasticsearch.action.support.master.AcknowledgedRequest
 import org.elasticsearch.common.ParseField
 import org.elasticsearch.common.io.stream.StreamInput
 import org.elasticsearch.common.io.stream.StreamOutput
+import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.xcontent.ObjectParser
+import org.elasticsearch.common.xcontent.ToXContent
 import org.elasticsearch.common.xcontent.ToXContent.Params
 import org.elasticsearch.common.xcontent.ToXContentObject
 import org.elasticsearch.common.xcontent.XContentBuilder
 import org.elasticsearch.common.xcontent.XContentParser
 import java.io.IOException
+import java.util.Collections
 import java.util.function.BiConsumer
+import java.util.function.BiFunction
+import kotlin.collections.HashMap
 
 class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, IndicesRequest.Replaceable, ToXContentObject {
 
@@ -42,13 +47,16 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
     // Triggered from autofollow to skip permissions check based on user as this is already validated
     var isAutoFollowRequest: Boolean = false
 
+    var settings :Settings = Settings.EMPTY
+
     private constructor() {
     }
 
-    constructor(followerIndex: String, remoteCluster: String, remoteIndex: String) : super() {
+    constructor(followerIndex: String, remoteCluster: String, remoteIndex: String, settings: Settings = Settings.EMPTY) : super() {
         this.followerIndex = followerIndex
         this.remoteCluster = remoteCluster
         this.remoteIndex = remoteIndex
+        this.settings = settings
     }
 
     companion object {
@@ -66,6 +74,8 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
             INDEX_REQ_PARSER.declareString(ReplicateIndexRequest::remoteIndex::set, ParseField("remote_index"))
             INDEX_REQ_PARSER.declareObjectOrDefault(BiConsumer {reqParser: ReplicateIndexRequest, roles: HashMap<String, String> -> reqParser.assumeRoles = roles},
                     FGAC_ROLES_PARSER, null, ParseField("assume_roles"))
+            INDEX_REQ_PARSER.declareObjectOrDefault(BiConsumer{ request: ReplicateIndexRequest, settings: Settings -> request.settings = settings}, BiFunction{ p: XContentParser?, c: Void? -> Settings.fromXContent(p) },
+                    null, ParseField(KEY_SETTINGS))
         }
 
         @Throws(IOException::class)
@@ -75,11 +85,16 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
             if(followIndexRequest.assumeRoles?.size == 0) {
                 followIndexRequest.assumeRoles = null
             }
+
+            if (followIndexRequest.settings == null) {
+                followIndexRequest.settings = Settings.EMPTY
+            }
             return followIndexRequest
         }
     }
 
     override fun validate(): ActionRequestValidationException? {
+
         var validationException = ActionRequestValidationException()
         if (!this::remoteCluster.isInitialized ||
             !this::remoteIndex.isInitialized ||
@@ -119,6 +134,8 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
 
         waitForRestore = inp.readBoolean()
         isAutoFollowRequest = inp.readBoolean()
+        settings = Settings.readSettingsFromStream(inp)
+
     }
 
     override fun writeTo(out: StreamOutput) {
@@ -130,6 +147,8 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
         out.writeOptionalString(assumeRoles?.get(FOLLOWER_FGAC_ROLE))
         out.writeBoolean(waitForRestore)
         out.writeBoolean(isAutoFollowRequest)
+
+        Settings.writeSettingsToStream(settings, out);
     }
 
     @Throws(IOException::class)
@@ -147,7 +166,13 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
         }
         builder.field("wait_for_restore", waitForRestore)
         builder.field("is_autofollow_request", isAutoFollowRequest)
+
+        builder.startObject(KEY_SETTINGS)
+        settings.toXContent(builder, ToXContent.MapParams(Collections.singletonMap("flat_settings", "true")));
         builder.endObject()
+
+        builder.endObject()
+
         return builder
     }
 }
