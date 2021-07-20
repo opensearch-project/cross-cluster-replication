@@ -134,7 +134,7 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
 
         try {
             log.info("Auto follow starting replication from ${remoteCluster}:$remoteIndex -> $remoteIndex")
-            val request = ReplicateIndexRequest(remoteIndex, remoteCluster, remoteIndex)
+            val request = ReplicateIndexRequest(remoteIndex, remoteCluster, remoteIndex )
             request.isAutoFollowRequest = true
             val followerRole = replicationMetadata.followerContext?.user?.roles?.get(0)
             val leaderRole = replicationMetadata.leaderContext?.user?.roles?.get(0)
@@ -143,6 +143,7 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
                 request.assumeRoles!![ReplicateIndexRequest.FOLLOWER_FGAC_ROLE] = followerRole
                 request.assumeRoles!![ReplicateIndexRequest.LEADER_FGAC_ROLE] = leaderRole
             }
+            request.settings = replicationMetadata.settings
             val response = client.suspendExecute(replicationMetadata, ReplicateIndexAction.INSTANCE, request)
             if (!response.isAcknowledged) {
                 throw ReplicationException("Failed to auto follow remote index $remoteIndex")

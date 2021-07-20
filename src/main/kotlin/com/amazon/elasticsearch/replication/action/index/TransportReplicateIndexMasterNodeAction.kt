@@ -44,6 +44,7 @@ import org.elasticsearch.cluster.metadata.IndexNameExpressionResolver
 import org.elasticsearch.cluster.service.ClusterService
 import org.elasticsearch.common.inject.Inject
 import org.elasticsearch.common.io.stream.StreamInput
+import org.elasticsearch.common.settings.IndexScopedSettings
 import org.elasticsearch.index.IndexNotFoundException
 import org.elasticsearch.persistent.PersistentTasksService
 import org.elasticsearch.repositories.RepositoriesService
@@ -56,6 +57,7 @@ class TransportReplicateIndexMasterNodeAction @Inject constructor(transportServi
                                                                   threadPool: ThreadPool,
                                                                   actionFilters: ActionFilters,
                                                                   indexNameExpressionResolver: IndexNameExpressionResolver,
+                                                                  val indexScopedSettings: IndexScopedSettings,
                                                                   private val persistentTasksService: PersistentTasksService,
                                                                   private val nodeClient : NodeClient,
                                                                   private val repositoryService: RepositoriesService,
@@ -96,12 +98,16 @@ class TransportReplicateIndexMasterNodeAction @Inject constructor(transportServi
                     "Delete the index:${replicateIndexReq.followerIndex}")
                 }
 
+                indexScopedSettings.validate(replicateIndexReq.settings,
+                        false,
+                        false)
+
                 val params = IndexReplicationParams(replicateIndexReq.remoteCluster, remoteMetadata.index, replicateIndexReq.followerIndex)
 
                 replicationMetadataManager.addIndexReplicationMetadata(replicateIndexReq.followerIndex,
                         replicateIndexReq.remoteCluster, replicateIndexReq.remoteIndex,
                         ReplicationOverallState.RUNNING, user, replicateIndexReq.assumeRoles?.getOrDefault(ReplicateIndexRequest.FOLLOWER_FGAC_ROLE, null),
-                        replicateIndexReq.assumeRoles?.getOrDefault(ReplicateIndexRequest.LEADER_FGAC_ROLE, null))
+                        replicateIndexReq.assumeRoles?.getOrDefault(ReplicateIndexRequest.LEADER_FGAC_ROLE, null), replicateIndexReq.settings)
 
                 val task = persistentTasksService.startTask("replication:index:${replicateIndexReq.followerIndex}",
                         IndexReplicationExecutor.TASK_NAME, params)

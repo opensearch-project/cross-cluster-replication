@@ -16,7 +16,12 @@
 package com.amazon.elasticsearch.replication.integ.rest
 
 
-import com.amazon.elasticsearch.replication.*
+import com.amazon.elasticsearch.replication.MultiClusterAnnotations
+import com.amazon.elasticsearch.replication.MultiClusterRestTestCase
+import com.amazon.elasticsearch.replication.StartReplicationRequest
+import com.amazon.elasticsearch.replication.startReplication
+import com.amazon.elasticsearch.replication.stopReplication
+import com.amazon.elasticsearch.replication.updateReplication
 import org.apache.http.HttpStatus
 import org.apache.http.entity.ContentType
 import org.apache.http.nio.entity.NStringEntity
@@ -67,6 +72,39 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             assertBusy {
                 assertThat(followerClient.indices().exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT)).isEqualTo(true)
             }
+        } finally {
+            followerClient.stopReplication(followerIndexName)
+        }
+    }
+
+    fun `test start replication with settings`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        val settings = Settings.builder()
+                .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 3)
+                .build()
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName, settings = settings))
+            assertBusy {
+                assertThat(followerClient.indices().exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT)).isEqualTo(true)
+            }
+
+            val getSettingsRequest = GetSettingsRequest()
+            getSettingsRequest.indices(followerIndexName)
+            getSettingsRequest.includeDefaults(true)
+            assertBusy ({
+                Assert.assertEquals(
+                        "3",
+                        followerClient.indices()
+                                .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
+                                .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+                )
+            }, 15, TimeUnit.SECONDS)
         } finally {
             followerClient.stopReplication(followerIndexName)
         }
@@ -300,6 +338,8 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
 
+        setMetadataSyncDelay()
+
         createConnectionBetweenClusters(FOLLOWER, LEADER)
 
         var settings = Settings.builder()
@@ -315,6 +355,12 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                         .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
                         .isEqualTo(true)
             }
+
+            settings = Settings.builder()
+                    .build()
+
+            followerClient.updateReplication( followerIndexName, settings)
+
             val getSettingsRequest = GetSettingsRequest()
             getSettingsRequest.indices(followerIndexName)
             getSettingsRequest.includeDefaults(true)
@@ -371,8 +417,6 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                     .put("index.routing.allocation.enable", "none")
                     .put("index.search.idle.after", "10s")
                     .build()
-
-
 
             followerClient.updateReplication( followerIndexName, settings)
             TimeUnit.SECONDS.sleep(SLEEP_TIME_BETWEEN_SYNC)
@@ -439,6 +483,8 @@ class StartReplicationIT: MultiClusterRestTestCase() {
     fun `test that static index settings are getting replicated `() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
+
+        setMetadataSyncDelay()
 
         createConnectionBetweenClusters(FOLLOWER, LEADER)
 

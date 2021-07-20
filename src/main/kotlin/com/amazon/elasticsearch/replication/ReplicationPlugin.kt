@@ -25,21 +25,51 @@ import com.amazon.elasticsearch.replication.action.index.ReplicateIndexAction
 import com.amazon.elasticsearch.replication.action.index.ReplicateIndexMasterNodeAction
 import com.amazon.elasticsearch.replication.action.index.TransportReplicateIndexAction
 import com.amazon.elasticsearch.replication.action.index.TransportReplicateIndexMasterNodeAction
+import com.amazon.elasticsearch.replication.action.index.block.TransportUpddateIndexBlockAction
+import com.amazon.elasticsearch.replication.action.index.block.UpdateIndexBlockAction
+import com.amazon.elasticsearch.replication.action.pause.PauseIndexReplicationAction
+import com.amazon.elasticsearch.replication.action.pause.TransportPauseIndexReplicationAction
 import com.amazon.elasticsearch.replication.action.replay.ReplayChangesAction
 import com.amazon.elasticsearch.replication.action.replay.TransportReplayChangesAction
+import com.amazon.elasticsearch.replication.action.replicationstatedetails.TransportUpdateReplicationStateDetails
+import com.amazon.elasticsearch.replication.action.replicationstatedetails.UpdateReplicationStateAction
 import com.amazon.elasticsearch.replication.action.repository.GetFileChunkAction
 import com.amazon.elasticsearch.replication.action.repository.GetStoreMetadataAction
 import com.amazon.elasticsearch.replication.action.repository.ReleaseLeaderResourcesAction
 import com.amazon.elasticsearch.replication.action.repository.TransportGetFileChunkAction
 import com.amazon.elasticsearch.replication.action.repository.TransportGetStoreMetadataAction
+import com.amazon.elasticsearch.replication.action.repository.TransportReleaseLeaderResourcesAction
+import com.amazon.elasticsearch.replication.action.resume.ResumeIndexReplicationAction
+import com.amazon.elasticsearch.replication.action.resume.TransportResumeIndexReplicationAction
+import com.amazon.elasticsearch.replication.action.setup.SetupChecksAction
+import com.amazon.elasticsearch.replication.action.setup.TransportSetupChecksAction
+import com.amazon.elasticsearch.replication.action.setup.TransportValidatePermissionsAction
+import com.amazon.elasticsearch.replication.action.setup.ValidatePermissionsAction
+import com.amazon.elasticsearch.replication.action.status.ReplicationStatusAction
+import com.amazon.elasticsearch.replication.action.status.ShardsInfoAction
+import com.amazon.elasticsearch.replication.action.status.TranportShardsInfoAction
+import com.amazon.elasticsearch.replication.action.status.TransportReplicationStatusAction
 import com.amazon.elasticsearch.replication.action.stop.StopIndexReplicationAction
 import com.amazon.elasticsearch.replication.action.stop.TransportStopIndexReplicationAction
-import com.amazon.elasticsearch.replication.action.repository.TransportReleaseLeaderResourcesAction
+import com.amazon.elasticsearch.replication.action.update.TransportUpdateIndexReplicationAction
+import com.amazon.elasticsearch.replication.action.update.UpdateIndexReplicationAction
+import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
+import com.amazon.elasticsearch.replication.metadata.TransportUpdateMetadataAction
+import com.amazon.elasticsearch.replication.metadata.UpdateMetadataAction
 import com.amazon.elasticsearch.replication.metadata.state.ReplicationStateMetadata
+import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadataStore
 import com.amazon.elasticsearch.replication.repository.REMOTE_REPOSITORY_TYPE
 import com.amazon.elasticsearch.replication.repository.RemoteClusterRepositoriesService
 import com.amazon.elasticsearch.replication.repository.RemoteClusterRepository
 import com.amazon.elasticsearch.replication.repository.RemoteClusterRestoreLeaderService
+import com.amazon.elasticsearch.replication.rest.PauseIndexReplicationHandler
+import com.amazon.elasticsearch.replication.rest.ReplicateIndexHandler
+import com.amazon.elasticsearch.replication.rest.ReplicationStatusHandler
+import com.amazon.elasticsearch.replication.rest.ResumeIndexReplicationHandler
+import com.amazon.elasticsearch.replication.rest.StopIndexReplicationHandler
+import com.amazon.elasticsearch.replication.rest.UpdateAutoFollowPatternsHandler
+import com.amazon.elasticsearch.replication.rest.UpdateIndexHandler
+import com.amazon.elasticsearch.replication.seqno.RemoteClusterTranslogService
 import com.amazon.elasticsearch.replication.task.IndexCloseListener
 import com.amazon.elasticsearch.replication.task.autofollow.AutoFollowExecutor
 import com.amazon.elasticsearch.replication.task.autofollow.AutoFollowParams
@@ -70,7 +100,10 @@ import org.elasticsearch.common.settings.Setting
 import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.settings.SettingsFilter
 import org.elasticsearch.common.settings.SettingsModule
+import org.elasticsearch.common.unit.ByteSizeUnit
+import org.elasticsearch.common.unit.ByteSizeValue
 import org.elasticsearch.common.unit.TimeValue
+import org.elasticsearch.common.util.concurrent.EsExecutors
 import org.elasticsearch.common.xcontent.NamedXContentRegistry
 import org.elasticsearch.common.xcontent.XContentParser
 import org.elasticsearch.env.Environment
@@ -94,40 +127,12 @@ import org.elasticsearch.rest.RestController
 import org.elasticsearch.rest.RestHandler
 import org.elasticsearch.script.ScriptService
 import org.elasticsearch.threadpool.ExecutorBuilder
+import org.elasticsearch.threadpool.FixedExecutorBuilder
 import org.elasticsearch.threadpool.ScalingExecutorBuilder
 import org.elasticsearch.threadpool.ThreadPool
 import org.elasticsearch.watcher.ResourceWatcherService
 import java.util.Optional
 import java.util.function.Supplier
-import com.amazon.elasticsearch.replication.action.index.block.UpdateIndexBlockAction
-import com.amazon.elasticsearch.replication.action.index.block.TransportUpddateIndexBlockAction
-import com.amazon.elasticsearch.replication.action.pause.PauseIndexReplicationAction
-import com.amazon.elasticsearch.replication.action.pause.TransportPauseIndexReplicationAction
-import com.amazon.elasticsearch.replication.action.replicationstatedetails.TransportUpdateReplicationStateDetails
-import com.amazon.elasticsearch.replication.action.replicationstatedetails.UpdateReplicationStateAction
-import com.amazon.elasticsearch.replication.action.resume.ResumeIndexReplicationAction
-import com.amazon.elasticsearch.replication.action.resume.TransportResumeIndexReplicationAction
-import com.amazon.elasticsearch.replication.metadata.TransportUpdateMetadataAction
-import com.amazon.elasticsearch.replication.metadata.UpdateMetadataAction
-import org.elasticsearch.common.util.concurrent.EsExecutors
-import org.elasticsearch.threadpool.FixedExecutorBuilder
-import com.amazon.elasticsearch.replication.action.setup.SetupChecksAction
-import com.amazon.elasticsearch.replication.action.setup.TransportSetupChecksAction
-import com.amazon.elasticsearch.replication.action.setup.TransportValidatePermissionsAction
-import com.amazon.elasticsearch.replication.action.setup.ValidatePermissionsAction
-import com.amazon.elasticsearch.replication.action.status.ShardsInfoAction
-import com.amazon.elasticsearch.replication.action.status.ReplicationStatusAction
-import com.amazon.elasticsearch.replication.action.status.TranportShardsInfoAction
-import com.amazon.elasticsearch.replication.action.status.TransportReplicationStatusAction
-import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
-import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadataStore
-import com.amazon.elasticsearch.replication.rest.*
-import com.amazon.elasticsearch.replication.seqno.RemoteClusterTranslogService
-import com.amazon.elasticsearch.replication.action.update.TransportUpdateIndexReplicationAction
-import com.amazon.elasticsearch.replication.action.update.UpdateIndexReplicationAction
-import com.amazon.elasticsearch.replication.rest.UpdateIndexHandler
-import org.elasticsearch.common.unit.ByteSizeUnit
-import org.elasticsearch.common.unit.ByteSizeValue
 
 internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin, RepositoryPlugin, EnginePlugin {
 
@@ -160,6 +165,9 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                 TimeValue.timeValueHours(1), Setting.Property.Dynamic, Setting.Property.NodeScope)
         val REPLICATION_AUTOFOLLOW_REMOTE_INDICES_RETRY_POLL_DURATION = Setting.timeSetting ("plugins.replication.autofollow.remote.retry_poll_duration", TimeValue.timeValueHours(1), TimeValue.timeValueMinutes(30),
                 TimeValue.timeValueHours(4), Setting.Property.Dynamic, Setting.Property.NodeScope)
+        val REPLICATION_METADATA_SYNC_INTERVAL = Setting.timeSetting("plugins.replication.metadata_sync",
+                TimeValue.timeValueSeconds(60), TimeValue.timeValueSeconds(5),
+                Setting.Property.Dynamic, Setting.Property.NodeScope)
     }
 
     override fun createComponents(client: Client, clusterService: ClusterService, threadPool: ThreadPool,
@@ -252,7 +260,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
         : List<PersistentTasksExecutor<*>> {
         return listOf(
             ShardReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager, replicationSettings),
-            IndexReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager, replicationSettings),
+            IndexReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager, replicationSettings, settingsModule),
             AutoFollowExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager, replicationSettings))
     }
 
@@ -308,7 +316,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                 REPLICATION_LEADER_THREADPOOL_QUEUE_SIZE, REPLICATION_PARALLEL_READ_PER_SHARD,
                 REPLICATION_FOLLOWER_RECOVERY_CHUNK_SIZE, REPLICATION_FOLLOWER_RECOVERY_PARALLEL_CHUNKS,
                 REPLICATION_PARALLEL_READ_POLL_DURATION, REPLICATION_AUTOFOLLOW_REMOTE_INDICES_POLL_DURATION,
-                REPLICATION_AUTOFOLLOW_REMOTE_INDICES_RETRY_POLL_DURATION)
+                REPLICATION_AUTOFOLLOW_REMOTE_INDICES_RETRY_POLL_DURATION, REPLICATION_METADATA_SYNC_INTERVAL)
     }
 
     override fun getInternalRepositories(env: Environment, namedXContentRegistry: NamedXContentRegistry,

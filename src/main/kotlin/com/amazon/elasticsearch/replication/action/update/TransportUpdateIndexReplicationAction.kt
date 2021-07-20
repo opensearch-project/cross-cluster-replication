@@ -49,6 +49,7 @@ class TransportUpdateIndexReplicationAction @Inject constructor(transportService
                                                               actionFilters: ActionFilters,
                                                               indexNameExpressionResolver:
                                                               IndexNameExpressionResolver,
+                                                              val indexScopedSettings: IndexScopedSettings,
                                                               val client: Client,
                                                               val replicationMetadataManager: ReplicationMetadataManager) :
     TransportMasterNodeAction<UpdateIndexReplicationRequest, AcknowledgedResponse> (UpdateIndexReplicationAction.NAME,
@@ -79,9 +80,8 @@ class TransportUpdateIndexReplicationAction @Inject constructor(transportService
     }
 
     private fun validateUpdateReplicationRequest(request: UpdateIndexReplicationRequest) {
-        IndexScopedSettings.DEFAULT_SCOPED_SETTINGS.validate(
-                request.settings,  // don't validate wildcards
-                false,  // don't validate dependencies here we check it below never allow to change the number of shards
+        indexScopedSettings.validate(request.settings,
+                false,
                 false)
 
         val replicationStateParams = getReplicationStateParamsForIndex(clusterService, request.indexName)

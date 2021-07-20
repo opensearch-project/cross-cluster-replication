@@ -25,7 +25,6 @@ import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationStoreMetadataType
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.ObsoleteCoroutinesApi
-import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.test.runBlockingTest
 import org.assertj.core.api.Assertions.assertThat
 import org.elasticsearch.action.ActionListener
@@ -33,6 +32,7 @@ import org.elasticsearch.action.ActionRequest
 import org.elasticsearch.action.ActionResponse
 import org.elasticsearch.action.ActionType
 import org.elasticsearch.action.support.replication.ReplicationResponse.ShardInfo
+import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.index.shard.ShardId
 import org.elasticsearch.index.translog.Translog
 import org.elasticsearch.tasks.TaskId.EMPTY_TASK_ID
@@ -71,7 +71,7 @@ class TranslogSequencerTests : ESTestCase() {
     val remoteIndex = "remoteIndex"
     val followerShardId = ShardId("follower", "follower_uuid", 0)
     val replicationMetadata = ReplicationMetadata(remoteCluster, ReplicationStoreMetadataType.INDEX.name, ReplicationOverallState.RUNNING.name, "test user",
-            ReplicationContext(followerShardId.indexName, null), ReplicationContext(remoteIndex, null))
+            ReplicationContext(followerShardId.indexName, null), ReplicationContext(remoteIndex, null), Settings.EMPTY)
     val client = RequestCapturingClient()
     init {
         closeAfterSuite(client)

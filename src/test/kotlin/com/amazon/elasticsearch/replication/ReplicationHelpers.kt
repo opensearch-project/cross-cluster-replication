@@ -35,7 +35,8 @@ import org.elasticsearch.test.rest.ESRestTestCase
 import org.junit.Assert
 import java.util.concurrent.TimeUnit
 
-data class StartReplicationRequest(val remoteClusterAlias: String, val remoteIndex: String, val toIndex: String)
+data class StartReplicationRequest(val remoteClusterAlias: String, val remoteIndex: String, val toIndex: String,
+                                   val settings: Settings = Settings.EMPTY)
 
 const val REST_REPLICATION_PREFIX = "/_plugins/_replication/"
 const val REST_REPLICATION_START = "$REST_REPLICATION_PREFIX{index}/_start"
@@ -55,11 +56,20 @@ fun RestHighLevelClient.startReplication(request: StartReplicationRequest,
                                          waitForRestore: Boolean = false) {
     val lowLevelRequest = Request("PUT", REST_REPLICATION_START.replace("{index}", request.toIndex, true)
             + "?wait_for_restore=${waitForRestore}")
-    lowLevelRequest.setJsonEntity("""{
+    if (request.settings == Settings.EMPTY) {
+        lowLevelRequest.setJsonEntity("""{
                                        "remote_cluster" : "${request.remoteClusterAlias}",
                                        "remote_index": "${request.remoteIndex}"
                                      }            
                                   """)
+    } else {
+        lowLevelRequest.setJsonEntity("""{
+                                       "remote_cluster" : "${request.remoteClusterAlias}",
+                                       "remote_index": "${request.remoteIndex}",
+                                       "settings": ${request.settings}
+                                     }            
+                                  """)
+    }
     val lowLevelResponse = lowLevelClient.performRequest(lowLevelRequest)
     val response = getAckResponse(lowLevelResponse)
     assertThat(response.isAcknowledged).withFailMessage("Replication not started.").isTrue()
@@ -203,13 +213,22 @@ fun RestHighLevelClient.waitForReplicationStop(index: String, waitFor : TimeValu
         }, waitFor.seconds, TimeUnit.SECONDS)
 }
 
-fun RestHighLevelClient.updateAutoFollowPattern(connection: String, patternName: String, pattern: String) {
+fun RestHighLevelClient.updateAutoFollowPattern(connection: String, patternName: String, pattern: String, settings: Settings = Settings.EMPTY) {
     val lowLevelRequest = Request("POST", REST_AUTO_FOLLOW_PATTERN)
-    lowLevelRequest.setJsonEntity("""{
+    if (settings == Settings.EMPTY) {
+        lowLevelRequest.setJsonEntity("""{
                                        "connection" : "${connection}",
                                        "name" : "${patternName}",
                                        "pattern": "${pattern}"
                                      }""")
+    } else {
+        lowLevelRequest.setJsonEntity("""{
+                                       "connection" : "${connection}",
+                                       "name" : "${patternName}",
+                                       "pattern": "${pattern}",
+                                       "settings": $settings
+                                     }""")
+    }
     val lowLevelResponse = lowLevelClient.performRequest(lowLevelRequest)
     val response = getAckResponse(lowLevelResponse)
     assertThat(response.isAcknowledged).isTrue()
