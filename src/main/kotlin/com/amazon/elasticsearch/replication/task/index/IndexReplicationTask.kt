@@ -142,8 +142,7 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
                 IndexMetadata.INDEX_BLOCKS_READ_ONLY_ALLOW_DELETE_SETTING,
                 EnableAllocationDecider.INDEX_ROUTING_REBALANCE_ENABLE_SETTING,
                 EnableAllocationDecider.INDEX_ROUTING_ALLOCATION_ENABLE_SETTING,
-                IndexSettings.INDEX_SOFT_DELETES_RETENTION_LEASE_PERIOD_SETTING,
-                Setting.groupSetting("index.analysis.", Setting.Property.IndexScope)
+                IndexSettings.INDEX_SOFT_DELETES_RETENTION_LEASE_PERIOD_SETTING
         )
 
         val blockListedSettings :Set<String> = blSettings.stream().map { k -> k.key }.collect(Collectors.toSet())
@@ -700,6 +699,8 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
             restoreRequest.renamePattern(remoteIndex.name)
                 .renameReplacement(followerIndexName)
         }
+        val replMetadata = replicationMetadataManager.getIndexReplicationMetadata(this.followerIndexName)
+        restoreRequest.indexSettings(replMetadata.settings)
 
         val response = client.suspending(client.admin().cluster()::restoreSnapshot, defaultContext = true)(restoreRequest)
         if (response.restoreInfo != null) {

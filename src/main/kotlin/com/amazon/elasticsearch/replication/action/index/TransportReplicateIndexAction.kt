@@ -20,7 +20,13 @@ import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.REPLICAT
 import com.amazon.elasticsearch.replication.action.setup.SetupChecksAction
 import com.amazon.elasticsearch.replication.action.setup.SetupChecksRequest
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationContext
-import com.amazon.elasticsearch.replication.util.*
+import com.amazon.elasticsearch.replication.util.SecurityContext
+import com.amazon.elasticsearch.replication.util.ValidationUtil
+import com.amazon.elasticsearch.replication.util.completeWith
+import com.amazon.elasticsearch.replication.util.coroutineContext
+import com.amazon.elasticsearch.replication.util.overrideFgacRole
+import com.amazon.elasticsearch.replication.util.suspendExecute
+import com.amazon.elasticsearch.replication.util.suspending
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
@@ -29,10 +35,9 @@ import org.elasticsearch.action.ActionListener
 import org.elasticsearch.action.admin.indices.settings.get.GetSettingsRequest
 import org.elasticsearch.action.support.ActionFilters
 import org.elasticsearch.action.support.HandledTransportAction
-import org.elasticsearch.action.support.master.AcknowledgedResponse
 import org.elasticsearch.client.Client
 import org.elasticsearch.common.inject.Inject
-import org.elasticsearch.common.util.concurrent.ThreadContext
+import org.elasticsearch.env.Environment
 import org.elasticsearch.indices.InvalidIndexNameException
 import org.elasticsearch.tasks.Task
 import org.elasticsearch.threadpool.ThreadPool
@@ -41,7 +46,8 @@ import org.elasticsearch.transport.TransportService
 class TransportReplicateIndexAction @Inject constructor(transportService: TransportService,
                                                         val threadPool: ThreadPool,
                                                         actionFilters: ActionFilters,
-                                                        private val client : Client) :
+                                                        private val client : Client,
+                                                        private val environment: Environment) :
         HandledTransportAction<ReplicateIndexRequest, ReplicateIndexResponse>(ReplicateIndexAction.NAME,
                 transportService, actionFilters, ::ReplicateIndexRequest),
     CoroutineScope by GlobalScope {
@@ -65,6 +71,8 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
                 if (leaderSettings.keySet().contains(REPLICATED_INDEX_SETTING.key) and !leaderSettings.get(REPLICATED_INDEX_SETTING.key).isNullOrBlank()) {
                     throw IllegalArgumentException("Cannot Replicate a Replicated Index ${request.remoteIndex}")
                 }
+                ValidationUtil.validateAnalyzerSettings(environment, leaderSettings, request.settings)
+
                 val followerReplContext = ReplicationContext(request.followerIndex,
                         user?.overrideFgacRole(request.assumeRoles?.get(ReplicateIndexRequest.FOLLOWER_FGAC_ROLE)))
                 val leaderReplContext = ReplicationContext(request.remoteIndex,

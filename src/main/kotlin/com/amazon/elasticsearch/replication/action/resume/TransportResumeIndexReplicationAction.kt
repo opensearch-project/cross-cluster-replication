@@ -16,8 +16,8 @@
 package com.amazon.elasticsearch.replication.action.resume
 
 import com.amazon.elasticsearch.replication.action.index.ReplicateIndexResponse
-import com.amazon.elasticsearch.replication.action.replicationstatedetails.UpdateReplicationStateDetailsRequest
-import com.amazon.elasticsearch.replication.metadata.*
+import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
+import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
 import com.amazon.elasticsearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
 import com.amazon.elasticsearch.replication.metadata.state.getReplicationStateParamsForIndex
 import com.amazon.elasticsearch.replication.seqno.RemoteClusterRetentionLeaseHelper
@@ -25,33 +25,36 @@ import com.amazon.elasticsearch.replication.task.ReplicationState
 import com.amazon.elasticsearch.replication.task.index.IndexReplicationExecutor
 import com.amazon.elasticsearch.replication.task.index.IndexReplicationParams
 import com.amazon.elasticsearch.replication.task.index.IndexReplicationState
-import com.amazon.elasticsearch.replication.util.*
+import com.amazon.elasticsearch.replication.util.ValidationUtil
+import com.amazon.elasticsearch.replication.util.completeWith
+import com.amazon.elasticsearch.replication.util.coroutineContext
+import com.amazon.elasticsearch.replication.util.persistentTasksService
+import com.amazon.elasticsearch.replication.util.startTask
+import com.amazon.elasticsearch.replication.util.suspending
+import com.amazon.elasticsearch.replication.util.waitForTaskCondition
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import org.apache.logging.log4j.LogManager
-import org.elasticsearch.ElasticsearchException
 import org.elasticsearch.ResourceAlreadyExistsException
 import org.elasticsearch.ResourceNotFoundException
 import org.elasticsearch.action.ActionListener
+import org.elasticsearch.action.admin.indices.settings.get.GetSettingsRequest
 import org.elasticsearch.action.support.ActionFilters
 import org.elasticsearch.action.support.IndicesOptions
-import org.elasticsearch.action.support.master.AcknowledgedRequest
 import org.elasticsearch.action.support.master.AcknowledgedResponse
 import org.elasticsearch.action.support.master.TransportMasterNodeAction
 import org.elasticsearch.client.Client
-import org.elasticsearch.cluster.AckedClusterStateUpdateTask
 import org.elasticsearch.cluster.ClusterState
-import org.elasticsearch.cluster.ClusterStateTaskExecutor
 import org.elasticsearch.cluster.block.ClusterBlockException
 import org.elasticsearch.cluster.block.ClusterBlockLevel
 import org.elasticsearch.cluster.metadata.IndexMetadata
 import org.elasticsearch.cluster.metadata.IndexNameExpressionResolver
-import org.elasticsearch.cluster.metadata.Metadata
 import org.elasticsearch.cluster.service.ClusterService
 import org.elasticsearch.common.inject.Inject
 import org.elasticsearch.common.io.stream.StreamInput
+import org.elasticsearch.env.Environment
 import org.elasticsearch.index.IndexNotFoundException
 import org.elasticsearch.index.shard.ShardId
 import org.elasticsearch.threadpool.ThreadPool
@@ -64,7 +67,8 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
                                                                 actionFilters: ActionFilters,
                                                                 indexNameExpressionResolver: IndexNameExpressionResolver,
                                                                 val client: Client,
-                                                                val replicationMetadataManager: ReplicationMetadataManager) :
+                                                                val replicationMetadataManager: ReplicationMetadataManager,
+                                                                private val environment: Environment) :
     TransportMasterNodeAction<ResumeIndexReplicationRequest, AcknowledgedResponse> (ResumeIndexReplicationAction.NAME,
             transportService, clusterService, threadPool, actionFilters, ::ResumeIndexReplicationRequest,
             indexNameExpressionResolver), CoroutineScope by GlobalScope {
@@ -90,6 +94,15 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
                 if (!isResumable(params)) {
                     throw ResourceNotFoundException("Retention lease doesn't exist. Replication can't be resumed for ${request.indexName}")
                 }
+
+                val remoteClient = client.getRemoteClusterClient(params.remoteCluster)
+                val getSettingsRequest = GetSettingsRequest().includeDefaults(false).indices(params.remoteIndex.name)
+                val settingsResponse = remoteClient.suspending(
+                    remoteClient.admin().indices()::getSettings,
+                    injectSecurityContext = true
+                )(getSettingsRequest)
+                ValidationUtil.validateAnalyzerSettings(environment, settingsResponse.indexToSettings.get(params.remoteIndex.name), replMetdata.settings)
+
                 replicationMetadataManager.updateIndexReplicationState(request.indexName, ReplicationOverallState.RUNNING)
                 val task = persistentTasksService.startTask("replication:index:${request.indexName}",
                         IndexReplicationExecutor.TASK_NAME, params)

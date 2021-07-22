@@ -21,6 +21,7 @@ import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.elasticsearch.action.DocWriteResponse
 import org.elasticsearch.action.admin.indices.delete.DeleteIndexRequest
 import org.elasticsearch.action.admin.indices.open.OpenIndexRequest
+import org.elasticsearch.action.admin.indices.settings.put.UpdateSettingsRequest
 import org.elasticsearch.action.index.IndexRequest
 import org.elasticsearch.client.RequestOptions
 import org.elasticsearch.client.ResponseException
@@ -28,6 +29,9 @@ import org.elasticsearch.client.indices.CloseIndexRequest
 import org.elasticsearch.client.indices.CreateIndexRequest
 import org.junit.Assert
 import org.elasticsearch.client.indices.GetMappingsRequest
+import org.elasticsearch.common.io.PathUtils
+import org.elasticsearch.common.settings.Settings
+import java.nio.file.Files
 
 
 @MultiClusterAnnotations.ClusterConfigurations(
@@ -37,6 +41,10 @@ import org.elasticsearch.client.indices.GetMappingsRequest
 class ResumeReplicationIT: MultiClusterRestTestCase() {
     private val leaderIndexName = "leader_index"
     private val followerIndexName = "resumed_index"
+    private val leaderClusterPath = "testclusters/leaderCluster-0"
+    private val followerClusterPath = "testclusters/followCluster-0"
+    private val buildDir = System.getProperty("build.dir")
+    private val synonymsJson = "/analyzers/synonym_setting.json"
 
     fun `test pause and resume replication in following state and empty index`() {
         val followerClient = getClientForCluster(FOLLOWER)
@@ -190,5 +198,141 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
         }
     }
 
+    fun `test that replication fails to resume when custom analyser is not present in follower`() {
+        val synonyms = javaClass.getResourceAsStream("/analyzers/synonyms.txt")
+        val config = PathUtils.get(buildDir, leaderClusterPath, "config")
+        val synonymPath = config.resolve("synonyms.txt")
+        val leaderClient = getClientForCluster(LEADER)
+        val followerClient = getClientForCluster(FOLLOWER)
+        try {
+            Files.copy(synonyms, synonymPath)
+
+            val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+            assertThat(createIndexResponse.isAcknowledged).isTrue()
+
+            createConnectionBetweenClusters(FOLLOWER, LEADER)
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
+            followerClient.pauseReplication(followerIndexName)
+            leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
+            val settings: Settings = Settings.builder().loadFromStream(synonymsJson, javaClass.getResourceAsStream(synonymsJson), false)
+                .build()
+
+            leaderClient.indices().putSettings(UpdateSettingsRequest(leaderIndexName).settings(settings), RequestOptions.DEFAULT)
+            leaderClient.indices().open(OpenIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
+
+            assertThatThrownBy {
+                followerClient.resumeReplication(followerIndexName)
+            }.isInstanceOf(ResponseException::class.java).hasMessageContaining("resource_not_found_exception")
+        } finally {
+            if (Files.exists(synonymPath)) {
+                Files.delete(synonymPath)
+            }
+            try {
+                followerClient.stopReplication(followerIndexName)
+            } catch (e: Exception) {
+                // DO nothing
+            }
+        }
+    }
+
+    fun `test that replication resumes when custom analyser is present in follower`() {
+        val synonyms = javaClass.getResourceAsStream("/analyzers/synonyms.txt")
+        val config = PathUtils.get(buildDir, leaderClusterPath, "config")
+        val synonymFilename = "synonyms.txt"
+        val synonymPath = config.resolve(synonymFilename)
+        val followerConfig = PathUtils.get(buildDir, followerClusterPath, "config")
+        val followerSynonymPath = followerConfig.resolve(synonymFilename)
+        val leaderClient = getClientForCluster(LEADER)
+        val followerClient = getClientForCluster(FOLLOWER)
+        try {
+            Files.copy(synonyms, synonymPath)
+
+            val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+            assertThat(createIndexResponse.isAcknowledged).isTrue()
+
+            createConnectionBetweenClusters(FOLLOWER, LEADER)
+
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
+            followerClient.pauseReplication(followerIndexName)
+            leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
+            Files.copy(synonyms, followerSynonymPath)
+            val settings: Settings = Settings.builder().loadFromStream(synonymsJson, javaClass.getResourceAsStream(synonymsJson), false)
+                .build()
+
+            leaderClient.indices().putSettings(UpdateSettingsRequest(leaderIndexName).settings(settings), RequestOptions.DEFAULT)
+            leaderClient.indices().open(OpenIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
+
+            followerClient.resumeReplication(followerIndexName)
+            var statusResp = followerClient.replicationStatus(followerIndexName)
+            `validate status syncing resposne`(statusResp)
+        } finally {
+            if (Files.exists(synonymPath)) {
+                Files.delete(synonymPath)
+            }
+            if (Files.exists(followerSynonymPath)) {
+                Files.delete(followerSynonymPath)
+            }
+            try {
+                followerClient.stopReplication(followerIndexName)
+            } catch (e: Exception) {
+                // DO nothing
+            }
+        }
+    }
+
+    fun `test that replication resumes when custom analyser is overridden and present in follower`() {
+        val synonyms = javaClass.getResourceAsStream("/analyzers/synonyms.txt")
+        val config = PathUtils.get(buildDir, leaderClusterPath, "config")
+        val synonymPath = config.resolve("synonyms.txt")
+        val newSynonymPath = config.resolve("synonyms_new.txt")
+        val followerConfig = PathUtils.get(buildDir, followerClusterPath, "config")
+        val followerSynonymFilename = "synonyms_follower.txt"
+        val followerSynonymPath = followerConfig.resolve(followerSynonymFilename)
+        val leaderClient = getClientForCluster(LEADER)
+        val followerClient = getClientForCluster(FOLLOWER)
+        try {
+            Files.copy(synonyms, synonymPath)
+            Files.copy(synonyms, followerSynonymPath)
+
+            var settings: Settings = Settings.builder().loadFromStream(synonymsJson, javaClass.getResourceAsStream(synonymsJson), false)
+                .build()
+            val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName).settings(settings), RequestOptions.DEFAULT)
+            assertThat(createIndexResponse.isAcknowledged).isTrue()
+
+            createConnectionBetweenClusters(FOLLOWER, LEADER)
+            val overriddenSettings: Settings = Settings.builder()
+                .put("index.analysis.filter.my_filter.synonyms_path", followerSynonymFilename)
+                .build()
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName, overriddenSettings), waitForRestore = true)
+            followerClient.pauseReplication(followerIndexName)
+            leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
+
+            Files.copy(synonyms, newSynonymPath)
+            settings = Settings.builder()
+                .put("index.analysis.filter.my_filter.synonyms_path", "synonyms_new.txt")
+                .build()
+            leaderClient.indices().putSettings(UpdateSettingsRequest(leaderIndexName).settings(settings), RequestOptions.DEFAULT)
+            leaderClient.indices().open(OpenIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
+
+            followerClient.resumeReplication(followerIndexName)
+            var statusResp = followerClient.replicationStatus(followerIndexName)
+            `validate status syncing resposne`(statusResp)
+        } finally {
+            if (Files.exists(synonymPath)) {
+                Files.delete(synonymPath)
+            }
+            if (Files.exists(followerSynonymPath)) {
+                Files.delete(followerSynonymPath)
+            }
+            if (Files.exists(newSynonymPath)) {
+                Files.delete(newSynonymPath)
+            }
+            try {
+                followerClient.stopReplication(followerIndexName)
+            } catch (e: Exception) {
+                // DO nothing
+            }
+        }
+    }
 
 }
