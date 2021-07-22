@@ -41,10 +41,13 @@ import org.elasticsearch.client.indices.CreateIndexRequest
 import org.elasticsearch.client.indices.GetIndexRequest
 import org.elasticsearch.client.indices.GetMappingsRequest
 import org.elasticsearch.cluster.metadata.IndexMetadata
+import org.elasticsearch.common.io.PathUtils
 import org.elasticsearch.common.settings.Settings
+import org.elasticsearch.common.xcontent.XContentType
 import org.elasticsearch.index.IndexSettings
 import org.elasticsearch.test.ESTestCase.assertBusy
 import org.junit.Assert
+import java.nio.file.Files
 import java.util.concurrent.TimeUnit
 
 
@@ -55,6 +58,11 @@ import java.util.concurrent.TimeUnit
 class StartReplicationIT: MultiClusterRestTestCase() {
     private val leaderIndexName = "leader_index"
     private val followerIndexName = "follower_index"
+    private val leaderClusterPath = "testclusters/leaderCluster-0"
+    private val followerClusterPath = "testclusters/followCluster-0"
+    private val buildDir = System.getProperty("build.dir")
+    private val synonymsJson = "/analyzers/synonym_setting.json"
+    private val synonymMapping = "{\"properties\":{\"value\":{\"type\":\"text\",\"analyzer\":\"standard\",\"search_analyzer\":\"my_analyzer\"}}}"
 
     // 3x of SLEEP_TIME_BETWEEN_POLL_MS
     val SLEEP_TIME_BETWEEN_SYNC = 15L
@@ -524,6 +532,119 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             )
         } finally {
             followerClient.stopReplication(followerIndexName)
+        }
+    }
+
+    fun `test that replication fails to start when custom analyser is not present in follower`() {
+        val synonyms = javaClass.getResourceAsStream("/analyzers/synonyms.txt")
+        val config = PathUtils.get(buildDir, leaderClusterPath, "config")
+        val synonymPath = config.resolve("synonyms.txt")
+        try {
+            Files.copy(synonyms, synonymPath)
+
+            val settings: Settings = Settings.builder().loadFromStream(synonymsJson, javaClass.getResourceAsStream(synonymsJson), false)
+                .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 1)
+                .build()
+
+            val leaderClient = getClientForCluster(LEADER)
+            val followerClient = getClientForCluster(FOLLOWER)
+            val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName)
+                .settings(settings).mapping(synonymMapping, XContentType.JSON), RequestOptions.DEFAULT)
+            assertThat(createIndexResponse.isAcknowledged).isTrue()
+
+            createConnectionBetweenClusters(FOLLOWER, LEADER)
+
+            assertThatThrownBy {
+                followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
+            }.isInstanceOf(ResponseException::class.java).hasMessageContaining("resource_not_found_exception")
+        } finally {
+            if (Files.exists(synonymPath)) {
+                Files.delete(synonymPath)
+            }
+        }
+    }
+
+    fun `test that replication starts successfully when custom analyser is present in follower`() {
+        val synonyms = javaClass.getResourceAsStream("/analyzers/synonyms.txt")
+        val leaderConfig = PathUtils.get(buildDir, leaderClusterPath, "config")
+        val leaderSynonymPath = leaderConfig.resolve("synonyms.txt")
+        val followerConfig = PathUtils.get(buildDir, followerClusterPath, "config")
+        val followerSynonymPath = followerConfig.resolve("synonyms.txt")
+        try {
+            Files.copy(synonyms, leaderSynonymPath)
+            Files.copy(synonyms, followerSynonymPath)
+
+            val settings: Settings = Settings.builder().loadFromStream(synonymsJson, javaClass.getResourceAsStream(synonymsJson), false)
+                .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 1)
+                .build()
+
+            val leaderClient = getClientForCluster(LEADER)
+            val followerClient = getClientForCluster(FOLLOWER)
+            val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName)
+                .settings(settings).mapping(synonymMapping, XContentType.JSON), RequestOptions.DEFAULT)
+            assertThat(createIndexResponse.isAcknowledged).isTrue()
+
+            createConnectionBetweenClusters(FOLLOWER, LEADER)
+
+            try {
+                followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
+                assertBusy {
+                    assertThat(followerClient.indices().exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT)).isEqualTo(true)
+                }
+            } finally {
+                followerClient.stopReplication(followerIndexName)
+            }
+        } finally {
+            if (Files.exists(leaderSynonymPath)) {
+                Files.delete(leaderSynonymPath)
+            }
+            if (Files.exists(followerSynonymPath)) {
+                Files.delete(followerSynonymPath)
+            }
+        }
+    }
+
+    fun `test that replication starts successfully when custom analyser is overridden and present in follower`() {
+        val synonyms = javaClass.getResourceAsStream("/analyzers/synonyms.txt")
+        val leaderConfig = PathUtils.get(buildDir, leaderClusterPath, "config")
+        val leaderSynonymPath = leaderConfig.resolve("synonyms.txt")
+        val followerConfig = PathUtils.get(buildDir, followerClusterPath, "config")
+        val synonymFollowerFilename = "synonyms_follower.txt"
+        val followerSynonymPath = followerConfig.resolve(synonymFollowerFilename)
+        try {
+            Files.copy(synonyms, leaderSynonymPath)
+            Files.copy(synonyms, followerSynonymPath)
+
+            val settings: Settings = Settings.builder().loadFromStream(synonymsJson, javaClass.getResourceAsStream(synonymsJson), false)
+                .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 1)
+                .build()
+
+            val leaderClient = getClientForCluster(LEADER)
+            val followerClient = getClientForCluster(FOLLOWER)
+            val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName)
+                .settings(settings).mapping(synonymMapping, XContentType.JSON), RequestOptions.DEFAULT)
+            assertThat(createIndexResponse.isAcknowledged).isTrue()
+
+            createConnectionBetweenClusters(FOLLOWER, LEADER)
+
+            try {
+                val overriddenSettings: Settings = Settings.builder()
+                    .put("index.analysis.filter.my_filter.synonyms_path", synonymFollowerFilename)
+                    .build()
+                followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName, overriddenSettings))
+                assertBusy {
+                    assertThat(followerClient.indices().exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT)).isEqualTo(true)
+                }
+            } finally {
+                followerClient.stopReplication(followerIndexName)
+            }
+        } finally {
+            if (Files.exists(leaderSynonymPath)) {
+                Files.delete(leaderSynonymPath)
+            }
+            if (Files.exists(followerSynonymPath)) {
+                Files.delete(followerSynonymPath)
+            }
         }
     }
 

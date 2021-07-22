@@ -173,6 +173,8 @@ integTest {
             systemProperty "tests.cluster.${cluster.name}.transport_hosts", "${-> cluster.allTransportPortURI.join(',')}"
         }
     }
+    systemProperty "build.dir", "${buildDir}"
+    systemProperty "java.security.policy", "file://${projectDir}/src/test/resources/plugin-security.policy"
 }
 
 run {
