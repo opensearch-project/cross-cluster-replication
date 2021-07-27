@@ -17,6 +17,7 @@ package com.amazon.elasticsearch.replication
 
 import com.amazon.elasticsearch.replication.task.index.IndexReplicationExecutor
 import com.amazon.elasticsearch.replication.task.shard.ShardReplicationExecutor
+import org.apache.http.message.BasicHeader
 import org.assertj.core.api.Assertions.assertThat
 import org.elasticsearch.action.admin.cluster.health.ClusterHealthRequest
 import org.elasticsearch.action.admin.cluster.node.tasks.list.ListTasksRequest
@@ -33,10 +34,14 @@ import org.elasticsearch.common.xcontent.XContentType
 import org.elasticsearch.test.ESTestCase.assertBusy
 import org.elasticsearch.test.rest.ESRestTestCase
 import org.junit.Assert
+import java.nio.charset.StandardCharsets
+import java.util.*
 import java.util.concurrent.TimeUnit
 
+data class AssumeRoles(val remoteClusterRole: String = "all_access", val localClusterRole: String = "all_access")
+
 data class StartReplicationRequest(val remoteClusterAlias: String, val remoteIndex: String, val toIndex: String,
-                                   val settings: Settings = Settings.EMPTY)
+                                   val settings: Settings = Settings.EMPTY, val assumeRoles: AssumeRoles = AssumeRoles())
 
 const val REST_REPLICATION_PREFIX = "/_plugins/_replication/"
 const val REST_REPLICATION_START = "$REST_REPLICATION_PREFIX{index}/_start"
@@ -59,13 +64,21 @@ fun RestHighLevelClient.startReplication(request: StartReplicationRequest,
     if (request.settings == Settings.EMPTY) {
         lowLevelRequest.setJsonEntity("""{
                                        "remote_cluster" : "${request.remoteClusterAlias}",
-                                       "remote_index": "${request.remoteIndex}"
+                                       "remote_index": "${request.remoteIndex}",
+                                       "assume_roles": {
+                                        "remote_cluster_role": "${request.assumeRoles.remoteClusterRole}",
+                                        "local_cluster_role": "${request.assumeRoles.localClusterRole}"
+                                       }
                                      }            
                                   """)
     } else {
         lowLevelRequest.setJsonEntity("""{
                                        "remote_cluster" : "${request.remoteClusterAlias}",
                                        "remote_index": "${request.remoteIndex}",
+                                       "assume_roles": {
+                                        "remote_cluster_role": "${request.assumeRoles.remoteClusterRole}",
+                                        "local_cluster_role": "${request.assumeRoles.localClusterRole}"
+                                       },
                                        "settings": ${request.settings}
                                      }            
                                   """)
@@ -212,19 +225,29 @@ fun RestHighLevelClient.waitForReplicationStop(index: String, waitFor : TimeValu
         }, waitFor.seconds, TimeUnit.SECONDS)
 }
 
-fun RestHighLevelClient.updateAutoFollowPattern(connection: String, patternName: String, pattern: String, settings: Settings = Settings.EMPTY) {
+fun RestHighLevelClient.updateAutoFollowPattern(connection: String, patternName: String, pattern: String,
+                                                settings: Settings = Settings.EMPTY,
+                                                assumeRoles: AssumeRoles = AssumeRoles()) {
     val lowLevelRequest = Request("POST", REST_AUTO_FOLLOW_PATTERN)
     if (settings == Settings.EMPTY) {
         lowLevelRequest.setJsonEntity("""{
                                        "connection" : "${connection}",
                                        "name" : "${patternName}",
-                                       "pattern": "${pattern}"
+                                       "pattern": "${pattern}",
+                                       "assume_roles": {
+                                        "remote_cluster_role": "${assumeRoles.remoteClusterRole}",
+                                        "local_cluster_role": "${assumeRoles.localClusterRole}"
+                                       }
                                      }""")
     } else {
         lowLevelRequest.setJsonEntity("""{
                                        "connection" : "${connection}",
                                        "name" : "${patternName}",
                                        "pattern": "${pattern}",
+                                       "assume_roles": {
+                                        "remote_cluster_role": "${assumeRoles.remoteClusterRole}",
+                                        "local_cluster_role": "${assumeRoles.localClusterRole}"
+                                       },
                                        "settings": $settings
                                      }""")
     }
@@ -243,4 +266,3 @@ fun RestHighLevelClient.deleteAutoFollowPattern(connection: String, patternName:
     val response = getAckResponse(lowLevelResponse)
     assertThat(response.isAcknowledged).isTrue()
 }
-
