@@ -38,6 +38,7 @@ import org.elasticsearch.action.support.HandledTransportAction
 import org.elasticsearch.client.Client
 import org.elasticsearch.common.inject.Inject
 import org.elasticsearch.env.Environment
+import org.elasticsearch.index.IndexNotFoundException
 import org.elasticsearch.indices.InvalidIndexNameException
 import org.elasticsearch.tasks.Task
 import org.elasticsearch.threadpool.ThreadPool
@@ -67,7 +68,8 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
                 val remoteClient = client.getRemoteClusterClient(request.remoteCluster)
                 val getSettingsRequest = GetSettingsRequest().includeDefaults(false).indices(request.remoteIndex)
                 val settingsResponse = remoteClient.suspending(remoteClient.admin().indices()::getSettings, injectSecurityContext = true)(getSettingsRequest)
-                val leaderSettings = settingsResponse.indexToSettings.get(request.remoteIndex)
+                val leaderSettings = settingsResponse.indexToSettings.get(request.remoteIndex) ?: throw IndexNotFoundException(request.remoteIndex)
+
                 if (leaderSettings.keySet().contains(REPLICATED_INDEX_SETTING.key) and !leaderSettings.get(REPLICATED_INDEX_SETTING.key).isNullOrBlank()) {
                     throw IllegalArgumentException("Cannot Replicate a Replicated Index ${request.remoteIndex}")
                 }

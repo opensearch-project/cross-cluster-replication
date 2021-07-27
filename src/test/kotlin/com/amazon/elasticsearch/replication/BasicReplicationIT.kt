@@ -17,13 +17,16 @@ package com.amazon.elasticsearch.replication
 
 import com.amazon.elasticsearch.replication.MultiClusterAnnotations.ClusterConfiguration
 import com.amazon.elasticsearch.replication.MultiClusterAnnotations.ClusterConfigurations
+import org.assertj.core.api.Assertions
 import org.assertj.core.api.Assertions.assertThat
 import org.elasticsearch.ElasticsearchStatusException
 import org.elasticsearch.action.DocWriteResponse.Result
+import org.elasticsearch.action.admin.indices.forcemerge.ForceMergeRequest
 import org.elasticsearch.action.get.GetRequest
 import org.elasticsearch.action.index.IndexRequest
 import org.elasticsearch.client.RequestOptions
 import org.elasticsearch.client.indices.CreateIndexRequest
+import org.elasticsearch.common.CheckedRunnable
 import org.elasticsearch.test.ESTestCase.assertBusy
 import org.junit.Assert
 import java.util.Locale
@@ -51,7 +54,7 @@ class BasicReplicationIT : MultiClusterRestTestCase() {
             follower.startReplication(StartReplicationRequest("source", leaderIndex, followerIndex), waitForRestore=true)
 
             val source = mapOf("name" to randomAlphaOfLength(20), "age" to randomInt().toString())
-            val response = leader.index(IndexRequest(leaderIndex).id("1").source(source), RequestOptions.DEFAULT)
+            var response = leader.index(IndexRequest(leaderIndex).id("1").source(source), RequestOptions.DEFAULT)
             assertThat(response.result).isEqualTo(Result.CREATED)
 
             assertBusy {
@@ -59,6 +62,32 @@ class BasicReplicationIT : MultiClusterRestTestCase() {
                 assertThat(getResponse.isExists).isTrue()
                 assertThat(getResponse.sourceAsMap).isEqualTo(source)
             }
+
+            // Ensure force merge on leader doesn't impact replication
+            for (i in 2..5) {
+                response = leader.index(IndexRequest(leaderIndex).id("$i").source(source), RequestOptions.DEFAULT)
+                assertThat(response.result).isEqualTo(Result.CREATED)
+            }
+            leader.indices().forcemerge(ForceMergeRequest(leaderIndex), RequestOptions.DEFAULT)
+            for (i in 6..10) {
+                response = leader.index(IndexRequest(leaderIndex).id("$i").source(source), RequestOptions.DEFAULT)
+                assertThat(response.result).isEqualTo(Result.CREATED)
+            }
+            assertBusy {
+                for (i in 2..10) {
+                    val getResponse = follower.get(GetRequest(followerIndex, "$i"), RequestOptions.DEFAULT)
+                    assertThat(getResponse.isExists).isTrue()
+                    assertThat(getResponse.sourceAsMap).isEqualTo(source)
+                }
+            }
+
+            // Force merge on follower however isn't allowed due to WRITE block
+            Assertions.assertThatThrownBy {
+                follower.indices().forcemerge(ForceMergeRequest(followerIndex), RequestOptions.DEFAULT)
+            }.isInstanceOf(ElasticsearchStatusException::class.java)
+                .hasMessage("Elasticsearch exception [type=cluster_block_exception, reason=index [$followerIndex] " +
+                        "blocked by: [FORBIDDEN/1000/index read-only(cross-cluster-replication)];]")
+
         } finally {
             follower.stopReplication(followerIndex)
         }

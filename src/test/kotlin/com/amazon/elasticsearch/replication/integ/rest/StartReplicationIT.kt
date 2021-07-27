@@ -263,6 +263,25 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         }
     }
 
+    fun `test that replication cannot be started on leader alias directly`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName).alias(Alias("leaderAlias")), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", "leaderAlias", followerIndexName))
+            fail("Expected startReplication to fail")
+        } catch (e: ResponseException) {
+            assertThat(e.response.statusLine.statusCode).isEqualTo(404)
+            assertThat(e.message).contains("index_not_found_exception")
+            assertThat(e.message).contains("no such index [leaderAlias]")
+        }
+    }
+
     fun `test that translog settings are set on leader and not on follower`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
