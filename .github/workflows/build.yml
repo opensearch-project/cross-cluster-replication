@@ -16,5 +16,11 @@ jobs:
           distribution: 'adopt'
       - name: Validate Gradle wrapper
         uses: gradle/wrapper-validation-action@e6e38bacfdf1a337459f332974bb2327a31aaf4b
+      - name: cp artifact 1
+        run: cp artifacts/elasticsearch-7.10.2.zip ~/.gradle/caches/modules-2/files-2.1/org.elasticsearch.distribution.integ-test-zip/elasticsearch/7.10.2/481d2ac2450de162375fd56e70b8428b578b2036/.
+      - name: cp artifact 2
+        run: cp artifacts/elasticsearch-7.10.2.jar ~/.gradle/caches/modules-2/files-2.1/org.elasticsearch/elasticsearch/7.10.2/7964e2db323030d39eaec1558d603009c6070c9d/elasticsearch-7.10.2-sources.jar
+      - name: cp artifact 3
+        run: cp artifacts/elasticsearch-7.10.2.jar ~/.gradle/caches/modules-2/files-2.1/org.elasticsearch/elasticsearch/7.10.2/27940821392b03d7601789a8003b1ee3c84ab7d1/elasticsearch-7.10.2.jar
       - name: Build with Gradle
         run: ./gradlew build
