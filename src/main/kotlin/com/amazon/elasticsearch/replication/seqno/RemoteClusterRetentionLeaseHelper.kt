@@ -82,7 +82,7 @@ class RemoteClusterRetentionLeaseHelper constructor(val followerClusterName: Str
         client.suspendExecute(RetentionLeaseActions.Renew.INSTANCE, request)
     }
 
-    public suspend fun removeRetentionLease(remoteShardId: ShardId, followerShardId: ShardId) {
+    public suspend fun attemptRetentionLeaseRemoval(remoteShardId: ShardId, followerShardId: ShardId) {
         val retentionLeaseId = retentionLeaseIdForShard(followerClusterName, followerShardId)
         val request = RetentionLeaseActions.RemoveRequest(remoteShardId, retentionLeaseId)
         try {
@@ -91,6 +91,10 @@ class RemoteClusterRetentionLeaseHelper constructor(val followerClusterName: Str
         } catch(e: RetentionLeaseNotFoundException) {
             // log error and bail
             log.error("${e.message}")
+        } catch (e: Exception) {
+            // We are not bubbling up the exception as the stop action/ task cleanup should succeed
+            // even if we fail to remove the retention lease from leader cluster
+            log.error("Exception in removing retention lease", e)
         }
     }
 

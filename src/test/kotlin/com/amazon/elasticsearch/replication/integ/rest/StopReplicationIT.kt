@@ -25,7 +25,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.elasticsearch.ElasticsearchStatusException
 import org.elasticsearch.action.DocWriteResponse
-import org.elasticsearch.action.admin.indices.delete.DeleteIndexRequest
+import org.elasticsearch.action.admin.cluster.settings.ClusterUpdateSettingsRequest
 import org.elasticsearch.action.admin.indices.flush.FlushRequest
 import org.elasticsearch.action.index.IndexRequest
 import org.elasticsearch.client.Request
@@ -40,6 +40,7 @@ import org.elasticsearch.common.unit.TimeValue
 import org.elasticsearch.index.mapper.MapperService
 import org.elasticsearch.test.ESTestCase.assertBusy
 import java.util.concurrent.TimeUnit
+import kotlin.collections.HashMap
 
 
 const val LEADER = "leaderCluster"
@@ -194,5 +195,35 @@ class StopReplicationIT: MultiClusterRestTestCase() {
             followerClient.stopReplication("no_index")
         }.isInstanceOf(ResponseException::class.java)
                 .hasMessageContaining("No replication in progress for index:no_index")
+    }
+
+    fun `test stop replication when remote cluster is unavailable`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
+            waitForRestore = true)
+        // Need to wait till index blocks appear into state
+        assertBusy ({
+            val clusterBlocksResponse = followerClient.lowLevelClient.performRequest(Request("GET", "/_cluster/state/blocks"))
+            val clusterResponseString = EntityUtils.toString(clusterBlocksResponse.entity)
+            assertThat(clusterResponseString.contains("cross-cluster-replication"))
+                .withFailMessage("Cant find replication block after starting replication")
+                .isTrue()
+        }, 10, TimeUnit.SECONDS)
+
+        // setting an invalid seed so that remote cluster is unavailable
+        val settings: Settings = Settings.builder()
+            .putList("cluster.remote.source.seeds", "127.0.0.1:9305")
+            .build()
+        val updateSettingsRequest = ClusterUpdateSettingsRequest()
+        updateSettingsRequest.persistentSettings(settings)
+        followerClient.cluster().putSettings(updateSettingsRequest, RequestOptions.DEFAULT)
+
+        followerClient.stopReplication(followerIndexName)
+        val sourceMap = mapOf("name" to randomAlphaOfLength(5))
+        followerClient.index(IndexRequest(followerIndexName).id("2").source(sourceMap), RequestOptions.DEFAULT)
     }
 }

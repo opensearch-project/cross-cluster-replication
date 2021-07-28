@@ -166,7 +166,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
             logDebug("Pausing and not removing lease for index $followerIndexName and shard $followerShardId task")
             return
         }
-        retentionLeaseHelper.removeRetentionLease(remoteShardId, followerShardId)
+        retentionLeaseHelper.attemptRetentionLeaseRemoval(remoteShardId, followerShardId)
     }
 
     private fun addListenerToInterruptTask() {

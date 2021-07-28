@@ -144,7 +144,7 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
         shards.forEach {
             val followerShardId = it.value.shardId
             log.debug("Removing lease for $followerShardId.id ")
-            retentionLeaseHelper.removeRetentionLease(ShardId(params.remoteIndex, followerShardId.id), followerShardId)
+            retentionLeaseHelper.attemptRetentionLeaseRemoval(ShardId(params.remoteIndex, followerShardId.id), followerShardId)
         }
 
         return false
