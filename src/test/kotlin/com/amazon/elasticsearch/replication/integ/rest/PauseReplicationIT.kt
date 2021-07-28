@@ -160,7 +160,6 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
     fun `test pause replication and stop replication`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
-
         createConnectionBetweenClusters(FOLLOWER, LEADER)
 
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)

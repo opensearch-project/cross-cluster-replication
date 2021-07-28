@@ -40,13 +40,22 @@ class TransportReplicationStatusAction @Inject constructor(transportService: Tra
                     val remoteClient = client.getRemoteClusterClient(metadata.connectionName)
                     var status = if (metadata.overallState.isNullOrEmpty()) "STOPPED" else metadata.overallState
                     var reason = metadata.reason
+                    if (!status.equals("RUNNING")) {
+                        var replicationStatusResponse= ReplicationStatusResponse(status)
+                        replicationStatusResponse.connectionAlias = metadata.connectionName
+                        replicationStatusResponse.followerIndexName = metadata.followerContext.resource
+                        replicationStatusResponse.leaderIndexName = metadata.leaderContext.resource
+                        replicationStatusResponse.status = status
+                        replicationStatusResponse.reason = reason
+                        return@completeWith replicationStatusResponse
+                    }
                     var followerResponse = client.suspendExecute(ShardsInfoAction.INSTANCE,
                             ShardInfoRequest(metadata.followerContext.resource),true)
                     var leaderResponse = remoteClient.suspendExecute(ShardsInfoAction.INSTANCE,
                             ShardInfoRequest(metadata.leaderContext.resource),true)
 
                     if (followerResponse.shardInfoResponse.size > 0) {
-                        status =  if (status == "RUNNING") followerResponse.shardInfoResponse.get(0).status else status
+                        status =  followerResponse.shardInfoResponse.get(0).status 
                     }
                     if (!status.equals("BOOTSTRAPPING")) {
                         var shardResponses = followerResponse.shardInfoResponse
