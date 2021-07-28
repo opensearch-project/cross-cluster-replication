@@ -134,7 +134,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                 // After marking FailedState, IndexReplicationTask will action on it by pausing or stopping all shard
                 // replication tasks. This ShardReplicationTask should also thus receive the pause/stop via
                 // cancellation. We thus wait for waitMillis duration.
-                val waitMillis = Duration.ofMinutes(1).toMillis()
+                val waitMillis = Duration.ofMinutes(10).toMillis()
                 logInfo("Waiting $waitMillis millis for IndexReplicationTask to respond to failure of shard task")
                 delay(waitMillis)
 
