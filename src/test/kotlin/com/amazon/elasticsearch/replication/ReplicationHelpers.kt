@@ -125,16 +125,13 @@ fun `validate not paused status aggregated resposne`(statusResp: Map<String, Any
 fun `validate paused status resposne`(statusResp: Map<String, Any>) {
     Assert.assertEquals(statusResp.getValue("status"),"PAUSED")
     Assert.assertEquals(statusResp.getValue("reason"), STATUS_REASON_USER_INITIATED)
-    Assert.assertTrue((statusResp.getValue("shard_replication_details")).toString().contains("syncing_task_details"))
-    Assert.assertTrue((statusResp.getValue("shard_replication_details")).toString().contains("local_checkpoint"))
-    Assert.assertTrue((statusResp.getValue("shard_replication_details")).toString().contains("remote_checkpoint"))
+    Assert.assertTrue(!(statusResp.containsKey("shard_replication_details")))
 }
 
 fun `validate aggregated paused status resposne`(statusResp: Map<String, Any>) {
     Assert.assertEquals(statusResp.getValue("status"),"PAUSED")
     Assert.assertEquals(statusResp.getValue("reason"), STATUS_REASON_USER_INITIATED)
-    Assert.assertTrue((statusResp.getValue("syncing_details")).toString().contains("local_checkpoint"))
-    Assert.assertTrue((statusResp.getValue("syncing_details")).toString().contains("remote_checkpoint"))
+    Assert.assertTrue(!(statusResp.containsKey("syncing_details")))
 }
 
 fun RestHighLevelClient.stopReplication(index: String, shouldWait: Boolean = true) {
