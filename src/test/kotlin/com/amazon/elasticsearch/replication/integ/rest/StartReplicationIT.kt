@@ -25,11 +25,14 @@ import com.amazon.elasticsearch.replication.updateReplication
 import org.apache.http.HttpStatus
 import org.apache.http.entity.ContentType
 import org.apache.http.nio.entity.NStringEntity
+import org.apache.http.util.EntityUtils
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.elasticsearch.ElasticsearchStatusException
 import org.elasticsearch.action.admin.indices.alias.Alias
 import org.elasticsearch.action.admin.indices.alias.IndicesAliasesRequest
 import org.elasticsearch.action.admin.indices.alias.get.GetAliasesRequest
+import org.elasticsearch.action.admin.indices.delete.DeleteIndexRequest
 import org.elasticsearch.action.admin.indices.settings.get.GetSettingsRequest
 import org.elasticsearch.action.admin.indices.settings.put.UpdateSettingsRequest
 import org.elasticsearch.action.get.GetRequest
@@ -664,6 +667,36 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             if (Files.exists(followerSynonymPath)) {
                 Files.delete(followerSynonymPath)
             }
+        }
+    }
+
+    fun `test that follower index cannot be deleted after starting replication`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
+            assertBusy {
+                assertThat(followerClient.indices().exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT)).isEqualTo(true)
+            }
+            // Need to wait till index blocks appear into state
+            assertBusy {
+                val clusterBlocksResponse = followerClient.lowLevelClient.performRequest(Request("GET", "/_cluster/state/blocks"))
+                val clusterResponseString = EntityUtils.toString(clusterBlocksResponse.entity)
+                assertThat(clusterResponseString.contains("cross-cluster-replication"))
+                    .withFailMessage("Cant find replication block afer starting replication")
+                    .isTrue()
+            }
+            assertThatThrownBy {
+                followerClient.indices().delete(DeleteIndexRequest(followerIndexName), RequestOptions.DEFAULT)
+            }.isInstanceOf(ElasticsearchStatusException::class.java).hasMessageContaining("cluster_block_exception")
+        } finally {
+            followerClient.stopReplication(followerIndexName)
         }
     }
 
