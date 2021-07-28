@@ -669,7 +669,7 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
         val shards = clusterService.state().routingTable.indicesRouting().get(followerIndexName)?.shards()
         shards?.forEach {
             val followerShardId = it.value.shardId
-            retentionLeaseHelper.removeRetentionLease(ShardId(remoteIndex, followerShardId.id), followerShardId)
+            retentionLeaseHelper.attemptRetentionLeaseRemoval(ShardId(remoteIndex, followerShardId.id), followerShardId)
         }
 
         /* As given here
