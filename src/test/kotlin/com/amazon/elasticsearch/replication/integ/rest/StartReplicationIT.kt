@@ -40,6 +40,7 @@ import org.elasticsearch.action.index.IndexRequest
 import org.elasticsearch.client.Request
 import org.elasticsearch.client.RequestOptions
 import org.elasticsearch.client.ResponseException
+import org.elasticsearch.client.indices.CloseIndexRequest
 import org.elasticsearch.client.indices.CreateIndexRequest
 import org.elasticsearch.client.indices.GetIndexRequest
 import org.elasticsearch.client.indices.GetMappingsRequest
@@ -692,8 +693,18 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                     .withFailMessage("Cant find replication block afer starting replication")
                     .isTrue()
             }
+            // Delete index
             assertThatThrownBy {
                 followerClient.indices().delete(DeleteIndexRequest(followerIndexName), RequestOptions.DEFAULT)
+            }.isInstanceOf(ElasticsearchStatusException::class.java).hasMessageContaining("cluster_block_exception")
+            // Close index
+            assertThatThrownBy {
+                followerClient.indices().close(CloseIndexRequest(followerIndexName), RequestOptions.DEFAULT)
+            }.isInstanceOf(ElasticsearchStatusException::class.java).hasMessageContaining("cluster_block_exception")
+            // Index document
+            assertThatThrownBy {
+                val sourceMap = mapOf("name" to randomAlphaOfLength(5))
+                followerClient.index(IndexRequest(followerIndexName).id("1").source(sourceMap), RequestOptions.DEFAULT)
             }.isInstanceOf(ElasticsearchStatusException::class.java).hasMessageContaining("cluster_block_exception")
         } finally {
             followerClient.stopReplication(followerIndexName)
