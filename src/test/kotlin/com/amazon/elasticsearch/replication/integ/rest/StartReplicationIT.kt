@@ -43,6 +43,7 @@ import org.elasticsearch.client.ResponseException
 import org.elasticsearch.client.indices.CreateIndexRequest
 import org.elasticsearch.client.indices.GetIndexRequest
 import org.elasticsearch.client.indices.GetMappingsRequest
+import org.elasticsearch.client.indices.PutMappingRequest
 import org.elasticsearch.cluster.metadata.IndexMetadata
 import org.elasticsearch.common.io.PathUtils
 import org.elasticsearch.common.settings.Settings
@@ -202,6 +203,22 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                     followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
                             .mappings()[followerIndexName]
             )
+            // test that new mapping created on leader is also propagated to follower
+            val putMappingRequest = PutMappingRequest(leaderIndexName)
+            putMappingRequest.source("{\"properties\":{\"name\":{\"type\":\"keyword\"}}}", XContentType.JSON)
+            leaderClient.indices().putMapping(putMappingRequest, RequestOptions.DEFAULT)
+            val sourceMap = mapOf("name" to randomAlphaOfLength(5))
+            leaderClient.index(IndexRequest(leaderIndexName).id("1").source(sourceMap), RequestOptions.DEFAULT)
+            val leaderMappings = leaderClient.indices().getMapping(GetMappingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
+                .mappings()[leaderIndexName]
+            assertBusy {
+                Assert.assertEquals(
+                    leaderMappings,
+                    followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
+                        .mappings()[followerIndexName]
+                )
+            }
+
         } finally {
             followerClient.stopReplication(followerIndexName)
         }
