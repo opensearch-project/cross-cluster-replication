@@ -15,9 +15,9 @@
 
 package com.amazon.elasticsearch.replication.util
 
-import com.amazon.elasticsearch.replication.repository.RemoteClusterRepository
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationContext
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
+import com.amazon.elasticsearch.replication.repository.RemoteClusterRepository
 import com.amazon.opendistroforelasticsearch.commons.authuser.User
 import kotlinx.coroutines.delay
 import org.apache.logging.log4j.Logger
@@ -26,13 +26,13 @@ import org.elasticsearch.action.ActionListener
 import org.elasticsearch.action.ActionRequest
 import org.elasticsearch.action.ActionResponse
 import org.elasticsearch.action.ActionType
-import org.elasticsearch.action.support.TransportActions
 import org.elasticsearch.action.index.IndexRequestBuilder
 import org.elasticsearch.action.index.IndexResponse
+import org.elasticsearch.action.support.TransportActions
 import org.elasticsearch.client.Client
-import org.elasticsearch.cluster.service.ClusterService
-import org.elasticsearch.index.shard.ShardId
 import org.elasticsearch.common.util.concurrent.ThreadContext
+import org.elasticsearch.index.IndexNotFoundException
+import org.elasticsearch.index.shard.ShardId
 import org.elasticsearch.index.store.Store
 import org.elasticsearch.indices.recovery.RecoveryState
 import org.elasticsearch.repositories.IndexId
@@ -111,7 +111,9 @@ suspend fun <Req: ActionRequest, Resp: ActionResponse> Client.suspendExecuteWith
         try {
             return suspendExecute(replicationMetadata, action, req, defaultContext = defaultContext)
         } catch (e: ElasticsearchException) {
-            if (retryOn.contains(e.javaClass) || TransportActions.isShardNotAvailableException(e)) {
+            // Not retrying for IndexNotFoundException as it is not a transient failure
+            // TODO Remove this check for IndexNotFoundException: https://github.com/opensearch-project/cross-cluster-replication/issues/78
+            if (e !is IndexNotFoundException && (retryOn.contains(e.javaClass) || TransportActions.isShardNotAvailableException(e))) {
                 log.warn("Encountered a failure while executing in $req. Retrying in ${currentBackoff/1000} seconds" +
                         ".", e)
                 delay(currentBackoff)

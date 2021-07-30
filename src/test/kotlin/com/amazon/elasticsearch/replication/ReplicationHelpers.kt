@@ -54,6 +54,7 @@ const val REST_REPLICATION_STATUS = "$REST_REPLICATION_PREFIX{index}/_status"
 const val REST_AUTO_FOLLOW_PATTERN = "${REST_REPLICATION_PREFIX}_autofollow"
 
 const val STATUS_REASON_USER_INITIATED = "User initiated"
+const val STATUS_REASON_INDEX_NOT_FOUND = "no such index"
 
 fun RestHighLevelClient.startReplication(request: StartReplicationRequest,
                                          waitFor: TimeValue = TimeValue.timeValueSeconds(10),
@@ -147,6 +148,11 @@ fun `validate aggregated paused status resposne`(statusResp: Map<String, Any>) {
     Assert.assertEquals(statusResp.getValue("status"),"PAUSED")
     Assert.assertEquals(statusResp.getValue("reason"), STATUS_REASON_USER_INITIATED)
     Assert.assertTrue(!(statusResp.containsKey("syncing_details")))
+}
+
+fun `validate paused status response due to leader index deleted`(statusResp: Map<String, Any>) {
+    Assert.assertEquals("PAUSED", statusResp.getValue("status"))
+    Assert.assertTrue(statusResp.getValue("reason").toString().contains(STATUS_REASON_INDEX_NOT_FOUND))
 }
 
 fun RestHighLevelClient.stopReplication(index: String, shouldWait: Boolean = true) {
