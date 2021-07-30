@@ -19,6 +19,9 @@ package com.amazon.elasticsearch.replication.integ.rest
 import com.amazon.elasticsearch.replication.MultiClusterAnnotations
 import com.amazon.elasticsearch.replication.MultiClusterRestTestCase
 import com.amazon.elasticsearch.replication.StartReplicationRequest
+import com.amazon.elasticsearch.replication.`validate paused status response due to leader index deleted`
+import com.amazon.elasticsearch.replication.`validate status syncing resposne`
+import com.amazon.elasticsearch.replication.replicationStatus
 import com.amazon.elasticsearch.replication.startReplication
 import com.amazon.elasticsearch.replication.stopReplication
 import com.amazon.elasticsearch.replication.updateReplication
@@ -723,6 +726,36 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                 val sourceMap = mapOf("name" to randomAlphaOfLength(5))
                 followerClient.index(IndexRequest(followerIndexName).id("1").source(sourceMap), RequestOptions.DEFAULT)
             }.isInstanceOf(ElasticsearchStatusException::class.java).hasMessageContaining("cluster_block_exception")
+        } finally {
+            followerClient.stopReplication(followerIndexName)
+        }
+    }
+
+    fun `test that replication gets paused if the leader index is deleted`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
+            assertBusy {
+                assertThat(followerClient.indices().exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT)).isEqualTo(true)
+            }
+            assertBusy {
+                var statusResp = followerClient.replicationStatus(followerIndexName)
+                `validate status syncing resposne`(statusResp)
+            }
+            val deleteIndexResponse = leaderClient.indices().delete(DeleteIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+            assertThat(deleteIndexResponse.isAcknowledged).isTrue()
+
+            assertBusy({
+                var statusResp = followerClient.replicationStatus(followerIndexName)
+                `validate paused status response due to leader index deleted`(statusResp)
+            }, 15, TimeUnit.SECONDS)
         } finally {
             followerClient.stopReplication(followerIndexName)
         }
