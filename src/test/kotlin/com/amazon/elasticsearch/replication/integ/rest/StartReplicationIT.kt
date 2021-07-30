@@ -16,6 +16,7 @@
 package com.amazon.elasticsearch.replication.integ.rest
 
 
+import com.amazon.elasticsearch.replication.IndexUtil
 import com.amazon.elasticsearch.replication.MultiClusterAnnotations
 import com.amazon.elasticsearch.replication.MultiClusterRestTestCase
 import com.amazon.elasticsearch.replication.StartReplicationRequest
@@ -36,10 +37,13 @@ import org.apache.http.util.EntityUtils
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.elasticsearch.ElasticsearchStatusException
+import org.elasticsearch.action.admin.cluster.repositories.put.PutRepositoryRequest
+import org.elasticsearch.action.admin.cluster.snapshots.create.CreateSnapshotRequest
 import org.elasticsearch.action.admin.indices.alias.Alias
 import org.elasticsearch.action.admin.indices.alias.IndicesAliasesRequest
 import org.elasticsearch.action.admin.indices.alias.get.GetAliasesRequest
 import org.elasticsearch.action.admin.indices.delete.DeleteIndexRequest
+import org.elasticsearch.action.admin.indices.forcemerge.ForceMergeRequest
 import org.elasticsearch.action.admin.indices.settings.get.GetSettingsRequest
 import org.elasticsearch.action.admin.indices.settings.put.UpdateSettingsRequest
 import org.elasticsearch.action.get.GetRequest
@@ -47,6 +51,7 @@ import org.elasticsearch.action.index.IndexRequest
 import org.elasticsearch.client.Request
 import org.elasticsearch.client.RequestOptions
 import org.elasticsearch.client.ResponseException
+import org.elasticsearch.client.core.CountRequest
 import org.elasticsearch.client.indices.CloseIndexRequest
 import org.elasticsearch.client.indices.CreateIndexRequest
 import org.elasticsearch.client.indices.GetIndexRequest
@@ -55,8 +60,11 @@ import org.elasticsearch.client.indices.PutMappingRequest
 import org.elasticsearch.cluster.metadata.IndexMetadata
 import org.elasticsearch.common.io.PathUtils
 import org.elasticsearch.common.settings.Settings
+import org.elasticsearch.common.unit.TimeValue
 import org.elasticsearch.common.xcontent.XContentType
 import org.elasticsearch.index.IndexSettings
+import org.elasticsearch.index.mapper.MapperService
+import org.elasticsearch.repositories.fs.FsRepository
 import org.elasticsearch.test.ESTestCase.assertBusy
 import org.junit.Assert
 import java.nio.file.Files
@@ -72,6 +80,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
     private val followerIndexName = "follower_index"
     private val leaderClusterPath = "testclusters/leaderCluster-0"
     private val followerClusterPath = "testclusters/followCluster-0"
+    private val repoPath = "testclusters/repo"
     private val buildDir = System.getProperty("build.dir")
     private val synonymsJson = "/analyzers/synonym_setting.json"
     private val synonymMapping = "{\"properties\":{\"value\":{\"type\":\"text\",\"analyzer\":\"standard\",\"search_analyzer\":\"my_analyzer\"}}}"
@@ -806,6 +815,92 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                 var statusResp = followerClient.replicationStatus(followerIndexName)
                 `validate paused status response due to leader index deleted`(statusResp)
             }, 15, TimeUnit.SECONDS)
+        } finally {
+            followerClient.stopReplication(followerIndexName)
+        }
+    }
+
+    fun `test forcemerge on leader during replication bootstrap`() {
+        val settings = Settings.builder()
+            .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 20)
+            .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0)
+            .put(MapperService.INDEX_MAPPING_TOTAL_FIELDS_LIMIT_SETTING.key, Long.MAX_VALUE)
+            .build()
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName).settings(settings),
+            RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        // Put a large amount of data into the index
+        IndexUtil.fillIndex(leaderClient, leaderIndexName, 5000, 1000, 1000)
+        assertBusy {
+            assertThat(leaderClient.indices()
+                .exists(GetIndexRequest(leaderIndexName), RequestOptions.DEFAULT))
+        }
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
+                TimeValue.timeValueSeconds(10),
+                false)
+            //Given the size of index, the replication should be in RESTORING phase at this point
+            leaderClient.indices().forcemerge(ForceMergeRequest(leaderIndexName), RequestOptions.DEFAULT)
+
+            assertBusy {
+                var statusResp = followerClient.replicationStatus(followerIndexName)
+                `validate status syncing response`(statusResp)
+            }
+            assertBusy {
+                Assert.assertEquals(leaderClient.count(CountRequest(leaderIndexName), RequestOptions.DEFAULT).toString(),
+                    followerClient.count(CountRequest(followerIndexName), RequestOptions.DEFAULT).toString())
+            }
+        } finally {
+            followerClient.stopReplication(followerIndexName)
+        }
+    }
+
+    fun `test that snapshot on leader does not affect replication during bootstrap`() {
+        val settings = Settings.builder()
+            .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 20)
+            .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0)
+            .put(MapperService.INDEX_MAPPING_TOTAL_FIELDS_LIMIT_SETTING.key, Long.MAX_VALUE)
+            .build()
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+
+        val repoPath = PathUtils.get(buildDir, repoPath)
+
+        val putRepositoryRequest = PutRepositoryRequest("my-repo")
+            .type(FsRepository.TYPE)
+            .settings("{\"location\": \"$repoPath\"}", XContentType.JSON)
+
+        leaderClient.snapshot().createRepository(putRepositoryRequest, RequestOptions.DEFAULT)
+
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName).settings(settings),
+            RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        // Put a large amount of data into the index
+        IndexUtil.fillIndex(leaderClient, leaderIndexName, 5000, 1000, 1000)
+        assertBusy {
+            assertThat(leaderClient.indices()
+                .exists(GetIndexRequest(leaderIndexName), RequestOptions.DEFAULT))
+        }
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
+                TimeValue.timeValueSeconds(10),
+                false)
+            //Given the size of index, the replication should be in RESTORING phase at this point
+            leaderClient.snapshot().create(CreateSnapshotRequest("my-repo", "snapshot_1").indices(leaderIndexName), RequestOptions.DEFAULT)
+
+            assertBusy {
+                var statusResp = followerClient.replicationStatus(followerIndexName)
+                `validate status syncing response`(statusResp)
+            }
+            assertBusy {
+                Assert.assertEquals(leaderClient.count(CountRequest(leaderIndexName), RequestOptions.DEFAULT).toString(),
+                    followerClient.count(CountRequest(followerIndexName), RequestOptions.DEFAULT).toString())
+            }
         } finally {
             followerClient.stopReplication(followerIndexName)
         }

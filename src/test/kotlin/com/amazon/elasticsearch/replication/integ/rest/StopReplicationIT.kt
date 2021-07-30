@@ -15,6 +15,7 @@
 
 package com.amazon.elasticsearch.replication.integ.rest
 
+import com.amazon.elasticsearch.replication.IndexUtil
 import com.amazon.elasticsearch.replication.MultiClusterAnnotations
 import com.amazon.elasticsearch.replication.MultiClusterRestTestCase
 import com.amazon.elasticsearch.replication.StartReplicationRequest
@@ -24,14 +25,11 @@ import org.apache.http.util.EntityUtils
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.elasticsearch.ElasticsearchStatusException
-import org.elasticsearch.action.DocWriteResponse
 import org.elasticsearch.action.admin.cluster.settings.ClusterUpdateSettingsRequest
-import org.elasticsearch.action.admin.indices.flush.FlushRequest
 import org.elasticsearch.action.index.IndexRequest
 import org.elasticsearch.client.Request
 import org.elasticsearch.client.RequestOptions
 import org.elasticsearch.client.ResponseException
-import org.elasticsearch.client.RestHighLevelClient
 import org.elasticsearch.client.indices.CreateIndexRequest
 import org.elasticsearch.client.indices.GetIndexRequest
 import org.elasticsearch.cluster.metadata.IndexMetadata
@@ -40,7 +38,6 @@ import org.elasticsearch.common.unit.TimeValue
 import org.elasticsearch.index.mapper.MapperService
 import org.elasticsearch.test.ESTestCase.assertBusy
 import java.util.concurrent.TimeUnit
-import kotlin.collections.HashMap
 
 
 const val LEADER = "leaderCluster"
@@ -104,7 +101,7 @@ class StopReplicationIT: MultiClusterRestTestCase() {
                 RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
         // Put a large amount of data into the index
-        fillIndex(leaderClient, leaderIndexName, nFields, fieldLength, stepSize)
+        IndexUtil.fillIndex(leaderClient, leaderIndexName, nFields, fieldLength, stepSize)
         assertBusy {
             assertThat(leaderClient.indices()
                     .exists(GetIndexRequest(leaderIndexName), RequestOptions.DEFAULT))
@@ -135,23 +132,6 @@ class StopReplicationIT: MultiClusterRestTestCase() {
                 .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0)
                 .build()
         testStopReplicationInRestoringState(settings, 5, 10, 5)
-    }
-
-    private fun fillIndex(clusterClient: RestHighLevelClient,
-                          indexName : String,
-                          nFields: Int,
-                          fieldLength: Int,
-                          stepSize: Int) {
-        for (i in nFields downTo 1 step stepSize) {
-            val sourceMap : MutableMap<String, String> = HashMap()
-            for (j in stepSize downTo 1)
-                sourceMap[(i-j).toString()] = randomAlphaOfLength(fieldLength)
-            logger.info("Updating index with map of size:${sourceMap.size}")
-            val indexResponse = clusterClient.index(IndexRequest(indexName).id(i.toString()).source(sourceMap), RequestOptions.DEFAULT)
-            assertThat(indexResponse.result).isIn(DocWriteResponse.Result.CREATED, DocWriteResponse.Result.UPDATED)
-        }
-        //flush the index
-        clusterClient.indices().flush(FlushRequest(indexName), RequestOptions.DEFAULT)
     }
 
     @AwaitsFix(bugUrl = "")
