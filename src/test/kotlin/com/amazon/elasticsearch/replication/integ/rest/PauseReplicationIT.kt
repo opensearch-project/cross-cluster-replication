@@ -15,13 +15,22 @@
 
 package com.amazon.elasticsearch.replication.integ.rest
 
-import com.amazon.elasticsearch.replication.*
+import com.amazon.elasticsearch.replication.MultiClusterAnnotations
+import com.amazon.elasticsearch.replication.MultiClusterRestTestCase
+import com.amazon.elasticsearch.replication.StartReplicationRequest
+import com.amazon.elasticsearch.replication.`validate aggregated paused status resposne`
+import com.amazon.elasticsearch.replication.`validate paused status resposne`
+import com.amazon.elasticsearch.replication.pauseReplication
+import com.amazon.elasticsearch.replication.replicationStatus
+import com.amazon.elasticsearch.replication.resumeReplication
+import com.amazon.elasticsearch.replication.startReplication
+import com.amazon.elasticsearch.replication.stopReplication
+import com.amazon.elasticsearch.replication.updateReplication
 import org.apache.http.util.EntityUtils
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
-import org.elasticsearch.ElasticsearchStatusException
 import org.elasticsearch.action.DocWriteResponse
-import org.elasticsearch.action.admin.indices.delete.DeleteIndexRequest
+import org.elasticsearch.action.admin.cluster.settings.ClusterUpdateSettingsRequest
 import org.elasticsearch.action.admin.indices.flush.FlushRequest
 import org.elasticsearch.action.index.IndexRequest
 import org.elasticsearch.client.Request
@@ -35,7 +44,6 @@ import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.unit.TimeValue
 import org.elasticsearch.index.mapper.MapperService
 import org.elasticsearch.test.ESTestCase.assertBusy
-import org.junit.Assert
 import java.util.concurrent.TimeUnit
 
 
@@ -71,6 +79,11 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
                         .isEqualTo(true)
             }
 
+            var settings = Settings.builder()
+                    .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0)
+                    .build()
+
+            followerClient.updateReplication( followerIndexName, settings)
             followerClient.resumeReplication(followerIndexName)
         } finally {
             followerClient.stopReplication(followerIndexName)
@@ -187,4 +200,40 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
         }
     }
 
+    fun `test pause replication when remote cluster is unavailable`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        try {
+            val leaderClient = getClientForCluster(LEADER)
+            createConnectionBetweenClusters(FOLLOWER, LEADER)
+            val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+            assertThat(createIndexResponse.isAcknowledged).isTrue()
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
+                    waitForRestore = true)
+            // Need to wait till index blocks appear into state
+            assertBusy({
+                val clusterBlocksResponse = followerClient.lowLevelClient.performRequest(Request("GET", "/_cluster/state/blocks"))
+                val clusterResponseString = EntityUtils.toString(clusterBlocksResponse.entity)
+                assertThat(clusterResponseString.contains("cross-cluster-replication"))
+                        .withFailMessage("Cant find replication block after starting replication")
+                        .isTrue()
+            }, 10, TimeUnit.SECONDS)
+
+            // setting an invalid seed so that remote cluster is unavailable
+            val settings: Settings = Settings.builder()
+                    .putList("cluster.remote.source.seeds", "127.0.0.1:9305")
+                    .build()
+            val updateSettingsRequest = ClusterUpdateSettingsRequest()
+            updateSettingsRequest.persistentSettings(settings)
+            followerClient.cluster().putSettings(updateSettingsRequest, RequestOptions.DEFAULT)
+
+            followerClient.pauseReplication(followerIndexName)
+
+            followerClient.replicationStatus(followerIndexName, verbose = false)
+            var statusResp = followerClient.replicationStatus(followerIndexName)
+            `validate paused status resposne`(statusResp)
+
+        } finally {
+            followerClient.stopReplication(followerIndexName)
+        }
+    }
 }

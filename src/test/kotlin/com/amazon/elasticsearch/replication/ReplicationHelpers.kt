@@ -125,7 +125,9 @@ fun `validate not paused status aggregated resposne`(statusResp: Map<String, Any
 fun `validate paused status resposne`(statusResp: Map<String, Any>) {
     Assert.assertEquals(statusResp.getValue("status"),"PAUSED")
     Assert.assertEquals(statusResp.getValue("reason"), STATUS_REASON_USER_INITIATED)
-    Assert.assertTrue(!(statusResp.containsKey("shard_replication_details")))
+    Assert.assertFalse(statusResp.containsKey("shard_replication_details"))
+    Assert.assertFalse(statusResp.containsKey("local_checkpoint"))
+    Assert.assertFalse(statusResp.containsKey("remote_checkpoint"))
 }
 
 fun `validate aggregated paused status resposne`(statusResp: Map<String, Any>) {

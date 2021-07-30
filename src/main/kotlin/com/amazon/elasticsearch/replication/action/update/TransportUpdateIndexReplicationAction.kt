@@ -88,7 +88,7 @@ class TransportUpdateIndexReplicationAction @Inject constructor(transportService
                 ?:
                 throw IllegalArgumentException("No replication in progress for index:${request.indexName}")
         val replicationOverallState = replicationStateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE]
-        if (replicationOverallState == ReplicationOverallState.RUNNING.name)
+        if (replicationOverallState == ReplicationOverallState.RUNNING.name || replicationOverallState == ReplicationOverallState.PAUSED.name)
             return
 
         throw IllegalStateException("Unknown value of replication state:$replicationOverallState")

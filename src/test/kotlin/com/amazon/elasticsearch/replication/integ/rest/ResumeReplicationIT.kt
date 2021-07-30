@@ -15,7 +15,20 @@
 
 package com.amazon.elasticsearch.replication.integ.rest
 
-import com.amazon.elasticsearch.replication.*
+import com.amazon.elasticsearch.replication.MultiClusterAnnotations
+import com.amazon.elasticsearch.replication.MultiClusterRestTestCase
+import com.amazon.elasticsearch.replication.StartReplicationRequest
+import com.amazon.elasticsearch.replication.`validate aggregated paused status resposne`
+import com.amazon.elasticsearch.replication.`validate not paused status aggregated resposne`
+import com.amazon.elasticsearch.replication.`validate not paused status resposne`
+import com.amazon.elasticsearch.replication.`validate paused status resposne`
+import com.amazon.elasticsearch.replication.`validate status syncing aggregated resposne`
+import com.amazon.elasticsearch.replication.`validate status syncing resposne`
+import com.amazon.elasticsearch.replication.pauseReplication
+import com.amazon.elasticsearch.replication.replicationStatus
+import com.amazon.elasticsearch.replication.resumeReplication
+import com.amazon.elasticsearch.replication.startReplication
+import com.amazon.elasticsearch.replication.stopReplication
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.elasticsearch.action.DocWriteResponse
@@ -27,10 +40,10 @@ import org.elasticsearch.client.RequestOptions
 import org.elasticsearch.client.ResponseException
 import org.elasticsearch.client.indices.CloseIndexRequest
 import org.elasticsearch.client.indices.CreateIndexRequest
-import org.junit.Assert
 import org.elasticsearch.client.indices.GetMappingsRequest
 import org.elasticsearch.common.io.PathUtils
 import org.elasticsearch.common.settings.Settings
+import org.junit.Assert
 import java.nio.file.Files
 
 

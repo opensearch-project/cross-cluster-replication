@@ -20,10 +20,13 @@ import org.elasticsearch.action.ActionRequestValidationException
 import org.elasticsearch.action.IndicesRequest
 import org.elasticsearch.action.support.IndicesOptions
 import org.elasticsearch.action.support.master.AcknowledgedRequest
-import org.elasticsearch.common.ParseField
 import org.elasticsearch.common.io.stream.StreamInput
 import org.elasticsearch.common.io.stream.StreamOutput
-import org.elasticsearch.common.xcontent.*
+import org.elasticsearch.common.xcontent.ObjectParser
+import org.elasticsearch.common.xcontent.ToXContent
+import org.elasticsearch.common.xcontent.ToXContentObject
+import org.elasticsearch.common.xcontent.XContentBuilder
+import org.elasticsearch.common.xcontent.XContentParser
 
 class PauseIndexReplicationRequest : AcknowledgedRequest<PauseIndexReplicationRequest>, IndicesRequest.Replaceable, ToXContentObject {
 
@@ -40,6 +43,7 @@ class PauseIndexReplicationRequest : AcknowledgedRequest<PauseIndexReplicationRe
 
     constructor(inp: StreamInput): super(inp) {
         indexName = inp.readString()
+        reason = inp.readString()
     }
 
     companion object {
@@ -80,6 +84,7 @@ class PauseIndexReplicationRequest : AcknowledgedRequest<PauseIndexReplicationRe
     override fun writeTo(out: StreamOutput) {
         super.writeTo(out)
         out.writeString(indexName)
+        out.writeString(reason)
     }
 
 }

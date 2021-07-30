@@ -406,7 +406,6 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
                         //Not intended setting on follower side.
                         val setting = indexScopedSettings[key]
                         if (indexScopedSettings.isPrivateSetting(key)) {
-                            log.info("$key is a private setting")
                             continue
                         }
                         if (!setting.isDynamic()) {

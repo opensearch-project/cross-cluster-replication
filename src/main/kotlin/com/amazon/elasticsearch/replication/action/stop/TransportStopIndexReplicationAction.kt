@@ -19,13 +19,21 @@ import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.REPLICAT
 import com.amazon.elasticsearch.replication.action.index.block.IndexBlockUpdateType
 import com.amazon.elasticsearch.replication.action.index.block.UpdateIndexBlockAction
 import com.amazon.elasticsearch.replication.action.index.block.UpdateIndexBlockRequest
-import com.amazon.elasticsearch.replication.metadata.*
+import com.amazon.elasticsearch.replication.metadata.INDEX_REPLICATION_BLOCK
+import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
+import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
+import com.amazon.elasticsearch.replication.metadata.UpdateMetadataAction
+import com.amazon.elasticsearch.replication.metadata.UpdateMetadataRequest
 import com.amazon.elasticsearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
 import com.amazon.elasticsearch.replication.metadata.state.getReplicationStateParamsForIndex
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
 import com.amazon.elasticsearch.replication.seqno.RemoteClusterRetentionLeaseHelper
 import com.amazon.elasticsearch.replication.task.index.IndexReplicationParams
-import com.amazon.elasticsearch.replication.util.*
+import com.amazon.elasticsearch.replication.util.completeWith
+import com.amazon.elasticsearch.replication.util.coroutineContext
+import com.amazon.elasticsearch.replication.util.suspendExecute
+import com.amazon.elasticsearch.replication.util.suspending
+import com.amazon.elasticsearch.replication.util.waitForClusterStateUpdate
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
@@ -104,9 +112,9 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                     }
                 }
                 val replMetadata = replicationMetadataManager.getIndexReplicationMetadata(request.indexName)
-                // If paused , we need to clear retention leases as Shard Tasks are non-existent
+                // If paused , we need to make attempt to clear retention leases as Shard Tasks are non-existent
                 if (isPaused) {
-                    removeRetentionLease(replMetadata, request.indexName)
+                    attemptRemoveRetentionLease(replMetadata, request.indexName)
                 }
 
                 val clusterStateUpdateResponse : AcknowledgedResponse =
@@ -129,17 +137,21 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
         }
     }
 
-    private suspend fun removeRetentionLease(replMetadata: ReplicationMetadata, followerIndexName: String) {
-        val remoteMetadata = getRemoteIndexMetadata(replMetadata.connectionName, replMetadata.leaderContext.resource)
-        val params = IndexReplicationParams(replMetadata.connectionName, remoteMetadata.index, followerIndexName)
-        val remoteClient = client.getRemoteClusterClient(params.remoteCluster)
-        val shards = clusterService.state().routingTable.indicesRouting().get(params.followerIndexName).shards()
-        val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
-        shards.forEach {
-            val followerShardId = it.value.shardId
-            log.debug("Removing lease for $followerShardId.id ")
-            retentionLeaseHelper.removeRetentionLease(ShardId(params.remoteIndex, followerShardId.id), followerShardId)
+    private suspend fun attemptRemoveRetentionLease(replMetadata: ReplicationMetadata, followerIndexName: String) {
+        try {
+            val remoteMetadata = getRemoteIndexMetadata(replMetadata.connectionName, replMetadata.leaderContext.resource)
+            val params = IndexReplicationParams(replMetadata.connectionName, remoteMetadata.index, followerIndexName)
+            val remoteClient = client.getRemoteClusterClient(params.remoteCluster)
+            val shards = clusterService.state().routingTable.indicesRouting().get(params.followerIndexName).shards()
+            val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
+            shards.forEach {
+                val followerShardId = it.value.shardId
+                log.debug("Removing lease for $followerShardId.id ")
+                retentionLeaseHelper.removeRetentionLease(ShardId(params.remoteIndex, followerShardId.id), followerShardId)
             }
+        } catch (e: Exception) {
+            log.error("Exception while trying to remove Retention Lease ", e )
+        }
     }
 
     private suspend fun getRemoteIndexMetadata(remoteCluster: String, remoteIndex: String): IndexMetadata {
