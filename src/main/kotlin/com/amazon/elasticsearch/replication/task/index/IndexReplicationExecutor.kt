@@ -75,6 +75,6 @@ class IndexReplicationExecutor(executor: String, private val clusterService: Clu
 
     override fun getDescription(taskInProgress: PersistentTask<IndexReplicationParams>): String {
         val params = requireNotNull(taskInProgress.params)
-        return "replication:${params.remoteCluster}:${params.remoteIndex} -> ${params.followerIndexName}"
+        return "replication:${params.leaderAlias}:${params.leaderIndex} -> ${params.followerIndexName}"
     }
 }

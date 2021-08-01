@@ -39,10 +39,10 @@ import kotlin.collections.HashMap
 class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, IndicesRequest.Replaceable, ToXContentObject {
 
     lateinit var followerIndex: String
-    lateinit var remoteCluster: String
-    lateinit var remoteIndex: String
+    lateinit var leaderAlias: String
+    lateinit var leaderIndex: String
     var assumeRoles: HashMap<String, String>? = null // roles to assume - {leader_fgac_role: role1, follower_fgac_role: role2}
-    // Used for integ tests to wait until the restore from remote cluster completes
+    // Used for integ tests to wait until the restore from leader cluster completes
     var waitForRestore: Boolean = false
     // Triggered from autofollow to skip permissions check based on user as this is already validated
     var isAutoFollowRequest: Boolean = false
@@ -52,26 +52,26 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
     private constructor() {
     }
 
-    constructor(followerIndex: String, remoteCluster: String, remoteIndex: String, settings: Settings = Settings.EMPTY) : super() {
+    constructor(followerIndex: String, leaderAlias: String, leaderIndex: String, settings: Settings = Settings.EMPTY) : super() {
         this.followerIndex = followerIndex
-        this.remoteCluster = remoteCluster
-        this.remoteIndex = remoteIndex
+        this.leaderAlias = leaderAlias
+        this.leaderIndex = leaderIndex
         this.settings = settings
     }
 
     companion object {
-        const val LEADER_FGAC_ROLE = "remote_cluster_role"
-        const val FOLLOWER_FGAC_ROLE = "local_cluster_role"
+        const val LEADER_CLUSTER_ROLE = "leader_cluster_role"
+        const val FOLLOWER_CLUSTER_ROLE = "follower_cluster_role"
         private val INDEX_REQ_PARSER = ObjectParser<ReplicateIndexRequest, Void>("FollowIndexRequestParser") { ReplicateIndexRequest() }
         val FGAC_ROLES_PARSER = ObjectParser<HashMap<String, String>, Void>("AssumeRolesParser") { HashMap() }
         init {
-            FGAC_ROLES_PARSER.declareStringOrNull({assumeRoles: HashMap<String, String>, role: String -> assumeRoles[LEADER_FGAC_ROLE] = role},
-                    ParseField(LEADER_FGAC_ROLE))
-            FGAC_ROLES_PARSER.declareStringOrNull({assumeRoles: HashMap<String, String>, role: String -> assumeRoles[FOLLOWER_FGAC_ROLE] = role},
-                    ParseField(FOLLOWER_FGAC_ROLE))
+            FGAC_ROLES_PARSER.declareStringOrNull({assumeRoles: HashMap<String, String>, role: String -> assumeRoles[LEADER_CLUSTER_ROLE] = role},
+                    ParseField(LEADER_CLUSTER_ROLE))
+            FGAC_ROLES_PARSER.declareStringOrNull({assumeRoles: HashMap<String, String>, role: String -> assumeRoles[FOLLOWER_CLUSTER_ROLE] = role},
+                    ParseField(FOLLOWER_CLUSTER_ROLE))
 
-            INDEX_REQ_PARSER.declareString(ReplicateIndexRequest::remoteCluster::set, ParseField("remote_cluster"))
-            INDEX_REQ_PARSER.declareString(ReplicateIndexRequest::remoteIndex::set, ParseField("remote_index"))
+            INDEX_REQ_PARSER.declareString(ReplicateIndexRequest::leaderAlias::set, ParseField("leader_alias"))
+            INDEX_REQ_PARSER.declareString(ReplicateIndexRequest::leaderIndex::set, ParseField("leader_index"))
             INDEX_REQ_PARSER.declareObjectOrDefault(BiConsumer {reqParser: ReplicateIndexRequest, roles: HashMap<String, String> -> reqParser.assumeRoles = roles},
                     FGAC_ROLES_PARSER, null, ParseField("assume_roles"))
             INDEX_REQ_PARSER.declareObjectOrDefault(BiConsumer{ request: ReplicateIndexRequest, settings: Settings -> request.settings = settings}, BiFunction{ p: XContentParser?, c: Void? -> Settings.fromXContent(p) },
@@ -96,15 +96,15 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
     override fun validate(): ActionRequestValidationException? {
 
         var validationException = ActionRequestValidationException()
-        if (!this::remoteCluster.isInitialized ||
-            !this::remoteIndex.isInitialized ||
+        if (!this::leaderAlias.isInitialized ||
+            !this::leaderIndex.isInitialized ||
             !this::followerIndex.isInitialized) {
             validationException.addValidationError("Mandatory params are missing for the request")
         }
 
-        if(assumeRoles != null && (assumeRoles!!.size < 2 || assumeRoles!![LEADER_FGAC_ROLE] == null ||
-                assumeRoles!![FOLLOWER_FGAC_ROLE] == null)) {
-            validationException.addValidationError("Need roles for $LEADER_FGAC_ROLE and $FOLLOWER_FGAC_ROLE")
+        if(assumeRoles != null && (assumeRoles!!.size < 2 || assumeRoles!![LEADER_CLUSTER_ROLE] == null ||
+                assumeRoles!![FOLLOWER_CLUSTER_ROLE] == null)) {
+            validationException.addValidationError("Need roles for $LEADER_CLUSTER_ROLE and $FOLLOWER_CLUSTER_ROLE")
         }
         return if(validationException.validationErrors().isEmpty()) return null else validationException
     }
@@ -122,15 +122,15 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
     }
 
     constructor(inp: StreamInput) : super(inp) {
-        remoteCluster = inp.readString()
-        remoteIndex = inp.readString()
+        leaderAlias = inp.readString()
+        leaderIndex = inp.readString()
         followerIndex = inp.readString()
 
-        var leaderFgacRole = inp.readOptionalString()
-        var followerFgacRole = inp.readOptionalString()
+        var leaderClusterRole = inp.readOptionalString()
+        var followerClusterRole = inp.readOptionalString()
         assumeRoles = HashMap()
-        if(leaderFgacRole != null) assumeRoles!![LEADER_FGAC_ROLE] = leaderFgacRole
-        if(followerFgacRole != null) assumeRoles!![FOLLOWER_FGAC_ROLE] = followerFgacRole
+        if(leaderClusterRole != null) assumeRoles!![LEADER_CLUSTER_ROLE] = leaderClusterRole
+        if(followerClusterRole != null) assumeRoles!![FOLLOWER_CLUSTER_ROLE] = followerClusterRole
 
         waitForRestore = inp.readBoolean()
         isAutoFollowRequest = inp.readBoolean()
@@ -140,11 +140,11 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
 
     override fun writeTo(out: StreamOutput) {
         super.writeTo(out)
-        out.writeString(remoteCluster)
-        out.writeString(remoteIndex)
+        out.writeString(leaderAlias)
+        out.writeString(leaderIndex)
         out.writeString(followerIndex)
-        out.writeOptionalString(assumeRoles?.get(LEADER_FGAC_ROLE))
-        out.writeOptionalString(assumeRoles?.get(FOLLOWER_FGAC_ROLE))
+        out.writeOptionalString(assumeRoles?.get(LEADER_CLUSTER_ROLE))
+        out.writeOptionalString(assumeRoles?.get(FOLLOWER_CLUSTER_ROLE))
         out.writeBoolean(waitForRestore)
         out.writeBoolean(isAutoFollowRequest)
 
@@ -154,14 +154,14 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
     @Throws(IOException::class)
     override fun toXContent(builder: XContentBuilder, params: Params): XContentBuilder {
         builder.startObject()
-        builder.field("remote_cluster", remoteCluster)
-        builder.field("remote_index", remoteIndex)
+        builder.field("leader_alias", leaderAlias)
+        builder.field("leader_index", leaderIndex)
         builder.field("follower_index", followerIndex)
         if(assumeRoles != null && assumeRoles!!.size == 2) {
             builder.field("assume_roles")
             builder.startObject()
-            builder.field(LEADER_FGAC_ROLE, assumeRoles!![LEADER_FGAC_ROLE])
-            builder.field(FOLLOWER_FGAC_ROLE, assumeRoles!![FOLLOWER_FGAC_ROLE])
+            builder.field(LEADER_CLUSTER_ROLE, assumeRoles!![LEADER_CLUSTER_ROLE])
+            builder.field(FOLLOWER_CLUSTER_ROLE, assumeRoles!![FOLLOWER_CLUSTER_ROLE])
             builder.endObject()
         }
         builder.field("wait_for_restore", waitForRestore)

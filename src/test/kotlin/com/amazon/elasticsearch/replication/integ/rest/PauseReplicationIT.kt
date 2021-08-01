@@ -179,7 +179,7 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
         }
     }
 
-    fun `test pause replication when remote cluster is unavailable`() {
+    fun `test pause replication when leader cluster is unavailable`() {
         val followerClient = getClientForCluster(FOLLOWER)
         try {
             val leaderClient = getClientForCluster(LEADER)
@@ -197,7 +197,7 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
                         .isTrue()
             }, 10, TimeUnit.SECONDS)
 
-            // setting an invalid seed so that remote cluster is unavailable
+            // setting an invalid seed so that leader cluster is unavailable
             val settings: Settings = Settings.builder()
                     .putList("cluster.remote.source.seeds", "127.0.0.1:9305")
                     .build()

@@ -48,7 +48,7 @@ class TransportGetStoreMetadataAction @Inject constructor(threadPool: ThreadPool
 
     override fun shardOperation(request: GetStoreMetadataRequest, shardId: ShardId): GetStoreMetadataResponse {
         log.debug(request.toString())
-        var metadataSnapshot = restoreLeaderService.addRemoteClusterRestore(request.restoreUUID, request).metadataSnapshot
+        var metadataSnapshot = restoreLeaderService.addLeaderClusterRestore(request.restoreUUID, request).metadataSnapshot
         return GetStoreMetadataResponse(metadataSnapshot)
     }
 

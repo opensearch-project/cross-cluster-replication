@@ -4,11 +4,9 @@ import org.apache.logging.log4j.LogManager
 import org.elasticsearch.ResourceNotFoundException
 import org.elasticsearch.common.component.AbstractLifecycleComponent
 import org.elasticsearch.common.inject.Singleton
-import org.elasticsearch.core.internal.io.IOUtils
 import org.elasticsearch.index.engine.Engine
 import org.elasticsearch.index.shard.IndexShard
 import org.elasticsearch.index.translog.Translog
-import java.io.Closeable
 
 @Singleton
 class RemoteClusterTranslogService : AbstractLifecycleComponent(){

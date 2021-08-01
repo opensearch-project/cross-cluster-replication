@@ -48,7 +48,7 @@ import java.util.concurrent.ConcurrentHashMap
 @ObsoleteCoroutinesApi
 class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: ReplicationMetadata,
                         private val followerShardId: ShardId,
-                        private val remoteCluster: String, private val remoteIndexName: String,
+                        private val leaderAlias: String, private val leaderIndexName: String,
                         private val parentTaskId: TaskId, private val client: Client, initialSeqNo: Long) {
 
     private val unAppliedChanges = ConcurrentHashMap<Long, GetChangesResponse>()
@@ -63,7 +63,7 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
             while (unAppliedChanges.containsKey(highWatermark + 1)) {
                 val next = unAppliedChanges.remove(highWatermark + 1)!!
                 val replayRequest = ReplayChangesRequest(followerShardId, next.changes, next.maxSeqNoOfUpdatesOrDeletes,
-                                                         remoteCluster, remoteIndexName)
+                                                         leaderAlias, leaderIndexName)
                 replayRequest.parentTask = parentTaskId
                 launch {
                     val replayResponse = client.suspendExecute(replicationMetadata, ReplayChangesAction.INSTANCE, replayRequest)

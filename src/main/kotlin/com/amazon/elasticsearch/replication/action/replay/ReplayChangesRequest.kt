@@ -23,33 +23,33 @@ import org.elasticsearch.index.translog.Translog
 
 class ReplayChangesRequest : ReplicatedWriteRequest<ReplayChangesRequest> {
 
-    val remoteCluster: String
-    val remoteIndex: String
+    val leaderAlias: String
+    val leaderIndex: String
     val changes: List<Translog.Operation>
     val maxSeqNoOfUpdatesOrDeletes: Long
 
     constructor(shardId: ShardId,
                 changes: List<Translog.Operation>,
                 maxSeqNoOfUpdatesOrDeletes: Long,
-                remoteCluster: String,
-                remoteIndex: String) : super(shardId) {
+                leaderAlias: String,
+                leaderIndex: String) : super(shardId) {
         this.changes = changes
         this.maxSeqNoOfUpdatesOrDeletes = maxSeqNoOfUpdatesOrDeletes
-        this.remoteCluster = remoteCluster
-        this.remoteIndex = remoteIndex
+        this.leaderAlias = leaderAlias
+        this.leaderIndex = leaderIndex
     }
 
     constructor(inp: StreamInput) : super(inp) {
-        remoteCluster = inp.readString()
-        remoteIndex = inp.readString()
+        leaderAlias = inp.readString()
+        leaderIndex = inp.readString()
         changes = inp.readList(Translog.Operation::readOperation)
         maxSeqNoOfUpdatesOrDeletes = inp.readLong()
     }
 
     override fun writeTo(out: StreamOutput) {
         super.writeTo(out)
-        out.writeString(remoteCluster)
-        out.writeString(remoteIndex)
+        out.writeString(leaderAlias)
+        out.writeString(leaderIndex)
         out.writeCollection(changes, Translog.Operation::writeOperation)
         out.writeLong(maxSeqNoOfUpdatesOrDeletes)
     }

@@ -170,8 +170,8 @@ class ReplayDetails:  BroadcastResponse, ToXContentObject {
         this.seqNo = seqNo
     }
 
-    private val REMOTECHECKPOINT = ParseField("remote_checkpoint")
-    private val LOCALCHECKPOINT = ParseField("local_checkpoint")
+    private val REMOTECHECKPOINT = ParseField("leader_checkpoint")
+    private val LOCALCHECKPOINT = ParseField("follower_checkpoint")
     private val SEQUENCENUMBER = ParseField("seq_no")
 
     fun remoteCheckpoint(): Long {

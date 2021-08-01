@@ -53,7 +53,7 @@ class AutoFollowExecutor(executor: String, private val clusterService: ClusterSe
     }
 
     override fun getDescription(taskInProgress: PersistentTask<AutoFollowParams>): String {
-        return "replication auto follow task for remote cluster: ${taskInProgress.params?.remoteCluster} with pattern " +
+        return "replication auto follow task for leader cluster: ${taskInProgress.params?.leaderCluster} with pattern " +
                 "${taskInProgress.params?.patternName}"
     }
 }

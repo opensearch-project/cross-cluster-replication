@@ -59,7 +59,7 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
     private val overallTaskScope = CoroutineScope(threadPool.coroutineContext(executor))
     protected abstract val log : Logger
     protected abstract val followerIndexName: String
-    protected abstract val remoteCluster: String
+    protected abstract val leaderAlias: String
     protected lateinit var replicationMetadata: ReplicationMetadata
     @Volatile private lateinit var taskManager: TaskManager
 
@@ -182,7 +182,7 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
      */
     protected open suspend fun setReplicationMetadata() {
         replicationMetadata = if(this is AutoFollowTask) {
-            replicationMetadataManager.getAutofollowMetadata(followerIndexName, remoteCluster, fetch_from_primary = true)
+            replicationMetadataManager.getAutofollowMetadata(followerIndexName, leaderAlias, fetch_from_primary = true)
         }
         else {
             replicationMetadataManager.getIndexReplicationMetadata(followerIndexName, fetch_from_primary = true)

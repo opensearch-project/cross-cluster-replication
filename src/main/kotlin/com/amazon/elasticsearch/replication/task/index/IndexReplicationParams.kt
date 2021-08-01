@@ -20,7 +20,6 @@ import org.elasticsearch.common.ParseField
 import org.elasticsearch.common.Strings
 import org.elasticsearch.common.io.stream.StreamInput
 import org.elasticsearch.common.io.stream.StreamOutput
-import org.elasticsearch.common.xcontent.ContextParser
 import org.elasticsearch.common.xcontent.ObjectParser
 import org.elasticsearch.common.xcontent.ToXContent
 import org.elasticsearch.common.xcontent.XContentBuilder
@@ -31,8 +30,8 @@ import java.io.IOException
 
 class IndexReplicationParams : PersistentTaskParams {
 
-    lateinit var remoteCluster: String
-    lateinit var remoteIndex: Index
+    lateinit var leaderAlias: String
+    lateinit var leaderIndex: Index
     lateinit var followerIndexName: String
 
     companion object {
@@ -40,10 +39,10 @@ class IndexReplicationParams : PersistentTaskParams {
 
         private val PARSER = ObjectParser<IndexReplicationParams, Void>(NAME, true) { IndexReplicationParams() }
         init {
-            PARSER.declareString(IndexReplicationParams::remoteCluster::set, ParseField("remote_cluster"))
-            PARSER.declareObject(IndexReplicationParams::remoteIndex::set,
+            PARSER.declareString(IndexReplicationParams::leaderAlias::set, ParseField("leader_alias"))
+            PARSER.declareObject(IndexReplicationParams::leaderIndex::set,
                     { parser: XContentParser, _ -> Index.fromXContent(parser) },
-                    ParseField("remote_index"))
+                    ParseField("leader_index"))
             PARSER.declareString(IndexReplicationParams::followerIndexName::set, ParseField("follower_index"))
         }
 
@@ -53,9 +52,9 @@ class IndexReplicationParams : PersistentTaskParams {
         }
     }
 
-    constructor(remoteCluster: String, remoteIndex: Index, followerIndexName: String) {
-        this.remoteCluster = remoteCluster
-        this.remoteIndex = remoteIndex
+    constructor(leaderAlias: String, leaderIndex: Index, followerIndexName: String) {
+        this.leaderAlias = leaderAlias
+        this.leaderIndex = leaderIndex
         this.followerIndexName = followerIndexName
     }
 
@@ -68,15 +67,15 @@ class IndexReplicationParams : PersistentTaskParams {
 
     override fun toXContent(builder: XContentBuilder, params: ToXContent.Params?): XContentBuilder {
         return builder.startObject()
-            .field("remote_cluster", remoteCluster)
-            .field("remote_index", remoteIndex)
+            .field("leader_alias", leaderAlias)
+            .field("leader_index", leaderIndex)
             .field("follower_index", followerIndexName)
             .endObject()
     }
 
     override fun writeTo(out: StreamOutput) {
-        out.writeString(remoteCluster)
-        remoteIndex.writeTo(out)
+        out.writeString(leaderAlias)
+        leaderIndex.writeTo(out)
         out.writeString(followerIndexName)
     }
 

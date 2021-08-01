@@ -49,7 +49,7 @@ class TransportReleaseLeaderResourcesAction @Inject constructor(threadPool: Thre
 
     override fun shardOperation(request: ReleaseLeaderResourcesRequest, shardId: ShardId): AcknowledgedResponse {
         log.info("Releasing resources for $shardId with restore-id as ${request.restoreUUID}")
-        restoreLeaderService.removeRemoteClusterRestore(request.restoreUUID)
+        restoreLeaderService.removeLeaderClusterRestore(request.restoreUUID)
         return AcknowledgedResponse(true)
     }
 

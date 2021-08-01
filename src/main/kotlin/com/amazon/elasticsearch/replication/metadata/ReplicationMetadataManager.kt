@@ -31,24 +31,24 @@ class ReplicationMetadataManager constructor(private val clusterService: Cluster
                                             leaderIndex: String,
                                             overallState: ReplicationOverallState,
                                             user: User?,
-                                            follower_fgac_role: String?,
-                                            leader_fgac_role: String?,
-    settings: Settings) {
+                                            follower_cluster_role: String?,
+                                            leader_cluster_role: String?,
+                                            settings: Settings) {
         val replicationMetadata = ReplicationMetadata(connectionName,
                 ReplicationStoreMetadataType.INDEX.name, overallState.name, CUSTOMER_INITIATED_ACTION,
-                ReplicationContext(followerIndex, user?.overrideFgacRole(follower_fgac_role)),
-                ReplicationContext(leaderIndex, user?.overrideFgacRole(leader_fgac_role)), settings)
+                ReplicationContext(followerIndex, user?.overrideFgacRole(follower_cluster_role)),
+                ReplicationContext(leaderIndex, user?.overrideFgacRole(leader_cluster_role)), settings)
         addMetadata(AddReplicationMetadataRequest(replicationMetadata))
         updateReplicationState(followerIndex, overallState)
     }
 
     suspend fun addAutofollowMetadata(patternName: String, connectionName: String, pattern: String,
                                       overallState: ReplicationOverallState, user: User?,
-                                      follower_fgac_role: String?, leader_fgac_role: String?, settings: Settings) {
+                                      follower_cluster_role: String?, leader_cluster_role: String?, settings: Settings) {
         val replicationMetadata = ReplicationMetadata(connectionName,
                 ReplicationStoreMetadataType.AUTO_FOLLOW.name, overallState.name, CUSTOMER_INITIATED_ACTION,
-                ReplicationContext(patternName, user?.overrideFgacRole(follower_fgac_role)),
-                ReplicationContext(pattern, user?.overrideFgacRole(leader_fgac_role)), settings)
+                ReplicationContext(patternName, user?.overrideFgacRole(follower_cluster_role)),
+                ReplicationContext(pattern, user?.overrideFgacRole(leader_cluster_role)), settings)
         addMetadata(AddReplicationMetadataRequest(replicationMetadata))
     }
 

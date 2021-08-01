@@ -85,13 +85,13 @@ class TransportReplicateIndexMasterNodeAction @Inject constructor(transportServi
         val replicateIndexReq = request.replicateIndexReq
         val user = request.user
         log.trace("Triggering relevant tasks to start replication for " +
-                "${replicateIndexReq.remoteCluster}:${replicateIndexReq.remoteIndex} -> ${replicateIndexReq.followerIndex}")
+                "${replicateIndexReq.leaderAlias}:${replicateIndexReq.leaderIndex} -> ${replicateIndexReq.followerIndex}")
 
         // For now this returns a response after creating the follower index and starting the replication tasks
         // for each shard. If that takes too long we can start the task asynchronously and return the response first.
         launch(Dispatchers.Unconfined + threadPool.coroutineContext()) {
             try {
-                val remoteMetadata = getRemoteIndexMetadata(replicateIndexReq.remoteCluster, replicateIndexReq.remoteIndex)
+                val remoteMetadata = getRemoteIndexMetadata(replicateIndexReq.leaderAlias, replicateIndexReq.leaderIndex)
 
                 if (state.routingTable.hasIndex(replicateIndexReq.followerIndex)) {
                     throw IllegalArgumentException("Cant use same index again for replication. " +
@@ -102,12 +102,12 @@ class TransportReplicateIndexMasterNodeAction @Inject constructor(transportServi
                         false,
                         false)
 
-                val params = IndexReplicationParams(replicateIndexReq.remoteCluster, remoteMetadata.index, replicateIndexReq.followerIndex)
+                val params = IndexReplicationParams(replicateIndexReq.leaderAlias, remoteMetadata.index, replicateIndexReq.followerIndex)
 
                 replicationMetadataManager.addIndexReplicationMetadata(replicateIndexReq.followerIndex,
-                        replicateIndexReq.remoteCluster, replicateIndexReq.remoteIndex,
-                        ReplicationOverallState.RUNNING, user, replicateIndexReq.assumeRoles?.getOrDefault(ReplicateIndexRequest.FOLLOWER_FGAC_ROLE, null),
-                        replicateIndexReq.assumeRoles?.getOrDefault(ReplicateIndexRequest.LEADER_FGAC_ROLE, null), replicateIndexReq.settings)
+                        replicateIndexReq.leaderAlias, replicateIndexReq.leaderIndex,
+                        ReplicationOverallState.RUNNING, user, replicateIndexReq.assumeRoles?.getOrDefault(ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE, null),
+                        replicateIndexReq.assumeRoles?.getOrDefault(ReplicateIndexRequest.LEADER_CLUSTER_ROLE, null), replicateIndexReq.settings)
 
                 val task = persistentTasksService.startTask("replication:index:${replicateIndexReq.followerIndex}",
                         IndexReplicationExecutor.TASK_NAME, params)
@@ -132,17 +132,17 @@ class TransportReplicateIndexMasterNodeAction @Inject constructor(transportServi
         }
     }
 
-    private suspend fun getRemoteIndexMetadata(remoteCluster: String, remoteIndex: String): IndexMetadata {
-        val remoteClusterClient = nodeClient.getRemoteClusterClient(remoteCluster)
+    private suspend fun getRemoteIndexMetadata(leaderAlias: String, leaderIndex: String): IndexMetadata {
+        val remoteClusterClient = nodeClient.getRemoteClusterClient(leaderAlias)
         val clusterStateRequest = remoteClusterClient.admin().cluster().prepareState()
                 .clear()
-                .setIndices(remoteIndex)
+                .setIndices(leaderIndex)
                 .setMetadata(true)
                 .setIndicesOptions(IndicesOptions.strictSingleIndexNoExpandForbidClosed())
                 .request()
         val remoteState = remoteClusterClient.suspending(remoteClusterClient.admin().cluster()::state,
                 injectSecurityContext = true, defaultContext = true)(clusterStateRequest).state
-        return remoteState.metadata.index(remoteIndex) ?: throw IndexNotFoundException("${remoteCluster}:${remoteIndex}")
+        return remoteState.metadata.index(leaderIndex) ?: throw IndexNotFoundException("${leaderAlias}:${leaderIndex}")
     }
 
     override fun checkBlock(request: ReplicateIndexMasterNodeRequest, state: ClusterState): ClusterBlockException? {

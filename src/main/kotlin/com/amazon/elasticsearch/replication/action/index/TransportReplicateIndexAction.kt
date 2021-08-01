@@ -59,39 +59,39 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
     }
 
     override fun doExecute(task: Task, request: ReplicateIndexRequest, listener: ActionListener<ReplicateIndexResponse>) {
-        log.info("Setting-up replication for ${request.remoteCluster}:${request.remoteIndex} -> ${request.followerIndex}")
+        log.info("Setting-up replication for ${request.leaderAlias}:${request.leaderIndex} -> ${request.followerIndex}")
         val user = SecurityContext.fromSecurityThreadContext(threadPool.threadContext)
         launch(threadPool.coroutineContext()) {
             listener.completeWith {
-                if(request.remoteIndex.startsWith(".")) {
-                    throw InvalidIndexNameException(request.remoteIndex,"Cannot start replication for an index starting with '.'")
+                if(request.leaderIndex.startsWith(".")) {
+                    throw InvalidIndexNameException(request.leaderIndex,"Cannot start replication for an index starting with '.'")
                 }
 
                 val followerReplContext = ReplicationContext(request.followerIndex,
-                        user?.overrideFgacRole(request.assumeRoles?.get(ReplicateIndexRequest.FOLLOWER_FGAC_ROLE)))
-                val leaderReplContext = ReplicationContext(request.remoteIndex,
-                        user?.overrideFgacRole(request.assumeRoles?.get(ReplicateIndexRequest.LEADER_FGAC_ROLE)))
+                        user?.overrideFgacRole(request.assumeRoles?.get(ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE)))
+                val leaderReplContext = ReplicationContext(request.leaderIndex,
+                        user?.overrideFgacRole(request.assumeRoles?.get(ReplicateIndexRequest.LEADER_CLUSTER_ROLE)))
 
                 // For autofollow request, setup checks are already made during addition of the pattern with
                 // original user
                 if(!request.isAutoFollowRequest) {
-                    val setupChecksReq = SetupChecksRequest(followerReplContext, leaderReplContext, request.remoteCluster)
+                    val setupChecksReq = SetupChecksRequest(followerReplContext, leaderReplContext, request.leaderAlias)
                     val setupChecksRes = client.suspendExecute(SetupChecksAction.INSTANCE, setupChecksReq)
                     if(!setupChecksRes.isAcknowledged) {
-                        log.error("Setup checks failed while triggering replication for ${request.remoteCluster}:${request.remoteIndex} -> " +
+                        log.error("Setup checks failed while triggering replication for ${request.leaderAlias}:${request.leaderIndex} -> " +
                                 "${request.followerIndex}")
                         throw ReplicationException("Setup checks failed while setting-up replication for ${request.followerIndex}")
                     }
                 }
 
-                val remoteClient = client.getRemoteClusterClient(request.remoteCluster)
-                val getSettingsRequest = GetSettingsRequest().includeDefaults(false).indices(request.remoteIndex)
+                val remoteClient = client.getRemoteClusterClient(request.leaderAlias)
+                val getSettingsRequest = GetSettingsRequest().includeDefaults(false).indices(request.leaderIndex)
                 val settingsResponse = remoteClient.suspending(remoteClient.admin().indices()::getSettings, injectSecurityContext = true)(getSettingsRequest)
-                val leaderSettings = settingsResponse.indexToSettings.get(request.remoteIndex) ?: throw IndexNotFoundException(request.remoteIndex)
+                val leaderSettings = settingsResponse.indexToSettings.get(request.leaderIndex) ?: throw IndexNotFoundException(request.leaderIndex)
 
                 if (leaderSettings.keySet().contains(ReplicationPlugin.REPLICATED_INDEX_SETTING.key) and
                         !leaderSettings.get(ReplicationPlugin.REPLICATED_INDEX_SETTING.key).isNullOrBlank()) {
-                    throw IllegalArgumentException("Cannot Replicate a Replicated Index ${request.remoteIndex}")
+                    throw IllegalArgumentException("Cannot Replicate a Replicated Index ${request.leaderIndex}")
                 }
                 if (!leaderSettings.getAsBoolean(IndexSettings.INDEX_SOFT_DELETES_SETTING.key, true)) {
                     throw IllegalArgumentException("Cannot Replicate an index where the setting ${IndexSettings.INDEX_SOFT_DELETES_SETTING.key} is disabled")

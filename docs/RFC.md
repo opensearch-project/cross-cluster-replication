@@ -107,7 +107,7 @@ Request
 PUT $FOLLOWER/_plugins/_replication/<index>/_start
 Content-Type: application/json
 
-{  "remote_cluster" : "leader-cluster",  "remote_index": "<index>"}
+{  "leader_alias" : "leader-cluster",  "leader_index": "<index>"}
 
 ## Response
 
@@ -148,7 +148,7 @@ POST $FOLLOWER/_plugins/_replication/_autofollow
 Content-Type: application/json
 
 {
-  "connection": "leader-cluster",
+  "leader_alias": "leader-cluster",
   "name": "test",
   "pattern": "*customer*"
 }
@@ -163,7 +163,7 @@ DELETE $FOLLOWER/_plugins/_replication/_autofollow
 Content-Type: application/json
 
 {
-  "connection": "leader-cluster",
+  "leader_alias": "leader-cluster",
   "name": "test"
 }
 ```

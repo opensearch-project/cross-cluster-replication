@@ -15,11 +15,9 @@
 
 package com.amazon.elasticsearch.replication.action.replay
 
-import com.amazon.elasticsearch.replication.ReplicationException
 import com.amazon.elasticsearch.replication.metadata.UpdateMetadataAction
 import com.amazon.elasticsearch.replication.metadata.UpdateMetadataRequest
 import com.amazon.elasticsearch.replication.metadata.checkIfIndexBlockedWithLevel
-import com.amazon.elasticsearch.replication.util.SecurityContext
 import com.amazon.elasticsearch.replication.util.completeWith
 import com.amazon.elasticsearch.replication.util.coroutineContext
 import com.amazon.elasticsearch.replication.util.suspendExecute
@@ -33,7 +31,6 @@ import org.apache.logging.log4j.LogManager
 import org.elasticsearch.action.ActionListener
 import org.elasticsearch.action.admin.indices.mapping.get.GetMappingsRequest
 import org.elasticsearch.action.admin.indices.mapping.put.PutMappingRequest
-import org.elasticsearch.action.bulk.TransportShardBulkAction
 import org.elasticsearch.action.index.IndexRequest
 import org.elasticsearch.action.resync.TransportResyncReplicationAction
 import org.elasticsearch.action.support.ActionFilters
@@ -63,7 +60,7 @@ import java.util.function.Function
 
 /**
  * Similar to [TransportResyncReplicationAction] except it also writes the changes to the primary before replicating
- * to the replicas.  The source of changes is, of course, the remote cluster.
+ * to the replicas.  The source of changes is, of course, the leader cluster.
  */
 class TransportReplayChangesAction @Inject constructor(settings: Settings, transportService: TransportService,
                                                        clusterService: ClusterService, indicesService: IndicesService,
@@ -128,8 +125,8 @@ class TransportReplayChangesAction @Inject constructor(settings: Settings, trans
             var result = primaryShard.applyTranslogOperation(op, Engine.Operation.Origin.PRIMARY)
             if (result.resultType == Engine.Result.Type.MAPPING_UPDATE_REQUIRED) {
                 waitForMappingUpdate {
-                    // fetch mappings from the remote cluster when applying on PRIMARY...
-                    syncRemoteMapping(request.remoteCluster, request.remoteIndex, request.shardId()!!.indexName,
+                    // fetch mappings from the leader cluster when applying on PRIMARY...
+                    syncRemoteMapping(request.leaderAlias, request.leaderIndex, request.shardId()!!.indexName,
                             op.docType())
                 }
                 result = primaryShard.applyTranslogOperation(op, Engine.Operation.Origin.PRIMARY)
@@ -171,17 +168,17 @@ class TransportReplayChangesAction @Inject constructor(settings: Settings, trans
     }
 
     /**
-     * Fetches the index mapping from the remote cluster, applies it to the local cluster's master and then waits
+     * Fetches the index mapping from the leader cluster, applies it to the local cluster's master and then waits
      * for the mapping to become available on the current shard. Should only be called on the primary shard .
      */
-    private suspend fun syncRemoteMapping(remoteCluster: String, remoteIndex: String,
+    private suspend fun syncRemoteMapping(leaderAlias: String, leaderIndex: String,
                                           followerIndex: String, type: String) {
-        log.debug("Syncing mappings from ${remoteCluster}:${remoteIndex}/${type} -> $followerIndex...")
-        val remoteClient = client.getRemoteClusterClient(remoteCluster)
+        log.debug("Syncing mappings from ${leaderAlias}:${leaderIndex}/${type} -> $followerIndex...")
+        val remoteClient = client.getRemoteClusterClient(leaderAlias)
         val options = IndicesOptions.strictSingleIndexNoExpandForbidClosed()
-        val getMappingsRequest = GetMappingsRequest().indices(remoteIndex).indicesOptions(options)
+        val getMappingsRequest = GetMappingsRequest().indices(leaderIndex).indicesOptions(options)
         val getMappingsResponse = remoteClient.suspending(remoteClient.admin().indices()::getMappings, injectSecurityContext = true)(getMappingsRequest)
-        val mappingSource = getMappingsResponse.mappings().get(remoteIndex).get(type).source().string()
+        val mappingSource = getMappingsResponse.mappings().get(leaderIndex).get(type).source().string()
 
         // This should use MappingUpdateAction but that uses PutMappingRequest internally and
         // PutMappingRequest#setConcreteIndex has a bug where it throws an NPE.This is fixed upstream in
@@ -197,7 +194,7 @@ class TransportReplayChangesAction @Inject constructor(settings: Settings, trans
     /**
      * Waits for an index mapping update to become available on the current shard. If a [mappingUpdater] is provided
      * it will be called to fetch and update the mapping. The updater is normally run only on the primary shard to fetch
-     * mappings from the remote index.  On replica shards an updater is not required as the primary should have already
+     * mappings from the leader index.  On replica shards an updater is not required as the primary should have already
      * updated the mapping - we just have to wait for it to reach this node.
      */
     private suspend fun waitForMappingUpdate(mappingUpdater: suspend () -> Unit = {}) {

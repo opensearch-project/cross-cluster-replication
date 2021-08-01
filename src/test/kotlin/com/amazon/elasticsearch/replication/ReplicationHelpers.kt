@@ -37,9 +37,9 @@ import org.junit.Assert
 import java.util.concurrent.TimeUnit
 import java.util.stream.Collectors
 
-data class AssumeRoles(val remoteClusterRole: String = "leader_role", val localClusterRole: String = "follower_role")
+data class AssumeRoles(val leaderClusterRole: String = "leader_role", val followerClusterRole: String = "follower_role")
 
-data class StartReplicationRequest(val remoteClusterAlias: String, val remoteIndex: String, val toIndex: String,
+data class StartReplicationRequest(val leaderAlias: String, val leaderIndex: String, val toIndex: String,
                                    val settings: Settings = Settings.EMPTY, val assumeRoles: AssumeRoles = AssumeRoles())
 
 const val REST_REPLICATION_PREFIX = "/_plugins/_replication/"
@@ -67,21 +67,21 @@ fun RestHighLevelClient.startReplication(request: StartReplicationRequest,
             + "?wait_for_restore=${waitForRestore}")
     if (request.settings == Settings.EMPTY) {
         lowLevelRequest.setJsonEntity("""{
-                                       "remote_cluster" : "${request.remoteClusterAlias}",
-                                       "remote_index": "${request.remoteIndex}",
+                                       "leader_alias" : "${request.leaderAlias}",
+                                       "leader_index": "${request.leaderIndex}",
                                        "assume_roles": {
-                                        "remote_cluster_role": "${request.assumeRoles.remoteClusterRole}",
-                                        "local_cluster_role": "${request.assumeRoles.localClusterRole}"
+                                        "leader_cluster_role": "${request.assumeRoles.leaderClusterRole}",
+                                        "follower_cluster_role": "${request.assumeRoles.followerClusterRole}"
                                        }
                                      }            
                                   """)
     } else {
         lowLevelRequest.setJsonEntity("""{
-                                       "remote_cluster" : "${request.remoteClusterAlias}",
-                                       "remote_index": "${request.remoteIndex}",
+                                       "leader_alias" : "${request.leaderAlias}",
+                                       "leader_index": "${request.leaderIndex}",
                                        "assume_roles": {
-                                        "remote_cluster_role": "${request.assumeRoles.remoteClusterRole}",
-                                        "local_cluster_role": "${request.assumeRoles.localClusterRole}"
+                                        "leader_cluster_role": "${request.assumeRoles.leaderClusterRole}",
+                                        "follower_cluster_role": "${request.assumeRoles.followerClusterRole}"
                                        },
                                        "settings": ${request.settings}
                                      }            
@@ -142,38 +142,38 @@ fun `validate status syncing response`(statusResp: Map<String, Any>) {
     Assert.assertEquals("SYNCING", statusResp.getValue("status"))
     Assert.assertEquals(STATUS_REASON_USER_INITIATED, statusResp.getValue("reason"))
     Assert.assertTrue((statusResp.getValue("shard_replication_details")).toString().contains("syncing_task_details"))
-    Assert.assertTrue((statusResp.getValue("shard_replication_details")).toString().contains("local_checkpoint"))
-    Assert.assertTrue((statusResp.getValue("shard_replication_details")).toString().contains("remote_checkpoint"))
+    Assert.assertTrue((statusResp.getValue("shard_replication_details")).toString().contains("follower_checkpoint"))
+    Assert.assertTrue((statusResp.getValue("shard_replication_details")).toString().contains("leader_checkpoint"))
 }
 
 fun `validate status syncing aggregated response`(statusResp: Map<String, Any>) {
     Assert.assertEquals("SYNCING", statusResp.getValue("status"))
     Assert.assertEquals(STATUS_REASON_USER_INITIATED, statusResp.getValue("reason"))
-    Assert.assertTrue((statusResp.getValue("syncing_details")).toString().contains("local_checkpoint"))
-    Assert.assertTrue((statusResp.getValue("syncing_details")).toString().contains("remote_checkpoint"))
+    Assert.assertTrue((statusResp.getValue("syncing_details")).toString().contains("follower_checkpoint"))
+    Assert.assertTrue((statusResp.getValue("syncing_details")).toString().contains("leader_checkpoint"))
 }
 
 fun `validate not paused status response`(statusResp: Map<String, Any>) {
     Assert.assertNotEquals(statusResp.getValue("status"),"PAUSED")
     Assert.assertEquals(STATUS_REASON_USER_INITIATED, statusResp.getValue("reason"))
     Assert.assertTrue((statusResp.getValue("shard_replication_details")).toString().contains("syncing_task_details"))
-    Assert.assertTrue((statusResp.getValue("shard_replication_details")).toString().contains("local_checkpoint"))
-    Assert.assertTrue((statusResp.getValue("shard_replication_details")).toString().contains("remote_checkpoint"))
+    Assert.assertTrue((statusResp.getValue("shard_replication_details")).toString().contains("follower_checkpoint"))
+    Assert.assertTrue((statusResp.getValue("shard_replication_details")).toString().contains("leader_checkpoint"))
 }
 
 fun `validate not paused status aggregated response`(statusResp: Map<String, Any>) {
     Assert.assertNotEquals("PAUSED", statusResp.getValue("status"))
     Assert.assertEquals(STATUS_REASON_USER_INITIATED, statusResp.getValue("reason"))
-    Assert.assertTrue((statusResp.getValue("syncing_details")).toString().contains("local_checkpoint"))
-    Assert.assertTrue((statusResp.getValue("syncing_details")).toString().contains("remote_checkpoint"))
+    Assert.assertTrue((statusResp.getValue("syncing_details")).toString().contains("follower_checkpoint"))
+    Assert.assertTrue((statusResp.getValue("syncing_details")).toString().contains("leader_checkpoint"))
 }
 
 fun `validate paused status response`(statusResp: Map<String, Any>) {
     Assert.assertEquals("PAUSED", statusResp.getValue("status"))
     Assert.assertEquals(STATUS_REASON_USER_INITIATED, statusResp.getValue("reason"))
     Assert.assertFalse(statusResp.containsKey("shard_replication_details"))
-    Assert.assertFalse(statusResp.containsKey("local_checkpoint"))
-    Assert.assertFalse(statusResp.containsKey("remote_checkpoint"))
+    Assert.assertFalse(statusResp.containsKey("follower_checkpoint"))
+    Assert.assertFalse(statusResp.containsKey("leader_checkpoint"))
 }
 
 fun `validate paused status on closed index`(statusResp: Map<String, Any>) {
@@ -292,22 +292,22 @@ fun RestHighLevelClient.updateAutoFollowPattern(connection: String, patternName:
     val lowLevelRequest = Request("POST", REST_AUTO_FOLLOW_PATTERN)
     if (settings == Settings.EMPTY) {
         lowLevelRequest.setJsonEntity("""{
-                                       "connection" : "${connection}",
+                                       "leader_alias" : "${connection}",
                                        "name" : "${patternName}",
                                        "pattern": "${pattern}",
                                        "assume_roles": {
-                                        "remote_cluster_role": "${assumeRoles.remoteClusterRole}",
-                                        "local_cluster_role": "${assumeRoles.localClusterRole}"
+                                        "leader_cluster_role": "${assumeRoles.leaderClusterRole}",
+                                        "follower_cluster_role": "${assumeRoles.followerClusterRole}"
                                        }
                                      }""")
     } else {
         lowLevelRequest.setJsonEntity("""{
-                                       "connection" : "${connection}",
+                                       "leader_alias" : "${connection}",
                                        "name" : "${patternName}",
                                        "pattern": "${pattern}",
                                        "assume_roles": {
-                                        "remote_cluster_role": "${assumeRoles.remoteClusterRole}",
-                                        "local_cluster_role": "${assumeRoles.localClusterRole}"
+                                        "leader_cluster_role": "${assumeRoles.leaderClusterRole}",
+                                        "follower_cluster_role": "${assumeRoles.followerClusterRole}"
                                        },
                                        "settings": $settings
                                      }""")
@@ -321,7 +321,7 @@ fun RestHighLevelClient.updateAutoFollowPattern(connection: String, patternName:
 fun RestHighLevelClient.deleteAutoFollowPattern(connection: String, patternName: String) {
     val lowLevelRequest = Request("DELETE", REST_AUTO_FOLLOW_PATTERN)
     lowLevelRequest.setJsonEntity("""{
-                                       "connection" : "${connection}",
+                                       "leader_alias" : "${connection}",
                                        "name" : "${patternName}"
                                      }""")
     val lowLevelResponse = lowLevelClient.performRequest(lowLevelRequest)

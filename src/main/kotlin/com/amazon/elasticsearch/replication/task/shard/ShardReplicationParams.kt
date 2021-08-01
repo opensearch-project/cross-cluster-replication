@@ -32,13 +32,13 @@ import org.elasticsearch.index.Index
 
 class ShardReplicationParams : PersistentTaskParams {
 
-    var remoteCluster: String
-    var remoteShardId: ShardId
+    var leaderAlias: String
+    var leaderShardId: ShardId
     var followerShardId: ShardId
 
-    constructor(remoteCluster: String, remoteShardId: ShardId, followerShardId: ShardId) {
-        this.remoteCluster = remoteCluster
-        this.remoteShardId = remoteShardId
+    constructor(leaderAlias: String, leaderShardId: ShardId, followerShardId: ShardId) {
+        this.leaderAlias = leaderAlias
+        this.leaderShardId = leaderShardId
         this.followerShardId = followerShardId
     }
 
@@ -49,10 +49,10 @@ class ShardReplicationParams : PersistentTaskParams {
 
         private val PARSER = ObjectParser<Builder, Void>(ShardReplicationExecutor.TASK_NAME, true) { Builder() }
         init {
-            PARSER.declareString(Builder::remoteCluster, ParseField("remote_cluster"))
+            PARSER.declareString(Builder::leaderAlias, ParseField("leader_alias"))
             // ShardId is converted to String - parsing from the same format to construct the params
-            PARSER.declareString(Builder::remoteShardId, ParseField("remote_shard"))
-            PARSER.declareString(Builder::remoteIndexUUID, ParseField("remote_index_uuid"))
+            PARSER.declareString(Builder::leaderShardId, ParseField("leader_shard"))
+            PARSER.declareString(Builder::leaderIndexUUID, ParseField("leader_index_uuid"))
             PARSER.declareString(Builder::followerShardId, ParseField("follower_shard"))
             PARSER.declareString(Builder::followerIndexUUID, ParseField("follower_index_uuid"))
         }
@@ -69,17 +69,17 @@ class ShardReplicationParams : PersistentTaskParams {
 
     override fun toXContent(builder: XContentBuilder, params: ToXContent.Params?): XContentBuilder {
         return builder.startObject()
-            .field("remote_cluster", remoteCluster)
-            .field("remote_shard", remoteShardId)
-            .field("remote_index_uuid", remoteShardId.index.uuid) // The XContent of ShardId doesn't serialize index uuid
+            .field("leader_alias", leaderAlias)
+            .field("leader_shard", leaderShardId)
+            .field("leader_index_uuid", leaderShardId.index.uuid) // The XContent of ShardId doesn't serialize index uuid
             .field("follower_shard", followerShardId)
             .field("follower_index_uuid", followerShardId.index.uuid)
             .endObject()
     }
 
     override fun writeTo(out: StreamOutput) {
-        out.writeString(remoteCluster)
-        remoteShardId.writeTo(out)
+        out.writeString(leaderAlias)
+        leaderShardId.writeTo(out)
         followerShardId.writeTo(out)
     }
 
@@ -92,22 +92,22 @@ class ShardReplicationParams : PersistentTaskParams {
     }
 
     class Builder {
-        lateinit var remoteCluster: String
-        lateinit var remoteShardId: String
-        lateinit var remoteIndexUUID: String
+        lateinit var leaderAlias: String
+        lateinit var leaderShardId: String
+        lateinit var leaderIndexUUID: String
         lateinit var followerShardId: String
         lateinit var followerIndexUUID: String
 
-        fun remoteCluster(remoteCluster: String) {
-            this.remoteCluster = remoteCluster
+        fun leaderAlias(leaderAlias: String) {
+            this.leaderAlias = leaderAlias
         }
 
-        fun remoteShardId(remoteShardId: String) {
-            this.remoteShardId = remoteShardId
+        fun leaderShardId(leaderShardId: String) {
+            this.leaderShardId = leaderShardId
         }
 
-        fun remoteIndexUUID(remoteIndexUUID: String) {
-            this.remoteIndexUUID = remoteIndexUUID
+        fun leaderIndexUUID(leaderIndexUUID: String) {
+            this.leaderIndexUUID = leaderIndexUUID
         }
 
         fun followerShardId(followerShardId: String) {
@@ -119,10 +119,10 @@ class ShardReplicationParams : PersistentTaskParams {
         }
 
         fun build(): ShardReplicationParams {
-            val remoteShardIdObj = ShardId.fromString(remoteShardId)
+            val leaderShardIdObj = ShardId.fromString(leaderShardId)
             val followerShardIdObj = ShardId.fromString(followerShardId)
-            return ShardReplicationParams(remoteCluster, ShardId(Index(remoteShardIdObj.indexName, remoteIndexUUID),
-                    remoteShardIdObj.id), ShardId(Index(followerShardIdObj.indexName, followerIndexUUID),
+            return ShardReplicationParams(leaderAlias, ShardId(Index(leaderShardIdObj.indexName, leaderIndexUUID),
+                    leaderShardIdObj.id), ShardId(Index(followerShardIdObj.indexName, followerIndexUUID),
                     followerShardIdObj.id))
         }
     }

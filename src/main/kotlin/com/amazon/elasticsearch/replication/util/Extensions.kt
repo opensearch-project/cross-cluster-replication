@@ -15,9 +15,9 @@
 
 package com.amazon.elasticsearch.replication.util
 
+import com.amazon.elasticsearch.replication.repository.RemoteClusterRepository
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationContext
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
-import com.amazon.elasticsearch.replication.repository.RemoteClusterRepository
 import com.amazon.opendistroforelasticsearch.commons.authuser.User
 import kotlinx.coroutines.delay
 import org.apache.logging.log4j.Logger
