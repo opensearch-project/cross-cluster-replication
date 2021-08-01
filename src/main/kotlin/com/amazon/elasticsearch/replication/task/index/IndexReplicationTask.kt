@@ -115,10 +115,10 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
     private lateinit var currentTaskState : IndexReplicationState
     private lateinit var followingTaskState : IndexReplicationState
 
-    override val remoteCluster = params.remoteCluster
+    override val leaderAlias = params.leaderAlias
 
-    private val remoteClient = client.getRemoteClusterClient(remoteCluster)
-    val remoteIndex   = params.remoteIndex
+    private val remoteClient = client.getRemoteClusterClient(leaderAlias)
+    val leaderIndex   = params.leaderIndex
     override val followerIndexName = params.followerIndexName
 
     override val log = Loggers.getLogger(javaClass, Index(params.followerIndexName, ClusterState.UNKNOWN_UUID))
@@ -364,13 +364,13 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
             try {
                 log.debug("Polling for metadata for $followerIndexName")
                 var staticUpdated = false
-                var gsr = GetSettingsRequest().includeDefaults(false).indices(this.remoteIndex.name)
+                var gsr = GetSettingsRequest().includeDefaults(false).indices(this.leaderIndex.name)
                 var settingsResponse = remoteClient.suspending(remoteClient.admin().indices()::getSettings, injectSecurityContext = true)(gsr)
                 //  There is no mechanism to retrieve settingsVersion from client
                 // If we we want to retrieve just the version of settings and alias versions, there are two options
                 // 1. Include this in GetChanges and communicate it to IndexTask via Metadata
                 // 2. Add another API to retrieve version of settings & aliases. Persist current version in Metadata
-                var leaderSettings = settingsResponse.indexToSettings.get(this.remoteIndex.name)
+                var leaderSettings = settingsResponse.indexToSettings.get(this.leaderIndex.name)
                 leaderSettings = leaderSettings.filter { k: String? ->
                     !blockListedSettings.contains(k)
                 }
@@ -452,9 +452,9 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
                 }
 
                 //Alias
-                var getAliasesRequest = GetAliasesRequest().indices(this.remoteIndex.name)
+                var getAliasesRequest = GetAliasesRequest().indices(this.leaderIndex.name)
                 var getAliasesRes = remoteClient.suspending(remoteClient.admin().indices()::getAliases, injectSecurityContext = true)(getAliasesRequest)
-                var leaderAliases = getAliasesRes.aliases.get(this.remoteIndex.name)
+                var leaderAliases = getAliasesRes.aliases.get(this.leaderIndex.name)
 
                 getAliasesRequest = GetAliasesRequest().indices(followerIndexName)
                 getAliasesRes = client.suspending(client.admin().indices()::getAliases, injectSecurityContext = true)(getAliasesRequest)
@@ -660,7 +660,7 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
             it.value.shardId
         }.associate { shardId ->
             val task = tasks.getOrElse(shardId) {
-                startReplicationTask(ShardReplicationParams(remoteCluster, ShardId(remoteIndex, shardId.id), shardId))
+                startReplicationTask(ShardReplicationParams(leaderAlias, ShardId(leaderIndex, shardId.id), shardId))
             }
             return@associate shardId to task
         }
@@ -675,7 +675,7 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
         val shards = clusterService.state().routingTable.indicesRouting().get(followerIndexName)?.shards()
         shards?.forEach {
             val followerShardId = it.value.shardId
-            retentionLeaseHelper.attemptRetentionLeaseRemoval(ShardId(remoteIndex, followerShardId.id), followerShardId)
+            retentionLeaseHelper.attemptRetentionLeaseRemoval(ShardId(leaderIndex, followerShardId.id), followerShardId)
         }
 
         /* As given here
@@ -688,20 +688,20 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
 
     private suspend fun setupAndStartRestore(): IndexReplicationState {
         // Enable translog based fetch on the leader(remote) cluster
-        val remoteClient = client.getRemoteClusterClient(remoteCluster)
+        val remoteClient = client.getRemoteClusterClient(leaderAlias)
         val settingsBuilder = Settings.builder().put(INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key, true)
-        val updateSettingsRequest = remoteClient.admin().indices().prepareUpdateSettings().setSettings(settingsBuilder).setIndices(remoteIndex.name).request()
+        val updateSettingsRequest = remoteClient.admin().indices().prepareUpdateSettings().setSettings(settingsBuilder).setIndices(leaderIndex.name).request()
         val updateResponse = remoteClient.suspending(remoteClient.admin().indices()::updateSettings, injectSecurityContext = true)(updateSettingsRequest)
         if(!updateResponse.isAcknowledged) {
             log.error("Unable to update setting for translog pruning based on retention lease")
         }
 
         val restoreRequest = client.admin().cluster()
-            .prepareRestoreSnapshot(RemoteClusterRepository.repoForCluster(remoteCluster), REMOTE_SNAPSHOT_NAME)
-            .setIndices(remoteIndex.name)
+            .prepareRestoreSnapshot(RemoteClusterRepository.repoForCluster(leaderAlias), REMOTE_SNAPSHOT_NAME)
+            .setIndices(leaderIndex.name)
             .request()
-        if (remoteIndex.name != followerIndexName) {
-            restoreRequest.renamePattern(remoteIndex.name)
+        if (leaderIndex.name != followerIndexName) {
+            restoreRequest.renamePattern(leaderIndex.name)
                 .renameReplacement(followerIndexName)
         }
         val replMetadata = replicationMetadataManager.getIndexReplicationMetadata(this.followerIndexName)
@@ -744,7 +744,7 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
                 return InitFollowState
             } else {
                 throw ResourceNotFoundException("""
-                    Unable to find in progress restore for remote index: $remoteCluster:$remoteIndex. 
+                    Unable to find in progress restore for remote index: $leaderAlias:$leaderIndex. 
                     This can happen if there was a badly timed master node failure.""".trimIndent())
             }
         } else if (restore.state() == RestoreInProgress.State.FAILURE) {
@@ -783,7 +783,7 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
     }
     private fun inProgressRestore(cs: ClusterState): RestoreInProgress.Entry? {
         return cs.custom<RestoreInProgress>(RestoreInProgress.TYPE).singleOrNull { entry ->
-            entry.snapshot().repository == RemoteClusterRepository.repoForCluster(remoteCluster) &&
+            entry.snapshot().repository == RemoteClusterRepository.repoForCluster(leaderAlias) &&
                 entry.indices().singleOrNull { idx -> idx == followerIndexName } != null
         }
     }

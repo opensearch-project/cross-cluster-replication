@@ -48,11 +48,11 @@ Content-Type: application/json
 
 
 {
-  "remote_cluster": "remote-cluster",
-  "remote_index": "remote-index",
+  "leader_alias": "remote-cluster",
+  "leader_index": "leader-index",
   "assume_roles": {
-    "remote_cluster_role": "all_access",
-    "local_cluster_role": "all_access"
+    "leader_cluster_role": "all_access",
+    "follower_cluster_role": "all_access"
   }
 }
 
@@ -97,8 +97,8 @@ Content-Type: application/json
 
 
 {
-  "remote_cluster" : "source",
-  "remote_index": "customer"
+  "leader_alias" : "source",
+  "leader_index": "customer"
 }
 
 ### Add another document after replication started
@@ -151,7 +151,7 @@ POST localhost:{{foll_port}}/_plugins/_replication/_autofollow
 Content-Type: application/json
 
 {
-  "connection": "source",
+  "leader_alias": "source",
   "name": "test",
   "pattern": "*customer*"
 }
@@ -161,12 +161,12 @@ POST localhost:{{foll_port}}/_plugins/_replication/_autofollow
 Content-Type: application/json
 
 {
-  "connection": "source",
+  "leader_alias": "source",
   "name": "test",
   "pattern": "*customer*",
   "assume_roles": {
-    "remote_cluster_role": "all_access",
-    "local_cluster_role": "all_access"
+    "leader_cluster_role": "all_access",
+    "follower_cluster_role": "all_access"
   }
 }
 
@@ -175,7 +175,7 @@ DELETE localhost:{{foll_port}}/_plugins/_replication/_autofollow
 Content-Type: application/json
 
 {
-  "connection": "source",
+  "leader_alias": "source",
   "name": "test"
 }
 

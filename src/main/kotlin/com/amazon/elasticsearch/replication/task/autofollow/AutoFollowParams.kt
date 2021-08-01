@@ -28,7 +28,7 @@ import java.io.IOException
 
 class AutoFollowParams : PersistentTaskParams {
 
-    lateinit var remoteCluster: String
+    lateinit var leaderCluster: String
     lateinit var patternName: String
 
     companion object {
@@ -36,7 +36,7 @@ class AutoFollowParams : PersistentTaskParams {
 
         private val PARSER = ObjectParser<AutoFollowParams, Void>(NAME, true) { AutoFollowParams() }
         init {
-            PARSER.declareString(AutoFollowParams::remoteCluster::set, ParseField("remote_cluster"))
+            PARSER.declareString(AutoFollowParams::leaderCluster::set, ParseField("leader_cluster"))
             PARSER.declareString(AutoFollowParams::patternName::set, ParseField("pattern_name"))
         }
 
@@ -49,15 +49,15 @@ class AutoFollowParams : PersistentTaskParams {
     private constructor() {
     }
 
-    constructor(remoteCluster: String, patternName: String) {
-        this.remoteCluster = remoteCluster
+    constructor(leaderCluster: String, patternName: String) {
+        this.leaderCluster = leaderCluster
         this.patternName = patternName
     }
 
     constructor(inp: StreamInput) : this(inp.readString(), inp.readString())
 
     override fun writeTo(out: StreamOutput) {
-        out.writeString(remoteCluster)
+        out.writeString(leaderCluster)
         out.writeString(patternName)
     }
 
@@ -67,7 +67,7 @@ class AutoFollowParams : PersistentTaskParams {
 
     override fun toXContent(builder: XContentBuilder, params: ToXContent.Params): XContentBuilder {
         return builder.startObject()
-            .field("remote_cluster", remoteCluster)
+            .field("leader_cluster", leaderCluster)
             .field("pattern_name", patternName)
             .endObject()
     }

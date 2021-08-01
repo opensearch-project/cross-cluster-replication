@@ -25,7 +25,7 @@ class TransportValidatePermissionsAction @Inject constructor(transportService: T
     }
 
     override fun doExecute(task: Task, request: ValidatePermissionsRequest, listener: ActionListener<AcknowledgedResponse>) {
-        log.info("Replication setup - Permissions validation successful for Index - ${request.index} and role ${request.fgacRole}")
+        log.info("Replication setup - Permissions validation successful for Index - ${request.index} and role ${request.clusterRole}")
         listener.completeWith { AcknowledgedResponse(true) }
     }
 

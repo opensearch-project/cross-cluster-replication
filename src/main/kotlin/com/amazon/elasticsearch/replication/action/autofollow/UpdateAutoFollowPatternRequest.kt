@@ -51,7 +51,7 @@ class UpdateAutoFollowPatternRequest: AcknowledgedRequest<UpdateAutoFollowPatter
     companion object {
         private val AUTOFOLLOW_REQ_PARSER = ObjectParser<UpdateAutoFollowPatternRequest, Void>("AutoFollowRequestParser") { UpdateAutoFollowPatternRequest() }
         init {
-            AUTOFOLLOW_REQ_PARSER.declareString(UpdateAutoFollowPatternRequest::connection::set, ParseField("connection"))
+            AUTOFOLLOW_REQ_PARSER.declareString(UpdateAutoFollowPatternRequest::connection::set, ParseField("leader_alias"))
             AUTOFOLLOW_REQ_PARSER.declareString(UpdateAutoFollowPatternRequest::patternName::set, ParseField("name"))
             AUTOFOLLOW_REQ_PARSER.declareString(UpdateAutoFollowPatternRequest::pattern::set, ParseField("pattern"))
 
@@ -88,11 +88,11 @@ class UpdateAutoFollowPatternRequest: AcknowledgedRequest<UpdateAutoFollowPatter
         patternName = inp.readString()
         pattern = inp.readOptionalString()
         action = inp.readEnum(Action::class.java)
-        var leaderFgacRole = inp.readOptionalString()
-        var followerFgacRole = inp.readOptionalString()
+        var leaderClusterRole = inp.readOptionalString()
+        var followerClusterRole = inp.readOptionalString()
         assumeRoles = HashMap()
-        if(leaderFgacRole != null) assumeRoles!![ReplicateIndexRequest.LEADER_FGAC_ROLE] = leaderFgacRole
-        if(followerFgacRole != null) assumeRoles!![ReplicateIndexRequest.FOLLOWER_FGAC_ROLE] = followerFgacRole
+        if(leaderClusterRole != null) assumeRoles!![ReplicateIndexRequest.LEADER_CLUSTER_ROLE] = leaderClusterRole
+        if(followerClusterRole != null) assumeRoles!![ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE] = followerClusterRole
         settings = Settings.readSettingsFromStream(inp)
     }
 
@@ -105,10 +105,10 @@ class UpdateAutoFollowPatternRequest: AcknowledgedRequest<UpdateAutoFollowPatter
             validationException.addValidationError("Missing connection or name in the request")
         }
 
-        if(assumeRoles != null && (assumeRoles!!.size < 2 || assumeRoles!![ReplicateIndexRequest.LEADER_FGAC_ROLE] == null ||
-                        assumeRoles!![ReplicateIndexRequest.FOLLOWER_FGAC_ROLE] == null)) {
-            validationException.addValidationError("Need roles for ${ReplicateIndexRequest.LEADER_FGAC_ROLE} and " +
-                    "${ReplicateIndexRequest.FOLLOWER_FGAC_ROLE}")
+        if(assumeRoles != null && (assumeRoles!!.size < 2 || assumeRoles!![ReplicateIndexRequest.LEADER_CLUSTER_ROLE] == null ||
+                        assumeRoles!![ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE] == null)) {
+            validationException.addValidationError("Need roles for ${ReplicateIndexRequest.LEADER_CLUSTER_ROLE} and " +
+                    "${ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE}")
         }
 
         if(action == Action.REMOVE) {
@@ -128,22 +128,22 @@ class UpdateAutoFollowPatternRequest: AcknowledgedRequest<UpdateAutoFollowPatter
         out.writeString(patternName)
         out.writeOptionalString(pattern)
         out.writeEnum(action)
-        out.writeOptionalString(assumeRoles?.get(ReplicateIndexRequest.LEADER_FGAC_ROLE))
-        out.writeOptionalString(assumeRoles?.get(ReplicateIndexRequest.FOLLOWER_FGAC_ROLE))
+        out.writeOptionalString(assumeRoles?.get(ReplicateIndexRequest.LEADER_CLUSTER_ROLE))
+        out.writeOptionalString(assumeRoles?.get(ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE))
         Settings.writeSettingsToStream(settings, out)
     }
 
     override fun toXContent(builder: XContentBuilder, params: ToXContent.Params): XContentBuilder {
         builder.startObject()
-        builder.field("connection", connection)
+        builder.field("leader_alias", connection)
         builder.field("pattern_name", patternName)
         builder.field("pattern", pattern)
         builder.field("action", action.name)
         if(assumeRoles != null) {
             builder.field("assume_roles")
             builder.startObject()
-            builder.field("remote_fgac_role", assumeRoles!!.get(ReplicateIndexRequest.LEADER_FGAC_ROLE))
-            builder.field("local_fgac_role", assumeRoles!!.get(ReplicateIndexRequest.FOLLOWER_FGAC_ROLE))
+            builder.field("leader_cluster_role", assumeRoles!!.get(ReplicateIndexRequest.LEADER_CLUSTER_ROLE))
+            builder.field("follower_cluster_role", assumeRoles!!.get(ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE))
             builder.endObject()
         }
 

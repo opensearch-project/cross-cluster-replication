@@ -68,15 +68,15 @@ class TransportAutoFollowMasterNodeAction @Inject constructor(transportService: 
                         throw ReplicationException("Failed to update empty autofollow pattern")
                     }
                     // Pattern is same for leader and follower
-                    val followerFgacRole = request.assumeRoles?.get(ReplicateIndexRequest.FOLLOWER_FGAC_ROLE)
-                    val leaderFgacRole = request.assumeRoles?.get(ReplicateIndexRequest.LEADER_FGAC_ROLE)
+                    val followerClusterRole = request.assumeRoles?.get(ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE)
+                    val leaderClusterRole = request.assumeRoles?.get(ReplicateIndexRequest.LEADER_CLUSTER_ROLE)
 
                     indexScopedSettings.validate(request.settings,
                             false,
                             false)
 
                     metadataManager.addAutofollowMetadata(request.patternName, request.connection, request.pattern!!,
-                            ReplicationOverallState.RUNNING, user, followerFgacRole, leaderFgacRole, request.settings)
+                            ReplicationOverallState.RUNNING, user, followerClusterRole, leaderClusterRole, request.settings)
                     startAutoFollowTask(request.connection, request.patternName)
                 }
                 AcknowledgedResponse(true)

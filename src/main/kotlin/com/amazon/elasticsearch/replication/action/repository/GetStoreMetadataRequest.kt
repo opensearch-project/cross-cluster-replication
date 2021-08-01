@@ -16,12 +16,9 @@
 package com.amazon.elasticsearch.replication.action.repository
 
 import org.elasticsearch.action.ActionRequestValidationException
-import org.elasticsearch.action.support.single.shard.SingleShardRequest
 import org.elasticsearch.cluster.node.DiscoveryNode
 import org.elasticsearch.common.io.stream.StreamInput
-import org.elasticsearch.common.io.stream.StreamOutput
 import org.elasticsearch.index.shard.ShardId
-import org.elasticsearch.transport.RemoteClusterAwareRequest
 
 class GetStoreMetadataRequest : RemoteClusterRepositoryRequest<GetStoreMetadataRequest> {
 

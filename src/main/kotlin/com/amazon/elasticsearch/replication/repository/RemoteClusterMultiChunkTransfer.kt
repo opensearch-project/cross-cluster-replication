@@ -46,10 +46,10 @@ class RemoteClusterMultiChunkTransfer(val logger: Logger,
                                       maxConcurrentFileChunks: Int,
                                       val restoreUUID: String,
                                       val replMetadata: ReplicationMetadata,
-                                      val remoteNode: DiscoveryNode,
-                                      val remoteShardId: ShardId,
+                                      val leaderNode: DiscoveryNode,
+                                      val leaderShardId: ShardId,
                                       val remoteFiles: List<StoreFileMetadata>,
-                                      val remoteClusterClient: Client,
+                                      val leaderClusterClient: Client,
                                       val recoveryState: RecoveryState,
                                       val chunkSize: ByteSizeValue,
                                       listener: ActionListener<Void>) :
@@ -83,12 +83,12 @@ class RemoteClusterMultiChunkTransfer(val logger: Logger,
     }
 
     override fun executeChunkRequest(request: RemoteClusterRepositoryFileChunk, listener: ActionListener<Void>) {
-        val getFileChunkRequest = GetFileChunkRequest(restoreUUID, remoteNode, remoteShardId, request.storeFileMetadata,
+        val getFileChunkRequest = GetFileChunkRequest(restoreUUID, leaderNode, leaderShardId, request.storeFileMetadata,
                 request.offset, request.length, followerClusterName, recoveryState.shardId)
 
-        launch(Dispatchers.IO + remoteClusterClient.threadPool().coroutineContext()) {
+        launch(Dispatchers.IO + leaderClusterClient.threadPool().coroutineContext()) {
             try {
-                val response = remoteClusterClient.suspendExecuteWithRetries(replMetadata, GetFileChunkAction.INSTANCE,
+                val response = leaderClusterClient.suspendExecuteWithRetries(replMetadata, GetFileChunkAction.INSTANCE,
                         getFileChunkRequest, log = logger)
                 logger.debug("Filename: ${request.storeFileMetadata.name()}, " +
                         "response_size: ${response.data.length()}, response_offset: ${response.offset}")

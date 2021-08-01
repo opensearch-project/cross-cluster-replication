@@ -17,7 +17,6 @@ package com.amazon.elasticsearch.replication.repository
 
 import com.amazon.elasticsearch.replication.action.repository.RemoteClusterRepositoryRequest
 import com.amazon.elasticsearch.replication.seqno.RemoteClusterRetentionLeaseHelper
-import com.amazon.elasticsearch.replication.task.shard.ShardReplicationTask
 import com.amazon.elasticsearch.replication.util.performOp
 import org.elasticsearch.ElasticsearchException
 import org.elasticsearch.action.support.single.shard.SingleShardRequest
@@ -29,9 +28,6 @@ import org.elasticsearch.common.lucene.store.InputStreamIndexInput
 import org.elasticsearch.core.internal.io.IOUtils
 import org.elasticsearch.index.engine.Engine
 import org.elasticsearch.index.seqno.RetentionLeaseActions
-import org.elasticsearch.index.seqno.SequenceNumbers
-import org.elasticsearch.index.shard.IndexShard
-import org.elasticsearch.index.shard.ShardId
 import org.elasticsearch.index.store.Store
 import org.elasticsearch.indices.IndicesService
 import java.io.Closeable
@@ -45,7 +41,7 @@ import java.io.IOException
  */
 @Singleton
 class RemoteClusterRestoreLeaderService @Inject constructor(private val indicesService: IndicesService,
-                                                    private val nodeClient : NodeClient) :
+                                                            private val nodeClient : NodeClient) :
         AbstractLifecycleComponent() {
 
     // TODO: Listen for the index events and release relevant resources.
@@ -64,12 +60,12 @@ class RemoteClusterRestoreLeaderService @Inject constructor(private val indicesS
     }
 
     @Synchronized
-    fun <T : SingleShardRequest<T>?> addRemoteClusterRestore(restoreUUID: String,
+    fun <T : SingleShardRequest<T>?> addLeaderClusterRestore(restoreUUID: String,
                                                              request: RemoteClusterRepositoryRequest<T>): RestoreContext {
         return onGoingRestores.getOrPut(restoreUUID) { constructRestoreContext(restoreUUID, request)}
     }
 
-    private fun getRemoteClusterRestore(restoreUUID: String): RestoreContext {
+    private fun getLeaderClusterRestore(restoreUUID: String): RestoreContext {
         return onGoingRestores[restoreUUID] ?: throw IllegalStateException("missing restoreContext")
     }
 
@@ -81,7 +77,7 @@ class RemoteClusterRestoreLeaderService @Inject constructor(private val indicesS
         val leaderIndexShard = indicesService.getShardOrNull(request.leaderShardId)
                 ?: throw ElasticsearchException("Shard [$request.leaderShardId] missing")
         val store = leaderIndexShard.store()
-        val restoreContext = getRemoteClusterRestore(restoreUUID)
+        val restoreContext = getLeaderClusterRestore(restoreUUID)
         val indexInput = restoreContext.openInput(store, fileName)
 
         return object : InputStreamIndexInput(indexInput, length) {
@@ -142,7 +138,7 @@ class RemoteClusterRestoreLeaderService @Inject constructor(private val indicesS
     }
 
     @Synchronized
-    fun removeRemoteClusterRestore(restoreUUID: String) {
+    fun removeLeaderClusterRestore(restoreUUID: String) {
         val restoreContext = onGoingRestores.remove(restoreUUID)
         /**
          * cleaning the resources - Closing only index safe commit

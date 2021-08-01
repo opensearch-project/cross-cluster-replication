@@ -83,6 +83,6 @@ class ShardReplicationExecutor(executor: String, private val clusterService : Cl
 
     override fun getDescription(taskInProgress: PersistentTask<ShardReplicationParams>): String {
         val params = requireNotNull(taskInProgress.params)
-        return "replication:${params.remoteCluster}:${params.remoteShardId} -> ${params.followerShardId}"
+        return "replication:${params.leaderAlias}:${params.leaderShardId} -> ${params.followerShardId}"
     }
 }

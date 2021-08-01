@@ -1,6 +1,5 @@
 package com.amazon.elasticsearch.replication.action.setup
 
-import com.amazon.elasticsearch.replication.ReplicationException
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationContext
 import com.amazon.elasticsearch.replication.util.SecurityContext
 import org.apache.logging.log4j.LogManager
@@ -13,7 +12,6 @@ import org.elasticsearch.action.support.HandledTransportAction
 import org.elasticsearch.action.support.master.AcknowledgedResponse
 import org.elasticsearch.client.Client
 import org.elasticsearch.cluster.service.ClusterService
-import org.elasticsearch.common.CheckedConsumer
 import org.elasticsearch.common.inject.Inject
 import org.elasticsearch.common.util.concurrent.ThreadContext
 import org.elasticsearch.rest.RestStatus
@@ -22,8 +20,6 @@ import org.elasticsearch.threadpool.ThreadPool
 import org.elasticsearch.transport.ActionNotFoundTransportException
 import org.elasticsearch.transport.RemoteTransportException
 import org.elasticsearch.transport.TransportService
-import java.util.function.Consumer
-import java.util.function.Predicate
 
 class TransportSetupChecksAction @Inject constructor(transportService: TransportService,
                                                     val threadPool: ThreadPool,
@@ -48,12 +44,12 @@ class TransportSetupChecksAction @Inject constructor(transportService: Transport
     }
 
     override fun doExecute(task: Task, request: SetupChecksRequest, listener: ActionListener<AcknowledgedResponse>) {
-        var remoteClusterClient: Client? = null
-        val localClusterName = clusterService.clusterName.value()
+        var leaderClusterClient: Client? = null
+        val followerClusterName = clusterService.clusterName.value()
         try {
-            remoteClusterClient = client.getRemoteClusterClient(request.connectionName)
+            leaderClusterClient = client.getRemoteClusterClient(request.connectionName)
         } catch (e: Exception) {
-            // Logging it as info as this check is to see if remote cluster is added or not
+            // Logging it as info as this check is to see if leader cluster is added or not
             log.info("Failed to connect to remote cluster $request.connectionName with error $e")
             listener.onFailure(e)
             return
@@ -98,10 +94,10 @@ class TransportSetupChecksAction @Inject constructor(transportService: Transport
                 {
                     log.info("Permissions validation successful for User [connection:${request.connectionName}, " +
                             "resource:${request.leaderContext.resource}]")
-                    triggerPermissionsValidation(remoteClusterClient!!, request.connectionName, request.leaderContext, true, rolePermissionsValidationAtRemote)
+                    triggerPermissionsValidation(leaderClusterClient!!, request.connectionName, request.leaderContext, true, rolePermissionsValidationAtRemote)
                 },
                 { e ->
-                    log.error("Permissions validation failed for role [local:$localClusterName, " +
+                    log.error("Permissions validation failed for role [local:$followerClusterName, " +
                             "resource:${request.followerContext.resource}] with $e")
                     listener.onFailure(unwrapSecurityExceptionIfPresent(e))
                 }
@@ -111,7 +107,7 @@ class TransportSetupChecksAction @Inject constructor(transportService: Transport
                 {
                     log.info("Permissions validation successful for User [connection:${request.connectionName}, " +
                             "resource:${request.leaderContext.resource}]")
-                    triggerPermissionsValidation(client, localClusterName, request.followerContext, true, rolePermissionsValidationAtLocal)
+                    triggerPermissionsValidation(client, followerClusterName, request.followerContext, true, rolePermissionsValidationAtLocal)
                 },
                 { e ->
                     var exceptionToThrow = e
@@ -126,18 +122,18 @@ class TransportSetupChecksAction @Inject constructor(transportService: Transport
 
         userPermissionsValidationAtLocal.whenComplete(
                 {
-                    log.info("Permissions validation successful for User [local:$localClusterName, " +
+                    log.info("Permissions validation successful for User [local:$followerClusterName, " +
                             "resource:${request.followerContext.resource}]")
-                    triggerPermissionsValidation(remoteClusterClient!!, request.connectionName, request.leaderContext, false, userPermissionsValidationAtRemote)
+                    triggerPermissionsValidation(leaderClusterClient!!, request.connectionName, request.leaderContext, false, userPermissionsValidationAtRemote)
                 },
                 { e ->
-                    log.error("Permissions validation failed for User [local:$localClusterName, " +
+                    log.error("Permissions validation failed for User [local:$followerClusterName, " +
                             "resource:${request.followerContext.resource}] with $e")
                     listener.onFailure(unwrapSecurityExceptionIfPresent(e))
                 }
         )
 
-        triggerPermissionsValidation(client, localClusterName, request.followerContext, false, userPermissionsValidationAtLocal)
+        triggerPermissionsValidation(client, followerClusterName, request.followerContext, false, userPermissionsValidationAtLocal)
 
     }
 

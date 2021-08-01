@@ -52,10 +52,10 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
     CrossClusterReplicationTask(id, type, action, description, parentTask, headers,
                                 executor, clusterService, threadPool, client, replicationMetadataManager, replicationSettings) {
 
-    override val remoteCluster = params.remoteCluster
+    override val leaderAlias = params.leaderCluster
     val patternName = params.patternName
     override val followerIndexName: String = params.patternName //Special case for auto follow
-    override val log = Loggers.getLogger(javaClass, remoteCluster)
+    override val log = Loggers.getLogger(javaClass, leaderAlias)
     private var trackingIndicesOnTheCluster = setOf<String>()
     private var failedIndices = ConcurrentSkipListSet<String>() // Failed indices for replication from this autofollow task
     private var retryScheduler: Scheduler.ScheduledCancellable? = null
@@ -86,13 +86,13 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
     }
 
     private suspend fun autoFollow() {
-        log.debug("Checking $remoteCluster under pattern name $patternName for new indices to auto follow")
+        log.debug("Checking $leaderAlias under pattern name $patternName for new indices to auto follow")
         val entry = replicationMetadata.leaderContext.resource
 
         // Fetch remote indices matching auto follow pattern
         var remoteIndices = Iterable { emptyArray<String>().iterator() }
         try {
-            val remoteClient = client.getRemoteClusterClient(remoteCluster)
+            val remoteClient = client.getRemoteClusterClient(leaderAlias)
             val indexReq = GetIndexRequest().features(*emptyArray())
                     .indices(entry)
                     .indicesOptions(IndicesOptions.lenientExpandOpen())
@@ -113,7 +113,7 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
         if(remoteIndices.intersect(currentIndices).isNotEmpty()) {
             // Log this once when we see any update on indices on the follower cluster to prevent log flood
             if(currentIndices.toSet() != trackingIndicesOnTheCluster) {
-                log.info("Cannot initiate replication for the following indices from remote ($remoteCluster) as indices with " +
+                log.info("Cannot initiate replication for the following indices from leader ($leaderAlias) as indices with " +
                         "same name already exists on the cluster ${remoteIndices.intersect(currentIndices)}")
                 trackingIndicesOnTheCluster = currentIndices.toSet()
             }
@@ -125,41 +125,41 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
         }
     }
 
-    private suspend fun startReplication(remoteIndex: String) {
-        if (clusterService.state().metadata().hasIndex(remoteIndex)) {
-            log.info("""Cannot replicate $remoteCluster:$remoteIndex as an index with the same name already 
+    private suspend fun startReplication(leaderIndex: String) {
+        if (clusterService.state().metadata().hasIndex(leaderIndex)) {
+            log.info("""Cannot replicate $leaderAlias:$leaderIndex as an index with the same name already 
                         |exists.""".trimMargin())
             return
         }
 
         try {
-            log.info("Auto follow starting replication from ${remoteCluster}:$remoteIndex -> $remoteIndex")
-            val request = ReplicateIndexRequest(remoteIndex, remoteCluster, remoteIndex )
+            log.info("Auto follow starting replication from ${leaderAlias}:$leaderIndex -> $leaderIndex")
+            val request = ReplicateIndexRequest(leaderIndex, leaderAlias, leaderIndex )
             request.isAutoFollowRequest = true
             val followerRole = replicationMetadata.followerContext?.user?.roles?.get(0)
             val leaderRole = replicationMetadata.leaderContext?.user?.roles?.get(0)
             if(followerRole != null && leaderRole != null) {
                 request.assumeRoles = HashMap<String, String>()
-                request.assumeRoles!![ReplicateIndexRequest.FOLLOWER_FGAC_ROLE] = followerRole
-                request.assumeRoles!![ReplicateIndexRequest.LEADER_FGAC_ROLE] = leaderRole
+                request.assumeRoles!![ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE] = followerRole
+                request.assumeRoles!![ReplicateIndexRequest.LEADER_CLUSTER_ROLE] = leaderRole
             }
             request.settings = replicationMetadata.settings
             val response = client.suspendExecute(replicationMetadata, ReplicateIndexAction.INSTANCE, request)
             if (!response.isAcknowledged) {
-                throw ReplicationException("Failed to auto follow remote index $remoteIndex")
+                throw ReplicationException("Failed to auto follow leader index $leaderIndex")
             }
         } catch (e: ElasticsearchSecurityException) {
             // For permission related failures, Adding as part of failed indices as autofollow role doesn't have required permissions.
-            log.trace("Cannot start replication on $remoteIndex due to missing permissions $e")
-            failedIndices.add(remoteIndex)
+            log.trace("Cannot start replication on $leaderIndex due to missing permissions $e")
+            failedIndices.add(leaderIndex)
         } catch (e: Exception) {
             // Any failure other than security exception can be safely retried and not adding to the failed indices
-            log.warn("Failed to start replication for $remoteCluster:$remoteIndex -> $remoteIndex.", e)
+            log.warn("Failed to start replication for $leaderAlias:$leaderIndex -> $leaderIndex.", e)
         }
     }
 
     override fun toString(): String {
-        return "AutoFollowTask(from=${remoteCluster} with pattern=${params.patternName})"
+        return "AutoFollowTask(from=${leaderAlias} with pattern=${params.patternName})"
     }
 
     override fun replicationTaskResponse(): CrossClusterReplicationTaskResponse {

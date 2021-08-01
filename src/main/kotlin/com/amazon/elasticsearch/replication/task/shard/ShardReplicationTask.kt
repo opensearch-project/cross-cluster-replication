@@ -67,11 +67,11 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     : CrossClusterReplicationTask(id, type, action, description, parentTask, emptyMap(),
                                   executor, clusterService, threadPool, client, replicationMetadataManager, replicationSettings) {
 
-    override val remoteCluster: String = params.remoteCluster
+    override val leaderAlias: String = params.leaderAlias
     override val followerIndexName: String = params.followerShardId.indexName
-    private val remoteShardId = params.remoteShardId
+    private val leaderShardId = params.leaderShardId
     private val followerShardId = params.followerShardId
-    private val remoteClient = client.getRemoteClusterClient(remoteCluster)
+    private val remoteClient = client.getRemoteClusterClient(leaderAlias)
     private val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
     private var paused = false
     private val backOffForNodeDiscovery = 1000L
@@ -166,7 +166,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
             logDebug("Pausing and not removing lease for index $followerIndexName and shard $followerShardId task")
             return
         }
-        retentionLeaseHelper.attemptRetentionLeaseRemoval(remoteShardId, followerShardId)
+        retentionLeaseHelper.attemptRetentionLeaseRemoval(leaderShardId, followerShardId)
     }
 
     private fun addListenerToInterruptTask() {
@@ -200,12 +200,12 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         // Adding retention lease at local checkpoint of a node. This makes sure
         // new tasks spawned after node changes/shard movements are handled properly
         logInfo("Adding retentionlease at follower sequence number: ${indexShard.lastSyncedGlobalCheckpoint}")
-        retentionLeaseHelper.addRetentionLease(remoteShardId, indexShard.lastSyncedGlobalCheckpoint , followerShardId)
+        retentionLeaseHelper.addRetentionLease(leaderShardId, indexShard.lastSyncedGlobalCheckpoint , followerShardId)
         addListenerToInterruptTask()
 
         // Since this setting is not dynamic, setting update would only reflect after pause-resume or on a new replication job.
         val rateLimiter = Semaphore(replicationSettings.readersPerShard)
-        val sequencer = TranslogSequencer(scope, replicationMetadata, followerShardId, remoteCluster, remoteShardId.indexName,
+        val sequencer = TranslogSequencer(scope, replicationMetadata, followerShardId, leaderAlias, leaderShardId.indexName,
                                           TaskId(clusterService.nodeName, id), client, indexShard.localCheckpoint)
 
         val changeTracker = ShardReplicationChangesTracker(indexShard, replicationSettings)
@@ -251,7 +251,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
 
                 //renew retention lease with global checkpoint so that any shard that picks up shard replication task has data until then.
                 try {
-                    retentionLeaseHelper.renewRetentionLease(remoteShardId, indexShard.lastSyncedGlobalCheckpoint, followerShardId)
+                    retentionLeaseHelper.renewRetentionLease(leaderShardId, indexShard.lastSyncedGlobalCheckpoint, followerShardId)
                 } catch (ex: Exception) {
                     when (ex) {
                         is RetentionLeaseInvalidRetainingSeqNoException, is RetentionLeaseNotFoundException -> {
@@ -266,8 +266,8 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     }
 
     private suspend fun getChanges(fromSeqNo: Long, toSeqNo: Long): GetChangesResponse {
-        val remoteClient = client.getRemoteClusterClient(remoteCluster)
-        val request = GetChangesRequest(remoteShardId, fromSeqNo, toSeqNo)
+        val remoteClient = client.getRemoteClusterClient(leaderAlias)
+        val request = GetChangesRequest(leaderShardId, fromSeqNo, toSeqNo)
         return remoteClient.suspendExecuteWithRetries(replicationMetadata = replicationMetadata,
                 action = GetChangesAction.INSTANCE, req = request, log = log)
     }
@@ -282,7 +282,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     }
 
     override fun toString(): String {
-        return "ShardReplicationTask(from=${remoteCluster}$remoteShardId to=$followerShardId)"
+        return "ShardReplicationTask(from=${leaderAlias}$leaderShardId to=$followerShardId)"
     }
 
     override fun replicationTaskResponse(): CrossClusterReplicationTaskResponse {

@@ -67,11 +67,11 @@ class TranslogSequencerTests : ESTestCase() {
     }
 
 
-    val remoteCluster = "remoteCluster"
-    val remoteIndex = "remoteIndex"
+    val leaderAlias = "leaderAlias"
+    val leaderIndex = "leaderIndex"
     val followerShardId = ShardId("follower", "follower_uuid", 0)
-    val replicationMetadata = ReplicationMetadata(remoteCluster, ReplicationStoreMetadataType.INDEX.name, ReplicationOverallState.RUNNING.name, "test user",
-            ReplicationContext(followerShardId.indexName, null), ReplicationContext(remoteIndex, null), Settings.EMPTY)
+    val replicationMetadata = ReplicationMetadata(leaderAlias, ReplicationStoreMetadataType.INDEX.name, ReplicationOverallState.RUNNING.name, "test user",
+            ReplicationContext(followerShardId.indexName, null), ReplicationContext(leaderIndex, null), Settings.EMPTY)
     val client = RequestCapturingClient()
     init {
         closeAfterSuite(client)
@@ -85,7 +85,7 @@ class TranslogSequencerTests : ESTestCase() {
     @ExperimentalCoroutinesApi
     fun `test sequencer out of order`() = runBlockingTest {
         val startSeqNo = randomNonNegativeLong()
-        val sequencer = TranslogSequencer(this, replicationMetadata, followerShardId, remoteCluster, remoteIndex, EMPTY_TASK_ID,
+        val sequencer = TranslogSequencer(this, replicationMetadata, followerShardId, leaderAlias, leaderIndex, EMPTY_TASK_ID,
                                           client, startSeqNo)
 
         // Send requests out of order (shuffled seqNo) and await for them to be processed.

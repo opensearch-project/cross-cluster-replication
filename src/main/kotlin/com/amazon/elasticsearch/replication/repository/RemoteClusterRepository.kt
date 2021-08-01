@@ -16,7 +16,6 @@
 package com.amazon.elasticsearch.replication.repository
 
 import com.amazon.elasticsearch.replication.ReplicationPlugin
-import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.REPLICATION_FOLLOWER_RECOVERY_CHUNK_SIZE
 import com.amazon.elasticsearch.replication.ReplicationSettings
 import com.amazon.elasticsearch.replication.action.repository.GetStoreMetadataAction
 import com.amazon.elasticsearch.replication.action.repository.GetStoreMetadataRequest
@@ -54,7 +53,6 @@ import org.elasticsearch.common.Nullable
 import org.elasticsearch.common.UUIDs
 import org.elasticsearch.common.component.AbstractLifecycleComponent
 import org.elasticsearch.common.metrics.CounterMetric
-import org.elasticsearch.common.settings.ClusterSettings
 import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.index.IndexSettings
 import org.elasticsearch.index.mapper.MapperService
@@ -90,19 +88,19 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
                               private val replicationMetadataManager: ReplicationMetadataManager,
                               private val replicationSettings: ReplicationSettings) : AbstractLifecycleComponent(), Repository, CoroutineScope by GlobalScope {
 
-    // Lazy init because we initialize when a remote cluster seed setting is added at which point the remote
+    // Lazy init because we initialize when a leader cluster seed setting is added at which point the leader
     // cluster connection might not be available yet
-    private val remoteClusterClient by lazy { client.getRemoteClusterClient(repositoryMetadata.remoteClusterName()) }
+    private val leaderClusterClient by lazy { client.getRemoteClusterClient(repositoryMetadata.leaderClusterName()) }
 
     companion object {
         private val log = LogManager.getLogger(RemoteClusterRepository::class.java)
         private val restoreRateLimitingTimeInNanos = CounterMetric()
         private fun String.asUUID(): String = UUID.nameUUIDFromBytes(toByteArray()).toString()
-        private fun RepositoryMetadata.remoteClusterName(): String = this.name().split(REMOTE_REPOSITORY_PREFIX)[1]
+        private fun RepositoryMetadata.leaderClusterName(): String = this.name().split(REMOTE_REPOSITORY_PREFIX)[1]
         const val REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC = 60000L
 
         fun clusterForRepo(remoteRepoName: String) = remoteRepoName.split(REMOTE_REPOSITORY_PREFIX)[1]
-        fun repoForCluster(remoteClusterName: String): String = REMOTE_REPOSITORY_PREFIX + remoteClusterName
+        fun repoForCluster(leaderClusterName: String): String = REMOTE_REPOSITORY_PREFIX + leaderClusterName
     }
 
 
@@ -168,7 +166,7 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
     override fun getShardSnapshotStatus(snapshotId: SnapshotId, indexId: IndexId,
                                         shardId: ShardId): IndexShardSnapshotStatus? {
         val indicesStatsRequest = IndicesStatsRequest().all().indices(indexId.name)
-        val indicesStatsResponse = remoteClusterGetAction(IndicesStatsAction.INSTANCE, indicesStatsRequest, shardId.indexName)
+        val indicesStatsResponse = leaderClusterGetAction(IndicesStatsAction.INSTANCE, indicesStatsRequest, shardId.indexName)
         for (i in indicesStatsResponse.shards.indices) {
             if (indicesStatsResponse.shards[i].shardRouting.shardId().id == shardId.id) {
                 val sizeInBytes = indicesStatsResponse.shards[i].stats?.store?.sizeInBytes!!
@@ -190,12 +188,12 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
     }
 
     /*
-     * Step 1: Gets all the indices from the remote cluster.
+     * Step 1: Gets all the indices from the leader cluster.
      * At this point, we don't have information on targeted index for restore.
      * Fetches all the information and creates a repository data object for the restore workflow.
      */
     override fun getRepositoryData(listener: ActionListener<RepositoryData>) {
-        val clusterState = getRemoteClusterState(false, false)
+        val clusterState = getLeaderClusterState(false, false)
         val shardGenerations = ShardGenerations.builder()
         clusterState.metadata.indices.values()
                 .map { it.value }
@@ -217,9 +215,9 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
      * on the indices present against the snapshotId
      */
     override fun getSnapshotInfo(snapshotId: SnapshotId): SnapshotInfo {
-        val remoteClusterState = getRemoteClusterState(false, false)
+        val leaderClusterState = getLeaderClusterState(false, false)
         assert(REMOTE_SNAPSHOT_NAME.equals(snapshotId.name), { "SnapshotName differs" })
-        val indices = remoteClusterState.metadata().indices().keys().map { x -> x.value }
+        val indices = leaderClusterState.metadata().indices().keys().map { x -> x.value }
         return SnapshotInfo(snapshotId, indices, emptyList(), SnapshotState.SUCCESS, Version.CURRENT)
     }
 
@@ -236,12 +234,12 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
      */
     override fun getSnapshotIndexMetaData(repositoryData: RepositoryData, snapshotId: SnapshotId, index: IndexId): IndexMetadata {
         assert(REMOTE_SNAPSHOT_NAME.equals(snapshotId.name), { "SnapshotName differs" })
-        val remoteClusterState = getRemoteClusterState(false, false, index.name)
-        val indexMetadata = remoteClusterState.metadata.index(index.name)
+        val leaderClusterState = getLeaderClusterState(false, false, index.name)
+        val indexMetadata = leaderClusterState.metadata.index(index.name)
 
         // Add replication specific settings
         val builder = Settings.builder().put(indexMetadata.settings)
-        val replicatedIndex = "${repositoryMetadata.remoteClusterName()}:${index.name}"
+        val replicatedIndex = "${repositoryMetadata.leaderClusterName()}:${index.name}"
         builder.put(ReplicationPlugin.REPLICATED_INDEX_SETTING.key, replicatedIndex)
 
         // Remove translog pruning for the follower index
@@ -255,11 +253,11 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
     }
 
     /*
-     * Step 5: restore shard by fetching the lucene segments from the remote cluster
+     * Step 5: restore shard by fetching the lucene segments from the leader cluster
      */
     override fun restoreShard(store: Store, snapshotId: SnapshotId, indexId: IndexId, snapshotShardId: ShardId,
                               recoveryState: RecoveryState, listener: ActionListener<Void>) {
-        launch(Dispatchers.IO + remoteClusterClient.threadPool().coroutineContext()) {
+        launch(Dispatchers.IO + leaderClusterClient.threadPool().coroutineContext()) {
             store.incRef()
             restoreShardWithRetries(store, snapshotId, indexId, snapshotShardId,
                     recoveryState, listener, ::restoreShardUsingMultiChunkTransfer, log = log)
@@ -274,22 +272,22 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
 
         var multiChunkTransfer: RemoteClusterMultiChunkTransfer?
         var restoreUUID: String?
-        var remoteShardNode: DiscoveryNode?
-        var remoteShardId: ShardId?
+        var leaderShardNode: DiscoveryNode?
+        var leaderShardId: ShardId?
         val followerIndexName = store.shardId().indexName
         val followerShardId = store.shardId()
-        // 1. Get all the files info from the remote cluster for this shardId
+        // 1. Get all the files info from the leader cluster for this shardId
         // Node containing the shard
-        val remoteClusterState = getRemoteClusterState(true, true, indexId.name)
-        val remoteShardRouting = remoteClusterState.routingTable.shardRoutingTable(snapshotShardId.indexName,
+        val leaderClusterState = getLeaderClusterState(true, true, indexId.name)
+        val leaderShardRouting = leaderClusterState.routingTable.shardRoutingTable(snapshotShardId.indexName,
                 snapshotShardId.id).primaryShard()
-        remoteShardNode = remoteClusterState.nodes.get(remoteShardRouting.currentNodeId())
-        // Get the index UUID of the remote cluster for the metadata request
-        remoteShardId = ShardId(snapshotShardId.indexName,
-                remoteClusterState.metadata.index(indexId.name).indexUUID,
+        leaderShardNode = leaderClusterState.nodes.get(leaderShardRouting.currentNodeId())
+        // Get the index UUID of the leader cluster for the metadata request
+        leaderShardId = ShardId(snapshotShardId.indexName,
+                leaderClusterState.metadata.index(indexId.name).indexUUID,
                 snapshotShardId.id)
         restoreUUID = UUIDs.randomBase64UUID()
-        val getStoreMetadataRequest = GetStoreMetadataRequest(restoreUUID, remoteShardNode, remoteShardId,
+        val getStoreMetadataRequest = GetStoreMetadataRequest(restoreUUID, leaderShardNode, leaderShardId,
                 clusterService.clusterName.value(), followerShardId)
 
         // Gets the remote store metadata
@@ -297,26 +295,26 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         val metadataSnapshot = metadataResponse.metadataSnapshot
 
         val replMetadata = getReplicationMetadata(followerIndexName)
-        // 2. Request for individual files from remote cluster for this shardId
+        // 2. Request for individual files from leader cluster for this shardId
         // make sure the store is not released until we are done.
         val fileMetadata = ArrayList(metadataSnapshot.asMap().values)
         multiChunkTransfer = RemoteClusterMultiChunkTransfer(log, clusterService.clusterName.value(), client.threadPool().threadContext,
-                store, replicationSettings.concurrentFileChunks, restoreUUID, replMetadata, remoteShardNode,
-                remoteShardId, fileMetadata, remoteClusterClient, recoveryState, replicationSettings.chunkSize,
+                store, replicationSettings.concurrentFileChunks, restoreUUID, replMetadata, leaderShardNode,
+                leaderShardId, fileMetadata, leaderClusterClient, recoveryState, replicationSettings.chunkSize,
                 object : ActionListener<Void> {
                     override fun onFailure(e: java.lang.Exception?) {
                         log.error("Restore of ${store.shardId()} failed due to $e")
                         if (e is NodeDisconnectedException || e is NodeNotConnectedException || e is ConnectTransportException) {
                             log.info("Retrying restore shard for ${store.shardId()}")
-                            Thread.sleep(1000) // to get updated remote cluster state
-                            launch(Dispatchers.IO + remoteClusterClient.threadPool().coroutineContext()) {
+                            Thread.sleep(1000) // to get updated leader cluster state
+                            launch(Dispatchers.IO + leaderClusterClient.threadPool().coroutineContext()) {
                                 restoreShardWithRetries(store, snapshotId, indexId, snapshotShardId,
                                         recoveryState, listener, ::restoreShardUsingMultiChunkTransfer, log = log)
                             }
                         } else {
                             log.error("Not retrying restore shard for ${store.shardId()}")
                             store.decRef()
-                            releaseLeaderResources(restoreUUID, remoteShardNode, remoteShardId, followerShardId, followerIndexName)
+                            releaseLeaderResources(restoreUUID, leaderShardNode, leaderShardId, followerShardId, followerIndexName)
                             listener.onFailure(e)
                         }
 
@@ -325,7 +323,7 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
                     override fun onResponse(response: Void?) {
                         log.info("Restore successful for ${store.shardId()}")
                         store.decRef()
-                        releaseLeaderResources(restoreUUID, remoteShardNode, remoteShardId, followerShardId, followerIndexName)
+                        releaseLeaderResources(restoreUUID, leaderShardNode, leaderShardId, followerShardId, followerIndexName)
                         listener.onResponse(null)
                     }
                 })
@@ -333,7 +331,7 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
             log.info("Initializing with empty store for shard:" + snapshotShardId.id)
             store.createEmpty(store.indexSettings().indexVersionCreated.luceneVersion)
             store.decRef()
-            releaseLeaderResources(restoreUUID, remoteShardNode, remoteShardId, followerShardId, followerIndexName)
+            releaseLeaderResources(restoreUUID, leaderShardNode, leaderShardId, followerShardId, followerIndexName)
             listener.onResponse(null)
         } else {
             val replMetadata = getReplicationMetadata(followerIndexName)
@@ -342,13 +340,13 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
     }
 
 
-    private fun releaseLeaderResources(restoreUUID: String, remoteShardNode: DiscoveryNode,
-                                       remoteShardId: ShardId, followerShardId: ShardId, followerIndexName: String) {
+    private fun releaseLeaderResources(restoreUUID: String, leaderShardNode: DiscoveryNode,
+                                       leaderShardId: ShardId, followerShardId: ShardId, followerIndexName: String) {
         try {
-            val releaseResourcesReq = ReleaseLeaderResourcesRequest(restoreUUID, remoteShardNode, remoteShardId,
+            val releaseResourcesReq = ReleaseLeaderResourcesRequest(restoreUUID, leaderShardNode, leaderShardId,
                     clusterService.clusterName.value(), followerShardId)
-            if (remoteClusterGetAction(ReleaseLeaderResourcesAction.INSTANCE, releaseResourcesReq, followerIndexName).isAcknowledged) {
-                log.info("Successfully released resources at the leader cluster for $remoteShardId at $remoteShardNode")
+            if (leaderClusterGetAction(ReleaseLeaderResourcesAction.INSTANCE, releaseResourcesReq, followerIndexName).isAcknowledged) {
+                log.info("Successfully released resources at the leader cluster for $leaderShardId at $leaderShardNode")
             }
         } catch (e: Exception) {
             log.error("Releasing leader resource failed due to $e")
@@ -362,11 +360,11 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
 
 
     /*
-     * This method makes a blocking call to the remote cluster
+     * This method makes a blocking call to the leader cluster
      * For restore workflow this is expected.
      */
-    private fun getRemoteClusterState(includeNodes: Boolean, includeRoutingTable: Boolean, vararg remoteIndices: String): ClusterState {
-        val clusterStateRequest = remoteClusterClient.admin().cluster().prepareState()
+    private fun getLeaderClusterState(includeNodes: Boolean, includeRoutingTable: Boolean, vararg remoteIndices: String): ClusterState {
+        val clusterStateRequest = leaderClusterClient.admin().cluster().prepareState()
                 .clear()
                 .setIndices(*remoteIndices)
                 .setMetadata(true)
@@ -375,7 +373,7 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
                 .setIndicesOptions(IndicesOptions.strictSingleIndexNoExpandForbidClosed())
                 .request()
 
-        val remoteState = remoteClusterClient.admin().cluster().state(clusterStateRequest)
+        val remoteState = leaderClusterClient.admin().cluster().state(clusterStateRequest)
                 .actionGet(REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC).state
         log.trace("Successfully fetched the cluster state from remote repository ${remoteState}")
         return remoteState
@@ -384,33 +382,33 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
 
     private fun getReplicationMetadata(followerIndex: String): ReplicationMetadata {
         return replicationMetadataManager.getIndexReplicationMetadata(followerIndex,
-                repositoryMetadata.remoteClusterName(), fetch_from_primary = true)
+                repositoryMetadata.leaderClusterName(), fetch_from_primary = true)
     }
 
 
     /*
-    * Makes transport action to the remote cluster by making a blocking call
+    * Makes transport action to the leader cluster by making a blocking call
     * For restore workflow this is expected.
     */
-    private fun <T : ActionResponse> remoteClusterGetAction(actionType: ActionType<T>,
+    private fun <T : ActionResponse> leaderClusterGetAction(actionType: ActionType<T>,
                                                             actionRequest: ActionRequest,
                                                             followerIndex: String): T {
 
         val replMetadata = getReplicationMetadata(followerIndex)
-        return remoteClusterClient.execute(replMetadata, actionType, actionRequest,
+        return leaderClusterClient.execute(replMetadata, actionType, actionRequest,
                 REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC)
 
     }
 
     /*
-    * Makes transport action to the remote cluster by making a non blocking call.
+    * Makes transport action to the leader cluster by making a non blocking call.
     */
     private suspend fun <T : ActionResponse> executeActionOnRemote(actionType: ActionType<T>,
                                                                    actionRequest: ActionRequest,
                                                                    followerIndex: String): T {
 
         val replMetadata = getReplicationMetadata(followerIndex)
-        return remoteClusterClient.suspendExecute(replMetadata, actionType, actionRequest)
+        return leaderClusterClient.suspendExecute(replMetadata, actionType, actionRequest)
 
     }
 }

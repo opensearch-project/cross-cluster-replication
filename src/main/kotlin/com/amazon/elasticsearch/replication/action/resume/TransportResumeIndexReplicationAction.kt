@@ -89,19 +89,19 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
                 log.info("Resuming index replication on index:" + request.indexName)
                 validateResumeReplicationRequest(request)
                 val replMetdata = replicationMetadataManager.getIndexReplicationMetadata(request.indexName)
-                val remoteMetadata = getRemoteIndexMetadata(replMetdata.connectionName, replMetdata.leaderContext.resource)
+                val remoteMetadata = getLeaderIndexMetadata(replMetdata.connectionName, replMetdata.leaderContext.resource)
                 val params = IndexReplicationParams(replMetdata.connectionName, remoteMetadata.index, request.indexName)
                 if (!isResumable(params)) {
                     throw ResourceNotFoundException("Retention lease doesn't exist. Replication can't be resumed for ${request.indexName}")
                 }
 
-                val remoteClient = client.getRemoteClusterClient(params.remoteCluster)
-                val getSettingsRequest = GetSettingsRequest().includeDefaults(false).indices(params.remoteIndex.name)
+                val remoteClient = client.getRemoteClusterClient(params.leaderAlias)
+                val getSettingsRequest = GetSettingsRequest().includeDefaults(false).indices(params.leaderIndex.name)
                 val settingsResponse = remoteClient.suspending(
                     remoteClient.admin().indices()::getSettings,
                     injectSecurityContext = true
                 )(getSettingsRequest)
-                ValidationUtil.validateAnalyzerSettings(environment, settingsResponse.indexToSettings.get(params.remoteIndex.name), replMetdata.settings)
+                ValidationUtil.validateAnalyzerSettings(environment, settingsResponse.indexToSettings.get(params.leaderIndex.name), replMetdata.settings)
 
                 replicationMetadataManager.updateIndexReplicationState(request.indexName, ReplicationOverallState.RUNNING)
                 val task = persistentTasksService.startTask("replication:index:${request.indexName}",
@@ -125,12 +125,12 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
 
     private suspend fun isResumable(params :IndexReplicationParams): Boolean {
         var isResumable = true
-        val remoteClient = client.getRemoteClusterClient(params.remoteCluster)
+        val remoteClient = client.getRemoteClusterClient(params.leaderAlias)
         val shards = clusterService.state().routingTable.indicesRouting().get(params.followerIndexName).shards()
         val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
         shards.forEach {
             val followerShardId = it.value.shardId
-            if  (!retentionLeaseHelper.verifyRetentionLeaseExist(ShardId(params.remoteIndex, followerShardId.id), followerShardId)) {
+            if  (!retentionLeaseHelper.verifyRetentionLeaseExist(ShardId(params.leaderIndex, followerShardId.id), followerShardId)) {
                 isResumable = false
             }
         }
@@ -144,22 +144,22 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
         shards.forEach {
             val followerShardId = it.value.shardId
             log.debug("Removing lease for $followerShardId.id ")
-            retentionLeaseHelper.attemptRetentionLeaseRemoval(ShardId(params.remoteIndex, followerShardId.id), followerShardId)
+            retentionLeaseHelper.attemptRetentionLeaseRemoval(ShardId(params.leaderIndex, followerShardId.id), followerShardId)
         }
 
         return false
     }
 
-    private suspend fun getRemoteIndexMetadata(remoteCluster: String, remoteIndex: String): IndexMetadata {
-        val remoteClusterClient = client.getRemoteClusterClient(remoteCluster)
-        val clusterStateRequest = remoteClusterClient.admin().cluster().prepareState()
+    private suspend fun getLeaderIndexMetadata(leaderAlias: String, leaderIndex: String): IndexMetadata {
+        val leaderClusterClient = client.getRemoteClusterClient(leaderAlias)
+        val clusterStateRequest = leaderClusterClient.admin().cluster().prepareState()
                 .clear()
-                .setIndices(remoteIndex)
+                .setIndices(leaderIndex)
                 .setMetadata(true)
                 .setIndicesOptions(IndicesOptions.strictSingleIndexNoExpandForbidClosed())
                 .request()
-        val remoteState = remoteClusterClient.suspending(remoteClusterClient.admin().cluster()::state)(clusterStateRequest).state
-        return remoteState.metadata.index(remoteIndex) ?: throw IndexNotFoundException("${remoteCluster}:${remoteIndex}")
+        val remoteState = leaderClusterClient.suspending(leaderClusterClient.admin().cluster()::state)(clusterStateRequest).state
+        return remoteState.metadata.index(leaderIndex) ?: throw IndexNotFoundException("${leaderAlias}:${leaderIndex}")
     }
 
     private fun validateResumeReplicationRequest(request: ResumeIndexReplicationRequest) {

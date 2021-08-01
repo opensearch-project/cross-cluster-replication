@@ -187,7 +187,7 @@ This API is used to initiate replication of an index from the leader cluster ont
 PUT localhost:{{foll_port}}/_plugins/_replication/<index>/_start
 Content-Type: application/json
 
-{  "remote_cluster" : "leader-cluster",  "remote_index": "<index>"}
+{  "leader_alias" : "leader-cluster",  "leader_index": "<index>"}
 
 
 # RESPONSE
@@ -203,7 +203,7 @@ Content-Type: application/json
 curl -k -u testuser:testuser -XPUT \
 "https://${FOLLOWER}/_plugins/_replication/follower-01/_start?pretty" \
 -H 'Content-type: application/json' \
--d'{"remote_cluster":"leader-cluster", "remote_index": "leader-01"}'
+-d'{"leader_alias":"leader-cluster", "leader_index": "leader-01"}'
 
 # Make sure to create an index with name leader-01 on the leader before starting replication on top of this index.
 # Now there should be a ReadOnly index named 'follower-01' on the follower cluster that should continuously stay updated with changes to 'leader-01' index on the leader cluster.
@@ -253,7 +253,7 @@ AutoFollow API helps to automatically start replication on indices matching a pa
 POST localhost:{{foll_port}}/_plugins/_replication/_autofollow
 Content-Type: application/json
 
-{"connection" : "<remote cluster connection name>",  "pattern": "<index pattern>", "name": "<name to identify autofollow task>"}
+{"leader_alias" : "<remote cluster connection name>",  "pattern": "<index pattern>", "name": "<name to identify autofollow task>"}
 
 # RESPONSE
 
@@ -267,7 +267,7 @@ Content-Type: application/json
 curl -k -u testuser:testuser -XPOST \
 "https://${FOLLOWER}/_plugins/_replication/_autofollow?pretty" \
 -H 'Content-type: application/json' \
--d'{"connection":"leader-cluster","pattern":"leader-*", "name":"my-replication"}'
+-d'{"leader_alias":"leader-cluster","pattern":"leader-*", "name":"my-replication"}'
 ```
 
 ## Stop AutoFollow
@@ -281,7 +281,7 @@ DELETE localhost:{{foll_port}}/_plugins/_replication/_autofollow
 Content-Type: application/json
 
 {
-  "connection": "leader-cluster",
+  "leader_alias": "leader-cluster",
   "name": "test"
 }
 ```
@@ -292,7 +292,7 @@ Content-Type: application/json
 curl -k -u testuser:testuser -XDELETE \
 "https://${FOLLOWER}/_plugins/_replication/_autofollow?pretty" \
 -H 'Content-type: application/json' \
--d'{"connection":"leader-cluster", "name":"my-replication"}'
+-d'{"leader_alias":"leader-cluster", "name":"my-replication"}'
 ```
 
 ## Check ongoing replication tasks
