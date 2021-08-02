@@ -19,9 +19,13 @@ package com.amazon.elasticsearch.replication.integ.rest
 import com.amazon.elasticsearch.replication.MultiClusterAnnotations
 import com.amazon.elasticsearch.replication.MultiClusterRestTestCase
 import com.amazon.elasticsearch.replication.StartReplicationRequest
+import com.amazon.elasticsearch.replication.`validate not paused status resposne`
+import com.amazon.elasticsearch.replication.`validate paused status on closed index`
+import com.amazon.elasticsearch.replication.pauseReplication
+import com.amazon.elasticsearch.replication.replicationStatus
+import com.amazon.elasticsearch.replication.resumeReplication
 import com.amazon.elasticsearch.replication.`validate paused status response due to leader index deleted`
 import com.amazon.elasticsearch.replication.`validate status syncing resposne`
-import com.amazon.elasticsearch.replication.replicationStatus
 import com.amazon.elasticsearch.replication.startReplication
 import com.amazon.elasticsearch.replication.stopReplication
 import com.amazon.elasticsearch.replication.updateReplication
@@ -121,6 +125,52 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                                 .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
                 )
             }, 15, TimeUnit.SECONDS)
+        } finally {
+            followerClient.stopReplication(followerIndexName)
+        }
+    }
+
+
+    fun `test replication when _close is triggered on leader`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
+            assertThat(followerClient.indices().exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT)).isEqualTo(true)
+            leaderClient.lowLevelClient.performRequest(Request("POST", "/" + leaderIndexName + "/_close"))
+            assertBusy ({
+                try {
+                    assertThat(followerClient.replicationStatus(followerIndexName)).containsKey("status")
+                    var statusResp = followerClient.replicationStatus(followerIndexName)
+                    `validate paused status on closed index`(statusResp)
+                } catch (e : Exception) {
+                    Assert.fail()
+                }
+            },30, TimeUnit.SECONDS)
+        } finally {
+            followerClient.stopReplication(followerIndexName)
+        }
+    }
+
+
+    fun `test replication when _close and _open is triggered on leader`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
+            followerClient.pauseReplication(followerIndexName)
+            leaderClient.lowLevelClient.performRequest(Request("POST", "/" + leaderIndexName + "/_close"))
+            leaderClient.lowLevelClient.performRequest(Request("POST", "/" + leaderIndexName + "/_open"))
+            followerClient.resumeReplication(followerIndexName)
+            var statusResp = followerClient.replicationStatus(followerIndexName)
+            `validate not paused status resposne`(statusResp)
+
         } finally {
             followerClient.stopReplication(followerIndexName)
         }
