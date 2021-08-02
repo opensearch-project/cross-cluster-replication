@@ -22,6 +22,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.elasticsearch.ElasticsearchStatusException
 import org.elasticsearch.action.DocWriteResponse.Result
 import org.elasticsearch.action.admin.indices.forcemerge.ForceMergeRequest
+import org.elasticsearch.action.delete.DeleteRequest
 import org.elasticsearch.action.get.GetRequest
 import org.elasticsearch.action.index.IndexRequest
 import org.elasticsearch.client.RequestOptions
@@ -39,6 +40,8 @@ const val FOLL = "followCluster"
     ClusterConfiguration(clusterName = FOLL)
 )
 class BasicReplicationIT : MultiClusterRestTestCase() {
+    private val leaderIndexName = "leader_index"
+    private val followerIndexName = "follower_index"
 
     fun `test empty index replication`() {
         val follower = getClientForCluster(FOLL)
@@ -113,5 +116,51 @@ class BasicReplicationIT : MultiClusterRestTestCase() {
             assertThat(getResponse.sourceAsMap).isEqualTo(source)
         }
         follower.stopReplication(followerIndex)
+    }
+
+    fun `test that index operations are replayed to follower during replication`() {
+        val followerClient = getClientForCluster(FOLL)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLL, LEADER)
+
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore=true)
+
+            // Create document
+            var source = mapOf("name" to randomAlphaOfLength(20), "age" to randomInt().toString())
+            var response = leaderClient.index(IndexRequest(leaderIndexName).id("1").source(source), RequestOptions.DEFAULT)
+            assertThat(response.result).withFailMessage("Failed to create leader data").isEqualTo(Result.CREATED)
+
+            assertBusy {
+                val getResponse = followerClient.get(GetRequest(followerIndexName, "1"), RequestOptions.DEFAULT)
+                assertThat(getResponse.isExists).isTrue()
+                assertThat(getResponse.sourceAsMap).isEqualTo(source)
+            }
+
+            // Update document
+            source = mapOf("name" to randomAlphaOfLength(20), "age" to randomInt().toString())
+            response = leaderClient.index(IndexRequest(leaderIndexName).id("1").source(source), RequestOptions.DEFAULT)
+            assertThat(response.result).withFailMessage("Failed to update leader data").isEqualTo(Result.UPDATED)
+
+            assertBusy {
+                val getResponse = followerClient.get(GetRequest(followerIndexName, "1"), RequestOptions.DEFAULT)
+                assertThat(getResponse.isExists).isTrue()
+                assertThat(getResponse.sourceAsMap).isEqualTo(source)
+            }
+
+            // Delete document
+            val deleteResponse = leaderClient.delete(DeleteRequest(leaderIndexName).id("1"), RequestOptions.DEFAULT)
+            assertThat(deleteResponse.result).withFailMessage("Failed to delete leader data").isEqualTo(Result.DELETED)
+
+            assertBusy {
+                val getResponse = followerClient.get(GetRequest(followerIndexName, "1"), RequestOptions.DEFAULT)
+                assertThat(getResponse.isExists).isFalse()
+            }
+        } finally {
+            followerClient.stopReplication(followerIndexName)
+        }
     }
 }
