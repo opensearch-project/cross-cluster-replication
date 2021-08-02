@@ -130,6 +130,14 @@ fun `validate paused status resposne`(statusResp: Map<String, Any>) {
     Assert.assertFalse(statusResp.containsKey("remote_checkpoint"))
 }
 
+fun `validate paused status on closed index`(statusResp: Map<String, Any>) {
+    Assert.assertEquals(statusResp.getValue("status"), "PAUSED")
+    assertThat(statusResp.getValue("reason").toString().contains("org.elasticsearch.cluster.block.ClusterBlockException"))
+    Assert.assertFalse(statusResp.containsKey("shard_replication_details"))
+    Assert.assertFalse(statusResp.containsKey("follower_checkpoint"))
+    Assert.assertFalse(statusResp.containsKey("leader_checkpoint"))
+}
+
 fun `validate aggregated paused status resposne`(statusResp: Map<String, Any>) {
     Assert.assertEquals(statusResp.getValue("status"),"PAUSED")
     Assert.assertEquals(statusResp.getValue("reason"), STATUS_REASON_USER_INITIATED)
