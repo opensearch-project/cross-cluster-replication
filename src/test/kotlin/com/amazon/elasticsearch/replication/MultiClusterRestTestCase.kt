@@ -65,6 +65,10 @@ import java.security.cert.CertificateException
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import java.util.Collections
+import javax.net.ssl.SSLContext
+import javax.net.ssl.TrustManager
+import javax.net.ssl.X509TrustManager
+import javax.security.cert.X509Certificate
 
 /**
  * This class provides basic support of managing life-cyle of
@@ -74,12 +78,31 @@ abstract class MultiClusterRestTestCase : ESTestCase() {
 
     class TestCluster(clusterName: String, val httpHosts: List<HttpHost>, val transportPorts: List<String>,
                       val preserveSnapshots: Boolean, val preserveIndices: Boolean,
-                      val preserveClusterSettings: Boolean) {
+                      val preserveClusterSettings: Boolean,
+                      val securityEnabled: Boolean) {
         val restClient : RestHighLevelClient
         init {
-            val builder = RestClient.builder(*httpHosts.toTypedArray())
-            configureClient(builder, getClusterSettings(clusterName))
-            builder.setStrictDeprecationMode(true)
+            val trustCerts = arrayOf<TrustManager>(object: X509TrustManager {
+                override fun checkClientTrusted(chain: Array<out java.security.cert.X509Certificate>?, authType: String?) {
+                }
+
+                override fun checkServerTrusted(chain: Array<out java.security.cert.X509Certificate>?, authType: String?) {
+                }
+
+                override fun getAcceptedIssuers(): Array<out java.security.cert.X509Certificate>? {
+                    return null
+                }
+
+            })
+            val sslContext = SSLContext.getInstance("SSL")
+            sslContext.init(null, trustCerts, java.security.SecureRandom())
+
+            val builder = RestClient.builder(*httpHosts.toTypedArray()).setHttpClientConfigCallback { httpAsyncClientBuilder ->
+                httpAsyncClientBuilder.setSSLHostnameVerifier { _, _ -> true } // Disable hostname verification for local cluster
+                httpAsyncClientBuilder.setSSLContext(sslContext)
+            }
+            configureClient(builder, getClusterSettings(clusterName), securityEnabled)
+            builder.setStrictDeprecationMode(false)
             restClient = RestHighLevelClient(builder)
         }
         val lowLevelClient = restClient.lowLevelClient!!
@@ -93,14 +116,20 @@ abstract class MultiClusterRestTestCase : ESTestCase() {
             val systemProperties = BootstrapInfo.getSystemProperties()
             val httpHostsProp = systemProperties.get("tests.cluster.${cluster}.http_hosts") as String?
             val transportHostsProp = systemProperties.get("tests.cluster.${cluster}.transport_hosts") as String?
+            val securityEnabled = systemProperties.get("tests.cluster.${cluster}.security_enabled") as String?
 
             requireNotNull(httpHostsProp) { "Missing http hosts property for cluster: $cluster."}
             requireNotNull(transportHostsProp) { "Missing transport hosts property for cluster: $cluster."}
+            requireNotNull(securityEnabled) { "Missing security enabled property for cluster: $cluster."}
 
-            val httpHosts = httpHostsProp.split(',').map { HttpHost.create("http://$it") }
+            var protocol = "http"
+            if(securityEnabled.equals("true", true)) {
+                protocol = "https"
+            }
+            val httpHosts = httpHostsProp.split(',').map { HttpHost.create("$protocol://$it") }
             val transportPorts = transportHostsProp.split(',')
             return TestCluster(cluster, httpHosts, transportPorts, configuration.preserveSnapshots,
-                               configuration.preserveIndices, configuration.preserveClusterSettings)
+                               configuration.preserveIndices, configuration.preserveClusterSettings, securityEnabled.equals("true", true))
         }
 
         private fun getClusterConfigurations(): List<ClusterConfiguration> {
@@ -143,7 +172,7 @@ abstract class MultiClusterRestTestCase : ESTestCase() {
 
 
         /* Copied this method from [ESRestCase] */
-        protected fun configureClient(builder: RestClientBuilder, settings: Settings) {
+        protected fun configureClient(builder: RestClientBuilder, settings: Settings, securityEnabled: Boolean) {
             val keystorePath = settings[ESRestTestCase.TRUSTSTORE_PATH]
             if (keystorePath != null) {
                 val keystorePass = settings[ESRestTestCase.TRUSTSTORE_PASSWORD]
@@ -172,12 +201,21 @@ abstract class MultiClusterRestTestCase : ESTestCase() {
                 }
             }
             val headers = ThreadContext.buildDefaultHeaders(settings)
-            val defaultHeaders = arrayOfNulls<Header>(headers.size)
+            var headerSize = headers.size
+            if(securityEnabled) {
+                headerSize = headers.size + 1
+            }
+            val defaultHeaders = arrayOfNulls<Header>(headerSize)
             var i = 0
             for ((key, value) in headers) {
                 defaultHeaders[i++] = BasicHeader(key, value)
             }
+            if(securityEnabled) {
+                defaultHeaders[i++] = BasicHeader("Authorization", "Basic YWRtaW46YWRtaW4=")
+            }
+
             builder.setDefaultHeaders(defaultHeaders)
+            builder.setStrictDeprecationMode(false)
             val socketTimeoutString = settings[ESRestTestCase.CLIENT_SOCKET_TIMEOUT]
             val socketTimeout = TimeValue.parseTimeValue(socketTimeoutString ?: "60s",
                                                          ESRestTestCase.CLIENT_SOCKET_TIMEOUT)
