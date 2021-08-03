@@ -129,7 +129,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
 
             // Validate paused replication using Status Api
             assertBusy {
-                `validate aggregated paused status resposne`(followerClient.replicationStatus(followerIndexName,requestOptions = requestOptionsBuilder.build()))
+                `validate aggregated paused status response`(followerClient.replicationStatus(followerIndexName,requestOptions = requestOptionsBuilder.build()))
             }
         } finally {
             followerClient.stopReplication(followerIndexName)
@@ -190,7 +190,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
             followerClient.startReplication(startReplicationRequest, requestOptions= requestOptionsBuilder.build(), waitForRestore = true)
 
             assertBusy {
-                `validate status syncing resposne`(followerClient.replicationStatus(followerIndexName,requestOptions = requestOptionsBuilder.build()))
+                `validate status syncing response`(followerClient.replicationStatus(followerIndexName,requestOptions = requestOptionsBuilder.build()))
             }
         } finally {
             followerClient.stopReplication(followerIndexName)
@@ -370,7 +370,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
             }, 1, TimeUnit.MINUTES)
 
             assertBusy {
-                `validate status syncing resposne`(followerClient.replicationStatus(followerIndexName,requestOptions = requestOptionsBuilder.build()))
+                `validate status syncing response`(followerClient.replicationStatus(followerIndexName,requestOptions = requestOptionsBuilder.build()))
             }
 
             updateRole(followerIndexName,"role1", false)
