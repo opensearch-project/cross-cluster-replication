@@ -134,7 +134,7 @@ def isReleaseTask = "release" in gradle.startParameter.taskNames
 def securityEnabled = findProperty("security") == "true"
 
 File repo = file("$buildDir/testclusters/repo")
-def _numNodes = findProperty('numNodes') as Integer ?: 1
+def _numNodes = 2
 testClusters {
     leaderCluster {
         plugin(project.tasks.bundlePlugin.archiveFile)

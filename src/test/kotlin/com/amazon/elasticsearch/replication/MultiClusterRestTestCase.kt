@@ -29,6 +29,7 @@ import org.apache.http.message.BasicHeader
 import org.apache.http.nio.conn.ssl.SSLIOSessionStrategy
 import org.apache.http.nio.entity.NStringEntity
 import org.apache.http.ssl.SSLContexts
+import org.apache.http.util.EntityUtils
 import org.apache.lucene.util.SetOnce
 import org.elasticsearch.action.admin.cluster.node.tasks.list.ListTasksRequest
 import org.elasticsearch.action.admin.cluster.settings.ClusterUpdateSettingsRequest
@@ -331,6 +332,87 @@ abstract class MultiClusterRestTestCase : ESTestCase() {
 
         persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
         val persistentConnectionResponse = fromCluster.lowLevelClient.performRequest(persistentConnectionRequest)
+        assertEquals(HttpStatus.SC_OK.toLong(), persistentConnectionResponse.statusLine.statusCode.toLong())
+    }
+
+    protected fun getPrimaryNodeForShard(clusterName: String,indexname: String, shardNumber: String) :String {
+        val cluster = getNamedCluster(clusterName)
+        val persistentConnectionRequest = Request("GET", "/_cat/shards")
+
+        val persistentConnectionResponse = cluster.lowLevelClient.performRequest(persistentConnectionRequest)
+        val resp = EntityUtils.toString(persistentConnectionResponse.entity);
+        var primaryNode:String = ""
+
+        //leader_index 0 p STARTED 1 3.7kb 127.0.0.1 leaderCluster-1
+        //leader_index 0 r STARTED 1 3.7kb 127.0.0.1 leaderCluster-0
+        resp.lines().forEach { line ->
+            val trimmed = line.replace("\\s+".toRegex(), " ")
+            val parts = trimmed.split(" ")
+            if(parts.size == 8) {
+                if (parts.get(0).equals(indexname)
+                        && parts.get(1).equals(shardNumber)
+                        && parts.get(2).equals("p")) {
+                    primaryNode = parts.get(7)
+                }
+            }
+        }
+        return primaryNode
+    }
+
+    protected fun insertDocToIndex(clusterName: String, docCount: String, docValue: String, indexName: String) {
+        val cluster = getNamedCluster(clusterName)
+        val persistentConnectionRequest = Request("PUT", indexName + "/_doc/"+ docCount)
+        val entityAsString = """
+                        {"value" : "$docValue"}""".trimMargin()
+
+        persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
+        val persistentConnectionResponse = cluster.lowLevelClient.performRequest(persistentConnectionRequest)
+        assertEquals(HttpStatus.SC_CREATED.toLong(), persistentConnectionResponse.statusLine.statusCode.toLong())
+    }
+
+    protected fun docs(clusterName: String,indexName : String) : String{
+        val cluster = getNamedCluster(clusterName)
+        val persistentConnectionRequest = Request("GET", "/$indexName/_search?pretty&q=*")
+
+        val persistentConnectionResponse = cluster.lowLevelClient.performRequest(persistentConnectionRequest)
+        val resp = EntityUtils.toString(persistentConnectionResponse.entity);
+        return resp
+    }
+
+    protected fun getNodesInCluster(clusterName: String) : List<String>{
+        val cluster = getNamedCluster(clusterName)
+        val persistentConnectionRequest = Request("GET", "/_cat/nodes")
+
+        val persistentConnectionResponse = cluster.lowLevelClient.performRequest(persistentConnectionRequest)
+        val resp = EntityUtils.toString(persistentConnectionResponse.entity);
+
+        //127.0.0.1 38 100 7 3.02   dimr * leaderCluster-1
+        //127.0.0.1 25 100 8 3.02   dimr - leaderCluster-0
+        var nodes = mutableListOf<String>()
+        resp.lines().forEach { line ->
+            val parts = line.split(" ")
+            if(parts.size >= 8) {
+                nodes.add(parts.last())
+            }
+        }
+        return nodes
+    }
+
+    protected fun rerouteShard(clusterName: String, shardNumber: String, indexName: String, fromNode: String, toNode : String) {
+        val cluster = getNamedCluster(clusterName)
+        val persistentConnectionRequest = Request("POST", "_cluster/reroute")
+        val entityAsString = """
+                        {
+                          "commands": [{
+                             "move": {
+                               "index": "$indexName", "shard": $shardNumber,
+                               "from_node": "$fromNode", "to_node": "$toNode"
+                             }
+                          }]
+                        }""".trimMargin()
+
+        persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
+        val persistentConnectionResponse = cluster.lowLevelClient.performRequest(persistentConnectionRequest)
         assertEquals(HttpStatus.SC_OK.toLong(), persistentConnectionResponse.statusLine.statusCode.toLong())
     }
 
