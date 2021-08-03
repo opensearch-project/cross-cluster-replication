@@ -60,7 +60,7 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
                 }
                 val remoteClient = client.getRemoteClusterClient(request.remoteCluster)
                 val getSettingsRequest = GetSettingsRequest().includeDefaults(false).indices(request.remoteIndex)
-                val settingsResponse = remoteClient.suspending(remoteClient.admin().indices()::getSettings, injectSecurityContext = true)(getSettingsRequest)
+                val settingsResponse = remoteClient.suspending(remoteClient.admin().indices()::getSettings)(getSettingsRequest)
                 val leaderSettings = settingsResponse.indexToSettings.get(request.remoteIndex)
                 if (leaderSettings.keySet().contains(REPLICATED_INDEX_SETTING.key) and !leaderSettings.get(REPLICATED_INDEX_SETTING.key).isNullOrBlank()) {
                     throw IllegalArgumentException("Cannot Replicate a Replicated Index ${request.remoteIndex}")
