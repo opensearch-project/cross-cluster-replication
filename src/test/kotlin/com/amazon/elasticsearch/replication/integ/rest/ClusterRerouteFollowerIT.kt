@@ -51,11 +51,9 @@ class ClusterRerouteFollowerIT : MultiClusterRestTestCase() {
                 }
             }, 1, TimeUnit.MINUTES)
 
-            logger.info("getting nodes")
             val nodes = getNodesInCluster(FOLLOWER)
 
             val primaryNode = getPrimaryNodeForShard(FOLLOWER,followerIndexName, "0")
-            logger.info("primary now is" + primaryNode)
             val unassignedNode = nodes.filter{!it.equals(primaryNode)}.stream().findFirst().get()
             rerouteShard(FOLLOWER, "0", followerIndexName, primaryNode, unassignedNode)
 

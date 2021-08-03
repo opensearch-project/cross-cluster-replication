@@ -21,7 +21,6 @@ import java.util.concurrent.TimeUnit
         MultiClusterAnnotations.ClusterConfiguration(clusterName = FOLLOWER)
 )
 
-@Ignore
 class ClusterRerouteLeaderIT : MultiClusterRestTestCase() {
     private val leaderIndexName = "leader_index"
     private val followerIndexName = "follower_index"
