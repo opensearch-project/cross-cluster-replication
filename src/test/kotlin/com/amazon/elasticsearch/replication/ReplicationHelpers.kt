@@ -22,6 +22,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.elasticsearch.action.admin.cluster.health.ClusterHealthRequest
 import org.elasticsearch.action.admin.cluster.node.tasks.list.ListTasksRequest
 import org.elasticsearch.action.support.master.AcknowledgedResponse
+import org.elasticsearch.client.HttpAsyncResponseConsumerFactory.HeapBufferedResponseConsumerFactory
 import org.elasticsearch.client.Request
 import org.elasticsearch.client.RequestOptions
 import org.elasticsearch.client.Response
@@ -59,7 +60,8 @@ const val STATUS_REASON_INDEX_NOT_FOUND = "no such index"
 fun RestHighLevelClient.startReplication(request: StartReplicationRequest,
                                          waitFor: TimeValue = TimeValue.timeValueSeconds(10),
                                          waitForShardsInit: Boolean = true,
-                                         waitForRestore: Boolean = false) {
+                                         waitForRestore: Boolean = false,
+                                         requestOptions: RequestOptions = RequestOptions.DEFAULT) {
     val lowLevelRequest = Request("PUT", REST_REPLICATION_START.replace("{index}", request.toIndex, true)
             + "?wait_for_restore=${waitForRestore}")
     if (request.settings == Settings.EMPTY) {
@@ -84,6 +86,8 @@ fun RestHighLevelClient.startReplication(request: StartReplicationRequest,
                                      }            
                                   """)
     }
+
+    lowLevelRequest.setOptions(requestOptions)
     val lowLevelResponse = lowLevelClient.performRequest(lowLevelRequest)
     val response = getAckResponse(lowLevelResponse)
     assertThat(response.isAcknowledged).withFailMessage("Replication not started.").isTrue()
@@ -161,29 +165,32 @@ fun `validate paused status response due to leader index deleted`(statusResp: Ma
     Assert.assertTrue(statusResp.getValue("reason").toString().contains(STATUS_REASON_INDEX_NOT_FOUND))
 }
 
-fun RestHighLevelClient.stopReplication(index: String, shouldWait: Boolean = true) {
+fun RestHighLevelClient.stopReplication(index: String, shouldWait: Boolean = true, requestOptions: RequestOptions = RequestOptions.DEFAULT) {
     val lowLevelStopRequest = Request("POST", REST_REPLICATION_STOP.replace("{index}", index,true))
     lowLevelStopRequest.setJsonEntity("{}")
+    lowLevelStopRequest.setOptions(requestOptions)
     val lowLevelStopResponse = lowLevelClient.performRequest(lowLevelStopRequest)
     val response = getAckResponse(lowLevelStopResponse)
     assertThat(response.isAcknowledged).withFailMessage("Replication could not be stopped").isTrue()
     if (shouldWait) waitForReplicationStop(index)
 }
 
-fun RestHighLevelClient.pauseReplication(index: String) {
-    val lowLevelStopRequest = Request("POST", REST_REPLICATION_PAUSE.replace("{index}", index,true))
-    lowLevelStopRequest.setJsonEntity("{}")
-    val lowLevelStopResponse = lowLevelClient.performRequest(lowLevelStopRequest)
-    val response = getAckResponse(lowLevelStopResponse)
-    assertThat(response.isAcknowledged).withFailMessage("Replication could not be stopped").isTrue()
+fun RestHighLevelClient.pauseReplication(index: String, requestOptions: RequestOptions = RequestOptions.DEFAULT) {
+    val lowLevelPauseRequest = Request("POST", REST_REPLICATION_PAUSE.replace("{index}", index,true))
+    lowLevelPauseRequest.setJsonEntity("{}")
+    lowLevelPauseRequest.setOptions(requestOptions)
+    val lowLevelPauseResponse = lowLevelClient.performRequest(lowLevelPauseRequest)
+    val response = getAckResponse(lowLevelPauseResponse)
+    assertThat(response.isAcknowledged).withFailMessage("Replication could not be paused").isTrue()
     waitForReplicationStop(index)
 }
 
-fun RestHighLevelClient.resumeReplication(index: String) {
-    val lowLevelStopRequest = Request("POST", REST_REPLICATION_RESUME.replace("{index}", index, true))
-    lowLevelStopRequest.setJsonEntity("{}")
-    val lowLevelStopResponse = lowLevelClient.performRequest(lowLevelStopRequest)
-    val response = getAckResponse(lowLevelStopResponse)
+fun RestHighLevelClient.resumeReplication(index: String, requestOptions: RequestOptions = RequestOptions.DEFAULT) {
+    val lowLevelResumeRequest = Request("POST", REST_REPLICATION_RESUME.replace("{index}", index, true))
+    lowLevelResumeRequest.setJsonEntity("{}")
+    lowLevelResumeRequest.setOptions(requestOptions)
+    val lowLevelResumeResponse = lowLevelClient.performRequest(lowLevelResumeRequest)
+    val response = getAckResponse(lowLevelResumeResponse)
     assertThat(response.isAcknowledged).withFailMessage("Replication could not be Resumed").isTrue()
     waitForReplicationStart(index, TimeValue.timeValueSeconds(10))
 }

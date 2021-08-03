@@ -109,7 +109,7 @@ abstract class MultiClusterRestTestCase : ESTestCase() {
     }
 
     companion object {
-        protected lateinit var testClusters : Map<String, TestCluster>
+        lateinit var testClusters : Map<String, TestCluster>
 
         private fun createTestCluster(configuration: ClusterConfiguration) : TestCluster {
             val cluster = configuration.clusterName
