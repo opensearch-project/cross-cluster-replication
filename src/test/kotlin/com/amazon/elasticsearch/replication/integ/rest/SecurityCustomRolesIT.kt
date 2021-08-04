@@ -339,7 +339,6 @@ class SecurityCustomRolesIT: SecurityBase()  {
             followerClient.stopReplication(followerIndexName)
         }
     }
-
     fun `test REVOKE replay permission`() {
         Assume.assumeTrue(isSecurityEnabled)
         val followerClient = getClientForCluster(FOLLOWER)
