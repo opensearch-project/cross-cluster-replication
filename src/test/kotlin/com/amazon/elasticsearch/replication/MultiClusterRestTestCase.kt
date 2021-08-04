@@ -55,6 +55,7 @@ import org.elasticsearch.test.rest.ESRestTestCase
 import org.hamcrest.Matchers
 import org.junit.After
 import org.junit.AfterClass
+import org.junit.Before
 import org.junit.BeforeClass
 import java.nio.file.Files
 import java.security.KeyManagementException
@@ -106,6 +107,8 @@ abstract class MultiClusterRestTestCase : ESTestCase() {
             restClient = RestHighLevelClient(builder)
         }
         val lowLevelClient = restClient.lowLevelClient!!
+
+        var defaultSecuritySetupCompleted = false
     }
 
     companion object {
@@ -227,6 +230,92 @@ abstract class MultiClusterRestTestCase : ESTestCase() {
                 builder.setPathPrefix(settings[ESRestTestCase.CLIENT_PATH_PREFIX])
             }
         }
+    }
+
+    /**
+     * Setup for the tests
+     */
+    @Before
+    fun setup() {
+        testClusters.values.forEach { if(it.securityEnabled && !it.defaultSecuritySetupCompleted) setupDefaultSecurityRoles(it) }
+    }
+
+    /**
+     * Setup for default security roles is performed once.
+     */
+    protected fun setupDefaultSecurityRoles(testCluster: TestCluster) {
+        val leaderRoleConfig = """
+                {
+                    "index_permissions": [
+                        {
+                            "index_patterns": [
+                                "*"
+                            ],
+                            "allowed_actions": [
+                                "indices:admin/plugins/replication/index/setup/validate",
+                                "indices:data/read/plugins/replication/changes",
+                                "indices:data/read/plugins/replication/file_chunk"
+                            ]
+                        }
+                    ]
+                }
+            """.trimMargin()
+
+        triggerRequest(testCluster.lowLevelClient, "PUT",
+                "_opendistro/_security/api/roles/leader_role", leaderRoleConfig)
+
+        val followerRoleConfig = """
+                {
+                    "cluster_permissions": [
+                        "cluster:admin/plugins/replication/autofollow/update"
+                    ],
+                    "index_permissions": [
+                        {
+                            "index_patterns": [
+                                "*"
+                            ],
+                            "allowed_actions": [
+                                "indices:admin/plugins/replication/index/setup/validate",
+                                "indices:data/write/plugins/replication/changes",
+                                "indices:admin/plugins/replication/index/start",
+                                "indices:admin/plugins/replication/index/pause",
+                                "indices:admin/plugins/replication/index/resume",
+                                "indices:admin/plugins/replication/index/stop",
+                                "indices:admin/plugins/replication/index/update",
+                                "indices:admin/plugins/replication/index/status_check"
+                            ]
+                        }
+                    ]
+                }
+            """.trimMargin()
+
+        triggerRequest(testCluster.lowLevelClient, "PUT",
+                "_opendistro/_security/api/roles/follower_role", followerRoleConfig)
+
+        val userMapping = """
+            {
+                "users": [
+                    "admin"
+                ]
+            }
+            """.trimMargin()
+
+        triggerRequest(testCluster.lowLevelClient, "PUT",
+                "_opendistro/_security/api/rolesmapping/leader_role", userMapping)
+
+        triggerRequest(testCluster.lowLevelClient, "PUT",
+                "_opendistro/_security/api/rolesmapping/follower_role", userMapping)
+
+        testCluster.defaultSecuritySetupCompleted = true
+    }
+
+    private fun triggerRequest(client: RestClient, method: String, endpoint: String, reqBody: String) {
+        val req = Request(method, endpoint)
+        req.entity = NStringEntity(reqBody, ContentType.APPLICATION_JSON)
+        val res = client.performRequest(req)
+
+        assertTrue(HttpStatus.SC_CREATED.toLong() == res.statusLine.statusCode.toLong() ||
+                HttpStatus.SC_OK.toLong() == res.statusLine.statusCode.toLong())
     }
 
     @After

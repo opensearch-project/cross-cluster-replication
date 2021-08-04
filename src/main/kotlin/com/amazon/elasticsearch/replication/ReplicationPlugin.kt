@@ -161,7 +161,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
         val REPLICATION_PARALLEL_READ_POLL_DURATION = Setting.timeSetting ("plugins.replication.parallel_reads_poll_duration", TimeValue.timeValueMillis(50), TimeValue.timeValueMillis(1),
             TimeValue.timeValueSeconds(1), Setting.Property.Dynamic, Setting.Property.NodeScope)
-        val REPLICATION_AUTOFOLLOW_REMOTE_INDICES_POLL_DURATION = Setting.timeSetting ("plugins.replication.autofollow.remote.fetch_poll_duration", TimeValue.timeValueSeconds(60), TimeValue.timeValueSeconds(30),
+        val REPLICATION_AUTOFOLLOW_REMOTE_INDICES_POLL_DURATION = Setting.timeSetting ("plugins.replication.autofollow.remote.fetch_poll_duration", TimeValue.timeValueSeconds(30), TimeValue.timeValueSeconds(30),
                 TimeValue.timeValueHours(1), Setting.Property.Dynamic, Setting.Property.NodeScope)
         val REPLICATION_AUTOFOLLOW_REMOTE_INDICES_RETRY_POLL_DURATION = Setting.timeSetting ("plugins.replication.autofollow.remote.retry_poll_duration", TimeValue.timeValueHours(1), TimeValue.timeValueMinutes(30),
                 TimeValue.timeValueHours(4), Setting.Property.Dynamic, Setting.Property.NodeScope)
