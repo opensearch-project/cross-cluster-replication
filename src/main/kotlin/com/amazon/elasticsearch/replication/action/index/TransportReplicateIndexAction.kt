@@ -39,6 +39,7 @@ import org.elasticsearch.client.Client
 import org.elasticsearch.common.inject.Inject
 import org.elasticsearch.env.Environment
 import org.elasticsearch.index.IndexNotFoundException
+import org.elasticsearch.index.IndexSettings
 import org.elasticsearch.indices.InvalidIndexNameException
 import org.elasticsearch.tasks.Task
 import org.elasticsearch.threadpool.ThreadPool
@@ -91,6 +92,9 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
                 if (leaderSettings.keySet().contains(ReplicationPlugin.REPLICATED_INDEX_SETTING.key) and
                         !leaderSettings.get(ReplicationPlugin.REPLICATED_INDEX_SETTING.key).isNullOrBlank()) {
                     throw IllegalArgumentException("Cannot Replicate a Replicated Index ${request.remoteIndex}")
+                }
+                if (!leaderSettings.getAsBoolean(IndexSettings.INDEX_SOFT_DELETES_SETTING.key, true)) {
+                    throw IllegalArgumentException("Cannot Replicate an index where the setting ${IndexSettings.INDEX_SOFT_DELETES_SETTING.key} is disabled")
                 }
                 ValidationUtil.validateAnalyzerSettings(environment, leaderSettings, request.settings)
 
