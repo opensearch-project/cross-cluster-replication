@@ -16,7 +16,7 @@
 package com.amazon.elasticsearch.replication.action.index
 
 import com.amazon.elasticsearch.replication.ReplicationException
-import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.REPLICATED_INDEX_SETTING
+import com.amazon.elasticsearch.replication.ReplicationPlugin
 import com.amazon.elasticsearch.replication.action.setup.SetupChecksAction
 import com.amazon.elasticsearch.replication.action.setup.SetupChecksRequest
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationContext
@@ -65,15 +65,6 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
                 if(request.remoteIndex.startsWith(".")) {
                     throw InvalidIndexNameException(request.remoteIndex,"Cannot start replication for an index starting with '.'")
                 }
-                val remoteClient = client.getRemoteClusterClient(request.remoteCluster)
-                val getSettingsRequest = GetSettingsRequest().includeDefaults(false).indices(request.remoteIndex)
-                val settingsResponse = remoteClient.suspending(remoteClient.admin().indices()::getSettings, injectSecurityContext = true)(getSettingsRequest)
-                val leaderSettings = settingsResponse.indexToSettings.get(request.remoteIndex) ?: throw IndexNotFoundException(request.remoteIndex)
-
-                if (leaderSettings.keySet().contains(REPLICATED_INDEX_SETTING.key) and !leaderSettings.get(REPLICATED_INDEX_SETTING.key).isNullOrBlank()) {
-                    throw IllegalArgumentException("Cannot Replicate a Replicated Index ${request.remoteIndex}")
-                }
-                ValidationUtil.validateAnalyzerSettings(environment, leaderSettings, request.settings)
 
                 val followerReplContext = ReplicationContext(request.followerIndex,
                         user?.overrideFgacRole(request.assumeRoles?.get(ReplicateIndexRequest.FOLLOWER_FGAC_ROLE)))
@@ -91,6 +82,17 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
                         throw ReplicationException("Setup checks failed while setting-up replication for ${request.followerIndex}")
                     }
                 }
+
+                val remoteClient = client.getRemoteClusterClient(request.remoteCluster)
+                val getSettingsRequest = GetSettingsRequest().includeDefaults(false).indices(request.remoteIndex)
+                val settingsResponse = remoteClient.suspending(remoteClient.admin().indices()::getSettings, injectSecurityContext = true)(getSettingsRequest)
+                val leaderSettings = settingsResponse.indexToSettings.get(request.remoteIndex) ?: throw IndexNotFoundException(request.remoteIndex)
+
+                if (leaderSettings.keySet().contains(ReplicationPlugin.REPLICATED_INDEX_SETTING.key) and
+                        !leaderSettings.get(ReplicationPlugin.REPLICATED_INDEX_SETTING.key).isNullOrBlank()) {
+                    throw IllegalArgumentException("Cannot Replicate a Replicated Index ${request.remoteIndex}")
+                }
+                ValidationUtil.validateAnalyzerSettings(environment, leaderSettings, request.settings)
 
                 // Setup checks are successful and trigger replication for the index
                 // permissions evaluation to trigger replication is based on the current security context set
