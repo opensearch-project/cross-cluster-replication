@@ -19,6 +19,8 @@ import org.elasticsearch.common.util.concurrent.ThreadContext
 import org.elasticsearch.rest.RestStatus
 import org.elasticsearch.tasks.Task
 import org.elasticsearch.threadpool.ThreadPool
+import org.elasticsearch.transport.ActionNotFoundTransportException
+import org.elasticsearch.transport.RemoteTransportException
 import org.elasticsearch.transport.TransportService
 import java.util.function.Consumer
 import java.util.function.Predicate
@@ -82,9 +84,13 @@ class TransportSetupChecksAction @Inject constructor(transportService: Transport
                     listener.onResponse(r)
                 },
                 { e ->
+                    var exceptionToThrow = e
+                    if ((e is RemoteTransportException) && (e.cause is ActionNotFoundTransportException)) {
+                        exceptionToThrow = UnsupportedOperationException("Replication is not enabled on the remote domain")
+                    }
                     log.error("Permissions validation failed for role [connection:${request.connectionName}, " +
-                            "resource:${request.leaderContext.resource}] with $e")
-                    listener.onFailure(unwrapSecurityExceptionIfPresent(e))
+                            "resource:${request.leaderContext.resource}] with $exceptionToThrow")
+                    listener.onFailure(unwrapSecurityExceptionIfPresent(exceptionToThrow))
                 }
         )
 
@@ -108,9 +114,13 @@ class TransportSetupChecksAction @Inject constructor(transportService: Transport
                     triggerPermissionsValidation(client, localClusterName, request.followerContext, true, rolePermissionsValidationAtLocal)
                 },
                 { e ->
+                    var exceptionToThrow = e
+                    if ((e is RemoteTransportException) && (e.cause is ActionNotFoundTransportException)) {
+                        exceptionToThrow = UnsupportedOperationException("Replication is not enabled on the remote domain")
+                    }
                     log.error("Permissions validation failed for User [connection:${request.connectionName}, " +
-                            "resource:${request.leaderContext.resource}] with $e")
-                    listener.onFailure(unwrapSecurityExceptionIfPresent(e))
+                            "resource:${request.leaderContext.resource}] with $exceptionToThrow")
+                    listener.onFailure(unwrapSecurityExceptionIfPresent(exceptionToThrow))
                 }
         )
 
