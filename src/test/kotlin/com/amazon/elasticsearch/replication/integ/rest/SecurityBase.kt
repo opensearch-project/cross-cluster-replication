@@ -10,20 +10,22 @@ import org.junit.BeforeClass
 abstract class SecurityBase : MultiClusterRestTestCase()   {
     companion object{
         fun addSecurityRoles() {
-            addUserToRole("TestUser1","Role1", FOLLOWER)
-            addUserToRole("TestUser2","Role2", FOLLOWER)
-            addUserToRole("TestUser1","Role1", LEADER)
+            addUserToRole("testUser1","role1", FOLLOWER)
+            addUserToRole("testUser2","role2", FOLLOWER)
+            addUserToRole("testUser1","role1", LEADER)
         }
         @BeforeClass @JvmStatic
         fun setupSecurity() {
-            addUsers()
-            createRoles()
-            addSecurityRoles()
+            if(isSecurityEnabled) {
+                addUsers()
+                createRoles()
+                addSecurityRoles()
+            }
         }
         fun createRoles() {
-            createRoleWithPermissions("FollowerIndex1", "Role1")
-            createLeaderRoleWithPermissions("*", "Role1")
-            createRoleWithPermissions("FollowerIndex2", "Role2")
+            createRoleWithPermissions("follower-index1", "role1")
+            createLeaderRoleWithPermissions("*", "role1")
+            createRoleWithPermissions("follower-index2", "role2")
         }
 
         private fun createLeaderRoleWithPermissions(indexPattern: String, role: String) {
@@ -92,10 +94,10 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
         }
 
         private fun addUsers(){
-            addUserToCluster("TestUser1","password", FOLLOWER)
-            addUserToCluster("TestUser1","password", LEADER)
-            addUserToCluster("TestUser2","password", FOLLOWER)
-            addUserToCluster("TestUser2","password", LEADER)
+            addUserToCluster("testUser1","password", FOLLOWER)
+            addUserToCluster("testUser1","password", LEADER)
+            addUserToCluster("testUser2","password", FOLLOWER)
+            addUserToCluster("testUser2","password", LEADER)
         }
 
         private fun addUserToCluster(userName: String, password: String, clusterName: String) {

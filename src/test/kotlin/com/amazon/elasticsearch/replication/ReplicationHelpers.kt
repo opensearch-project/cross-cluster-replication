@@ -102,10 +102,11 @@ fun getAckResponse(lowLevelResponse: Response): AcknowledgedResponse {
     return AcknowledgedResponse.fromXContent(xcp)
 }
 
-fun RestHighLevelClient.replicationStatus(index: String,verbose: Boolean = true) : Map<String, Any> {
-    var lowLevelStopRequest = if(!verbose)  Request("GET", REST_REPLICATION_STATUS.replace("{index}", index,true)) else Request("GET", REST_REPLICATION_STATUS_VERBOSE.replace("{index}", index,true))
-    lowLevelStopRequest.setJsonEntity("{}")
-    val lowLevelStatusResponse = lowLevelClient.performRequest(lowLevelStopRequest)
+fun RestHighLevelClient.replicationStatus(index: String,verbose: Boolean = true, requestOptions: RequestOptions = RequestOptions.DEFAULT) : Map<String, Any> {
+    var lowLevelReplStatusRequest = if(!verbose)  Request("GET", REST_REPLICATION_STATUS.replace("{index}", index,true)) else Request("GET", REST_REPLICATION_STATUS_VERBOSE.replace("{index}", index,true))
+    lowLevelReplStatusRequest.setJsonEntity("{}")
+    lowLevelReplStatusRequest.setOptions(requestOptions)
+    val lowLevelStatusResponse = lowLevelClient.performRequest(lowLevelReplStatusRequest)
     val statusResponse: Map<String, Any> = ESRestTestCase.entityAsMap(lowLevelStatusResponse)
     return statusResponse
 }
@@ -195,9 +196,10 @@ fun RestHighLevelClient.resumeReplication(index: String, requestOptions: Request
     waitForReplicationStart(index, TimeValue.timeValueSeconds(10))
 }
 
-fun RestHighLevelClient.updateReplication(index: String, settings: Settings) {
+fun RestHighLevelClient.updateReplication(index: String, settings: Settings, requestOptions: RequestOptions = RequestOptions.DEFAULT) {
     val lowLevelRequest = Request("PUT", REST_REPLICATION_UPDATE.replace("{index}", index,true))
     lowLevelRequest.setJsonEntity(settings.toString())
+    lowLevelRequest.setOptions(requestOptions)
     val lowLevelResponse = lowLevelClient.performRequest(lowLevelRequest)
     val response = getAckResponse(lowLevelResponse)
     assertThat(response.isAcknowledged).isTrue()
