@@ -45,6 +45,7 @@ import org.elasticsearch.common.io.PathUtils
 import org.elasticsearch.common.settings.Settings
 import org.junit.Assert
 import java.nio.file.Files
+import java.util.concurrent.TimeUnit
 
 
 @MultiClusterAnnotations.ClusterConfigurations(
@@ -167,13 +168,14 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
             sourceMap["x"] = "y"
             val indexResponse = leaderClient.index(IndexRequest(leaderIndexName).id("2").source(sourceMap), RequestOptions.DEFAULT)
             assertThat(indexResponse.result).isIn(DocWriteResponse.Result.CREATED, DocWriteResponse.Result.UPDATED)
-            Thread.sleep(1000)
-            Assert.assertEquals(
-                    leaderClient.indices().getMapping(GetMappingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
-                            .mappings()[leaderIndexName],
-                    followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
-                            .mappings()[followerIndexName]
-            )
+            assertBusy ({
+                Assert.assertEquals(
+                        leaderClient.indices().getMapping(GetMappingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
+                                .mappings()[leaderIndexName],
+                        followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
+                                .mappings()[followerIndexName]
+                )
+            }, 5, TimeUnit.SECONDS)
 
         } finally {
             followerClient.stopReplication(followerIndexName)

@@ -39,7 +39,7 @@ import java.nio.charset.StandardCharsets
 import java.util.*
 import java.util.concurrent.TimeUnit
 
-data class AssumeRoles(val remoteClusterRole: String = "all_access", val localClusterRole: String = "all_access")
+data class AssumeRoles(val remoteClusterRole: String = "leader_role", val localClusterRole: String = "follower_role")
 
 data class StartReplicationRequest(val remoteClusterAlias: String, val remoteIndex: String, val toIndex: String,
                                    val settings: Settings = Settings.EMPTY, val assumeRoles: AssumeRoles = AssumeRoles())
