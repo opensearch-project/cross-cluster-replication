@@ -13,6 +13,9 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
             addUserToRole("testUser1","role1", FOLLOWER)
             addUserToRole("testUser2","role2", FOLLOWER)
             addUserToRole("testUser1","role1", LEADER)
+            addUserToRole("testUser3","role3", FOLLOWER)
+            addUserToRole("testUser4","role4", FOLLOWER)
+            addUserToRole("testUser5","role5", FOLLOWER)
         }
         @BeforeClass @JvmStatic
         fun setupSecurity() {
@@ -26,6 +29,102 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
             createRoleWithPermissions("follower-index1", "role1")
             createLeaderRoleWithPermissions("*", "role1")
             createRoleWithPermissions("follower-index2", "role2")
+            createDLSRole("follower-index1", "role3")
+            createFLSRole("follower-index1", "role4")
+            createFieldMaskingRole("follower-index1", "role5")
+        }
+
+        private fun createFieldMaskingRole(indexPattern: String, role: String) {
+            val leaderClient = testClusters.get(FOLLOWER)
+            val persistentConnectionRequest = Request("PUT", "_opendistro/_security/api/roles/"+role)
+            val entityAsString = """
+            {
+                "cluster_permissions": [
+                    "cluster:admin/plugins/replication/autofollow/update"
+                ],
+                "index_permissions": [
+                    {
+                        "index_patterns": ["$indexPattern*"],
+                        "fls":["Designation"],
+                        "allowed_actions": [
+                            "indices:admin/plugins/replication/index/setup/validate",
+                            "indices:data/write/plugins/replication/changes",
+                            "indices:admin/plugins/replication/index/start",
+                            "indices:admin/plugins/replication/index/pause",
+                            "indices:admin/plugins/replication/index/resume",
+                            "indices:admin/plugins/replication/index/stop",
+                            "indices:admin/plugins/replication/index/update",
+                            "indices:admin/plugins/replication/index/status_check"
+                        ]
+                    }
+                ]
+            }
+            """.trimMargin()
+            persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
+            val persistentConnectionResponse = leaderClient!!.lowLevelClient.performRequest(persistentConnectionRequest)
+            assertEquals(HttpStatus.SC_CREATED.toLong(), persistentConnectionResponse.statusLine.statusCode.toLong())
+        }
+
+        private fun createFLSRole(indexPattern: String, role: String) {
+            val leaderClient = testClusters.get(FOLLOWER)
+            val persistentConnectionRequest = Request("PUT", "_opendistro/_security/api/roles/"+role)
+            val entityAsString = """
+            {
+                "cluster_permissions": [
+                    "cluster:admin/plugins/replication/autofollow/update"
+                ],
+                "index_permissions": [
+                    {
+                        "index_patterns" : ["$indexPattern*"],
+                        "masked_fields" : ["User"],
+                        "allowed_actions": [
+                            "indices:admin/plugins/replication/index/setup/validate",
+                            "indices:data/write/plugins/replication/changes",
+                            "indices:admin/plugins/replication/index/start",
+                            "indices:admin/plugins/replication/index/pause",
+                            "indices:admin/plugins/replication/index/resume",
+                            "indices:admin/plugins/replication/index/stop",
+                            "indices:admin/plugins/replication/index/update",
+                            "indices:admin/plugins/replication/index/status_check"
+                        ]
+                    }
+                ]
+            }
+            """.trimMargin()
+            persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
+            val persistentConnectionResponse = leaderClient!!.lowLevelClient.performRequest(persistentConnectionRequest)
+            assertEquals(HttpStatus.SC_CREATED.toLong(), persistentConnectionResponse.statusLine.statusCode.toLong())
+        }
+
+        private fun createDLSRole(indexPattern: String, role: String) {
+            val leaderClient = testClusters.get(FOLLOWER)
+            val persistentConnectionRequest = Request("PUT", "_opendistro/_security/api/roles/"+role)
+            val entityAsString = """
+            {
+                "cluster_permissions": [
+                    "cluster:admin/plugins/replication/autofollow/update"
+                ],
+                "index_permissions": [
+                    {
+                        "index_patterns": ["$indexPattern*"],
+                        "dls": "{\"bool\": {\"must_not\": {\"match\": {\"Designation\": \"CEO\"}}}}",
+                        "allowed_actions": [
+                            "indices:admin/plugins/replication/index/setup/validate",
+                            "indices:data/write/plugins/replication/changes",
+                            "indices:admin/plugins/replication/index/start",
+                            "indices:admin/plugins/replication/index/pause",
+                            "indices:admin/plugins/replication/index/resume",
+                            "indices:admin/plugins/replication/index/stop",
+                            "indices:admin/plugins/replication/index/update",
+                            "indices:admin/plugins/replication/index/status_check"
+                        ]
+                    }
+                ]
+            }
+            """.trimMargin()
+            persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
+            val persistentConnectionResponse = leaderClient!!.lowLevelClient.performRequest(persistentConnectionRequest)
+            assertEquals(HttpStatus.SC_CREATED.toLong(), persistentConnectionResponse.statusLine.statusCode.toLong())
         }
 
         private fun createLeaderRoleWithPermissions(indexPattern: String, role: String) {
@@ -35,7 +134,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
             {
                 "index_permissions": [
                     {
-                        "index_patterns": ["$indexPattern"],
+                        "index_patterns": ["$indexPattern*"],
                         "allowed_actions": [
                             "indices:admin/plugins/replication/index/setup/validate",
                             "indices:data/read/plugins/replication/changes",
@@ -98,6 +197,9 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
             addUserToCluster("testUser1","password", LEADER)
             addUserToCluster("testUser2","password", FOLLOWER)
             addUserToCluster("testUser2","password", LEADER)
+            addUserToCluster("testUser3","password", FOLLOWER)
+            addUserToCluster("testUser4","password", FOLLOWER)
+            addUserToCluster("testUser5","password", FOLLOWER)
         }
 
         private fun addUserToCluster(userName: String, password: String, clusterName: String) {

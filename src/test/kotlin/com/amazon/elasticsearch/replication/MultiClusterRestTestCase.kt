@@ -29,6 +29,7 @@ import org.apache.http.message.BasicHeader
 import org.apache.http.nio.conn.ssl.SSLIOSessionStrategy
 import org.apache.http.nio.entity.NStringEntity
 import org.apache.http.ssl.SSLContexts
+import org.apache.http.util.EntityUtils
 import org.apache.lucene.util.SetOnce
 import org.elasticsearch.action.admin.cluster.node.tasks.list.ListTasksRequest
 import org.elasticsearch.action.admin.cluster.settings.ClusterUpdateSettingsRequest
@@ -379,6 +380,27 @@ abstract class MultiClusterRestTestCase : ESTestCase() {
         val request = ListTasksRequest().setDetailed(true).setActions(action)
         val response = client.tasks().list(request,RequestOptions.DEFAULT)
         return response.tasks
+    }
+
+    //These methods overlap across different PRs. They will be resolved while merging
+    protected fun insertDocToIndex(clusterName: String, docCount: String, docValue: String, indexName: String) {
+        val cluster = getNamedCluster(clusterName)
+        val persistentConnectionRequest = Request("PUT", indexName + "/_doc/"+ docCount)
+        val entityAsString = """
+                        {"value" : "$docValue"}""".trimMargin()
+
+        persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
+        val persistentConnectionResponse = cluster.lowLevelClient.performRequest(persistentConnectionRequest)
+        assertEquals(HttpStatus.SC_CREATED.toLong(), persistentConnectionResponse.statusLine.statusCode.toLong())
+    }
+
+    protected fun docs(clusterName: String,indexName : String) : String{
+        val cluster = getNamedCluster(clusterName)
+        val persistentConnectionRequest = Request("GET", "/$indexName/_search?pretty&q=*")
+
+        val persistentConnectionResponse = cluster.lowLevelClient.performRequest(persistentConnectionRequest)
+        val resp = EntityUtils.toString(persistentConnectionResponse.entity);
+        return resp
     }
 
     protected fun setMetadataSyncDelay() {
