@@ -877,19 +877,25 @@ class StartReplicationIT: MultiClusterRestTestCase() {
 
         leaderClient.snapshot().createRepository(putRepositoryRequest, RequestOptions.DEFAULT)
 
-        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName).settings(settings),
-            RequestOptions.DEFAULT)
+        val createIndexResponse = leaderClient.indices().create(
+            CreateIndexRequest(leaderIndexName).settings(settings),
+            RequestOptions.DEFAULT
+        )
         assertThat(createIndexResponse.isAcknowledged).isTrue()
         // Put a large amount of data into the index
         IndexUtil.fillIndex(leaderClient, leaderIndexName, 5000, 1000, 1000)
         assertBusy {
-            assertThat(leaderClient.indices()
-                .exists(GetIndexRequest(leaderIndexName), RequestOptions.DEFAULT))
+            assertThat(
+                leaderClient.indices()
+                    .exists(GetIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+            )
         }
         try {
-            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
+            followerClient.startReplication(
+                StartReplicationRequest("source", leaderIndexName, followerIndexName),
                 TimeValue.timeValueSeconds(10),
-                false)
+                false
+            )
             //Given the size of index, the replication should be in RESTORING phase at this point
             leaderClient.snapshot().create(CreateSnapshotRequest("my-repo", "snapshot_1").indices(leaderIndexName), RequestOptions.DEFAULT)
 
@@ -898,12 +904,33 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                 `validate status syncing response`(statusResp)
             }
             assertBusy {
-                Assert.assertEquals(leaderClient.count(CountRequest(leaderIndexName), RequestOptions.DEFAULT).toString(),
-                    followerClient.count(CountRequest(followerIndexName), RequestOptions.DEFAULT).toString())
+                Assert.assertEquals(
+                    leaderClient.count(CountRequest(leaderIndexName), RequestOptions.DEFAULT).toString(),
+                    followerClient.count(CountRequest(followerIndexName), RequestOptions.DEFAULT).toString()
+                )
             }
         } finally {
             followerClient.stopReplication(followerIndexName)
         }
+    }
+
+    fun `test that replication cannot be started when soft delete is disabled`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+
+        val settings: Settings = Settings.builder()
+            .put(IndexSettings.INDEX_SOFT_DELETES_SETTING.key, false)
+            .build()
+
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName)
+            .settings(settings), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+
+        assertThatThrownBy {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
+        }.isInstanceOf(ResponseException::class.java).hasMessageContaining("Cannot Replicate an index where the setting index.soft_deletes.enabled is disabled")
     }
 
     private fun assertEqualAliases() {
