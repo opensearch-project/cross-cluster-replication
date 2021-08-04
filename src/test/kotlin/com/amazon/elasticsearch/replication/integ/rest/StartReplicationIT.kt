@@ -19,13 +19,13 @@ package com.amazon.elasticsearch.replication.integ.rest
 import com.amazon.elasticsearch.replication.MultiClusterAnnotations
 import com.amazon.elasticsearch.replication.MultiClusterRestTestCase
 import com.amazon.elasticsearch.replication.StartReplicationRequest
-import com.amazon.elasticsearch.replication.`validate not paused status resposne`
+import com.amazon.elasticsearch.replication.`validate not paused status response`
 import com.amazon.elasticsearch.replication.`validate paused status on closed index`
 import com.amazon.elasticsearch.replication.pauseReplication
 import com.amazon.elasticsearch.replication.replicationStatus
 import com.amazon.elasticsearch.replication.resumeReplication
 import com.amazon.elasticsearch.replication.`validate paused status response due to leader index deleted`
-import com.amazon.elasticsearch.replication.`validate status syncing resposne`
+import com.amazon.elasticsearch.replication.`validate status syncing response`
 import com.amazon.elasticsearch.replication.startReplication
 import com.amazon.elasticsearch.replication.stopReplication
 import com.amazon.elasticsearch.replication.updateReplication
@@ -169,7 +169,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             leaderClient.lowLevelClient.performRequest(Request("POST", "/" + leaderIndexName + "/_open"))
             followerClient.resumeReplication(followerIndexName)
             var statusResp = followerClient.replicationStatus(followerIndexName)
-            `validate not paused status resposne`(statusResp)
+            `validate not paused status response`(statusResp)
 
         } finally {
             followerClient.stopReplication(followerIndexName)
@@ -797,7 +797,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             }
             assertBusy {
                 var statusResp = followerClient.replicationStatus(followerIndexName)
-                `validate status syncing resposne`(statusResp)
+                `validate status syncing response`(statusResp)
             }
             val deleteIndexResponse = leaderClient.indices().delete(DeleteIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
             assertThat(deleteIndexResponse.isAcknowledged).isTrue()
