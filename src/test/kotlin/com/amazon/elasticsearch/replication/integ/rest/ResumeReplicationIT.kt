@@ -18,12 +18,12 @@ package com.amazon.elasticsearch.replication.integ.rest
 import com.amazon.elasticsearch.replication.MultiClusterAnnotations
 import com.amazon.elasticsearch.replication.MultiClusterRestTestCase
 import com.amazon.elasticsearch.replication.StartReplicationRequest
-import com.amazon.elasticsearch.replication.`validate aggregated paused status resposne`
-import com.amazon.elasticsearch.replication.`validate not paused status aggregated resposne`
-import com.amazon.elasticsearch.replication.`validate not paused status resposne`
-import com.amazon.elasticsearch.replication.`validate paused status resposne`
-import com.amazon.elasticsearch.replication.`validate status syncing aggregated resposne`
-import com.amazon.elasticsearch.replication.`validate status syncing resposne`
+import com.amazon.elasticsearch.replication.`validate aggregated paused status response`
+import com.amazon.elasticsearch.replication.`validate not paused status aggregated response`
+import com.amazon.elasticsearch.replication.`validate not paused status response`
+import com.amazon.elasticsearch.replication.`validate paused status response`
+import com.amazon.elasticsearch.replication.`validate status syncing aggregated response`
+import com.amazon.elasticsearch.replication.`validate status syncing response`
 import com.amazon.elasticsearch.replication.pauseReplication
 import com.amazon.elasticsearch.replication.replicationStatus
 import com.amazon.elasticsearch.replication.resumeReplication
@@ -76,9 +76,9 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
              */
             followerClient.pauseReplication(followerIndexName)
             var statusResp = followerClient.replicationStatus(followerIndexName)
-            `validate paused status resposne`(statusResp)
+            `validate paused status response`(statusResp)
             statusResp = followerClient.replicationStatus(followerIndexName,false)
-            `validate aggregated paused status resposne`(statusResp)
+            `validate aggregated paused status response`(statusResp)
             followerClient.resumeReplication(followerIndexName)
         } finally {
             followerClient.stopReplication(followerIndexName)
@@ -98,14 +98,14 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
 
             assertThatThrownBy {
                 var statusResp = followerClient.replicationStatus(followerIndexName)
-                `validate status syncing resposne`(statusResp)
+                `validate status syncing response`(statusResp)
                 statusResp = followerClient.replicationStatus(followerIndexName,false)
-                `validate status syncing aggregated resposne`(statusResp)
+                `validate status syncing aggregated response`(statusResp)
                 followerClient.resumeReplication(followerIndexName)
                 statusResp = followerClient.replicationStatus(followerIndexName)
-                `validate not paused status resposne`(statusResp)
+                `validate not paused status response`(statusResp)
                 statusResp = followerClient.replicationStatus(followerIndexName,false)
-                `validate not paused status aggregated resposne`(statusResp)
+                `validate not paused status aggregated response`(statusResp)
             }.isInstanceOf(ResponseException::class.java)
                     .hasMessageContaining("Replication on Index ${followerIndexName} is already running")
         } finally {
@@ -279,7 +279,7 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
 
             followerClient.resumeReplication(followerIndexName)
             var statusResp = followerClient.replicationStatus(followerIndexName)
-            `validate status syncing resposne`(statusResp)
+            `validate status syncing response`(statusResp)
         } finally {
             if (Files.exists(synonymPath)) {
                 Files.delete(synonymPath)
@@ -331,7 +331,7 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
 
             followerClient.resumeReplication(followerIndexName)
             var statusResp = followerClient.replicationStatus(followerIndexName)
-            `validate status syncing resposne`(statusResp)
+            `validate status syncing response`(statusResp)
         } finally {
             if (Files.exists(synonymPath)) {
                 Files.delete(synonymPath)

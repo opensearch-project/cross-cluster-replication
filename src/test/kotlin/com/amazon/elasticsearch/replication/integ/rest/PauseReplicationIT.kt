@@ -18,8 +18,8 @@ package com.amazon.elasticsearch.replication.integ.rest
 import com.amazon.elasticsearch.replication.MultiClusterAnnotations
 import com.amazon.elasticsearch.replication.MultiClusterRestTestCase
 import com.amazon.elasticsearch.replication.StartReplicationRequest
-import com.amazon.elasticsearch.replication.`validate aggregated paused status resposne`
-import com.amazon.elasticsearch.replication.`validate paused status resposne`
+import com.amazon.elasticsearch.replication.`validate aggregated paused status response`
+import com.amazon.elasticsearch.replication.`validate paused status response`
 import com.amazon.elasticsearch.replication.pauseReplication
 import com.amazon.elasticsearch.replication.replicationStatus
 import com.amazon.elasticsearch.replication.resumeReplication
@@ -163,9 +163,9 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
         assertThatThrownBy {
             followerClient.pauseReplication(randomIndex)
             var statusResp = followerClient.replicationStatus(followerIndexName)
-            `validate paused status resposne`(statusResp)
+            `validate paused status response`(statusResp)
             statusResp = followerClient.replicationStatus(followerIndexName,false)
-            `validate aggregated paused status resposne`(statusResp)
+            `validate aggregated paused status response`(statusResp)
         }.isInstanceOf(ResponseException::class.java)
                 .hasMessageContaining("No replication in progress for index:$randomIndex")
     }
@@ -185,9 +185,9 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
              */
             followerClient.pauseReplication(followerIndexName)
             var statusResp = followerClient.replicationStatus(followerIndexName)
-            `validate paused status resposne`(statusResp)
+            `validate paused status response`(statusResp)
             statusResp = followerClient.replicationStatus(followerIndexName,false)
-            `validate aggregated paused status resposne`(statusResp)
+            `validate aggregated paused status response`(statusResp)
             // Since, we were still in FOLLOWING phase when pause was called, the index
             // in follower index should not have been deleted in follower cluster
             assertBusy {
@@ -230,7 +230,7 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
 
             followerClient.replicationStatus(followerIndexName, verbose = false)
             var statusResp = followerClient.replicationStatus(followerIndexName)
-            `validate paused status resposne`(statusResp)
+            `validate paused status response`(statusResp)
 
         } finally {
             followerClient.stopReplication(followerIndexName)

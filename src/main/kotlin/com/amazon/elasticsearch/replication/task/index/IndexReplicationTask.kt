@@ -131,7 +131,6 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
 
     private var metadataUpdate :MetadataUpdate? = null
     private var metadataPoller: Job? = null
-
     companion object {
         val blSettings  : Set<Setting<*>> = setOf(
                 INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING,
@@ -148,6 +147,7 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
         val blockListedSettings :Set<String> = blSettings.stream().map { k -> k.key }.collect(Collectors.toSet())
 
         const val SLEEP_TIME_BETWEEN_POLL_MS = 5000L
+        const val TASK_CANCELLATION_REASON = "Index replication task was cancelled by user"
     }
 
 
@@ -227,6 +227,12 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
         }
     }
 
+    override fun onCancelled() {
+        log.info("Cancelling the index replication task.")
+        client.execute(PauseIndexReplicationAction.INSTANCE,
+            PauseIndexReplicationRequest(followerIndexName, TASK_CANCELLATION_REASON))
+        super.onCancelled()
+    }
     private suspend fun failReplication(failedState: FailedState) {
         withContext(NonCancellable) {
             val reason = failedState.errorMsg
@@ -825,4 +831,5 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
     data class MetadataUpdate(val updateSettingsRequest: UpdateSettingsRequest?, val aliasReq: IndicesAliasesRequest?, val staticUpdated: Boolean) {
 
     }
+
 }
