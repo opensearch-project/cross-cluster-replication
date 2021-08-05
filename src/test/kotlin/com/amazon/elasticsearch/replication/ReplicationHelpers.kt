@@ -17,7 +17,6 @@ package com.amazon.elasticsearch.replication
 
 import com.amazon.elasticsearch.replication.task.index.IndexReplicationExecutor
 import com.amazon.elasticsearch.replication.task.shard.ShardReplicationExecutor
-import org.apache.http.message.BasicHeader
 import org.assertj.core.api.Assertions.assertThat
 import org.elasticsearch.action.admin.cluster.health.ClusterHealthRequest
 import org.elasticsearch.action.admin.cluster.node.tasks.list.ListTasksRequest
@@ -35,9 +34,8 @@ import org.elasticsearch.common.xcontent.XContentType
 import org.elasticsearch.test.ESTestCase.assertBusy
 import org.elasticsearch.test.rest.ESRestTestCase
 import org.junit.Assert
-import java.nio.charset.StandardCharsets
-import java.util.*
 import java.util.concurrent.TimeUnit
+import java.util.stream.Collectors
 
 data class AssumeRoles(val remoteClusterRole: String = "leader_role", val localClusterRole: String = "follower_role")
 
@@ -53,9 +51,12 @@ const val REST_REPLICATION_UPDATE = "$REST_REPLICATION_PREFIX{index}/_update"
 const val REST_REPLICATION_STATUS_VERBOSE = "$REST_REPLICATION_PREFIX{index}/_status?verbose=true"
 const val REST_REPLICATION_STATUS = "$REST_REPLICATION_PREFIX{index}/_status"
 const val REST_AUTO_FOLLOW_PATTERN = "${REST_REPLICATION_PREFIX}_autofollow"
-
+const val REST_REPLICATION_TASKS = "_tasks?actions=*replication*&detailed&pretty"
+const val INDEX_TASK_CANCELLATION_REASON = "Index replication task was cancelled by user"
 const val STATUS_REASON_USER_INITIATED = "User initiated"
+const val STATUS_REASON_SHARD_TASK_CANCELLED = "Shard task killed or cancelled."
 const val STATUS_REASON_INDEX_NOT_FOUND = "no such index"
+
 
 fun RestHighLevelClient.startReplication(request: StartReplicationRequest,
                                          waitFor: TimeValue = TimeValue.timeValueSeconds(10),
@@ -111,53 +112,91 @@ fun RestHighLevelClient.replicationStatus(index: String,verbose: Boolean = true,
     return statusResponse
 }
 
-fun `validate status syncing resposne`(statusResp: Map<String, Any>) {
-    Assert.assertEquals(statusResp.getValue("status"),"SYNCING")
-    Assert.assertEquals(statusResp.getValue("reason"), STATUS_REASON_USER_INITIATED)
+fun RestHighLevelClient.getReplicationTasks(): Map<String, Map<String, String>>? {
+    var lowLevelStopRequest = Request("GET", REST_REPLICATION_TASKS)
+    lowLevelStopRequest.setJsonEntity("{}")
+    val lowLevelStatusResponse = lowLevelClient.performRequest(lowLevelStopRequest)
+    val tasks = ESRestTestCase.entityAsMap(lowLevelStatusResponse) as
+                    Map<String, Map<String, Map<String, String>>>
+    return tasks["nodes"]?.values?.stream()?.flatMap { node ->
+        (node["tasks"] as Map<String, Map<String, String>>).entries.stream()
+    }?.collect(Collectors.toMap({ t -> t.key}, { t -> t.value}))
+}
+
+fun RestHighLevelClient.getIndexReplicationTask(index: String): String {
+    val tasks = getReplicationTasks()?.entries?.stream()?.filter {
+            t -> (t.value["action"].equals("cluster:indices/admin/replication[c]")
+            && t.value["description"]?.contains(index) ?: false)
+    }?.map {e -> e.key}?.collect(Collectors.toList()) as List<String>
+    return if (tasks.isNotEmpty()) tasks[0] else ""
+}
+
+fun RestHighLevelClient.getShardReplicationTasks(index: String): List<String> {
+    return getReplicationTasks()?.entries?.stream()?.filter {
+            t -> (t.value["action"].equals("cluster:indices/shards/replication[c]")
+            && t.value["description"]?.contains(index) ?: false)
+    }?.map {e -> e.key}?.collect(Collectors.toList()) as List<String>
+}
+
+fun `validate status syncing response`(statusResp: Map<String, Any>) {
+    Assert.assertEquals("SYNCING", statusResp.getValue("status"))
+    Assert.assertEquals(STATUS_REASON_USER_INITIATED, statusResp.getValue("reason"))
     Assert.assertTrue((statusResp.getValue("shard_replication_details")).toString().contains("syncing_task_details"))
     Assert.assertTrue((statusResp.getValue("shard_replication_details")).toString().contains("local_checkpoint"))
     Assert.assertTrue((statusResp.getValue("shard_replication_details")).toString().contains("remote_checkpoint"))
 }
 
-fun `validate status syncing aggregated resposne`(statusResp: Map<String, Any>) {
-    Assert.assertEquals(statusResp.getValue("status"),"SYNCING")
-    Assert.assertEquals(statusResp.getValue("reason"), STATUS_REASON_USER_INITIATED)
+fun `validate status syncing aggregated response`(statusResp: Map<String, Any>) {
+    Assert.assertEquals("SYNCING", statusResp.getValue("status"))
+    Assert.assertEquals(STATUS_REASON_USER_INITIATED, statusResp.getValue("reason"))
     Assert.assertTrue((statusResp.getValue("syncing_details")).toString().contains("local_checkpoint"))
     Assert.assertTrue((statusResp.getValue("syncing_details")).toString().contains("remote_checkpoint"))
 }
 
-fun `validate not paused status resposne`(statusResp: Map<String, Any>) {
+fun `validate not paused status response`(statusResp: Map<String, Any>) {
     Assert.assertNotEquals(statusResp.getValue("status"),"PAUSED")
-    Assert.assertEquals(statusResp.getValue("reason"), STATUS_REASON_USER_INITIATED)
+    Assert.assertEquals(STATUS_REASON_USER_INITIATED, statusResp.getValue("reason"))
     Assert.assertTrue((statusResp.getValue("shard_replication_details")).toString().contains("syncing_task_details"))
     Assert.assertTrue((statusResp.getValue("shard_replication_details")).toString().contains("local_checkpoint"))
     Assert.assertTrue((statusResp.getValue("shard_replication_details")).toString().contains("remote_checkpoint"))
 }
 
-fun `validate not paused status aggregated resposne`(statusResp: Map<String, Any>) {
-    Assert.assertNotEquals(statusResp.getValue("status"),"PAUSED")
-    Assert.assertEquals(statusResp.getValue("reason"), STATUS_REASON_USER_INITIATED)
+fun `validate not paused status aggregated response`(statusResp: Map<String, Any>) {
+    Assert.assertNotEquals("PAUSED", statusResp.getValue("status"))
+    Assert.assertEquals(STATUS_REASON_USER_INITIATED, statusResp.getValue("reason"))
     Assert.assertTrue((statusResp.getValue("syncing_details")).toString().contains("local_checkpoint"))
     Assert.assertTrue((statusResp.getValue("syncing_details")).toString().contains("remote_checkpoint"))
 }
 
-fun `validate paused status resposne`(statusResp: Map<String, Any>) {
-    Assert.assertEquals(statusResp.getValue("status"),"PAUSED")
-    Assert.assertEquals(statusResp.getValue("reason"), STATUS_REASON_USER_INITIATED)
+fun `validate paused status response`(statusResp: Map<String, Any>) {
+    Assert.assertEquals("PAUSED", statusResp.getValue("status"))
+    Assert.assertEquals(STATUS_REASON_USER_INITIATED, statusResp.getValue("reason"))
     Assert.assertFalse(statusResp.containsKey("shard_replication_details"))
     Assert.assertFalse(statusResp.containsKey("local_checkpoint"))
     Assert.assertFalse(statusResp.containsKey("remote_checkpoint"))
 }
 
 fun `validate paused status on closed index`(statusResp: Map<String, Any>) {
-    Assert.assertEquals(statusResp.getValue("status"), "PAUSED")
+    Assert.assertEquals("PAUSED", statusResp.getValue("status"))
     assertThat(statusResp.getValue("reason").toString()).contains("org.elasticsearch.indices.IndexClosedException")
     assertThat(statusResp).doesNotContainKeys("shard_replication_details","follower_checkpoint","leader_checkpoint")
 }
 
-fun `validate aggregated paused status resposne`(statusResp: Map<String, Any>) {
-    Assert.assertEquals(statusResp.getValue("status"),"PAUSED")
-    Assert.assertEquals(statusResp.getValue("reason"), STATUS_REASON_USER_INITIATED)
+fun `validate aggregated paused status response`(statusResp: Map<String, Any>) {
+    Assert.assertEquals("PAUSED", statusResp.getValue("status"))
+    Assert.assertEquals(STATUS_REASON_USER_INITIATED, statusResp.getValue("reason"))
+    Assert.assertTrue(!(statusResp.containsKey("syncing_details")))
+}
+
+fun `validate status due shard task cancellation`(statusResp: Map<String, Any>) {
+    Assert.assertEquals("PAUSED", statusResp.getValue("status"))
+    Assert.assertTrue((statusResp.getValue("reason") as String).contains(STATUS_REASON_SHARD_TASK_CANCELLED))
+    Assert.assertTrue(!(statusResp.containsKey("syncing_details")))
+}
+
+fun `validate status due index task cancellation`(statusResp: Map<String, Any>) {
+    Assert.assertEquals("PAUSED", statusResp.getValue("status"))
+    Assert.assertEquals(INDEX_TASK_CANCELLATION_REASON, statusResp.getValue("reason"))
     Assert.assertTrue(!(statusResp.containsKey("syncing_details")))
 }
 
