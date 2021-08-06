@@ -471,7 +471,6 @@ abstract class MultiClusterRestTestCase : ESTestCase() {
         return response.tasks
     }
 
-    //These methods overlap across different PRs. They will be resolved while merging
     protected fun insertDocToIndex(clusterName: String, docCount: String, docValue: String, indexName: String) {
         val cluster = getNamedCluster(clusterName)
         val persistentConnectionRequest = Request("PUT", indexName + "/_doc/"+ docCount)

@@ -408,9 +408,8 @@ class SecurityCustomRolesIT: SecurityBase()  {
                 validatePausedState(followerClient.replicationStatus(followerIndexName,
                         requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password")))
             }, 100, TimeUnit.SECONDS)
-
-            updateRole(followerIndexName,"followerRoleValidPerms", true)
         } finally {
+            updateRole(followerIndexName,"followerRoleValidPerms", true)
             followerClient.stopReplication(followerIndexName)
         }
     }

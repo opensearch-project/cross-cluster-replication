@@ -13,7 +13,6 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
     companion object{
         var initialized : Boolean = false
         fun addSecurityRoles() {
-            //addUserToRole("testUser1","followerRoleValidPerms", FOLLOWER)
             addUserToRole("testUser2","followerRoleNoPerms", FOLLOWER)
             addUserToRole("testUser1\",\"testUser3\",\"testUser4\",\"testUser5\",\"testUser7","leaderRoleValidPerms", LEADER)
             addUserToRole("testUser3","followerDlsRole", FOLLOWER)
