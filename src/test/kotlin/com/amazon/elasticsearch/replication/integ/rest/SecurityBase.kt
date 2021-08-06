@@ -15,7 +15,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
         fun addSecurityRoles() {
             //addUserToRole("testUser1","followerRoleValidPerms", FOLLOWER)
             addUserToRole("testUser2","followerRoleNoPerms", FOLLOWER)
-            addUserToRole("testUser1\",\"testUser2\",\"testUser3\",\"testUser4\",\"testUser5\",\"testUser7","leaderRoleValidPerms", LEADER)
+            addUserToRole("testUser1\",\"testUser3\",\"testUser4\",\"testUser5\",\"testUser7","leaderRoleValidPerms", LEADER)
             addUserToRole("testUser3","followerDlsRole", FOLLOWER)
             addUserToRole("testUser4","followerFlsRole", FOLLOWER)
             addUserToRole("testUser5","followerFieldMaskRole", FOLLOWER)
