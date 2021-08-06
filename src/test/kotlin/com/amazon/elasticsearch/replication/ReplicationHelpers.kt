@@ -287,7 +287,8 @@ fun RestHighLevelClient.waitForReplicationStop(index: String, waitFor : TimeValu
 
 fun RestHighLevelClient.updateAutoFollowPattern(connection: String, patternName: String, pattern: String,
                                                 settings: Settings = Settings.EMPTY,
-                                                assumeRoles: AssumeRoles = AssumeRoles()) {
+                                                assumeRoles: AssumeRoles = AssumeRoles(),
+                                                requestOptions: RequestOptions = RequestOptions.DEFAULT) {
     val lowLevelRequest = Request("POST", REST_AUTO_FOLLOW_PATTERN)
     if (settings == Settings.EMPTY) {
         lowLevelRequest.setJsonEntity("""{
@@ -311,6 +312,7 @@ fun RestHighLevelClient.updateAutoFollowPattern(connection: String, patternName:
                                        "settings": $settings
                                      }""")
     }
+    lowLevelRequest.setOptions(requestOptions)
     val lowLevelResponse = lowLevelClient.performRequest(lowLevelRequest)
     val response = getAckResponse(lowLevelResponse)
     assertThat(response.isAcknowledged).isTrue()

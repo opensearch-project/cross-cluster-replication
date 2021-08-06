@@ -114,7 +114,7 @@ abstract class MultiClusterRestTestCase : ESTestCase() {
 
     companion object {
         lateinit var testClusters : Map<String, TestCluster>
-        var isSecurityEnabled = false
+        var isSecurityPropertyEnabled = false
 
         private fun createTestCluster(configuration: ClusterConfiguration) : TestCluster {
             val cluster = configuration.clusterName
@@ -130,7 +130,7 @@ abstract class MultiClusterRestTestCase : ESTestCase() {
             var protocol = "http"
             if(securityEnabled.equals("true", true)) {
                 protocol = "https"
-                isSecurityEnabled = true
+                isSecurityPropertyEnabled = true
             }
             val httpHosts = httpHostsProp.split(',').map { HttpHost.create("$protocol://$it") }
             val transportPorts = transportHostsProp.split(',')
