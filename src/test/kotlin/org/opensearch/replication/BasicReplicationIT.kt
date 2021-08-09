@@ -85,7 +85,7 @@ class BasicReplicationIT : MultiClusterRestTestCase() {
             Assertions.assertThatThrownBy {
                 follower.indices().forcemerge(ForceMergeRequest(followerIndex), RequestOptions.DEFAULT)
             }.isInstanceOf(OpenSearchStatusException::class.java)
-                .hasMessage("Elasticsearch exception [type=cluster_block_exception, reason=index [$followerIndex] " +
+                .hasMessage("OpenSearch exception [type=cluster_block_exception, reason=index [$followerIndex] " +
                         "blocked by: [FORBIDDEN/1000/index read-only(cross-cluster-replication)];]")
 
         } finally {

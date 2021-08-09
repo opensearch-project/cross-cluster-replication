@@ -67,7 +67,7 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
 
     override fun onCancelled() {
         super.onCancelled()
-        cancelTask("Cancelled by Elasticsearch Cancellable Task invocation.")
+        cancelTask("Cancelled by OpenSearch Cancellable Task invocation.")
     }
 
     protected fun cancelTask(message: String) {
