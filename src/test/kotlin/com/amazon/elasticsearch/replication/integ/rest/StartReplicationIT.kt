@@ -850,10 +850,12 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                 var statusResp = followerClient.replicationStatus(followerIndexName)
                 `validate status syncing response`(statusResp)
             }
-            assertBusy {
+            assertBusy ({
                 Assert.assertEquals(leaderClient.count(CountRequest(leaderIndexName), RequestOptions.DEFAULT).toString(),
                     followerClient.count(CountRequest(followerIndexName), RequestOptions.DEFAULT).toString())
-            }
+                },
+                30, TimeUnit.SECONDS
+            )
         } finally {
             followerClient.stopReplication(followerIndexName)
         }
@@ -903,12 +905,13 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                 var statusResp = followerClient.replicationStatus(followerIndexName)
                 `validate status syncing response`(statusResp)
             }
-            assertBusy {
+            assertBusy({
                 Assert.assertEquals(
                     leaderClient.count(CountRequest(leaderIndexName), RequestOptions.DEFAULT).toString(),
                     followerClient.count(CountRequest(followerIndexName), RequestOptions.DEFAULT).toString()
-                )
-            }
+                )},
+                30, TimeUnit.SECONDS
+            )
         } finally {
             followerClient.stopReplication(followerIndexName)
         }
