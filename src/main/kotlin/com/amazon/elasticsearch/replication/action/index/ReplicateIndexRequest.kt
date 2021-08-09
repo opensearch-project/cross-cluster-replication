@@ -16,6 +16,7 @@
 package com.amazon.elasticsearch.replication.action.index
 
 import com.amazon.elasticsearch.replication.metadata.store.KEY_SETTINGS
+import com.amazon.elasticsearch.replication.util.ValidationUtil.validateName
 import org.elasticsearch.action.ActionRequestValidationException
 import org.elasticsearch.action.IndicesRequest
 import org.elasticsearch.action.support.IndicesOptions
@@ -101,6 +102,9 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
             !this::followerIndex.isInitialized) {
             validationException.addValidationError("Mandatory params are missing for the request")
         }
+
+        validateName(leaderIndex, validationException)
+        validateName(followerIndex, validationException)
 
         if(assumeRoles != null && (assumeRoles!!.size < 2 || assumeRoles!![LEADER_CLUSTER_ROLE] == null ||
                 assumeRoles!![FOLLOWER_CLUSTER_ROLE] == null)) {

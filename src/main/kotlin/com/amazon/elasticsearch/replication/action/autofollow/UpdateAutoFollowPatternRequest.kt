@@ -17,6 +17,7 @@ package com.amazon.elasticsearch.replication.action.autofollow
 
 import com.amazon.elasticsearch.replication.action.index.ReplicateIndexRequest
 import com.amazon.elasticsearch.replication.metadata.store.KEY_SETTINGS
+import com.amazon.elasticsearch.replication.util.ValidationUtil.validateName
 import org.elasticsearch.action.ActionRequestValidationException
 import org.elasticsearch.action.support.master.AcknowledgedRequest
 import org.elasticsearch.common.ParseField
@@ -105,6 +106,7 @@ class UpdateAutoFollowPatternRequest: AcknowledgedRequest<UpdateAutoFollowPatter
             validationException.addValidationError("Missing connection or name in the request")
         }
 
+        validateName(patternName, validationException)
         if(assumeRoles != null && (assumeRoles!!.size < 2 || assumeRoles!![ReplicateIndexRequest.LEADER_CLUSTER_ROLE] == null ||
                         assumeRoles!![ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE] == null)) {
             validationException.addValidationError("Need roles for ${ReplicateIndexRequest.LEADER_CLUSTER_ROLE} and " +
