@@ -16,7 +16,7 @@
     - [License](#license)
 
 
-Cross-Cluster Replication Plugin enables users to replicate data across two elasticsearch clusters which enables a number of use cases such as 
+Cross-Cluster Replication Plugin enables users to replicate data across two opensearch clusters which enables a number of use cases such as 
 
 - **Disaster Recovery (DR) or High Availability (HA):** For production systems with high availability requirements, cross-cluster replication provides the safety-net of being able to failover to an alternate cluster in case of failure or outages on the primary cluster.
 - **Reduced Query Latency:** For critical business needs, responding to the customer query in the shortest time is critical. Replicating data to a cluster that is closest to the user can drastically reduce the query latency. Applications can redirect the customer query to the nearest data center where data has been replicated.
@@ -32,7 +32,7 @@ Following are the tenets that guided our design:
 - **Resource usage**: Replication should use minimal resources. 
 
 
-The replication machinery is implemented as an Elasticsearch plugin that exposes APIs to control replication, spawns background persistent tasks to asynchronously replicate indices and utilizes snapshot repository abstraction to facilitate bootstrap. Replication relies on cross cluster connection setup from the follower cluster to the leader cluster for connectivity. Once replication is initiated on an index, a background persistent task per primary shard on the follower cluster continuously polls corresponding shards from the leader index and applies the changes on to the follower shard. The replication plugin offers seamless integration with the Open Distro for Elasticsearch Security plugin for secure data transfer and access control.
+The replication machinery is implemented as an OpenSearch plugin that exposes APIs to control replication, spawns background persistent tasks to asynchronously replicate indices and utilizes snapshot repository abstraction to facilitate bootstrap. Replication relies on cross cluster connection setup from the follower cluster to the leader cluster for connectivity. Once replication is initiated on an index, a background persistent task per primary shard on the follower cluster continuously polls corresponding shards from the leader index and applies the changes on to the follower shard. The replication plugin offers seamless integration with the OpenSearch Security plugin for secure data transfer and access control.
 
 
 ## Build

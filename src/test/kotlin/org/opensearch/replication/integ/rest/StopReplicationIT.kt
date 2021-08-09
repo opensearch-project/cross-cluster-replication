@@ -156,7 +156,7 @@ class StopReplicationIT: MultiClusterRestTestCase() {
             followerClient.index(IndexRequest(followerIndexName).id("blocked").source(sourceMap), RequestOptions
                 .DEFAULT)
         }.isInstanceOf(OpenSearchStatusException::class.java)
-                .hasMessage("Elasticsearch exception [type=cluster_block_exception, reason=index [$followerIndexName] " +
+                .hasMessage("OpenSearch exception [type=cluster_block_exception, reason=index [$followerIndexName] " +
                         "blocked by: [FORBIDDEN/1000/index read-only(cross-cluster-replication)];]")
 
         //Stop replication and verify that index is not blocked any more

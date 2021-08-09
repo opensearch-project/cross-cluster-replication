@@ -87,7 +87,7 @@ fun IndexRequestBuilder.execute(id: String, listener: ActionListener<IndexRespon
  * @param maxTimeOut - Time out for retries
  * @param factor - ExponentialBackoff factor
  * @param log - logger used to log intermediate failures
- * @param retryOn - javaClass name of Elasticsearch exceptions that should be retried along with default retryable exceptions
+ * @param retryOn - javaClass name of OpenSearch exceptions that should be retried along with default retryable exceptions
  * @param block - the block of code to retry. This should be a suspend function.
  */
 suspend fun <Req: ActionRequest, Resp: ActionResponse> Client.suspendExecuteWithRetries(
@@ -131,7 +131,7 @@ suspend fun <Req: ActionRequest, Resp: ActionResponse> Client.suspendExecuteWith
  * @param maxTimeOut - Time out for retries
  * @param factor - ExponentialBackoff factor
  * @param log - logger used to log intermediate failures
- * @param retryOn - javaClass name of Elasticsearch exceptions that should be retried along with default retryable exceptions
+ * @param retryOn - javaClass name of OpenSearch exceptions that should be retried along with default retryable exceptions
  */
 suspend fun RemoteClusterRepository.restoreShardWithRetries(
         store: Store, snapshotId: SnapshotId, indexId: IndexId, snapshotShardId: ShardId,

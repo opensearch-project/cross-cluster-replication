@@ -27,10 +27,10 @@ services:
         soft: -1
         hard: -1
       nofile:
-        soft: 65536 # maximum number of open files for the Elasticsearch user, set to at least 65536 on modern systems
+        soft: 65536 # maximum number of open files for the OpenSearch user, set to at least 65536 on modern systems
         hard: 65536
     volumes:
-      - odfe-leader-data1:/usr/share/elasticsearch/data
+      - odfe-leader-data1:/usr/share/opensearch/data
     ports:
       - 9200:9200
       - 9600:9600 # required for Performance Analyzer
@@ -59,7 +59,7 @@ services:
         soft: 65536
         hard: 65536
     volumes:
-      - odfe-follower-data1:/usr/share/elasticsearch/data
+      - odfe-follower-data1:/usr/share/opensearch/data
     ports:
       - 9201:9200
       - 9601:9600 # required for Performance Analyzer

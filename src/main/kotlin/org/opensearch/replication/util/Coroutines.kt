@@ -171,9 +171,9 @@ inline fun <T> ActionListener<T>.completeWith(block : () -> T) {
 }
 
 /**
- * Stores and restores the Elasticsearch [ThreadContext] when the coroutine is suspended and resumed.
+ * Stores and restores the OpenSearch [ThreadContext] when the coroutine is suspended and resumed.
  *
- * The implementation is a little confusing because Elasticsearch and Kotlin uses [ThreadContext.stashContext] to
+ * The implementation is a little confusing because OpenSearch and Kotlin uses [ThreadContext.stashContext] to
  * restore the default context.
  *
  * @param threadContext - a [ThreadContext] instance
@@ -231,7 +231,7 @@ fun ThreadPool.coroutineContext(replicationMetadata: ReplicationMetadata?, actio
         OpenSearchClientThreadContextElement(threadContext, replicationMetadata, action, injectSecurityContext, defaultContext)
 
 /**
- * Captures the current Elastic [ThreadContext] in the coroutine context as well as sets the given executor as the dispatcher
+ * Captures the current OpenSearch [ThreadContext] in the coroutine context as well as sets the given executor as the dispatcher
  */
 fun ThreadPool.coroutineContext(executorName: String) : CoroutineContext =
     executor(executorName).asCoroutineDispatcher() + coroutineContext()

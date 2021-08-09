@@ -3,10 +3,10 @@
 - [Handbook for commands/API’s while using replication plugin](#handbook-for-commandsapis-while-using-replication-plugin)
     - [Setup](#setup)
         - [Spin up sample clusters from the packaged example](#spin-up-sample-clusters-from-the-packaged-example)
-        - [Setup for custom Open Distro for Elasticsearch clusters](#setup-for-custom-open-distro-for-elasticsearch-clusters)
+        - [Setup for custom OpenSearch clusters](#setup-for-opensearch-clusters)
             - [Install cross-cluster-replication plugin](#install-cross-cluster-replication-plugin)
             - [Ensure all follower nodes can act as remote_cluster_client](#ensure-all-follower-nodes-can-act-as-remote_cluster_client)
-            - [Open Distro for Elasticsearch security plugin specific configuration](#open-distro-for-elasticsearch-security-plugin-specific-configuration)
+            - [OpenSearch security plugin specific configuration](#opensearch-security-plugin-specific-configuration)
                 - [Ensure user_injection is set to true](#ensure-user_injection-is-set-to-true)
                 - [Ensure nodes_dn setting on the leader cluster allows connections from follower cluster](#ensure-nodes_dn-setting-on-the-leader-cluster-allows-connections-from-follower-cluster)
             - [Configure variables](#configure-variables)
@@ -24,17 +24,17 @@
 
 This document helps you with sample commands/api’s to run, for the various scenarios supported by replication plugin.
 
-The example uses docker based setup to spin up the clusters with OpenDistro for Elasticsearch security plugin.
+The example uses docker based setup to spin up the clusters with OpenSearch security plugin.
 
 ## Setup
 ### Spin up sample clusters from the packaged example
 
-Clone the cross-cluster-replication repository and spin up the clusters from the [packaged example](https://github.com/opendistro-for-elasticsearch/cross-cluster-replication/tree/main/examples/sample).
+Clone the cross-cluster-replication repository and spin up the clusters from the [packaged example](https://github.com/opensearch-project/cross-cluster-replication/tree/main/examples/sample).
 
 ```bash
 
 # 1. Clone the cross-cluster-replication repo
-git clone https://github.com/opendistro-for-elasticsearch/cross-cluster-replication.git 
+git clone https://github.com/opensearch-project/cross-cluster-replication.git 
 
 # 2. Navigate to example directory
 cd cross-cluster-replication/examples/sample
@@ -51,15 +51,15 @@ export FOLLOWER=localhost:9201
 export LEADER_NODES_IPS='["172.18.0.10:9300"]'
 ```
 
-### Setup for custom Open Distro for Elasticsearch clusters
+### Setup for custom OpenSearch clusters
 
 #### Install cross-cluster-replication plugin
 
 Install cross-cluster-replication plugin on all nodes of both leader and follower clusters
 
 ```bash
-sudo bin/elasticsearch-plugin install \
-https://github.com/opendistro-for-elasticsearch/cross-cluster-replication/releases/download/v1.13.0.0-experimental/opendistro-cross-cluster-replication-1.13.0.0.zip
+sudo bin/opensearch-plugin install \
+https://github.com/opensearch-project/cross-cluster-replication/releases/download/v1.1.0.0/opensearch-cross-cluster-replication-1.1.0.0.zip
 ```
 #### Ensure all follower nodes can act as remote_cluster_client
 
@@ -69,7 +69,7 @@ By default, all nodes can act as remote_cluster_client. If you have overridden `
 node.roles: [<other_roles>, remote_cluster_client]
 ```
 
-#### Open Distro for Elasticsearch security plugin specific configuration
+#### OpenSearch security plugin specific configuration
 
 If you have [disabled](https://opendistro.github.io/for-elasticsearch-docs/docs/security/configuration/disable/) security plugin, you can skip this step. Ensure that either security plugin is **enabled on both clusters** OR **disabled on both clusters**.
 
@@ -81,7 +81,7 @@ opendistro_security.unsupported.inject_user.enabled: true
 
 ##### Ensure nodes_dn setting on the leader cluster allows connections from follower cluster
 
-Ensure nodesdn dynamic API is enabled in elasticsearch.yml
+Ensure nodesdn dynamic API is enabled in opensearch.yml
 
 ```yml
 opendistro_security.nodes_dn_dynamic_config_enabled: true
@@ -105,7 +105,7 @@ export LEADER_NODES_IPS='["<node1:9300>", "<node2:9300>"]'
 
 ## Setup cross-cluster connectivity
 
-Setup remote cluster connection from follower cluster to the leader cluster. The Open Distro for Elasticsearch security plugin ensures the cross-cluster traffic is encrypted.
+Setup remote cluster connection from follower cluster to the leader cluster. The OpenSearch security plugin ensures the cross-cluster traffic is encrypted.
 
 ```bash
 curl -k -u admin:admin -XPUT "https://${FOLLOWER}/_cluster/settings?pretty" \
@@ -168,7 +168,7 @@ cluster:monitor/state
 
 ### Populate it on test clusters
 
-You can run the [example script](https://github.com/opendistro-for-elasticsearch/cross-cluster-replication/tree/main/examples/sample/setup_permissions.sh) to setup the required permissions on the test clusters.
+You can run the [example script](https://github.com/opensearch-project/cross-cluster-replication/tree/main/examples/sample/setup_permissions.sh) to setup the required permissions on the test clusters.
 
 ```bash
 sh ./setup_permissions.sh "${LEADER}"

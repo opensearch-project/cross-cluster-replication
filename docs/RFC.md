@@ -28,7 +28,7 @@
     - [Comments/feedback](#commentsfeedback)
 ## Problem Statement 
 
-Today Open Distro for Elasticsearch users don’t have a native solution to replicate data across multiple clusters. Replication allows users to achieve the following
+Today OpenSearch users don’t have a native solution to replicate data across multiple clusters. Replication allows users to achieve the following
 
 - **High Availability (HA)**: Cross-cluster replication ensures uninterrupted service availability with the ability to failover to an alternate cluster in case of failure or outages on the primary cluster.
 - **Reduced Latency**: Replicating data to a cluster that is closer to the application users minimizes the query latency. 
@@ -38,7 +38,7 @@ Today Open Distro for Elasticsearch users don’t have a native solution to repl
 
 ## Proposal
 
-Cross-cluster replication project is intended to incubate and deliver a replication feature for Open Distro for Elasticsearch.  Cross-cluster replication continuously replicates indices from one Elasticsearch cluster to another. Basic feature set proposed are:
+Cross-cluster replication project is intended to incubate and deliver a replication feature for OpenSearch.  Cross-cluster replication continuously replicates indices from one OpenSearch cluster to another. Basic feature set proposed are:
 
 1. APIs to start and stop replication for indices with support for auto follow patterns.
 2. Implement active-passive mode of replication at index level that involves:
@@ -52,7 +52,7 @@ Cross-cluster replication project is intended to incubate and deliver a replicat
 
 ### Overview
 
-The replication machinery is implemented as an Elasticsearch plugin that exposes APIs to control replication, spawns background persistent tasks to asynchronously replicate indices and utilizes snapshot repository abstraction to facilitate bootstrap. Replication relies on [cross cluster connection setup](https://github.com/opendistro-for-elasticsearch/cross-cluster-replication/blob/main/HANDBOOK.md#setup-cross-cluster-connectivity) from the follower cluster to the leader cluster for connectivity. Once replication is initiated on an index, a background persistent task per primary shard on the follower cluster continuously polls corresponding shards from the leader index and applies the changes on to the corresponding follower shards.
+The replication machinery is implemented as an OpenSearch plugin that exposes APIs to control replication, spawns background persistent tasks to asynchronously replicate indices and utilizes snapshot repository abstraction to facilitate bootstrap. Replication relies on [cross cluster connection setup](https://github.com/opensearch-project/cross-cluster-replication/blob/main/HANDBOOK.md#setup-cross-cluster-connectivity) from the follower cluster to the leader cluster for connectivity. Once replication is initiated on an index, a background persistent task per primary shard on the follower cluster continuously polls corresponding shards from the leader index and applies the changes on to the corresponding follower shards.
 
 ![Architecture](/docs/images/rfc0.png?raw=true "Architecture")
 
@@ -180,7 +180,7 @@ This component is responsible for co-ordinating bootstrap process at the leader 
 
 ### Index level replication tasks
 
-Replication at index level is managed by spinning-up persistent tasks. These tasks persist current task state information in cluster state and are tolerant to node restarts by continuing execution from the last known state. Elasticsearch internally manages task lifecycle.
+Replication at index level is managed by spinning-up persistent tasks. These tasks persist current task state information in cluster state and are tolerant to node restarts by continuing execution from the last known state. OpenSearch internally manages task lifecycle.
 
 ![Index level replication tasks](/docs/images/rfc3.jpg?raw=true "Index level replication tasks")
 
@@ -217,7 +217,7 @@ Cluster level tasks are persistent tasks and are not associated with any specifi
 
 ## Security Considerations 
 
-Cross-cluster replication supports security controls via integration with Open Distro for Elasticsearch Security plugin.
+Cross-cluster replication supports security controls via integration with OpenSearch Security plugin.
 
 Node-to-node encryption can be turned on both leader and follower cluster to ensure the replication traffic between the clusters are encrypted. Note that either both clusters need to have it turned on OR both clusters need to have it turned off.
 
@@ -229,7 +229,7 @@ Given that there are multiple clusters involved, it introduces possibilities whe
 - Security plugin fully enabled on both clusters
 - Security plugin enabled only for TLS on both clusters (opendistro_security.ssl_only)
 
-Since the replication steps are implemented using standard Elasticsearch action framework, audit logging works seamlessly as well.
+Since the replication steps are implemented using standard OpenSearch action framework, audit logging works seamlessly as well.
 
 ### Permission model
 
@@ -256,7 +256,7 @@ We are actively working on the following features and will release it in the rep
 
 ## Comments/feedback 
 
-- For any feedback on the problem statement or design, please leave your comments on the [github issue](https://github.com/opendistro-for-elasticsearch/cross-cluster-replication/issues/1).
+- For any feedback on the problem statement or design, please leave your comments on the [github issue](https://github.com/opensearch-project/cross-cluster-replication/issues/1).
 - For any issues or specific feature requests, please report by following the [guidelines](../CONTRIBUTING.md).
 
 
