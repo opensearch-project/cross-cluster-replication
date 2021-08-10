@@ -29,11 +29,13 @@ import com.amazon.elasticsearch.replication.`validate paused status response due
 import com.amazon.elasticsearch.replication.`validate status syncing response`
 import com.amazon.elasticsearch.replication.startReplication
 import com.amazon.elasticsearch.replication.stopReplication
+import com.amazon.elasticsearch.replication.updateAutoFollowPattern
 import com.amazon.elasticsearch.replication.updateReplication
 import org.apache.http.HttpStatus
 import org.apache.http.entity.ContentType
 import org.apache.http.nio.entity.NStringEntity
 import org.apache.http.util.EntityUtils
+import org.assertj.core.api.Assertions
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.elasticsearch.ElasticsearchStatusException
@@ -51,6 +53,7 @@ import org.elasticsearch.action.index.IndexRequest
 import org.elasticsearch.client.Request
 import org.elasticsearch.client.RequestOptions
 import org.elasticsearch.client.ResponseException
+import org.elasticsearch.client.RestHighLevelClient
 import org.elasticsearch.client.core.CountRequest
 import org.elasticsearch.client.indices.CloseIndexRequest
 import org.elasticsearch.client.indices.CreateIndexRequest
@@ -58,6 +61,7 @@ import org.elasticsearch.client.indices.GetIndexRequest
 import org.elasticsearch.client.indices.GetMappingsRequest
 import org.elasticsearch.client.indices.PutMappingRequest
 import org.elasticsearch.cluster.metadata.IndexMetadata
+import org.elasticsearch.cluster.metadata.MetadataCreateIndexService
 import org.elasticsearch.common.io.PathUtils
 import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.unit.TimeValue
@@ -84,7 +88,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
     private val buildDir = System.getProperty("build.dir")
     private val synonymsJson = "/analyzers/synonym_setting.json"
     private val synonymMapping = "{\"properties\":{\"value\":{\"type\":\"text\",\"analyzer\":\"standard\",\"search_analyzer\":\"my_analyzer\"}}}"
-
+    private val longIndexName = "index_".repeat(43)
     // 3x of SLEEP_TIME_BETWEEN_POLL_MS
     val SLEEP_TIME_BETWEEN_SYNC = 15L
 
@@ -209,9 +213,9 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
         assertThatThrownBy {
-            followerClient.startReplication(StartReplicationRequest("doesNotExist", leaderIndexName, followerIndexName))
+            followerClient.startReplication(StartReplicationRequest("does_not_exist", leaderIndexName, followerIndexName))
         }.isInstanceOf(ResponseException::class.java).hasMessageContaining("{\"error\":{\"root_cause\":[{\"type\":\"no_such_remote_cluster_exception\"," +
-                "\"reason\":\"no such remote cluster: [doesNotExist]\"}]")
+                "\"reason\":\"no such remote cluster: [does_not_exist]\"}]")
     }
 
     fun `test start replication fails when index does not exist`() {
@@ -223,9 +227,9 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
         assertThatThrownBy {
-            followerClient.startReplication(StartReplicationRequest("source", "doesNotExist", followerIndexName))
+            followerClient.startReplication(StartReplicationRequest("source", "does_not_exist", followerIndexName))
         }.isInstanceOf(ResponseException::class.java).hasMessageContaining("{\"error\":{\"root_cause\":[{\"type\":\"index_not_found_exception\"," +
-                "\"reason\":\"no such index [doesNotExist]\"")
+                "\"reason\":\"no such index [does_not_exist]\"")
     }
 
     fun `test start replication fails when the follower cluster is write blocked or metadata blocked`() {
@@ -352,16 +356,16 @@ class StartReplicationIT: MultiClusterRestTestCase() {
 
         createConnectionBetweenClusters(FOLLOWER, LEADER)
 
-        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName).alias(Alias("leaderAlias")), RequestOptions.DEFAULT)
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName).alias(Alias("leader_alias")), RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
 
         try {
-            followerClient.startReplication(StartReplicationRequest("source", "leaderAlias", followerIndexName))
+            followerClient.startReplication(StartReplicationRequest("source", "leader_alias", followerIndexName))
             fail("Expected startReplication to fail")
         } catch (e: ResponseException) {
             assertThat(e.response.statusLine.statusCode).isEqualTo(404)
             assertThat(e.message).contains("index_not_found_exception")
-            assertThat(e.message).contains("no such index [leaderAlias]")
+            assertThat(e.message).contains("no such index [leader_alias]")
         }
     }
 
@@ -934,6 +938,51 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         assertThatThrownBy {
             followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
         }.isInstanceOf(ResponseException::class.java).hasMessageContaining("Cannot Replicate an index where the setting index.soft_deletes.enabled is disabled")
+    }
+
+    fun `test that replication cannot be started on invalid indexName`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName).alias(Alias("leaderAlias")), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+
+        assertValidationFailure(followerClient, "leaderIndex", followerIndexName,
+            "Value leaderIndex must be lowercase")
+        assertValidationFailure(followerClient, "leaderindex", "followerIndex",
+            "Value followerIndex must be lowercase")
+
+        assertValidationFailure(followerClient, "test*", followerIndexName,
+            "Value test* must not contain the following characters")
+        assertValidationFailure(followerClient, "test#", followerIndexName,
+            "Value test# must not contain '#' or ':'")
+        assertValidationFailure(followerClient, "test:", followerIndexName,
+            "Value test: must not contain '#' or ':'")
+        assertValidationFailure(followerClient, ".", followerIndexName,
+            "Value . must not be '.' or '..'")
+        assertValidationFailure(followerClient, "..", followerIndexName,
+            "Value .. must not be '.' or '..'")
+
+        assertValidationFailure(followerClient, "_leader", followerIndexName,
+            "Value _leader must not start with '_' or '-' or '+'")
+
+        assertValidationFailure(followerClient, "-leader", followerIndexName,
+            "Value -leader must not start with '_' or '-' or '+'")
+        assertValidationFailure(followerClient, "+leader", followerIndexName,
+            "Value +leader must not start with '_' or '-' or '+'")
+        assertValidationFailure(followerClient, longIndexName, followerIndexName,
+            "Value $longIndexName must not be longer than ${MetadataCreateIndexService.MAX_INDEX_NAME_BYTES} bytes")
+        assertValidationFailure(followerClient, ".leaderIndex", followerIndexName,
+            "Value .leaderIndex must not start with '.'")
+    }
+
+    private fun assertValidationFailure(client: RestHighLevelClient, leader: String, follower: String, errrorMsg: String) {
+        assertThatThrownBy {
+            client.startReplication(StartReplicationRequest("source", leader, follower))
+        }.isInstanceOf(ResponseException::class.java)
+            .hasMessageContaining(errrorMsg)
     }
 
     private fun assertEqualAliases() {

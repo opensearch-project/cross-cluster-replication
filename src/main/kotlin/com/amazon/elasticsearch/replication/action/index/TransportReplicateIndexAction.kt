@@ -63,9 +63,6 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
         val user = SecurityContext.fromSecurityThreadContext(threadPool.threadContext)
         launch(threadPool.coroutineContext()) {
             listener.completeWith {
-                if(request.leaderIndex.startsWith(".")) {
-                    throw InvalidIndexNameException(request.leaderIndex,"Cannot start replication for an index starting with '.'")
-                }
 
                 val followerReplContext = ReplicationContext(request.followerIndex,
                         user?.overrideFgacRole(request.assumeRoles?.get(ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE)))

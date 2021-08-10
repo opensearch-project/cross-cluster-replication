@@ -28,6 +28,7 @@ import org.apache.http.HttpStatus
 import org.apache.http.entity.ContentType
 import org.apache.http.nio.entity.NStringEntity
 import org.assertj.core.api.Assertions
+import org.elasticsearch.action.ActionRequestValidationException
 import org.elasticsearch.action.admin.cluster.settings.ClusterUpdateSettingsRequest
 import org.elasticsearch.action.admin.indices.settings.get.GetSettingsRequest
 import org.elasticsearch.client.Request
@@ -42,6 +43,7 @@ import org.elasticsearch.tasks.TaskInfo
 import org.junit.Assert
 import java.util.Locale
 import org.elasticsearch.cluster.metadata.IndexMetadata
+import org.elasticsearch.cluster.metadata.MetadataCreateIndexService
 import org.elasticsearch.test.ESTestCase.assertBusy
 import java.util.concurrent.TimeUnit
 
@@ -55,7 +57,7 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
     private val indexPattern = "leader_index*"
     private val indexPatternName = "test_pattern"
     private val connectionAlias = "test_conn"
-
+    private val longIndexPatternName = "index_".repeat(43)
     fun `test auto follow pattern`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
@@ -196,6 +198,44 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
             followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern)
         }.isInstanceOf(ResponseException::class.java)
                 .hasMessageContaining("no such remote cluster")
+    }
+
+    fun `test auto follow should fail on pattern name validation failure`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
+
+        assertPatternNameValidation(followerClient, "testPattern",
+            "Value testPattern must be lowercase")
+        assertPatternNameValidation(followerClient, "testPattern*",
+            "Value testPattern* must not contain the following characters")
+        assertPatternNameValidation(followerClient, "test#",
+            "Value test# must not contain '#' or ':'")
+        assertPatternNameValidation(followerClient, "test:",
+            "Value test: must not contain '#' or ':'")
+        assertPatternNameValidation(followerClient, ".",
+            "Value . must not be '.' or '..'")
+        assertPatternNameValidation(followerClient, "..",
+            "Value .. must not be '.' or '..'")
+
+        assertPatternNameValidation(followerClient, "_leader",
+            "Value _leader must not start with '_' or '-' or '+'")
+
+        assertPatternNameValidation(followerClient, "-leader",
+            "Value -leader must not start with '_' or '-' or '+'")
+        assertPatternNameValidation(followerClient, "+leader",
+            "Value +leader must not start with '_' or '-' or '+'")
+        assertPatternNameValidation(followerClient, longIndexPatternName,
+            "Value $longIndexPatternName must not be longer than ${MetadataCreateIndexService.MAX_INDEX_NAME_BYTES} bytes")
+        assertPatternNameValidation(followerClient, ".leaderIndex",
+            "Value .leaderIndex must not start with '.'")
+    }
+
+    private fun assertPatternNameValidation(followerClient: RestHighLevelClient, patternName: String,
+        errorMsg: String) {
+        Assertions.assertThatThrownBy {
+            followerClient.updateAutoFollowPattern(connectionAlias, patternName, indexPattern)
+        }.isInstanceOf(ResponseException::class.java)
+            .hasMessageContaining(errorMsg)
     }
 
     fun `test removing autofollow pattern stop autofollow task`() {

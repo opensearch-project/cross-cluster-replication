@@ -2,10 +2,15 @@ package com.amazon.elasticsearch.replication.util
 
 import org.apache.logging.log4j.LogManager
 import org.elasticsearch.ResourceNotFoundException
+import org.elasticsearch.cluster.metadata.MetadataCreateIndexService
+import org.elasticsearch.common.Strings
+import org.elasticsearch.common.ValidationException
 import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.env.Environment
+import java.io.UnsupportedEncodingException
 import java.nio.file.Files
 import java.nio.file.Path
+import java.util.Locale
 
 object ValidationUtil {
 
@@ -22,5 +27,39 @@ object ValidationUtil {
                 throw ResourceNotFoundException(message)
             }
         }
+    }
+
+    /**
+     * Validate the name against the rules that we have for index name.
+     */
+    fun validateName(name: String, validationException: ValidationException) {
+        if (name.toLowerCase(Locale.ROOT) != name)
+            validationException.addValidationError("Value $name must be lowercase")
+
+        if (!Strings.validFileName(name))
+            validationException.addValidationError("Value $name must not contain the following characters ${Strings.INVALID_FILENAME_CHARS}")
+
+        if (name.contains("#") || name.contains(":"))
+            validationException.addValidationError("Value $name must not contain '#' or ':'")
+
+        if (name == "." || name == "..")
+            validationException.addValidationError("Value $name must not be '.' or '..'")
+
+        if (name.startsWith('_') || name.startsWith('-') || name.startsWith('+'))
+            validationException.addValidationError("Value $name must not start with '_' or '-' or '+'")
+
+        try {
+            var byteCount = name.toByteArray(charset("UTF-8")).size
+            if (byteCount > MetadataCreateIndexService.MAX_INDEX_NAME_BYTES) {
+                validationException.addValidationError("Value $name must not be longer than ${MetadataCreateIndexService.MAX_INDEX_NAME_BYTES} bytes")
+            }
+        } catch (e: UnsupportedEncodingException) {
+            // UTF-8 should always be supported, but rethrow this if it is not for some reason
+            validationException.addValidationError("Unable to determine length of $name")
+        }
+
+        // Additionally we don't allow replication for system indices i.e. starts with '.'
+        if(name.startsWith("."))
+            validationException.addValidationError("Value $name must not start with '.'")
     }
 }
