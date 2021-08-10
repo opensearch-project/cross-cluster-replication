@@ -1,0 +1,55 @@
+package org.opensearch.replication.action.autofollow
+
+import org.opensearch.commons.authuser.User
+import org.opensearch.action.ActionRequestValidationException
+import org.opensearch.action.support.master.MasterNodeRequest
+import org.opensearch.common.io.stream.StreamInput
+import org.opensearch.common.io.stream.StreamOutput
+import org.opensearch.common.xcontent.ToXContent
+import org.opensearch.common.xcontent.ToXContentObject
+import org.opensearch.common.xcontent.XContentBuilder
+
+class AutoFollowMasterNodeRequest: MasterNodeRequest<AutoFollowMasterNodeRequest>, ToXContentObject {
+    var user: User? = null
+    var autofollowReq: UpdateAutoFollowPatternRequest
+    var withSecurityContext: Boolean = false
+
+    constructor(user: User?, autofollowReq: UpdateAutoFollowPatternRequest): super() {
+        this.user = user
+        if(user != null) {
+            this.withSecurityContext = true
+        }
+        this.autofollowReq = autofollowReq
+    }
+
+    override fun validate(): ActionRequestValidationException? {
+        return null
+    }
+
+    constructor(inp: StreamInput): super(inp) {
+        this.withSecurityContext = inp.readBoolean()
+        if(withSecurityContext) {
+            this.user = User(inp)
+        }
+        autofollowReq = UpdateAutoFollowPatternRequest(inp)
+    }
+
+    override fun writeTo(out: StreamOutput) {
+        super.writeTo(out)
+        out.writeBoolean(withSecurityContext)
+        if(this.withSecurityContext) {
+            user?.writeTo(out)
+        }
+        autofollowReq.writeTo(out)
+    }
+
+    override fun toXContent(builder: XContentBuilder, params: ToXContent.Params): XContentBuilder {
+        builder.startObject()
+        builder.field("user", user)
+        builder.field("auto_follow_req")
+        autofollowReq.toXContent(builder, params)
+        builder.field("with_security_context", withSecurityContext)
+        return builder.endObject()
+    }
+
+}
