@@ -201,30 +201,34 @@ class ElasticsearchClientThreadContextElement(private val threadContext: ThreadC
                                               private val replicationMetadata: ReplicationMetadata?,
                                               private val action: String,
                                               private val injectSecurityContext: Boolean,
-                                              private val defaultContext: Boolean) : ThreadContextElement<ThreadContext.StoredContext> {
+                                              private val defaultContext: Boolean) : ThreadContextElement<Unit> {
 
     companion object Key : CoroutineContext.Key<ElasticThreadContextElement>
+
+    private var context: ThreadContext.StoredContext = threadContext.newStoredContext(true)
+    private var init = false
 
     override val key: CoroutineContext.Key<*>
         get() = Key
 
-    override fun restoreThreadContext(context: CoroutineContext, oldState: ThreadContext.StoredContext) {
-        oldState.close()
+    override fun restoreThreadContext(cc: CoroutineContext, oldState: Unit) {
+        this.context = threadContext.stashContext()
+        init = true
     }
 
-    override fun updateThreadContext(context: CoroutineContext): ThreadContext.StoredContext {
-        var storedContext = setThreadContext()
-        if(injectSecurityContext) {
-            // Populate relevant transients from replication metadata
-            SecurityContext.setBasedOnActions(replicationMetadata, action, threadContext)
+    override fun updateThreadContext(cc: CoroutineContext) {
+        this.context.close()
+        if(!init) {
+            // To ensure, we initialize security related transients only once
+            this.context = if(injectSecurityContext || defaultContext)
+                threadContext.stashContext()
+            else
+                threadContext.newStoredContext(true)
+            if(injectSecurityContext) {
+                // Populate relevant transients from replication metadata
+                SecurityContext.setBasedOnActions(replicationMetadata, action, threadContext)
+            }
         }
-        return storedContext
-    }
-
-    private fun setThreadContext(): ThreadContext.StoredContext {
-        if(injectSecurityContext || defaultContext)
-            return threadContext.stashContext()
-        return threadContext.newStoredContext(false)
     }
 }
 
