@@ -227,7 +227,7 @@ Given that there are multiple clusters involved, it introduces possibilities whe
 
 - Security plugin absent/disabled on both clusters
 - Security plugin fully enabled on both clusters
-- Security plugin enabled only for TLS on both clusters (opendistro_security.ssl_only)
+- Security plugin enabled only for TLS on both clusters (plugins.security.ssl_only)
 
 Since the replication steps are implemented using standard OpenSearch action framework, audit logging works seamlessly as well.
 

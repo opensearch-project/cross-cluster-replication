@@ -56,7 +56,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
 
         private fun createFieldMaskingRole(indexPattern: String, role: String) {
             val leaderClient = testClusters.get(FOLLOWER)
-            val persistentConnectionRequest = Request("PUT", "_opendistro/_security/api/roles/"+role)
+            val persistentConnectionRequest = Request("PUT", "_plugins/_security/api/roles/"+role)
             val entityAsString = """
             {
                 "cluster_permissions": [
@@ -87,7 +87,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
 
         private fun createFieldMaskingRoleForIndex(indexPatternWithFieldMasking: String, indexPatternWithoutFieldMasking:String, role: String) {
             val leaderClient = testClusters.get(FOLLOWER)
-            val persistentConnectionRequest = Request("PUT", "_opendistro/_security/api/roles/"+role)
+            val persistentConnectionRequest = Request("PUT", "_plugins/_security/api/roles/"+role)
             val entityAsString = """
             {
                 "cluster_permissions": [
@@ -131,7 +131,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
 
         private fun createFLSRole(indexPattern: String, role: String) {
             val leaderClient = testClusters.get(FOLLOWER)
-            val persistentConnectionRequest = Request("PUT", "_opendistro/_security/api/roles/"+role)
+            val persistentConnectionRequest = Request("PUT", "_plugins/_security/api/roles/"+role)
             val entityAsString = """
             {
                 "cluster_permissions": [
@@ -162,7 +162,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
 
         private fun createDLSRole(indexPattern: String, role: String) {
             val leaderClient = testClusters.get(FOLLOWER)
-            val persistentConnectionRequest = Request("PUT", "_opendistro/_security/api/roles/"+role)
+            val persistentConnectionRequest = Request("PUT", "_plugins/_security/api/roles/"+role)
             val entityAsString = """
             {
                 "cluster_permissions": [
@@ -193,7 +193,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
 
         private fun createLeaderRoleWithNoPermissions(indexPattern: String, role: String) {
             val leaderClient = testClusters.get(LEADER)
-            val persistentConnectionRequest = Request("PUT", "_opendistro/_security/api/roles/"+role)
+            val persistentConnectionRequest = Request("PUT", "_plugins/_security/api/roles/"+role)
             val entityAsString = """
             {
                 "index_permissions": [
@@ -212,7 +212,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
 
         private fun createLeaderRoleWithPermissions(indexPattern: String, role: String) {
             val leaderClient = testClusters.get(LEADER)
-            val persistentConnectionRequest = Request("PUT", "_opendistro/_security/api/roles/"+role)
+            val persistentConnectionRequest = Request("PUT", "_plugins/_security/api/roles/"+role)
             val entityAsString = """
             {
                 "index_permissions": [
@@ -234,7 +234,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
 
         private fun createRoleWithPermissions(indexPattern: String, role: String) {
             val followerClient = testClusters.get(FOLLOWER)
-            val persistentConnectionRequest = Request("PUT", "_opendistro/_security/api/roles/"+role)
+            val persistentConnectionRequest = Request("PUT", "_plugins/_security/api/roles/"+role)
 
             val entityAsString = """
             {
@@ -265,7 +265,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
 
         private fun addUserToRole(user: String, role: String, clusterName: String) {
             val followerClient = testClusters.get(clusterName)
-            val persistentConnectionRequest = Request("PUT", "_opendistro/_security/api/rolesmapping/"+role)
+            val persistentConnectionRequest = Request("PUT", "_plugins/_security/api/rolesmapping/"+role)
             val entityAsString = """
                 {"users": ["$user"]}
             """.trimMargin()
@@ -291,7 +291,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
 
         private fun addUserToCluster(userName: String, password: String, clusterName: String) {
             val followerClient = testClusters.get(clusterName)
-            val persistentConnectionRequest = Request("PUT", "_opendistro/_security/api/internalusers/"+userName)
+            val persistentConnectionRequest = Request("PUT", "_plugins/_security/api/internalusers/"+userName)
             val entityAsString = """
             {
                 "password":"$password"

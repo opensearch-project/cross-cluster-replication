@@ -11,17 +11,17 @@
 
 version: '3'
 services:
-  odfe-leader1:
-    image: open-distro-for-es-with-replication
-    container_name: odfe-leader1
+  os-leader1:
+    image: opensearch-with-replication
+    container_name: os-leader1
     environment:
-      - cluster.name=odfe-leader
-      - node.name=odfe-leader1
-      - discovery.seed_hosts=odfe-leader1
-      - cluster.initial_master_nodes=odfe-leader1
+      - cluster.name=os-leader
+      - node.name=os-leader1
+      - discovery.seed_hosts=os-leader1
+      - cluster.initial_master_nodes=os-leader1
       - bootstrap.memory_lock=true # along with the memlock settings below, disables swapping
-      - opendistro_security.unsupported.inject_user.enabled=true
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m" # minimum and maximum Java heap size, recommend setting both to 50% of system RAM
+      - plugins.security.unsupported.inject_user.enabled=true
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m" # minimum and maximum Java heap size, recommend setting both to 50% of system RAM
     ulimits:
       memlock:
         soft: -1
@@ -30,27 +30,27 @@ services:
         soft: 65536 # maximum number of open files for the OpenSearch user, set to at least 65536 on modern systems
         hard: 65536
     volumes:
-      - odfe-leader-data1:/usr/share/opensearch/data
+      - os-leader-data1:/usr/share/opensearch/data
     ports:
       - 9200:9200
       - 9600:9600 # required for Performance Analyzer
     networks:
-      odfe-net:
+      os-net:
         ipv4_address: 172.18.0.10
-  odfe-follower1:
-    image: open-distro-for-es-with-replication
+  os-follower1:
+    image: opensearch-with-replication
     build:
       context: .
       dockerfile: Dockerfile
-    container_name: odfe-follower1
+    container_name: os-follower1
     environment:
-      - cluster.name=odfe-follower
-      - node.name=odfe-follower1
-      - discovery.seed_hosts=odfe-follower1
-      - cluster.initial_master_nodes=odfe-follower1
-      - opendistro_security.unsupported.inject_user.enabled=true
+      - cluster.name=os-follower
+      - node.name=os-follower1
+      - discovery.seed_hosts=os-follower1
+      - cluster.initial_master_nodes=os-follower1
+      - plugins.security.unsupported.inject_user.enabled=true
       - bootstrap.memory_lock=true
-      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+      - "OPENSEARCH_JAVA_OPTS=-Xms512m -Xmx512m"
     ulimits:
       memlock:
         soft: -1
@@ -59,20 +59,20 @@ services:
         soft: 65536
         hard: 65536
     volumes:
-      - odfe-follower-data1:/usr/share/opensearch/data
+      - os-follower-data1:/usr/share/opensearch/data
     ports:
       - 9201:9200
       - 9601:9600 # required for Performance Analyzer
     networks:
-      odfe-net:
+      os-net:
         ipv4_address: 172.18.0.20
 
 volumes:
-  odfe-leader-data1:
-  odfe-follower-data1:
+  os-leader-data1:
+  os-follower-data1:
 
 networks:
-  odfe-net:
+  os-net:
     driver: bridge
     driver_opts:
       com.docker.network.enable_ipv6: "false"

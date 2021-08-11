@@ -261,7 +261,7 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
             """.trimMargin()
 
         triggerRequest(testCluster.lowLevelClient, "PUT",
-                "_opendistro/_security/api/roles/leader_role", leaderRoleConfig)
+                "_plugins/_security/api/roles/leader_role", leaderRoleConfig)
 
         val followerRoleConfig = """
                 {
@@ -289,7 +289,7 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
             """.trimMargin()
 
         triggerRequest(testCluster.lowLevelClient, "PUT",
-                "_opendistro/_security/api/roles/follower_role", followerRoleConfig)
+                "_plugins/_security/api/roles/follower_role", followerRoleConfig)
 
         val userMapping = """
             {
@@ -300,10 +300,10 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
             """.trimMargin()
 
         triggerRequest(testCluster.lowLevelClient, "PUT",
-                "_opendistro/_security/api/rolesmapping/leader_role", userMapping)
+                "_plugins/_security/api/rolesmapping/leader_role", userMapping)
 
         triggerRequest(testCluster.lowLevelClient, "PUT",
-                "_opendistro/_security/api/rolesmapping/follower_role", userMapping)
+                "_plugins/_security/api/rolesmapping/follower_role", userMapping)
 
         testCluster.defaultSecuritySetupCompleted = true
     }
