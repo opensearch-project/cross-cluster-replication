@@ -39,6 +39,7 @@ import org.opensearch.indices.IndicesService
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportActionProxy
 import org.opensearch.transport.TransportService
+import java.lang.IllegalStateException
 import kotlin.math.min
 
 class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clusterService: ClusterService,
@@ -93,6 +94,8 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
                     try {
                         ops = translogService.getHistoryOfOperations(indexShard, request.fromSeqNo, toSeqNo)
                     } catch (e: ResourceNotFoundException) {
+                        fetchFromTranslog = false
+                    } catch (e: IllegalStateException) {
                         fetchFromTranslog = false
                     }
                 }
