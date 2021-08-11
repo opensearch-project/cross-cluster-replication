@@ -435,7 +435,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
 
     private fun updateRole(indexPattern: String, role: String, shouldAddWritePermission: Boolean) {
         val followerClient = testClusters.get(FOLLOWER)
-        val persistentConnectionRequest = Request("PUT", "_opendistro/_security/api/roles/"+role)
+        val persistentConnectionRequest = Request("PUT", "_plugins/_security/api/roles/"+role)
         var writePermission : String = ""
         if(shouldAddWritePermission)
             writePermission = "\"indices:data/write/plugins/replication/changes\","

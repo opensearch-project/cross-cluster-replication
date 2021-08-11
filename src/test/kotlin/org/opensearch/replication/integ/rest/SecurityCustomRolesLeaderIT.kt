@@ -131,7 +131,7 @@ class SecurityCustomRolesLeaderIT: SecurityBase() {
 
     private fun updateFileChunkPermissions(indexPattern: String, role: String, shouldAddfilechunkPermission: Boolean) {
         val followerClient = testClusters.get(LEADER)
-        val persistentConnectionRequest = Request("PUT", "_opendistro/_security/api/roles/"+role)
+        val persistentConnectionRequest = Request("PUT", "_plugins/_security/api/roles/"+role)
         var fileChunkPermission : String = ""
         if(shouldAddfilechunkPermission)
             fileChunkPermission = "\"indices:data/read/plugins/replication/file_chunk\","
@@ -156,7 +156,7 @@ class SecurityCustomRolesLeaderIT: SecurityBase() {
 
     private fun updateRole(indexPattern: String, role: String, shouldAddReadPermission: Boolean) {
         val followerClient = testClusters.get(LEADER)
-        val persistentConnectionRequest = Request("PUT", "_opendistro/_security/api/roles/"+role)
+        val persistentConnectionRequest = Request("PUT", "_plugins/_security/api/roles/"+role)
         var readPermission : String = ""
         if(shouldAddReadPermission)
             readPermission = "\"indices:data/read/plugins/replication/changes\","

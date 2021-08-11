@@ -40,7 +40,7 @@ git clone https://github.com/opensearch-project/cross-cluster-replication.git
 cd cross-cluster-replication/examples/sample
 
 # 3. Build local image with replication plugin
-docker build -t open-distro-for-es-with-replication ./open-distro-for-es-with-replication
+docker build -t opensearch-with-replication ./opensearch-with-replication
 
 # 4. Bring up 2 clusters with replication plugin installed
 docker-compose up
@@ -71,12 +71,12 @@ node.roles: [<other_roles>, remote_cluster_client]
 
 #### OpenSearch security plugin specific configuration
 
-If you have [disabled](https://opendistro.github.io/for-elasticsearch-docs/docs/security/configuration/disable/) security plugin, you can skip this step. Ensure that either security plugin is **enabled on both clusters** OR **disabled on both clusters**.
+If you have [disabled](https://opensearch.org/docs/security-plugin/configuration/disable) security plugin, you can skip this step. Ensure that either security plugin is **enabled on both clusters** OR **disabled on both clusters**.
 
 ##### Ensure user_injection is set to true
 
 ```yml
-opendistro_security.unsupported.inject_user.enabled: true
+plugins.security.unsupported.inject_user.enabled: true
 ```
 
 ##### Ensure nodes_dn setting on the leader cluster allows connections from follower cluster
@@ -84,13 +84,13 @@ opendistro_security.unsupported.inject_user.enabled: true
 Ensure nodesdn dynamic API is enabled in opensearch.yml
 
 ```yml
-opendistro_security.nodes_dn_dynamic_config_enabled: true
+plugins.security.nodes_dn_dynamic_config_enabled: true
 ```
 
 Allow connections from follower cluster on the leader as follows
 
 ```bash
-curl -k -u admin:admin -XPUT "https://${LEADER}/_opendistro/_security/api/nodesdn/follower" \
+curl -k -u admin:admin -XPUT "https://${LEADER}/_plugins/_security/api/nodesdn/follower" \
 -H 'Content-type: application/json' \
 -d'{"nodes_dn": ["CN=follower.example.com"]}'
 ```

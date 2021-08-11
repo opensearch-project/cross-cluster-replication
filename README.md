@@ -1,6 +1,6 @@
-# Open Distro Cross Cluster Replication Plugin
+# Cross Cluster Replication Plugin
 
-- [Open Distro Cross Cluster Replication Plugin](#open-distro-cross-cluster-replication-plugin)
+- [Cross Cluster Replication Plugin](#cross-cluster-replication-plugin)
     - [Build](#build)
         - [Building from the command line](#building-from-the-command-line)
     - [Intellij Setup](#intellij-setup)
