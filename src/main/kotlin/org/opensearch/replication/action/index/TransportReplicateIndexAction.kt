@@ -77,6 +77,8 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
                     }
                 }
 
+                // Any checks on the settings is followed by setup checks to ensure all relevant changes are
+                // present across the plugins
                 val remoteClient = client.getRemoteClusterClient(request.leaderAlias)
                 val getSettingsRequest = GetSettingsRequest().includeDefaults(false).indices(request.leaderIndex)
                 val settingsResponse = remoteClient.suspending(remoteClient.admin().indices()::getSettings, injectSecurityContext = true)(getSettingsRequest)
