@@ -208,6 +208,7 @@ class OpenSearchClientThreadContextElement(private val threadContext: ThreadCont
         get() = Key
 
     override fun restoreThreadContext(cc: CoroutineContext, oldState: Unit) {
+        // OpenSearch expects default context to be set after coroutine is suspended.
         this.context = threadContext.stashContext()
         init = true
     }
