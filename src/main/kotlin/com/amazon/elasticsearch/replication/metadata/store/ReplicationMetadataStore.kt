@@ -8,6 +8,7 @@ import org.elasticsearch.ResourceAlreadyExistsException
 import org.elasticsearch.ResourceNotFoundException
 import org.elasticsearch.action.admin.indices.create.CreateIndexRequest
 import org.elasticsearch.action.admin.indices.create.CreateIndexResponse
+import org.elasticsearch.action.admin.indices.mapping.put.PutMappingRequest
 import org.elasticsearch.action.delete.DeleteRequest
 import org.elasticsearch.action.delete.DeleteResponse
 import org.elasticsearch.action.get.GetRequest
@@ -27,8 +28,44 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
     companion object {
         const val REPLICATION_CONFIG_SYSTEM_INDEX = ".replication-metadata-store"
         const val MAPPING_TYPE = "_doc"
+        const val MAPPING_META = "_meta"
+        const val MAPPING_SCHEMA_VERSION = "schema_version"
+        const val DEFAULT_SCHEMA_VERSION = 1
         val REPLICATION_CONFIG_SYSTEM_INDEX_MAPPING = javaClass.classLoader.getResource("mappings/replication-metadata-store.json").readText()
+        var REPLICATION_STORE_MAPPING_VERSION: Int
+        init {
+            REPLICATION_STORE_MAPPING_VERSION = getSchemaVersion(REPLICATION_CONFIG_SYSTEM_INDEX_MAPPING)
+        }
         private val log = LogManager.getLogger(ReplicationMetadataStore::class.java)
+
+
+        private fun getSchemaVersion(mapping: String): Int {
+            val xcp = XContentType.JSON.xContent().createParser(NamedXContentRegistry.EMPTY,
+                    LoggingDeprecationHandler.INSTANCE, mapping)
+
+            while (!xcp.isClosed) {
+                val token = xcp.currentToken()
+                if (token != null && token != XContentParser.Token.END_OBJECT && token != XContentParser.Token.START_OBJECT) {
+                    if (xcp.currentName() != MAPPING_META) {
+                        xcp.nextToken()
+                        xcp.skipChildren()
+                    } else {
+                        while (xcp.nextToken() != XContentParser.Token.END_OBJECT) {
+                            when (xcp.currentName()) {
+                                MAPPING_SCHEMA_VERSION -> {
+                                    val version = xcp.intValue()
+                                    require(version > -1)
+                                    return version
+                                }
+                                else -> xcp.nextToken()
+                            }
+                        }
+                    }
+                }
+                xcp.nextToken()
+            }
+            return DEFAULT_SCHEMA_VERSION
+        }
     }
 
     suspend fun addMetadata(addReq: AddReplicationMetadataRequest): IndexResponse {
@@ -41,13 +78,33 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
                 }
             }
         }
-        // TODO: Check and update if existing index needs mapping update
+
+        checkAndUpdateMapping()
 
         val id = getId(addReq.replicationMetadata.metadataType, addReq.replicationMetadata.connectionName,
                 addReq.replicationMetadata.followerContext.resource)
         val indexReqBuilder = client.prepareIndex(REPLICATION_CONFIG_SYSTEM_INDEX, MAPPING_TYPE, id)
                 .setSource(addReq.replicationMetadata.toXContent(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS))
         return client.suspending(indexReqBuilder::execute, defaultContext = true)("replication")
+    }
+
+    private suspend fun checkAndUpdateMapping() {
+        var currentSchemaVersion = DEFAULT_SCHEMA_VERSION
+        val indexMetadata = clusterService.state().metadata.indices.getOrDefault(REPLICATION_CONFIG_SYSTEM_INDEX, null)
+                ?: throw ResourceNotFoundException("Index metadata doesn't exist for $REPLICATION_CONFIG_SYSTEM_INDEX")
+        val mappingMetadata = indexMetadata.mapping()?.sourceAsMap?.get(MAPPING_META)
+        if(mappingMetadata != null && mappingMetadata is HashMap<*,*>) {
+            currentSchemaVersion = mappingMetadata.get(MAPPING_SCHEMA_VERSION) as Int
+        }
+
+        if(REPLICATION_STORE_MAPPING_VERSION > currentSchemaVersion) {
+            val putMappingReq = PutMappingRequest(REPLICATION_CONFIG_SYSTEM_INDEX).type(MAPPING_TYPE)
+                    .source(REPLICATION_CONFIG_SYSTEM_INDEX_MAPPING, XContentType.JSON)
+            val putMappingRes = client.suspending(client.admin().indices()::putMapping, defaultContext = true)(putMappingReq)
+            if(!putMappingRes.isAcknowledged) {
+                log.error("Mapping update failed for replication store - $REPLICATION_CONFIG_SYSTEM_INDEX")
+            }
+        }
     }
 
     suspend fun getMetadata(getMetadataReq: GetReplicationMetadataRequest,
@@ -143,7 +200,7 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
         if(!configStoreExists()) {
             throw ResourceNotFoundException("Metadata for $id doesn't exist")
         }
-        // TODO: Check and update if existing index needs mapping update
+        checkAndUpdateMapping()
 
         val indexReqBuilder = client.prepareIndex(REPLICATION_CONFIG_SYSTEM_INDEX, MAPPING_TYPE, id)
                 .setSource(updateMetadataReq.replicationMetadata.toXContent(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS))
@@ -179,6 +236,7 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
                 .put(IndexMetadata.INDEX_HIDDEN_SETTING.key, true)
                 .build()
     }
+
 
     override fun doStart() {
     }

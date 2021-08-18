@@ -212,6 +212,7 @@ class ElasticsearchClientThreadContextElement(private val threadContext: ThreadC
         get() = Key
 
     override fun restoreThreadContext(cc: CoroutineContext, oldState: Unit) {
+        // ES expects default context to be set after coroutine is suspended.
         this.context = threadContext.stashContext()
         init = true
     }
