@@ -15,8 +15,11 @@ import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.settings.ClusterSettings
 import org.opensearch.common.unit.ByteSizeValue
 import org.opensearch.common.unit.TimeValue
+import org.opensearch.commons.utils.OpenForTesting
 
-class ReplicationSettings(clusterService: ClusterService) {
+//ToDo : Make OpenForTesting work
+@OpenForTesting
+open class ReplicationSettings(clusterService: ClusterService) {
 
     @Volatile var chunkSize = ReplicationPlugin.REPLICATION_FOLLOWER_RECOVERY_CHUNK_SIZE.get(clusterService.settings)
     @Volatile var concurrentFileChunks = ReplicationPlugin.REPLICATION_FOLLOWER_RECOVERY_PARALLEL_CHUNKS.get(clusterService.settings)
