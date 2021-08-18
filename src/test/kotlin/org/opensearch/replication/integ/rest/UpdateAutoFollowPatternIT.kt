@@ -39,6 +39,7 @@ import org.junit.Assert
 import java.util.Locale
 import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.cluster.metadata.MetadataCreateIndexService
+import org.opensearch.replication.ReplicationPlugin
 import org.opensearch.test.OpenSearchTestCase.assertBusy
 import java.util.concurrent.TimeUnit
 
@@ -93,7 +94,8 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
 
         try {
             // Set poll duration to 30sec from 60sec (default)
-            val settings = Settings.builder().put("plugins.replication.autofollow.remote.fetch_poll_duration", TimeValue.timeValueSeconds(30))
+            val settings = Settings.builder().put(ReplicationPlugin.REPLICATION_AUTOFOLLOW_REMOTE_INDICES_POLL_INTERVAL.key,
+                TimeValue.timeValueSeconds(30))
             val clusterUpdateSetttingsReq = ClusterUpdateSettingsRequest().persistentSettings(settings)
             val clusterUpdateResponse = followerClient.cluster().putSettings(clusterUpdateSetttingsReq, RequestOptions.DEFAULT)
             Assert.assertTrue(clusterUpdateResponse.isAcknowledged)
