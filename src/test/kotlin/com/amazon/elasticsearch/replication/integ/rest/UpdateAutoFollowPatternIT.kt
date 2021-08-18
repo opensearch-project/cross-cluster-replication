@@ -44,6 +44,7 @@ import org.junit.Assert
 import java.util.Locale
 import org.elasticsearch.cluster.metadata.IndexMetadata
 import org.elasticsearch.cluster.metadata.MetadataCreateIndexService
+import org.elasticsearch.replication.ReplicationPlugin
 import org.elasticsearch.test.ESTestCase.assertBusy
 import java.util.concurrent.TimeUnit
 
@@ -98,7 +99,8 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
 
         try {
             // Set poll duration to 30sec from 60sec (default)
-            val settings = Settings.builder().put("plugins.replication.autofollow.remote.fetch_poll_duration", TimeValue.timeValueSeconds(30))
+            val settings = Settings.builder().put(ReplicationPlugin.REPLICATION_AUTOFOLLOW_REMOTE_INDICES_POLL_INTERVAL.key,
+                TimeValue.timeValueSeconds(30))
             val clusterUpdateSetttingsReq = ClusterUpdateSettingsRequest().persistentSettings(settings)
             val clusterUpdateResponse = followerClient.cluster().putSettings(clusterUpdateSetttingsReq, RequestOptions.DEFAULT)
             Assert.assertTrue(clusterUpdateResponse.isAcknowledged)

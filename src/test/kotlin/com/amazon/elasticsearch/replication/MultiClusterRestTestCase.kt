@@ -498,7 +498,7 @@ abstract class MultiClusterRestTestCase : ESTestCase() {
     protected fun setMetadataSyncDelay() {
         val followerClient = getClientForCluster(FOLLOWER)
         val updateSettingsRequest = ClusterUpdateSettingsRequest()
-        updateSettingsRequest.transientSettings(Collections.singletonMap<String, String?>("plugins.replication.metadata_sync", "5s"))
+        updateSettingsRequest.transientSettings(Collections.singletonMap<String, String?>(ReplicationPlugin.REPLICATION_METADATA_SYNC_INTERVAL.key, "5s"))
         followerClient.cluster().putSettings(updateSettingsRequest, RequestOptions.DEFAULT)
     }
 }
