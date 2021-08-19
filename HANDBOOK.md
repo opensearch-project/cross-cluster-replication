@@ -24,32 +24,7 @@
 
 This document helps you with sample commands/api’s to run, for the various scenarios supported by replication plugin.
 
-The example uses docker based setup to spin up the clusters with OpenSearch security plugin.
-
 ## Setup
-### Spin up sample clusters from the packaged example
-
-Clone the cross-cluster-replication repository and spin up the clusters from the [packaged example](https://github.com/opensearch-project/cross-cluster-replication/tree/main/examples/sample).
-
-```bash
-
-# 1. Clone the cross-cluster-replication repo
-git clone https://github.com/opensearch-project/cross-cluster-replication.git 
-
-# 2. Navigate to example directory
-cd cross-cluster-replication/examples/sample
-
-# 3. Build local image with replication plugin
-docker build -t opensearch-with-replication ./opensearch-with-replication
-
-# 4. Bring up 2 clusters with replication plugin installed
-docker-compose up
-
-# 5. Set variables for readability (in different terminal window/tab where you will run rest of the steps)
-export LEADER=localhost:9200
-export FOLLOWER=localhost:9201
-export LEADER_NODES_IPS='["172.18.0.10:9300"]'
-```
 
 ### Setup for custom OpenSearch clusters
 
