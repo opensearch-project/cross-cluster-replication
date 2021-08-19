@@ -127,11 +127,12 @@ import org.opensearch.threadpool.FixedExecutorBuilder
 import org.opensearch.threadpool.ScalingExecutorBuilder
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.watcher.ResourceWatcherService
+import java.util.Collections
 import java.util.Optional
 import java.util.function.Supplier
 
 internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin, RepositoryPlugin, EnginePlugin {
-
+    private var isPluginDisabled: Boolean = true
     private lateinit var client: Client
     private lateinit var threadPool: ThreadPool
     private lateinit var replicationMetadataManager: ReplicationMetadataManager
@@ -140,6 +141,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
     companion object {
         const val REPLICATION_EXECUTOR_NAME_LEADER = "replication_leader"
         const val REPLICATION_EXECUTOR_NAME_FOLLOWER = "replication_follower"
+        val REPLICATION_PLUGIN_ENABLED = Setting.boolSetting("plugins.replication.enabled", false, Setting.Property.NodeScope)
         val REPLICATED_INDEX_SETTING: Setting<String> = Setting.simpleString("index.plugins.replication.replicated",
             Setting.Property.InternalIndex, Setting.Property.IndexScope)
         val REPLICATION_FOLLOWER_OPS_BATCH_SIZE: Setting<Int> = Setting.intSetting("plugins.replication.follower.index.ops_batch_size", 50000, 16,
@@ -166,6 +168,11 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                 Setting.Property.Dynamic, Setting.Property.NodeScope)
     }
 
+    private fun isPluginDisabled(settings: Settings): Boolean {
+        isPluginDisabled = !REPLICATION_PLUGIN_ENABLED.get(settings)
+        return isPluginDisabled
+    }
+
     override fun createComponents(client: Client, clusterService: ClusterService, threadPool: ThreadPool,
                                   resourceWatcherService: ResourceWatcherService, scriptService: ScriptService,
                                   xContentRegistry: NamedXContentRegistry, environment: Environment,
@@ -173,6 +180,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                                   namedWriteableRegistry: NamedWriteableRegistry,
                                   indexNameExpressionResolver: IndexNameExpressionResolver,
                                   repositoriesService: Supplier<RepositoriesService>): Collection<Any> {
+        if(isPluginDisabled(clusterService.settings)) return Collections.emptyList()
+
         this.client = client
         this.threadPool = threadPool
         this.replicationMetadataManager = ReplicationMetadataManager(clusterService, client,
@@ -182,12 +191,14 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
     }
 
     override fun getGuiceServiceClasses(): Collection<Class<out LifecycleComponent>> {
-        return listOf(Injectables::class.java,
+        return if (isPluginDisabled) Collections.emptyList()
+        else listOf(Injectables::class.java,
                 RemoteClusterRestoreLeaderService::class.java, RemoteClusterTranslogService::class.java)
     }
 
     override fun getActions(): List<ActionHandler<out ActionRequest, out ActionResponse>> {
-        return listOf(ActionHandler(GetChangesAction.INSTANCE, TransportGetChangesAction::class.java),
+        return if (isPluginDisabled) Collections.emptyList()
+        else listOf(ActionHandler(GetChangesAction.INSTANCE, TransportGetChangesAction::class.java),
             ActionHandler(ReplicateIndexAction.INSTANCE, TransportReplicateIndexAction::class.java),
             ActionHandler(ReplicateIndexMasterNodeAction.INSTANCE, TransportReplicateIndexMasterNodeAction::class.java),
             ActionHandler(ReplayChangesAction.INSTANCE, TransportReplayChangesAction::class.java),
@@ -215,7 +226,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                                  settingsFilter: SettingsFilter?,
                                  indexNameExpressionResolver: IndexNameExpressionResolver,
                                  nodesInCluster: Supplier<DiscoveryNodes>): List<RestHandler> {
-        return listOf(ReplicateIndexHandler(),
+        return if(isPluginDisabled(settings)) return Collections.emptyList()
+        else listOf(ReplicateIndexHandler(),
             UpdateAutoFollowPatternsHandler(),
             PauseIndexReplicationHandler(),
             ResumeIndexReplicationHandler(),
@@ -225,7 +237,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
     }
 
     override fun getExecutorBuilders(settings: Settings): List<ExecutorBuilder<*>> {
-        return listOf(followerExecutorBuilder(settings), leaderExecutorBuilder(settings))
+        return if(isPluginDisabled(settings)) return Collections.emptyList()
+        else listOf(followerExecutorBuilder(settings), leaderExecutorBuilder(settings))
     }
 
     private fun followerExecutorBuilder(settings: Settings): ExecutorBuilder<*> {
@@ -254,7 +267,9 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                                             settingsModule: SettingsModule,
                                             expressionResolver: IndexNameExpressionResolver)
         : List<PersistentTasksExecutor<*>> {
-        return listOf(
+
+        return if (isPluginDisabled(clusterService.settings)) Collections.emptyList()
+        else listOf(
             ShardReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager, replicationSettings),
             IndexReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager, replicationSettings, settingsModule),
             AutoFollowExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager, replicationSettings))
@@ -312,19 +327,24 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                 REPLICATION_LEADER_THREADPOOL_QUEUE_SIZE, REPLICATION_FOLLOWER_CONCURRENT_READERS_PER_SHARD,
                 REPLICATION_FOLLOWER_RECOVERY_CHUNK_SIZE, REPLICATION_FOLLOWER_RECOVERY_PARALLEL_CHUNKS,
                 REPLICATION_PARALLEL_READ_POLL_INTERVAL, REPLICATION_AUTOFOLLOW_REMOTE_INDICES_POLL_INTERVAL,
-                REPLICATION_AUTOFOLLOW_REMOTE_INDICES_RETRY_POLL_INTERVAL, REPLICATION_METADATA_SYNC_INTERVAL)
+                REPLICATION_AUTOFOLLOW_REMOTE_INDICES_RETRY_POLL_INTERVAL, REPLICATION_METADATA_SYNC_INTERVAL,
+                REPLICATION_PLUGIN_ENABLED)
     }
 
     override fun getInternalRepositories(env: Environment, namedXContentRegistry: NamedXContentRegistry,
                                          clusterService: ClusterService, recoverySettings: RecoverySettings): Map<String, Repository.Factory> {
-        val repoFactory = Repository.Factory { repoMetadata: RepositoryMetadata ->
-            RemoteClusterRepository(repoMetadata, client, clusterService, recoverySettings, replicationMetadataManager, replicationSettings) }
-        return mapOf(REMOTE_REPOSITORY_TYPE to repoFactory)
+        return if (isPluginDisabled) Collections.emptyMap()
+        else {
+            val repoFactory = Repository.Factory { repoMetadata: RepositoryMetadata ->
+                RemoteClusterRepository(repoMetadata, client, clusterService, recoverySettings, replicationMetadataManager, replicationSettings)
+            }
+            mapOf(REMOTE_REPOSITORY_TYPE to repoFactory)
+        }
     }
 
     override fun getEngineFactory(indexSettings: IndexSettings): Optional<EngineFactory> {
         return if (indexSettings.settings.get(REPLICATED_INDEX_SETTING.key) != null) {
-            Optional.of(EngineFactory { config -> org.opensearch.replication.ReplicationEngine(config) })
+            Optional.of(EngineFactory { config -> ReplicationEngine(config) })
         } else {
             Optional.empty()
         }

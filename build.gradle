@@ -293,6 +293,7 @@ testClusters {
         if (_numNodes > 1) numberOfNodes = _numNodes
         //numberOfNodes = 3
         setting 'path.repo', repo.absolutePath
+        setting 'plugins.replication.enabled', "true"
         if(_numNodes == 1) jvmArgs "${-> getDebugJvmArgs(debugPort++)}"
     }
     followCluster {
@@ -306,6 +307,7 @@ testClusters {
         if (_numNodes > 1) numberOfNodes = _numNodes
         //numberOfNodes = 3
         setting 'path.repo', repo.absolutePath
+        setting 'plugins.replication.enabled', "true"
         if(_numNodes == 1) jvmArgs "${-> getDebugJvmArgs(debugPort++)}"
     }
 }
