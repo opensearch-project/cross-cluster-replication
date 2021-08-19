@@ -39,7 +39,10 @@ object MultiClusterAnnotations {
          * preserved in other tests in a single test class.*/
         val preserveSnapshots: Boolean = false,  /* This setting controls whether cluster settings setup by one tests are to be
          * preserved in other tests in a single test class.*/
-        val preserveClusterSettings: Boolean = false)
+        val preserveClusterSettings: Boolean = false, /* This setting controls if security
+        roles need to be re-initialized*/
+        val forceInitSecurityConfiguration: Boolean = false
+    )
 
     @Retention(AnnotationRetention.RUNTIME)
     @Target(AnnotationTarget.ANNOTATION_CLASS, AnnotationTarget.CLASS)

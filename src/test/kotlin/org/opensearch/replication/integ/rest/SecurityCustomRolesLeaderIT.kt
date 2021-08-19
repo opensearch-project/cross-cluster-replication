@@ -94,8 +94,8 @@ class SecurityCustomRolesLeaderIT: SecurityBase() {
                         requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password")))
             }, 100, TimeUnit.SECONDS)
 
-            updateRole(followerIndexName,"leaderRoleValidPerms", true)
         } finally {
+            updateRole(followerIndexName,"leaderRoleValidPerms", true)
             followerClient.stopReplication(followerIndexName)
         }
     }
@@ -120,12 +120,12 @@ class SecurityCustomRolesLeaderIT: SecurityBase() {
                 validateNotInProgressState(followerClient.replicationStatus(followerIndexName,
                         requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password")))
             }, 10, TimeUnit.SECONDS)
-
-            updateFileChunkPermissions("","leaderRoleValidPerms", true)
         } catch (ex : Exception) {
             logger.info("Exception is", ex)
+            Assert.assertNull(ex)
         } finally {
-                followerClient.stopReplication(followerIndexName)
+            updateFileChunkPermissions("","leaderRoleValidPerms", true)
+            followerClient.stopReplication(followerIndexName)
         }
     }
 
@@ -189,7 +189,7 @@ class SecurityCustomRolesLeaderIT: SecurityBase() {
 
     private fun validateNotInProgressState(statusResp: Map<String, Any>) {
         Assert.assertEquals(statusResp.getValue("status"),"REPLICATION NOT IN PROGRESS")
-        Assert.assertTrue((statusResp.getValue("reason")).toString().contains("no permissions for [indices:data/read/plugins/replication/changes] and associated roles"))
+        Assert.assertFalse(statusResp.containsKey("reason"))
         Assert.assertFalse(statusResp.containsKey("shard_replication_details"))
         Assert.assertFalse(statusResp.containsKey("local_checkpoint"))
         Assert.assertFalse(statusResp.containsKey("remote_checkpoint"))

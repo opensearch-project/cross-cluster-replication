@@ -111,6 +111,7 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
     companion object {
         lateinit var testClusters : Map<String, TestCluster>
         var isSecurityPropertyEnabled = false
+        var forceInitSecurityConfiguration = false
 
         private fun createTestCluster(configuration: ClusterConfiguration) : TestCluster {
             val cluster = configuration.clusterName
@@ -128,6 +129,9 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
                 protocol = "https"
                 isSecurityPropertyEnabled = true
             }
+
+            forceInitSecurityConfiguration = isSecurityPropertyEnabled && configuration.forceInitSecurityConfiguration
+
             val httpHosts = httpHostsProp.split(',').map { HttpHost.create("$protocol://$it") }
             val transportPorts = transportHostsProp.split(',')
             return TestCluster(cluster, httpHosts, transportPorts, configuration.preserveSnapshots,
