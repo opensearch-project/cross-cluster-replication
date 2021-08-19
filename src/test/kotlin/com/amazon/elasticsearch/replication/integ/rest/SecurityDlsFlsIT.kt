@@ -14,10 +14,11 @@ import org.elasticsearch.test.ESTestCase
 import org.junit.Assert
 import org.junit.Assume
 import org.junit.Before
+import org.junit.BeforeClass
 
 @MultiClusterAnnotations.ClusterConfigurations(
-        MultiClusterAnnotations.ClusterConfiguration(clusterName = LEADER),
-        MultiClusterAnnotations.ClusterConfiguration(clusterName = FOLLOWER)
+        MultiClusterAnnotations.ClusterConfiguration(clusterName = LEADER, forceInitSecurityConfiguration = true),
+        MultiClusterAnnotations.ClusterConfiguration(clusterName = FOLLOWER, forceInitSecurityConfiguration = true)
 )
 class SecurityDlsFlsIT: SecurityBase() {
     private val leaderIndexName = "leader_index"

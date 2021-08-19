@@ -10,8 +10,9 @@ import org.junit.BeforeClass
 import javax.swing.text.StyledEditorKit
 
 abstract class SecurityBase : MultiClusterRestTestCase()   {
-    companion object{
+    companion object {
         var initialized : Boolean = false
+
         fun addSecurityRoles() {
             addUserToRole("testUser2","followerRoleNoPerms", FOLLOWER)
             addUserToRole("testUser1\",\"testUser3\",\"testUser4\",\"testUser5\",\"testUser7","leaderRoleValidPerms", LEADER)
@@ -22,9 +23,10 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
             addUserToRole("testUser6","leaderRoleNoPerms", LEADER)
             addUserToRole("testUser1\",\"testUser6","followerRoleValidPerms", FOLLOWER)
         }
+
         @BeforeClass @JvmStatic
         fun setupSecurity() {
-            if(isSecurityPropertyEnabled && !initialized) {
+            if(isSecurityPropertyEnabled && (!initialized || forceInitSecurityConfiguration)) {
                 addUsers()
                 createRoles()
                 addSecurityRoles()
@@ -71,7 +73,8 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
             """.trimMargin()
             persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
             val persistentConnectionResponse = leaderClient!!.lowLevelClient.performRequest(persistentConnectionRequest)
-            assertEquals(HttpStatus.SC_CREATED.toLong(), persistentConnectionResponse.statusLine.statusCode.toLong())
+            assertTrue(HttpStatus.SC_CREATED.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong() ||
+                    HttpStatus.SC_OK.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong())
         }
 
         private fun createFieldMaskingRoleForIndex(indexPatternWithFieldMasking: String, indexPatternWithoutFieldMasking:String, role: String) {
@@ -115,7 +118,8 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
             """.trimMargin()
             persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
             val persistentConnectionResponse = leaderClient!!.lowLevelClient.performRequest(persistentConnectionRequest)
-            assertEquals(HttpStatus.SC_CREATED.toLong(), persistentConnectionResponse.statusLine.statusCode.toLong())
+            assertTrue(HttpStatus.SC_CREATED.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong() ||
+                    HttpStatus.SC_OK.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong())
         }
 
         private fun createFLSRole(indexPattern: String, role: String) {
@@ -146,7 +150,8 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
             """.trimMargin()
             persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
             val persistentConnectionResponse = leaderClient!!.lowLevelClient.performRequest(persistentConnectionRequest)
-            assertEquals(HttpStatus.SC_CREATED.toLong(), persistentConnectionResponse.statusLine.statusCode.toLong())
+            assertTrue(HttpStatus.SC_CREATED.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong() ||
+                    HttpStatus.SC_OK.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong())
         }
 
         private fun createDLSRole(indexPattern: String, role: String) {
@@ -177,7 +182,8 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
             """.trimMargin()
             persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
             val persistentConnectionResponse = leaderClient!!.lowLevelClient.performRequest(persistentConnectionRequest)
-            assertEquals(HttpStatus.SC_CREATED.toLong(), persistentConnectionResponse.statusLine.statusCode.toLong())
+            assertTrue(HttpStatus.SC_CREATED.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong() ||
+                    HttpStatus.SC_OK.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong())
         }
 
         private fun createLeaderRoleWithNoPermissions(indexPattern: String, role: String) {
@@ -196,7 +202,8 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
             """.trimMargin()
             persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
             val persistentConnectionResponse = leaderClient!!.lowLevelClient.performRequest(persistentConnectionRequest)
-            assertEquals(HttpStatus.SC_CREATED.toLong(), persistentConnectionResponse.statusLine.statusCode.toLong())
+            assertTrue(HttpStatus.SC_CREATED.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong() ||
+                    HttpStatus.SC_OK.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong())
         }
 
         private fun createLeaderRoleWithPermissions(indexPattern: String, role: String) {
@@ -218,7 +225,8 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
             """.trimMargin()
             persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
             val persistentConnectionResponse = leaderClient!!.lowLevelClient.performRequest(persistentConnectionRequest)
-            assertEquals(HttpStatus.SC_CREATED.toLong(), persistentConnectionResponse.statusLine.statusCode.toLong())
+            assertTrue(HttpStatus.SC_CREATED.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong() ||
+                    HttpStatus.SC_OK.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong())
         }
 
         private fun createRoleWithPermissions(indexPattern: String, role: String) {
@@ -249,7 +257,8 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
             """.trimMargin()
             persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
             val persistentConnectionResponse = followerClient!!.lowLevelClient.performRequest(persistentConnectionRequest)
-            assertEquals(HttpStatus.SC_CREATED.toLong(), persistentConnectionResponse.statusLine.statusCode.toLong())
+            assertTrue(HttpStatus.SC_CREATED.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong() ||
+                    HttpStatus.SC_OK.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong())
         }
 
         private fun addUserToRole(user: String, role: String, clusterName: String) {
@@ -261,7 +270,8 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
 
             persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
             val persistentConnectionResponse = followerClient!!.lowLevelClient.performRequest(persistentConnectionRequest)
-            assertEquals(HttpStatus.SC_CREATED.toLong(), persistentConnectionResponse.statusLine.statusCode.toLong())
+            assertTrue(HttpStatus.SC_CREATED.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong() ||
+                    HttpStatus.SC_OK.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong())
         }
 
         private fun addUsers(){
@@ -289,7 +299,8 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
 
             persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
             val persistentConnectionResponse = followerClient!!.lowLevelClient.performRequest(persistentConnectionRequest)
-            assertEquals(HttpStatus.SC_CREATED.toLong(), persistentConnectionResponse.statusLine.statusCode.toLong())
+            assertTrue(HttpStatus.SC_CREATED.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong() ||
+                    HttpStatus.SC_OK.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong())
         }
     }
 }
