@@ -158,3 +158,7 @@ See [CONTRIBUTING](CONTRIBUTING.md) for more information.
 ## License
 
 This project is licensed under the Apache-2.0 License.
+
+## Copyright
+
+Copyright OpenSearch Contributors. See [NOTICE](NOTICE) for details.
