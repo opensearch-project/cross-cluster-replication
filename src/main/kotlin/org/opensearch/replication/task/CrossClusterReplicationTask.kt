@@ -15,6 +15,7 @@ import org.opensearch.replication.ReplicationSettings
 import org.opensearch.replication.metadata.ReplicationMetadataManager
 import org.opensearch.replication.metadata.store.ReplicationMetadata
 import org.opensearch.replication.task.autofollow.AutoFollowTask
+import org.opensearch.replication.task.shard.ShardReplicationTask
 import org.opensearch.replication.util.coroutineContext
 import org.opensearch.replication.util.suspending
 import kotlinx.coroutines.CancellationException
@@ -142,7 +143,14 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
         }
     }
 
-    fun onIndexOrShardClosed(indexOrShardId: Any) {
+    fun onIndexShardClosed(indexOrShardId: Any) {
+        if (this is ShardReplicationTask) {
+            log.info("Cancelling shard replication task ")
+            cancelTask("$indexOrShardId was closed.")
+        }
+    }
+
+    fun onIndexClosed(indexOrShardId: Any) {
         cancelTask("$indexOrShardId was closed.")
     }
 

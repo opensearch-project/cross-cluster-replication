@@ -198,6 +198,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                         state
                     } else {
                         state = pollShardTaskStatus((followingTaskState as FollowingState).shardReplicationTasks)
+                        followingTaskState = startMissingShardTasks((followingTaskState as FollowingState).shardReplicationTasks)
                         when (state) {
                             is MonitoringState -> {
                                 updateMetadata()
@@ -257,8 +258,24 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         clusterService.addListener(this)
     }
 
+    private suspend fun startMissingShardTasks(shardTasks: Map<ShardId, PersistentTask<ShardReplicationParams>>): IndexReplicationState {
+        val persistentTasks = clusterService.state().metadata.custom<PersistentTasksCustomMetadata>(PersistentTasksCustomMetadata.TYPE)
+
+        val runningShardTasks = persistentTasks.findTasks(ShardReplicationExecutor.TASK_NAME, Predicate { true }).stream()
+                .map { task -> task.params as ShardReplicationParams }
+                .collect(Collectors.toList())
+
+        val runningTasksForCurrentIndex = shardTasks.filter { entry -> runningShardTasks.find { task -> task.followerShardId == entry.key } != null}
+
+        if (shardTasks.size - runningTasksForCurrentIndex.size > 0) {
+            log.info("Starting failed shard tasks")
+            return startShardFollowTasks(runningTasksForCurrentIndex)
+        }
+        return FollowingState(shardTasks)
+    }
+
     private suspend fun pollShardTaskStatus(shardTasks: Map<ShardId, PersistentTask<ShardReplicationParams>>): IndexReplicationState {
-        val failedShardTasks = findFailedOrMissingShardTasks(shardTasks, clusterService.state())
+        val failedShardTasks = findFailedShardTasks(shardTasks, clusterService.state())
         if (failedShardTasks.isNotEmpty()) {
             log.info("Failed shard tasks - ", failedShardTasks)
             var msg = ""
@@ -601,26 +618,18 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         return MonitoringState
     }
 
-    private fun findFailedOrMissingShardTasks(shardTasks: Map<ShardId, PersistentTask<ShardReplicationParams>>, clusterState: ClusterState)
-        :Map<ShardId, PersistentTask<ShardReplicationParams>> {
-
+    private fun findFailedShardTasks(shardTasks: Map<ShardId, PersistentTask<ShardReplicationParams>>, clusterState: ClusterState)
+            :Map<ShardId, PersistentTask<ShardReplicationParams>> {
         val persistentTasks = clusterState.metadata.custom<PersistentTasksCustomMetadata>(PersistentTasksCustomMetadata.TYPE)
 
         val failedShardTasks = persistentTasks.findTasks(ShardReplicationExecutor.TASK_NAME, Predicate { true }).stream()
-            .filter { task -> task.state is org.opensearch.replication.task.shard.FailedState }
-            .map { task -> task as PersistentTask<ShardReplicationParams> }
-            .collect(Collectors.toMap(
-                {t: PersistentTask<ShardReplicationParams> -> t.params!!.followerShardId},
-                {t: PersistentTask<ShardReplicationParams> -> t}))
+                .filter { task -> task.state is org.opensearch.replication.task.shard.FailedState }
+                .map { task -> task as PersistentTask<ShardReplicationParams> }
+                .collect(Collectors.toMap(
+                        {t: PersistentTask<ShardReplicationParams> -> t.params!!.followerShardId},
+                        {t: PersistentTask<ShardReplicationParams> -> t}))
 
-        val runningShardTasks = persistentTasks.findTasks(ShardReplicationExecutor.TASK_NAME, Predicate { true }).stream()
-            .map { task -> task.params as ShardReplicationParams }
-            .collect(Collectors.toList())
-
-        val missingShardTasks = shardTasks.filterKeys { shardId ->
-            runningShardTasks.find { task -> task.followerShardId == shardId } == null}
-
-        return failedShardTasks + missingShardTasks
+        return failedShardTasks
     }
 
     override suspend fun cleanup() {

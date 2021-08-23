@@ -43,7 +43,7 @@ object IndexCloseListener : IndexEventListener {
         val tasksToCancel = tasks.remove(shardId)
         if (tasksToCancel != null) {
             for (task in tasksToCancel) {
-                task.onIndexOrShardClosed(shardId)
+                task.onIndexShardClosed(shardId)
             }
         }
     }
@@ -54,7 +54,7 @@ object IndexCloseListener : IndexEventListener {
         val tasksToCancel = tasks.remove(indexService.index().name)
         if (tasksToCancel != null) {
             for (task in tasksToCancel) {
-                task.onIndexOrShardClosed(indexService.index().name)
+                task.onIndexClosed(indexService.index().name)
             }
         }
     }
