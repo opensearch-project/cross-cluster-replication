@@ -22,10 +22,12 @@ import org.opensearch.replication.stopReplication
 import org.opensearch.replication.getIndexReplicationTask
 import org.opensearch.replication.getShardReplicationTasks
 import org.assertj.core.api.Assertions.assertThat
+import org.junit.Assert
 import org.opensearch.client.RequestOptions
 import org.opensearch.client.indices.CreateIndexRequest
 import org.opensearch.client.tasks.CancelTasksRequest
 import org.opensearch.client.tasks.TaskId
+import org.opensearch.common.settings.Settings
 import java.util.Collections
 
 
@@ -42,10 +44,13 @@ class TaskCancellationIT : MultiClusterRestTestCase() {
     fun `test user triggering cancel on a shard task`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
+        val primaryShards = 3
 
         createConnectionBetweenClusters(FOLLOWER, LEADER)
 
-        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        val createIndexResponse = leaderClient.indices().create(
+                CreateIndexRequest(leaderIndexName).settings(Settings.builder().put("index.number_of_shards", primaryShards).build()),
+                RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
         try {
             followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
@@ -53,7 +58,7 @@ class TaskCancellationIT : MultiClusterRestTestCase() {
             var tasks = Collections.emptyList<String>()
             assertBusy {
                 tasks = followerClient.getShardReplicationTasks(followerIndexName)
-                assertThat(tasks.isEmpty()).isEqualTo(false)
+                Assert.assertEquals(tasks.size, primaryShards)
             }
 
             // Cancel one shard task
@@ -61,10 +66,10 @@ class TaskCancellationIT : MultiClusterRestTestCase() {
                 withWaitForCompletion(true).build()
             followerClient.tasks().cancel(cancelTasksRequest, RequestOptions.DEFAULT)
 
-            // Verify that replication has paused.
+            // Verify that replication is continuing and the shards tasks are up and running
             assertBusy {
-                assertThat(followerClient.getShardReplicationTasks(followerIndexName).isEmpty()).isTrue()
-                assertThat(followerClient.getIndexReplicationTask(followerIndexName).isNullOrBlank()).isTrue()
+                Assert.assertEquals(followerClient.getShardReplicationTasks(followerIndexName).size, primaryShards)
+                assertThat(followerClient.getIndexReplicationTask(followerIndexName).isNotBlank()).isTrue()
                 `validate status due shard task cancellation`(followerClient.replicationStatus(followerIndexName))
             }
         } finally {
