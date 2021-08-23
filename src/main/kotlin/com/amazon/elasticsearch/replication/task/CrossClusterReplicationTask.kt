@@ -19,6 +19,7 @@ import com.amazon.elasticsearch.replication.ReplicationSettings
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
 import com.amazon.elasticsearch.replication.task.autofollow.AutoFollowTask
+import com.amazon.elasticsearch.replication.task.shard.ShardReplicationTask
 import com.amazon.elasticsearch.replication.util.coroutineContext
 import com.amazon.elasticsearch.replication.util.suspending
 import kotlinx.coroutines.CancellationException
@@ -146,7 +147,14 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
         }
     }
 
-    fun onIndexOrShardClosed(indexOrShardId: Any) {
+    fun onIndexShardClosed(indexOrShardId: Any) {
+        if (this is ShardReplicationTask) {
+            log.info("Cancelling shard replication task ")
+            cancelTask("$indexOrShardId was closed.")
+        }
+    }
+
+    fun onIndexClosed(indexOrShardId: Any) {
         cancelTask("$indexOrShardId was closed.")
     }
 

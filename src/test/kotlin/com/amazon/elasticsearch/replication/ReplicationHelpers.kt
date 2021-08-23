@@ -189,9 +189,8 @@ fun `validate aggregated paused status response`(statusResp: Map<String, Any>) {
 }
 
 fun `validate status due shard task cancellation`(statusResp: Map<String, Any>) {
-    Assert.assertEquals("PAUSED", statusResp.getValue("status"))
-    Assert.assertTrue((statusResp.getValue("reason") as String).contains(STATUS_REASON_SHARD_TASK_CANCELLED))
-    Assert.assertTrue(!(statusResp.containsKey("syncing_details")))
+    Assert.assertEquals("SYNCING", statusResp.getValue("status"))
+    Assert.assertTrue(statusResp.containsKey("syncing_details"))
 }
 
 fun `validate status due index task cancellation`(statusResp: Map<String, Any>) {
