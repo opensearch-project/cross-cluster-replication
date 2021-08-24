@@ -176,13 +176,19 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
     /**
      * Sets the security context
      */
-    protected open suspend fun setReplicationMetadata() {
+    open suspend fun setReplicationMetadata() {
         replicationMetadata = if(this is AutoFollowTask) {
             replicationMetadataManager.getAutofollowMetadata(followerIndexName, leaderAlias, fetch_from_primary = true)
         }
         else {
             replicationMetadataManager.getIndexReplicationMetadata(followerIndexName, fetch_from_primary = true)
         }
+    }
+
+    //used only in testing
+    open suspend fun setReplicationMetadata(rm :ReplicationMetadata) {
+        replicationMetadata = rm
+
     }
 
     open class CrossClusterReplicationTaskResponse(val status: String): ActionResponse(), ToXContentObject {

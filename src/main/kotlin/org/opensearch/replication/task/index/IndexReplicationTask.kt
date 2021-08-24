@@ -86,6 +86,7 @@ import org.opensearch.persistent.PersistentTasksCustomMetadata.PersistentTask
 import org.opensearch.persistent.PersistentTasksNodeService
 import org.opensearch.persistent.PersistentTasksService
 import org.opensearch.tasks.TaskId
+import org.opensearch.tasks.TaskManager
 import org.opensearch.threadpool.ThreadPool
 import java.util.function.Predicate
 import java.util.stream.Collectors
@@ -94,7 +95,7 @@ import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
 import kotlin.streams.toList
 
-class IndexReplicationTask(id: Long, type: String, action: String, description: String,
+open class IndexReplicationTask(id: Long, type: String, action: String, description: String,
                            parentTask: TaskId,
                            executor: String,
                            clusterService: ClusterService,
@@ -104,7 +105,8 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
                            private val persistentTasksService: PersistentTasksService,
                            replicationMetadataManager: ReplicationMetadataManager,
                            replicationSettings: ReplicationSettings,
-                           val settingsModule: SettingsModule)
+                           val settingsModule: SettingsModule,
+                           val cso: ClusterStateObserver)
     : CrossClusterReplicationTask(id, type, action, description, parentTask, emptyMap(), executor,
                                   clusterService, threadPool, client, replicationMetadataManager, replicationSettings), ClusterStateListener
     {
@@ -118,7 +120,6 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
     override val followerIndexName = params.followerIndexName
 
     override val log = Loggers.getLogger(javaClass, Index(params.followerIndexName, ClusterState.UNKNOWN_UUID))
-    private val cso = ClusterStateObserver(clusterService, log, threadPool.threadContext)
     private val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
 
     private var shouldCallEvalMonitoring = true
@@ -144,12 +145,17 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
 
         const val SLEEP_TIME_BETWEEN_POLL_MS = 5000L
         const val TASK_CANCELLATION_REASON = "Index replication task was cancelled by user"
+
     }
 
+    //only for testing
+    fun setPersistent(taskManager: TaskManager) {
+        super.init(persistentTasksService, taskManager, "persistentTaskId", allocationId)
+    }
 
     override fun indicesOrShards(): List<Any> = listOf(followerIndexName)
 
-    override suspend fun execute(scope: CoroutineScope, initialState: PersistentTaskState?) {
+    public override suspend fun execute(scope: CoroutineScope, initialState: PersistentTaskState?) {
         checkNotNull(initialState) { "Missing initial state" }
         followingTaskState = FollowingState(emptyMap())
         currentTaskState = initialState as IndexReplicationState

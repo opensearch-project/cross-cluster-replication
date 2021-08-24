@@ -20,6 +20,7 @@ import org.opensearch.replication.util.persistentTasksService
 import org.apache.logging.log4j.LogManager
 import org.opensearch.client.Client
 import org.opensearch.cluster.ClusterState
+import org.opensearch.cluster.ClusterStateObserver
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.settings.SettingsModule
 import org.opensearch.persistent.AllocatedPersistentTask
@@ -64,9 +65,10 @@ class IndexReplicationExecutor(executor: String, private val clusterService: Clu
     override fun createTask(id: Long, type: String, action: String, parentTaskId: TaskId,
                             taskInProgress: PersistentTask<IndexReplicationParams>,
                             headers: MutableMap<String, String>?): AllocatedPersistentTask {
+        val cso = ClusterStateObserver(clusterService, log, threadPool.threadContext)
         return IndexReplicationTask(id, type, action, getDescription(taskInProgress), parentTaskId,
                                     executor, clusterService, threadPool, client, requireNotNull(taskInProgress.params),
-                                    persistentTasksService, replicationMetadataManager, replicationSettings, settingsModule)
+                                    persistentTasksService, replicationMetadataManager, replicationSettings, settingsModule, cso)
     }
 
     override fun getDescription(taskInProgress: PersistentTask<IndexReplicationParams>): String {

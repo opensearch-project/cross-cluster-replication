@@ -26,9 +26,12 @@ import org.opensearch.client.Client
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Singleton
 import org.opensearch.common.settings.Settings
+import org.opensearch.commons.utils.OpenForTesting
 
 @Singleton
-class ReplicationMetadataManager constructor(private val clusterService: ClusterService,
+@OpenForTesting
+//ToDo : Debug why OpenForTesting is not working properly
+open class ReplicationMetadataManager constructor(private val clusterService: ClusterService,
                                              private val client: Client,
                                              private val replicaionMetadataStore: ReplicationMetadataStore) {
 
