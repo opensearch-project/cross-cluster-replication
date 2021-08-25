@@ -11,37 +11,16 @@
 
 package org.opensearch.replication.task.index
 
-import org.opensearch.replication.ReplicationPlugin
-import org.opensearch.replication.ReplicationSettings
-import org.opensearch.replication.action.index.block.UpdateIndexBlockAction
-import org.opensearch.replication.metadata.ReplicationMetadataManager
-import org.opensearch.replication.metadata.store.ReplicationContext
-import org.opensearch.replication.metadata.store.ReplicationMetadata
-import org.opensearch.replication.repository.REMOTE_REPOSITORY_PREFIX
-import org.opensearch.replication.task.shard.ShardReplicationExecutor
-import org.opensearch.replication.task.shard.ShardReplicationParams
 import com.carrotsearch.randomizedtesting.annotations.ThreadLeakScope
 import com.nhaarman.mockitokotlin2.any
 import com.nhaarman.mockitokotlin2.doAnswer
-import com.nhaarman.mockitokotlin2.doReturn
 import com.nhaarman.mockitokotlin2.spy
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.assertj.core.api.Assertions.assertThat
+import org.mockito.Mockito
 import org.opensearch.Version
-import org.opensearch.action.ActionListener
-import org.opensearch.action.ActionRequest
-import org.opensearch.action.ActionResponse
-import org.opensearch.action.ActionType
-import org.opensearch.action.admin.cluster.snapshots.restore.RestoreSnapshotAction
-import org.opensearch.action.admin.cluster.snapshots.restore.RestoreSnapshotResponse
-import org.opensearch.action.admin.indices.recovery.RecoveryAction
-import org.opensearch.action.admin.indices.recovery.RecoveryResponse
-import org.opensearch.action.admin.indices.settings.get.GetSettingsAction
-import org.opensearch.action.admin.indices.settings.get.GetSettingsResponse
-import org.opensearch.action.admin.indices.settings.put.UpdateSettingsAction
-import org.opensearch.action.support.master.AcknowledgedResponse
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.ClusterStateObserver
 import org.opensearch.cluster.RestoreInProgress
@@ -51,11 +30,24 @@ import org.opensearch.cluster.routing.RoutingTable
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.settings.SettingsModule
 import org.opensearch.common.unit.TimeValue
+import org.opensearch.common.xcontent.NamedXContentRegistry
 import org.opensearch.index.Index
 import org.opensearch.index.shard.ShardId
 import org.opensearch.persistent.PersistentTaskParams
 import org.opensearch.persistent.PersistentTasksCustomMetadata
 import org.opensearch.persistent.PersistentTasksService
+import org.opensearch.replication.ReplicationPlugin
+import org.opensearch.replication.ReplicationSettings
+import org.opensearch.replication.metadata.ReplicationMetadataManager
+import org.opensearch.replication.metadata.ReplicationOverallState
+import org.opensearch.replication.metadata.store.ReplicationContext
+import org.opensearch.replication.metadata.store.ReplicationMetadata
+import org.opensearch.replication.metadata.store.ReplicationMetadataStore
+import org.opensearch.replication.metadata.store.ReplicationMetadataStore.Companion.REPLICATION_CONFIG_SYSTEM_INDEX
+import org.opensearch.replication.metadata.store.ReplicationStoreMetadataType
+import org.opensearch.replication.repository.REMOTE_REPOSITORY_PREFIX
+import org.opensearch.replication.task.shard.ShardReplicationExecutor
+import org.opensearch.replication.task.shard.ShardReplicationParams
 import org.opensearch.snapshots.Snapshot
 import org.opensearch.snapshots.SnapshotId
 import org.opensearch.tasks.TaskId.EMPTY_TASK_ID
@@ -65,13 +57,6 @@ import org.opensearch.test.ClusterServiceUtils.setState
 import org.opensearch.test.OpenSearchTestCase
 import org.opensearch.test.OpenSearchTestCase.assertBusy
 import org.opensearch.threadpool.TestThreadPool
-import org.junit.Test
-import org.mockito.Mockito
-import org.opensearch.common.xcontent.NamedXContentRegistry
-import org.opensearch.replication.metadata.ReplicationOverallState
-import org.opensearch.replication.metadata.store.ReplicationMetadataStore
-import org.opensearch.replication.metadata.store.ReplicationMetadataStore.Companion.REPLICATION_CONFIG_SYSTEM_INDEX
-import org.opensearch.replication.metadata.store.ReplicationStoreMetadataType
 import java.util.*
 import java.util.concurrent.TimeUnit
 
@@ -91,7 +76,6 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
     var threadPool = TestThreadPool("ReplicationPluginTest")
     var clusterService  = ClusterServiceUtils.createClusterService(threadPool)
 
-    @Test
     fun testExecute() = runBlocking {
         val replicationTask: IndexReplicationTask = spy(createIndexReplicationTask())
         var taskManager = Mockito.mock(TaskManager::class.java)
