@@ -41,6 +41,8 @@ import org.opensearch.common.io.PathUtils
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.unit.TimeValue
 import org.opensearch.common.util.concurrent.ThreadContext
+import org.opensearch.common.xcontent.DeprecationHandler
+import org.opensearch.common.xcontent.NamedXContentRegistry
 import org.opensearch.common.xcontent.XContentHelper
 import org.opensearch.common.xcontent.XContentType
 import org.opensearch.common.xcontent.json.JsonXContent
@@ -461,6 +463,71 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
 
         persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
         val persistentConnectionResponse = fromCluster.lowLevelClient.performRequest(persistentConnectionRequest)
+        assertEquals(HttpStatus.SC_OK.toLong(), persistentConnectionResponse.statusLine.statusCode.toLong())
+    }
+
+    protected fun getPrimaryNodeForShard(clusterName: String,indexname: String, shardNumber: String) :String {
+        val cluster = getNamedCluster(clusterName)
+        val persistentConnectionRequest = Request("GET", "/_cat/shards?format=json")
+        val persistentConnectionResponse = cluster.lowLevelClient.performRequest(persistentConnectionRequest)
+        val resp = EntityUtils.toString(persistentConnectionResponse.entity);
+
+        var parser = XContentType.JSON.xContent().createParser(NamedXContentRegistry.EMPTY, DeprecationHandler.THROW_UNSUPPORTED_OPERATION, resp)
+        var primaryNode:String = ""
+        parser.list().forEach{ item  ->
+            val entryValue = item.toString()
+
+            val map = entryValue.subSequence(1,entryValue.length-1).split(",").associate {
+                val (key, value) = it.trim().split("=")
+                key to value
+            }
+            if(map.get("shard").equals(shardNumber)
+                    && map.get("index").equals(indexname)
+                    && map.get("prirep").equals("p")) {
+                primaryNode = map.get("node").orEmpty()
+            }
+        }
+
+        return primaryNode
+    }
+
+    protected fun getNodesInCluster(clusterName: String) : List<String>{
+        val cluster = getNamedCluster(clusterName)
+        val persistentConnectionRequest = Request("GET", "/_cat/nodes?format=json")
+
+        val persistentConnectionResponse = cluster.lowLevelClient.performRequest(persistentConnectionRequest)
+        val resp = EntityUtils.toString(persistentConnectionResponse.entity);
+
+        var parser = XContentType.JSON.xContent().createParser(NamedXContentRegistry.EMPTY, DeprecationHandler.THROW_UNSUPPORTED_OPERATION, resp)
+        var nodes = mutableListOf<String>()
+        parser.list().forEach{ item  ->
+            val entryValue = item.toString()
+
+            val map = entryValue.subSequence(1,entryValue.length-1).split(",").associate {
+                val (key, value) = it.trim().split("=")
+                key to value
+            }
+            nodes.add(map.get("name").orEmpty())
+        }
+
+        return nodes
+    }
+
+    protected fun rerouteShard(clusterName: String, shardNumber: String, indexName: String, fromNode: String, toNode : String) {
+        val cluster = getNamedCluster(clusterName)
+        val persistentConnectionRequest = Request("POST", "_cluster/reroute")
+        val entityAsString = """
+                        {
+                          "commands": [{
+                             "move": {
+                               "index": "$indexName", "shard": $shardNumber,
+                               "from_node": "$fromNode", "to_node": "$toNode"
+                             }
+                          }]
+                        }""".trimMargin()
+
+        persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
+        val persistentConnectionResponse = cluster.lowLevelClient.performRequest(persistentConnectionRequest)
         assertEquals(HttpStatus.SC_OK.toLong(), persistentConnectionResponse.statusLine.statusCode.toLong())
     }
 
