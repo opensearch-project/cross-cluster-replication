@@ -30,11 +30,7 @@ class ClusterRerouteLeaderIT : MultiClusterRestTestCase() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
         try {
-            try {
-                changeTemplate(LEADER)
-            } catch (ex1 : Exception) {
-                logger.info("Changing template method is deprecated and throws an warning exception")
-            }
+            changeTemplate(LEADER)
             createConnectionBetweenClusters(FOLLOWER, LEADER)
             val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
             Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
@@ -46,7 +42,7 @@ class ClusterRerouteLeaderIT : MultiClusterRestTestCase() {
                 try {
                     Assertions.assertThat(docs(FOLLOWER, followerIndexName)).contains("dummy data 1")
                 } catch (ex: Exception) {
-                    Assertions.assertThat(true).isEqualTo(false)
+                    Assert.fail("Exception while querying follower cluster. Failing to retry again")
                 }
             }, 1, TimeUnit.MINUTES)
 
@@ -65,7 +61,7 @@ class ClusterRerouteLeaderIT : MultiClusterRestTestCase() {
                 try {
                     Assertions.assertThat(docs(FOLLOWER, followerIndexName)).contains("dummy data 2")
                 } catch (ex: Exception) {
-                    Assertions.assertThat(true).isEqualTo(false)
+                    Assert.fail("Exception while querying follower cluster. Failing to retry again")
                 }
             }, 1, TimeUnit.MINUTES)
         } finally {
