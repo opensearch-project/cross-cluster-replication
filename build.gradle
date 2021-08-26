@@ -62,6 +62,8 @@ apply plugin: 'opensearch.rest-test'
 apply plugin: 'org.jetbrains.kotlin.jvm'
 apply plugin: 'org.jetbrains.kotlin.plugin.allopen'
 
+forbiddenApisTest.ignoreFailures = true
+
 configurations.all {
     if (it.state != Configuration.State.UNRESOLVED) return
     resolutionStrategy {
