@@ -32,10 +32,14 @@ import org.opensearch.action.ActionResponse
 import org.opensearch.client.Client
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.io.stream.StreamOutput
+import org.opensearch.common.settings.Settings
 import org.opensearch.common.xcontent.ToXContent
 import org.opensearch.common.xcontent.ToXContentObject
 import org.opensearch.common.xcontent.XContentBuilder
+import org.opensearch.index.IndexService
+import org.opensearch.index.shard.IndexShard
 import org.opensearch.index.shard.ShardId
+import org.opensearch.indices.cluster.IndicesClusterStateService
 import org.opensearch.persistent.AllocatedPersistentTask
 import org.opensearch.persistent.PersistentTaskState
 import org.opensearch.persistent.PersistentTasksService
@@ -143,15 +147,15 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
         }
     }
 
-    fun onIndexShardClosed(indexOrShardId: Any) {
-        if (this is ShardReplicationTask) {
-            log.info("Cancelling shard replication task ")
-            cancelTask("$indexOrShardId was closed.")
-        }
+    open fun onIndexShardClosed(shardId: ShardId, indexShard: IndexShard?, indexSettings: Settings) {
+        // keeping the default behavior to cancel the task
+        cancelTask("$shardId was closed.")
     }
 
-    fun onIndexClosed(indexOrShardId: Any) {
-        cancelTask("$indexOrShardId was closed.")
+    open fun onIndexRemoved(indexService: IndexService,
+                            reason: IndicesClusterStateService.AllocatedIndices.IndexRemovalReason) {
+        // keeping the default behavior to cancel the task
+        cancelTask("${indexService.index().name} was closed.")
     }
 
     /**
