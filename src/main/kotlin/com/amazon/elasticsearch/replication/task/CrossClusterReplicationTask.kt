@@ -36,10 +36,14 @@ import org.elasticsearch.action.ActionResponse
 import org.elasticsearch.client.Client
 import org.elasticsearch.cluster.service.ClusterService
 import org.elasticsearch.common.io.stream.StreamOutput
+import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.xcontent.ToXContent
 import org.elasticsearch.common.xcontent.ToXContentObject
 import org.elasticsearch.common.xcontent.XContentBuilder
+import org.elasticsearch.index.IndexService
+import org.elasticsearch.index.shard.IndexShard
 import org.elasticsearch.index.shard.ShardId
+import org.elasticsearch.indices.cluster.IndicesClusterStateService
 import org.elasticsearch.persistent.AllocatedPersistentTask
 import org.elasticsearch.persistent.PersistentTaskState
 import org.elasticsearch.persistent.PersistentTasksService
@@ -147,15 +151,15 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
         }
     }
 
-    fun onIndexShardClosed(indexOrShardId: Any) {
-        if (this is ShardReplicationTask) {
-            log.info("Cancelling shard replication task ")
-            cancelTask("$indexOrShardId was closed.")
-        }
+    open fun onIndexShardClosed(shardId: ShardId, indexShard: IndexShard?, indexSettings: Settings) {
+        // keeping the default behavior to cancel the task
+        cancelTask("$shardId was closed.")
     }
 
-    fun onIndexClosed(indexOrShardId: Any) {
-        cancelTask("$indexOrShardId was closed.")
+    open fun onIndexRemoved(indexService: IndexService,
+                            reason: IndicesClusterStateService.AllocatedIndices.IndexRemovalReason) {
+        // keeping the default behavior to cancel the task
+        cancelTask("${indexService.index().name} was closed.")
     }
 
     /**

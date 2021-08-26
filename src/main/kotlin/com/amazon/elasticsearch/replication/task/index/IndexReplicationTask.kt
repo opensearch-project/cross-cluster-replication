@@ -80,9 +80,12 @@ import org.elasticsearch.common.xcontent.ToXContent
 import org.elasticsearch.common.xcontent.ToXContentObject
 import org.elasticsearch.common.xcontent.XContentBuilder
 import org.elasticsearch.index.Index
+import org.elasticsearch.index.IndexService
 import org.elasticsearch.index.IndexSettings
 import org.elasticsearch.index.IndexSettings.INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING
+import org.elasticsearch.index.shard.IndexShard
 import org.elasticsearch.index.shard.ShardId
+import org.elasticsearch.indices.cluster.IndicesClusterStateService
 import org.elasticsearch.indices.recovery.RecoveryState
 import org.elasticsearch.persistent.PersistentTaskState
 import org.elasticsearch.persistent.PersistentTasksCustomMetadata
@@ -801,6 +804,18 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
     fun startReplicationTask(replicationParams : ShardReplicationParams) : PersistentTask<ShardReplicationParams> {
         return persistentTasksService.startTask(ShardReplicationTask.taskIdForShard(replicationParams.followerShardId),
             ShardReplicationExecutor.TASK_NAME, replicationParams)
+    }
+
+    override fun onIndexShardClosed(shardId: ShardId, indexShard: IndexShard?, indexSettings: Settings) {
+    }
+
+    override fun onIndexRemoved(indexService: IndexService,
+                                reason: IndicesClusterStateService.AllocatedIndices.IndexRemovalReason) {
+        // cancel the index task only if the index is closed
+        val indexMetadata = indexService.indexSettings.indexMetadata
+        if(indexMetadata.state != IndexMetadata.State.OPEN) {
+            cancelTask("${indexService.index().name} was closed.")
+        }
     }
 
     override fun clusterChanged(event: ClusterChangedEvent) {
