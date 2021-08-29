@@ -150,7 +150,7 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
 
         } finally {
             followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
-            followerClient.stopReplication(leaderIndexName, false)
+            followerClient.stopReplication(leaderIndexName)
         }
     }
 

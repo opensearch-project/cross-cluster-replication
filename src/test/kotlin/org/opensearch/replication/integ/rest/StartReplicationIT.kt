@@ -861,6 +861,8 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                 var statusResp = followerClient.replicationStatus(followerIndexName)
                 `validate status syncing response`(statusResp)
             }
+            TimeUnit.SECONDS.sleep(30)
+
             assertBusy ({
                 Assert.assertEquals(leaderClient.count(CountRequest(leaderIndexName), RequestOptions.DEFAULT).toString(),
                     followerClient.count(CountRequest(followerIndexName), RequestOptions.DEFAULT).toString())
@@ -912,10 +914,11 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             //Given the size of index, the replication should be in RESTORING phase at this point
             leaderClient.snapshot().create(CreateSnapshotRequest("my-repo", "snapshot_1").indices(leaderIndexName), RequestOptions.DEFAULT)
 
-            assertBusy {
-                var statusResp = followerClient.replicationStatus(followerIndexName)
-                `validate status syncing response`(statusResp)
-            }
+            assertBusy({
+                    var statusResp = followerClient.replicationStatus(followerIndexName)
+                    `validate status syncing response`(statusResp)
+                }, 30, TimeUnit.SECONDS
+            )
             assertBusy({
                 Assert.assertEquals(
                     leaderClient.count(CountRequest(leaderIndexName), RequestOptions.DEFAULT).toString(),
