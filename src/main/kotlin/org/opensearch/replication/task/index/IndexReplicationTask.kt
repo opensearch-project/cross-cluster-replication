@@ -174,16 +174,19 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                     }
                 }
                 ReplicationState.RESTORING -> {
+                    log.info("In restoring state")
                     waitForRestore()
                 }
                 ReplicationState.INIT_FOLLOW -> {
+                    log.info("Starting shard tasks")
+                    addIndexBlockForReplication()
                     startShardFollowTasks(emptyMap())
                 }
                 ReplicationState.FOLLOWING -> {
                     if (currentTaskState is FollowingState) {
                         followingTaskState = (currentTaskState as FollowingState)
                         shouldCallEvalMonitoring = false
-                        addIndexBlockForReplication()
+                        MonitoringState
                     } else {
                         throw org.opensearch.replication.ReplicationException("Wrong state type: ${currentTaskState::class}")
                     }
@@ -239,6 +242,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
             PauseIndexReplicationRequest(followerIndexName, TASK_CANCELLATION_REASON))
         super.onCancelled()
     }
+
     private suspend fun failReplication(failedState: FailedState) {
         withContext(NonCancellable) {
             val reason = failedState.errorMsg
@@ -646,10 +650,10 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         clusterService.removeListener(this)
     }
 
-    private suspend fun addIndexBlockForReplication(): IndexReplicationState {
+    private suspend fun addIndexBlockForReplication() {
+        log.info("Adding index block for replication")
         val request = UpdateIndexBlockRequest(followerIndexName, IndexBlockUpdateType.ADD_BLOCK)
         client.suspendExecute(replicationMetadata, UpdateIndexBlockAction.INSTANCE, request, defaultContext = true)
-        return MonitoringState
     }
 
     private suspend fun updateState(newState: IndexReplicationState) : IndexReplicationState {
@@ -815,18 +819,23 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                                 reason: IndicesClusterStateService.AllocatedIndices.IndexRemovalReason) {
         // cancel the index task only if the index is closed
         val indexMetadata = indexService.indexSettings.indexMetadata
+        log.info("onIndexRemoved called")
         if(indexMetadata.state != IndexMetadata.State.OPEN) {
+            log.info("onIndexRemoved cancelling the task")
             cancelTask("${indexService.index().name} was closed.")
         }
     }
 
     override fun clusterChanged(event: ClusterChangedEvent) {
-        log.debug("Cluster metadata listener invoked on index task...")
+        log.info("Cluster metadata listener invoked on index task...")
         if (event.metadataChanged()) {
             val replicationStateParams = getReplicationStateParamsForIndex(clusterService, followerIndexName)
+            log.info("$replicationStateParams from the cluster state")
             if (replicationStateParams == null) {
-                if (PersistentTasksNodeService.Status(State.STARTED) == status)
+                if (PersistentTasksNodeService.Status(State.STARTED) == status) {
+                    log.info("Cancelling index replication stop")
                     cancelTask("Index replication task received an interrupt.")
+                }
             } else if (replicationStateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE] == ReplicationOverallState.PAUSED.name){
                 log.info("Pause state received for index $followerIndexName task")
                 cancelTask("Index replication task received a pause.")
