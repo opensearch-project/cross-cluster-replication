@@ -819,7 +819,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                                 reason: IndicesClusterStateService.AllocatedIndices.IndexRemovalReason) {
         // cancel the index task only if the index is closed
         val indexMetadata = indexService.indexSettings.indexMetadata
-        log.info("onIndexRemoved called")
+        log.debug("onIndexRemoved called")
         if(indexMetadata.state != IndexMetadata.State.OPEN) {
             log.info("onIndexRemoved cancelling the task")
             cancelTask("${indexService.index().name} was closed.")
@@ -827,10 +827,10 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
     }
 
     override fun clusterChanged(event: ClusterChangedEvent) {
-        log.info("Cluster metadata listener invoked on index task...")
+        log.debug("Cluster metadata listener invoked on index task...")
         if (event.metadataChanged()) {
             val replicationStateParams = getReplicationStateParamsForIndex(clusterService, followerIndexName)
-            log.info("$replicationStateParams from the cluster state")
+            log.debug("$replicationStateParams from the cluster state")
             if (replicationStateParams == null) {
                 if (PersistentTasksNodeService.Status(State.STARTED) == status) {
                     log.info("Cancelling index replication stop")

@@ -162,7 +162,7 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
 
         try {
             followerClient.startReplication(StartReplicationRequest(connectionAlias, leaderIndexName, leaderIndexName),
-                    TimeValue.timeValueSeconds(10),true)
+                    TimeValue.timeValueSeconds(10),true, waitForRestore = true)
 
             assertBusy({
                 Assertions.assertThat(followerClient.indices()
