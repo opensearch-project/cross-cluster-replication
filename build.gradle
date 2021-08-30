@@ -280,7 +280,7 @@ class CrossClusterWaitForHttpResource {
 def securityEnabled = findProperty("security") == "true"
 
 File repo = file("$buildDir/testclusters/repo")
-def _numNodes = findProperty('numNodes') as Integer ?: 1
+def _numNodes = findProperty('numNodes') as Integer ?: 2
 testClusters {
     leaderCluster {
         plugin(project.tasks.bundlePlugin.archiveFile)
