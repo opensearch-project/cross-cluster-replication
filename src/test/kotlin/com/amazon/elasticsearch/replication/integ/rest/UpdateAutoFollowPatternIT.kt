@@ -44,7 +44,7 @@ import org.junit.Assert
 import java.util.Locale
 import org.elasticsearch.cluster.metadata.IndexMetadata
 import org.elasticsearch.cluster.metadata.MetadataCreateIndexService
-import org.elasticsearch.replication.ReplicationPlugin
+import com.amazon.elasticsearch.replication.ReplicationPlugin
 import org.elasticsearch.test.ESTestCase.assertBusy
 import java.util.concurrent.TimeUnit
 
