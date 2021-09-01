@@ -11,11 +11,6 @@
 
 package org.opensearch.replication.action.changes
 
-import org.opensearch.replication.util.completeWith
-import org.opensearch.replication.util.coroutineContext
-import org.opensearch.replication.util.waitForGlobalCheckpoint
-import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATION_EXECUTOR_NAME_LEADER
-import org.opensearch.replication.seqno.RemoteClusterTranslogService
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import org.apache.logging.log4j.LogManager
@@ -36,17 +31,25 @@ import org.opensearch.index.IndexSettings
 import org.opensearch.index.shard.ShardId
 import org.opensearch.index.translog.Translog
 import org.opensearch.indices.IndicesService
+import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATION_EXECUTOR_NAME_LEADER
+import org.opensearch.replication.seqno.RemoteClusterStats
+import org.opensearch.replication.seqno.RemoteClusterTranslogService
+import org.opensearch.replication.seqno.RemoteShardMetric
+import org.opensearch.replication.util.completeWith
+import org.opensearch.replication.util.coroutineContext
+import org.opensearch.replication.util.waitForGlobalCheckpoint
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportActionProxy
 import org.opensearch.transport.TransportService
-import java.lang.IllegalStateException
+import java.util.concurrent.TimeUnit
 import kotlin.math.min
 
 class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clusterService: ClusterService,
                                                     transportService: TransportService, actionFilters: ActionFilters,
                                                     indexNameExpressionResolver: IndexNameExpressionResolver,
                                                     private val indicesService: IndicesService,
-                                                    private val translogService: RemoteClusterTranslogService) :
+                                                    private val translogService: RemoteClusterTranslogService,
+                                                    private val remoteStatsService: RemoteClusterStats) :
     TransportSingleShardAction<GetChangesRequest, GetChangesResponse>(
         GetChangesAction.NAME, threadPool, clusterService, transportService, actionFilters,
         indexNameExpressionResolver, ::GetChangesRequest, REPLICATION_EXECUTOR_NAME_LEADER) {
@@ -69,6 +72,12 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
         GlobalScope.launch(threadPool.coroutineContext(REPLICATION_EXECUTOR_NAME_LEADER)) {
             // TODO: Figure out if we need to acquire a primary permit here
             listener.completeWith {
+                var relativeStartNanos  = System.nanoTime()
+                remoteStatsService.stats[shardId] = remoteStatsService.stats.getOrDefault(shardId, RemoteShardMetric())
+                val indexMetric = remoteStatsService.stats[shardId]!!
+
+                indexMetric.lastFetchTime.set(relativeStartNanos)
+
                 val indexShard = indicesService.indexServiceSafe(shardId.index).getShard(shardId.id)
                 if (indexShard.lastSyncedGlobalCheckpoint < request.fromSeqNo) {
                     // There are no new operations to sync. Do a long poll and wait for GlobalCheckpoint to advance. If
@@ -85,6 +94,7 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
                     }
                 }
 
+                relativeStartNanos  = System.nanoTime()
                 // At this point lastSyncedGlobalCheckpoint is at least fromSeqNo
                 val toSeqNo = min(indexShard.lastSyncedGlobalCheckpoint, request.toSeqNo)
 
@@ -103,6 +113,7 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
                 // Translog fetch is disabled or not found
                 if(!fetchFromTranslog) {
                     log.info("Fetching changes from lucene for ${request.shardId} - from:${request.fromSeqNo}, to:$toSeqNo")
+                    relativeStartNanos  = System.nanoTime()
                     indexShard.newChangesSnapshot("odr", request.fromSeqNo, toSeqNo, true).use { snapshot ->
                         ops = ArrayList(snapshot.totalOperations())
                         var op = snapshot.next()
@@ -112,6 +123,21 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
                         }
                     }
                 }
+
+                val tookInNanos = System.nanoTime() - relativeStartNanos
+                val tookInMillis = TimeUnit.NANOSECONDS.toMillis(tookInNanos)
+                if (fetchFromTranslog) {
+                    indexMetric.latencyTlog.addAndGet(tookInMillis)
+                    indexMetric.opsTlog.addAndGet(ops.size.toLong())
+                } else {
+                    indexMetric.latencyLucene.addAndGet(tookInMillis)
+                    indexMetric.opsLucene.addAndGet(ops.size.toLong())
+                }
+                indexMetric.tlogSize.set(indexShard.translogStats().translogSizeInBytes)
+                indexMetric.ops.addAndGet(ops.size.toLong())
+
+                ops.stream().forEach{op -> indexMetric.bytesRead.addAndGet(op.estimateSize()) }
+
                 GetChangesResponse(ops, request.fromSeqNo, indexShard.maxSeqNoOfUpdatesOrDeletes, indexShard.lastSyncedGlobalCheckpoint)
             }
         }
