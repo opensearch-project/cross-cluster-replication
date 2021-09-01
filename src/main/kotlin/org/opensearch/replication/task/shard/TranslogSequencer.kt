@@ -29,6 +29,7 @@ import org.opensearch.index.shard.ShardId
 import org.opensearch.index.translog.Translog
 import org.opensearch.tasks.TaskId
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.TimeUnit
 
 /**
  * A TranslogSequencer allows multiple producers of [Translog.Operation]s to write them in sequence number order to an
@@ -45,7 +46,8 @@ import java.util.concurrent.ConcurrentHashMap
 class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: ReplicationMetadata,
                         private val followerShardId: ShardId,
                         private val leaderAlias: String, private val leaderIndexName: String,
-                        private val parentTaskId: TaskId, private val client: Client, initialSeqNo: Long) {
+                        private val parentTaskId: TaskId, private val client: Client, initialSeqNo: Long,
+                        private val followerClusterStats: FollowerClusterStats) {
 
     private val unAppliedChanges = ConcurrentHashMap<Long, GetChangesResponse>()
     private val log = Loggers.getLogger(javaClass, followerShardId)!!
@@ -62,13 +64,19 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
                                                          leaderAlias, leaderIndexName)
                 replayRequest.parentTask = parentTaskId
                 launch {
+                    var relativeStartNanos  = System.nanoTime()
                     val replayResponse = client.suspendExecute(replicationMetadata, ReplayChangesAction.INSTANCE, replayRequest)
                     if (replayResponse.shardInfo.failed > 0) {
                         replayResponse.shardInfo.failures.forEachIndexed { i, failure ->
                             log.error("Failed replaying changes. Failure:$i:$failure")
                         }
-                        throw org.opensearch.replication.ReplicationException("failed to replay changes", replayResponse.shardInfo.failures)
+                        followerClusterStats.stats[followerShardId]!!.opsWriteFailures.addAndGet(replayResponse.shardInfo.failed.toLong())
+                        throw ReplicationException("failed to replay changes", replayResponse.shardInfo.failures)
                     }
+
+                    val tookInNanos = System.nanoTime() - relativeStartNanos
+                    followerClusterStats.stats[followerShardId]!!.totalWriteTime.addAndGet(TimeUnit.NANOSECONDS.toMillis(tookInNanos))
+                    followerClusterStats.stats[followerShardId]!!.opsWritten.addAndGet(replayRequest.changes.size.toLong())
                 }
                 highWatermark = next.changes.lastOrNull()?.seqNo() ?: highWatermark
             }

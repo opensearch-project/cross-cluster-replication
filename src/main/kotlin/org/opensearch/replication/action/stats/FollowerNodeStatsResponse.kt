@@ -16,24 +16,24 @@ import org.opensearch.cluster.node.DiscoveryNode
 import org.opensearch.common.io.stream.StreamInput
 import org.opensearch.common.io.stream.StreamOutput
 import org.opensearch.index.shard.ShardId
-import org.opensearch.replication.seqno.RemoteShardMetric
-import org.opensearch.replication.seqno.RemoteShardMetric.RemoteStats
+import org.opensearch.replication.task.shard.FollowerShardMetric
+import org.opensearch.replication.task.shard.FollowerShardMetric.FollowerStats
 import java.io.IOException
 
-class LeaderNodeStatsResponse : BaseNodeResponse {
-    var remoteStats :Map<ShardId, RemoteStats>
+class FollowerNodeStatsResponse : BaseNodeResponse {
+    var stats :Map<ShardId, FollowerStats>
 
     constructor(inp: StreamInput) : super(inp) {
-        remoteStats = inp.readMap(::ShardId, ::RemoteStats)
+        stats = inp.readMap(::ShardId, ::FollowerStats)
     }
 
-    constructor(node : DiscoveryNode, remoteClusterStats: Map<ShardId, RemoteShardMetric>) : super(node) {
-        remoteStats = remoteClusterStats.mapValues { (_ , v) -> v.createStats()  }
+    constructor(node : DiscoveryNode, remoteClusterStats: Map<ShardId, FollowerShardMetric>) : super(node) {
+        stats = remoteClusterStats.mapValues { (_ , v) -> v.createStats()  }
     }
 
     @Throws(IOException::class)
     override fun writeTo(out: StreamOutput) {
         super.writeTo(out)
-        out.writeMap(remoteStats, { o, k -> k.writeTo(o)}, { o, v -> v.writeTo(o)})
+        out.writeMap(stats, { o, k -> k.writeTo(o)}, { o, v -> v.writeTo(o)})
     }
 }

@@ -11,12 +11,10 @@
 
 package org.opensearch.replication.action.status
 
-import org.opensearch.replication.metadata.ReplicationMetadataManager
 import org.apache.logging.log4j.LogManager
 import org.opensearch.action.support.ActionFilters
 import org.opensearch.action.support.DefaultShardOperationFailedException
 import org.opensearch.action.support.broadcast.node.TransportBroadcastByNodeAction
-import org.opensearch.client.Client
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.block.ClusterBlockException
 import org.opensearch.cluster.metadata.IndexNameExpressionResolver
@@ -25,7 +23,6 @@ import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Inject
 import org.opensearch.common.io.stream.StreamInput
 import org.opensearch.common.io.stream.Writeable
-import org.opensearch.index.IndexNotFoundException
 import org.opensearch.index.IndexService
 import org.opensearch.indices.IndicesService
 import org.opensearch.threadpool.ThreadPool
@@ -35,13 +32,11 @@ import java.util.*
 
 class TranportShardsInfoAction  @Inject constructor(clusterService: ClusterService,
                                                     transportService: TransportService,
-                                                    replicationMetadataManager: ReplicationMetadataManager,
                                                     threadPool: ThreadPool,
                                                     actionFilters: ActionFilters,
-                                                    client: Client,
                                                     indexNameExpressionResolver: IndexNameExpressionResolver?,
                                                     private val indicesService: IndicesService
-                                                    )
+)
        : TransportBroadcastByNodeAction<
                 ShardInfoRequest,
                 ReplicationStatusResponse,
@@ -85,7 +80,7 @@ class TranportShardsInfoAction  @Inject constructor(clusterService: ClusterServi
         val indexShard = indexService.getShard(shardRouting.shardId().id())
 
         var indexState = indexShard.recoveryState().index
-        if (indexShard.recoveryState().recoverySource.type.equals(org.opensearch.cluster.routing.RecoverySource.Type.SNAPSHOT) and
+        if (indexShard.recoveryState().recoverySource.type.equals(RecoverySource.Type.SNAPSHOT) and
                 (indexState.recoveredBytesPercent() <100)) {
             return ShardInfoResponse(shardRouting.shardId(),"BOOTSTRAPPING",
                     RestoreDetails(indexState.totalBytes(), indexState.recoveredBytes(),

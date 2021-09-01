@@ -118,10 +118,14 @@ import org.opensearch.plugins.EnginePlugin
 import org.opensearch.plugins.PersistentTaskPlugin
 import org.opensearch.plugins.Plugin
 import org.opensearch.plugins.RepositoryPlugin
+import org.opensearch.replication.action.stats.FollowerStatsAction
 import org.opensearch.replication.action.stats.LeaderStatsAction
+import org.opensearch.replication.action.stats.TransportFollowerStatsAction
 import org.opensearch.replication.action.stats.TransportLeaderStatsAction
+import org.opensearch.replication.rest.FollowerStatsHandler
 import org.opensearch.replication.rest.LeaderStatsHandler
 import org.opensearch.replication.seqno.RemoteClusterStats
+import org.opensearch.replication.task.shard.FollowerClusterStats
 import org.opensearch.repositories.RepositoriesService
 import org.opensearch.repositories.Repository
 import org.opensearch.rest.RestController
@@ -142,6 +146,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
     private lateinit var threadPool: ThreadPool
     private lateinit var replicationMetadataManager: ReplicationMetadataManager
     private lateinit var replicationSettings: ReplicationSettings
+    private var followerClusterStats = FollowerClusterStats()
 
     companion object {
         const val REPLICATION_EXECUTOR_NAME_LEADER = "replication_leader"
@@ -184,7 +189,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
         this.replicationMetadataManager = ReplicationMetadataManager(clusterService, client,
                 ReplicationMetadataStore(client, clusterService, xContentRegistry))
         this.replicationSettings = ReplicationSettings(clusterService)
-        return listOf(RemoteClusterRepositoriesService(repositoriesService, clusterService), replicationMetadataManager, replicationSettings)
+        return listOf(RemoteClusterRepositoriesService(repositoriesService, clusterService), replicationMetadataManager, replicationSettings, followerClusterStats)
     }
 
     override fun getGuiceServiceClasses(): Collection<Class<out LifecycleComponent>> {
@@ -213,7 +218,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             ActionHandler(UpdateReplicationStateAction.INSTANCE, TransportUpdateReplicationStateDetails::class.java),
             ActionHandler(ShardsInfoAction.INSTANCE, TranportShardsInfoAction::class.java),
             ActionHandler(ReplicationStatusAction.INSTANCE,TransportReplicationStatusAction::class.java),
-            ActionHandler(LeaderStatsAction.INSTANCE, TransportLeaderStatsAction::class.java)
+            ActionHandler(LeaderStatsAction.INSTANCE, TransportLeaderStatsAction::class.java),
+            ActionHandler(FollowerStatsAction.INSTANCE, TransportFollowerStatsAction::class.java)
         )
     }
 
@@ -229,7 +235,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             UpdateIndexHandler(),
             StopIndexReplicationHandler(),
             ReplicationStatusHandler(),
-            LeaderStatsHandler())
+            LeaderStatsHandler(),
+            FollowerStatsHandler())
     }
 
     override fun getExecutorBuilders(settings: Settings): List<ExecutorBuilder<*>> {
@@ -263,7 +270,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                                             expressionResolver: IndexNameExpressionResolver)
         : List<PersistentTasksExecutor<*>> {
         return listOf(
-            ShardReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager, replicationSettings),
+            ShardReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager, replicationSettings, followerClusterStats),
             IndexReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager, replicationSettings, settingsModule),
             AutoFollowExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager, replicationSettings))
     }
