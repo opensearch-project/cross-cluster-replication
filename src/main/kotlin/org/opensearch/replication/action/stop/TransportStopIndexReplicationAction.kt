@@ -59,6 +59,7 @@ import org.opensearch.common.io.stream.StreamInput
 import org.opensearch.common.settings.Settings
 import org.opensearch.index.IndexNotFoundException
 import org.opensearch.index.shard.ShardId
+import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
 import java.io.IOException
@@ -137,7 +138,7 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                 replicationMetadataManager.deleteIndexReplicationMetadata(request.indexName)
                 listener.onResponse(AcknowledgedResponse(true))
             } catch (e: Exception) {
-                log.error("Stop replication failed for index[${request.indexName}] with error $e")
+                log.error("Stop replication failed for index[${request.indexName}] with error ${e.stackTraceToString()}")
                 listener.onFailure(e)
             }
         }

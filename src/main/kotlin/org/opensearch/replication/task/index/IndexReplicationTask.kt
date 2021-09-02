@@ -814,6 +814,8 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
     }
 
     override fun onIndexShardClosed(shardId: ShardId, indexShard: IndexShard?, indexSettings: Settings) {
+        // Index task shouldn't cancel if the shards are moved within the cluster.
+        // Currently, we don't have any actions to trigger based on this event
     }
 
     override fun onIndexRemoved(indexService: IndexService,
