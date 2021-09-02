@@ -77,7 +77,7 @@ class SecurityCustomRolesLeaderIT: SecurityBase() {
                 try {
                     Assertions.assertThat(docs(FOLLOWER, followerIndexName)).contains("dummy data 1")
                 } catch (ex: Exception) {
-                    Assertions.assertThat(true).isEqualTo(false)
+                    Assert.fail("Exception while querying follower cluster. Failing to retry again")
                 }
             }, 1, TimeUnit.MINUTES)
 
