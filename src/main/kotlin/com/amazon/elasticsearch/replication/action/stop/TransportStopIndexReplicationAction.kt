@@ -31,6 +31,7 @@ import com.amazon.elasticsearch.replication.seqno.RemoteClusterRetentionLeaseHel
 import com.amazon.elasticsearch.replication.task.index.IndexReplicationParams
 import com.amazon.elasticsearch.replication.util.completeWith
 import com.amazon.elasticsearch.replication.util.coroutineContext
+import com.amazon.elasticsearch.replication.util.stackTraceToString
 import com.amazon.elasticsearch.replication.util.suspendExecute
 import com.amazon.elasticsearch.replication.util.suspending
 import com.amazon.elasticsearch.replication.util.waitForClusterStateUpdate
@@ -143,7 +144,7 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                 replicationMetadataManager.deleteIndexReplicationMetadata(request.indexName)
                 listener.onResponse(AcknowledgedResponse(true))
             } catch (e: Exception) {
-                log.error("Stop replication failed for index[${request.indexName}] with error $e")
+                log.error("Stop replication failed for index[${request.indexName}] with error ${e.stackTraceToString()}")
                 listener.onFailure(e)
             }
         }

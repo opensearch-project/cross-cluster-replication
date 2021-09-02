@@ -152,13 +152,17 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
     }
 
     open fun onIndexShardClosed(shardId: ShardId, indexShard: IndexShard?, indexSettings: Settings) {
-        // keeping the default behavior to cancel the task
+        // Replication task are tied to shards/index on the node.
+        // On shard closed event, task running on the node can be cancelled
+        // Sub classes can override this to take action/cancel the task
         cancelTask("$shardId was closed.")
     }
 
     open fun onIndexRemoved(indexService: IndexService,
                             reason: IndicesClusterStateService.AllocatedIndices.IndexRemovalReason) {
-        // keeping the default behavior to cancel the task
+        // Replication task are tied to shards/index on the node.
+        // On index removed event, task running on the node can be cancelled
+        // Sub classes can override this to take action/cancel the task
         cancelTask("${indexService.index().name} was closed.")
     }
 
