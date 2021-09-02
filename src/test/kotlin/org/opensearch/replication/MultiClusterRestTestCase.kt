@@ -558,6 +558,16 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
         return resp
     }
 
+    protected fun changeTemplate(clusterName: String) {
+        val cluster = getNamedCluster(clusterName)
+        val persistentConnectionRequest = Request("PUT", "_template/all")
+        val entityAsString = """
+                        {"template": "*", "settings": {"number_of_shards": 1, "number_of_replicas": 0}}""".trimMargin()
+
+        persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
+        cluster.lowLevelClient.performRequest(persistentConnectionRequest)
+    }
+
     protected fun setMetadataSyncDelay() {
         val followerClient = getClientForCluster(FOLLOWER)
         val updateSettingsRequest = ClusterUpdateSettingsRequest()
