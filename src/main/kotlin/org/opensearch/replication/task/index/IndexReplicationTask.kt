@@ -268,8 +268,9 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
 
         val runningTasksForCurrentIndex = shardTasks.filter { entry -> runningShardTasks.find { task -> task.followerShardId == entry.key } != null}
 
-        if (shardTasks.size - runningTasksForCurrentIndex.size > 0) {
-            log.info("Starting failed shard tasks")
+        val numMissingTasks = shardTasks.size - runningTasksForCurrentIndex.size
+        if (numMissingTasks > 0) {
+            log.info("Starting $numMissingTasks missing shard task(s)")
             return startShardFollowTasks(runningTasksForCurrentIndex)
         }
         return FollowingState(shardTasks)
