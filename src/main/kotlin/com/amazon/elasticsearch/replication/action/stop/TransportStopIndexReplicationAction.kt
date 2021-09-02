@@ -31,6 +31,7 @@ import com.amazon.elasticsearch.replication.seqno.RemoteClusterRetentionLeaseHel
 import com.amazon.elasticsearch.replication.task.index.IndexReplicationParams
 import com.amazon.elasticsearch.replication.util.completeWith
 import com.amazon.elasticsearch.replication.util.coroutineContext
+import com.amazon.elasticsearch.replication.util.stackTraceToString
 import com.amazon.elasticsearch.replication.util.suspendExecute
 import com.amazon.elasticsearch.replication.util.suspending
 import com.amazon.elasticsearch.replication.util.waitForClusterStateUpdate
@@ -91,17 +92,25 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
     override fun masterOperation(request: StopIndexReplicationRequest, state: ClusterState,
                                  listener: ActionListener<AcknowledgedResponse>) {
         launch(Dispatchers.Unconfined + threadPool.coroutineContext()) {
-            listener.completeWith {
+            try {
                 log.info("Stopping index replication on index:" + request.indexName)
                 val isPaused = validateStopReplicationRequest(request)
 
                 val updateIndexBlockRequest = UpdateIndexBlockRequest(request.indexName,IndexBlockUpdateType.REMOVE_BLOCK)
-                client.suspendExecute(UpdateIndexBlockAction.INSTANCE, updateIndexBlockRequest, injectSecurityContext = true)
+                val updateIndexBlockResponse = client.suspendExecute(UpdateIndexBlockAction.INSTANCE, updateIndexBlockRequest, injectSecurityContext = true)
+                if(!updateIndexBlockResponse.isAcknowledged) {
+                    throw ElasticsearchException("Failed to remove index block on ${request.indexName}")
+                }
 
                 // Index will be deleted if replication is stopped while it is restoring.  So no need to close/reopen
                 val restoring = clusterService.state().custom<RestoreInProgress>(RestoreInProgress.TYPE, RestoreInProgress.EMPTY).any { entry ->
                     entry.indices().any { it == request.indexName }
                 }
+
+                if(restoring) {
+                    log.info("Index[${request.indexName}] is in restoring stage")
+                }
+
                 if (!restoring &&
                         state.routingTable.hasIndex(request.indexName)) {
 
@@ -114,6 +123,7 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                 val replMetadata = replicationMetadataManager.getIndexReplicationMetadata(request.indexName)
                 // If paused , we need to make attempt to clear retention leases as Shard Tasks are non-existent
                 if (isPaused) {
+                    log.info("Index[${request.indexName}] is in paused state")
                     attemptRemoveRetentionLease(replMetadata, request.indexName)
                 }
 
@@ -132,7 +142,10 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                     }
                 }
                 replicationMetadataManager.deleteIndexReplicationMetadata(request.indexName)
-                AcknowledgedResponse(true)
+                listener.onResponse(AcknowledgedResponse(true))
+            } catch (e: Exception) {
+                log.error("Stop replication failed for index[${request.indexName}] with error ${e.stackTraceToString()}")
+                listener.onFailure(e)
             }
         }
     }

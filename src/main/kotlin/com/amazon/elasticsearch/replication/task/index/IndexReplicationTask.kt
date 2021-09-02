@@ -80,9 +80,12 @@ import org.elasticsearch.common.xcontent.ToXContent
 import org.elasticsearch.common.xcontent.ToXContentObject
 import org.elasticsearch.common.xcontent.XContentBuilder
 import org.elasticsearch.index.Index
+import org.elasticsearch.index.IndexService
 import org.elasticsearch.index.IndexSettings
 import org.elasticsearch.index.IndexSettings.INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING
+import org.elasticsearch.index.shard.IndexShard
 import org.elasticsearch.index.shard.ShardId
+import org.elasticsearch.indices.cluster.IndicesClusterStateService
 import org.elasticsearch.indices.recovery.RecoveryState
 import org.elasticsearch.persistent.PersistentTaskState
 import org.elasticsearch.persistent.PersistentTasksCustomMetadata
@@ -169,16 +172,19 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
                     }
                 }
                 ReplicationState.RESTORING -> {
+                    log.info("In restoring state")
                     waitForRestore()
                 }
                 ReplicationState.INIT_FOLLOW -> {
+                    log.info("Starting shard tasks")
+                    addIndexBlockForReplication()
                     startShardFollowTasks(emptyMap())
                 }
                 ReplicationState.FOLLOWING -> {
                     if (currentTaskState is FollowingState) {
                         followingTaskState = (currentTaskState as FollowingState)
                         shouldCallEvalMonitoring = false
-                        addIndexBlockForReplication()
+                        MonitoringState
                     } else {
                         throw ReplicationException("Wrong state type: ${currentTaskState::class}")
                     }
@@ -196,6 +202,7 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
                         state
                     } else {
                         state = pollShardTaskStatus((followingTaskState as FollowingState).shardReplicationTasks)
+                        followingTaskState = startMissingShardTasks((followingTaskState as FollowingState).shardReplicationTasks)
                         when (state) {
                             is MonitoringState -> {
                                 updateMetadata()
@@ -255,8 +262,24 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
         clusterService.addListener(this)
     }
 
+    private suspend fun startMissingShardTasks(shardTasks: Map<ShardId, PersistentTask<ShardReplicationParams>>): IndexReplicationState {
+        val persistentTasks = clusterService.state().metadata.custom<PersistentTasksCustomMetadata>(PersistentTasksCustomMetadata.TYPE)
+
+        val runningShardTasks = persistentTasks.findTasks(ShardReplicationExecutor.TASK_NAME, Predicate { true }).stream()
+                .map { task -> task.params as ShardReplicationParams }
+                .collect(Collectors.toList())
+
+        val runningTasksForCurrentIndex = shardTasks.filter { entry -> runningShardTasks.find { task -> task.followerShardId == entry.key } != null}
+        val numMissingTasks = shardTasks.size - runningTasksForCurrentIndex.size
+        if (numMissingTasks > 0) {
+            log.info("Starting $numMissingTasks missing shard task(s)")
+            return startShardFollowTasks(runningTasksForCurrentIndex)
+        }
+        return FollowingState(shardTasks)
+    }
+
     private suspend fun pollShardTaskStatus(shardTasks: Map<ShardId, PersistentTask<ShardReplicationParams>>): IndexReplicationState {
-        val failedShardTasks = findFailedOrMissingShardTasks(shardTasks, clusterService.state())
+        val failedShardTasks = findFailedShardTasks(shardTasks, clusterService.state())
         if (failedShardTasks.isNotEmpty()) {
             log.info("Failed shard tasks - ", failedShardTasks)
             var msg = ""
@@ -599,26 +622,18 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
         return MonitoringState
     }
 
-    private fun findFailedOrMissingShardTasks(shardTasks: Map<ShardId, PersistentTask<ShardReplicationParams>>, clusterState: ClusterState)
-        :Map<ShardId, PersistentTask<ShardReplicationParams>> {
-
+    private fun findFailedShardTasks(shardTasks: Map<ShardId, PersistentTask<ShardReplicationParams>>, clusterState: ClusterState)
+            :Map<ShardId, PersistentTask<ShardReplicationParams>> {
         val persistentTasks = clusterState.metadata.custom<PersistentTasksCustomMetadata>(PersistentTasksCustomMetadata.TYPE)
 
         val failedShardTasks = persistentTasks.findTasks(ShardReplicationExecutor.TASK_NAME, Predicate { true }).stream()
-            .filter { task -> task.state is com.amazon.elasticsearch.replication.task.shard.FailedState }
-            .map { task -> task as PersistentTask<ShardReplicationParams> }
-            .collect(Collectors.toMap(
-                {t: PersistentTask<ShardReplicationParams> -> t.params!!.followerShardId},
-                {t: PersistentTask<ShardReplicationParams> -> t}))
+                .filter { task -> task.state is com.amazon.elasticsearch.replication.task.shard.FailedState }
+                .map { task -> task as PersistentTask<ShardReplicationParams> }
+                .collect(Collectors.toMap(
+                        {t: PersistentTask<ShardReplicationParams> -> t.params!!.followerShardId},
+                        {t: PersistentTask<ShardReplicationParams> -> t}))
 
-        val runningShardTasks = persistentTasks.findTasks(ShardReplicationExecutor.TASK_NAME, Predicate { true }).stream()
-            .map { task -> task.params as ShardReplicationParams }
-            .collect(Collectors.toList())
-
-        val missingShardTasks = shardTasks.filterKeys { shardId ->
-            runningShardTasks.find { task -> task.followerShardId == shardId } == null}
-
-        return failedShardTasks + missingShardTasks
+        return failedShardTasks
     }
 
     override suspend fun cleanup() {
@@ -632,10 +647,10 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
         clusterService.removeListener(this)
     }
 
-    private suspend fun addIndexBlockForReplication(): IndexReplicationState {
+    private suspend fun addIndexBlockForReplication() {
+        log.info("Adding index block for replication")
         val request = UpdateIndexBlockRequest(followerIndexName, IndexBlockUpdateType.ADD_BLOCK)
         client.suspendExecute(replicationMetadata, UpdateIndexBlockAction.INSTANCE, request, defaultContext = true)
-        return MonitoringState
     }
 
     private suspend fun updateState(newState: IndexReplicationState) : IndexReplicationState {
@@ -794,13 +809,32 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
             ShardReplicationExecutor.TASK_NAME, replicationParams)
     }
 
+    override fun onIndexShardClosed(shardId: ShardId, indexShard: IndexShard?, indexSettings: Settings) {
+        // Index task shouldn't cancel if the shards are moved within the cluster.
+        // Currently, we don't have any actions to trigger based on this event
+    }
+
+    override fun onIndexRemoved(indexService: IndexService,
+                                reason: IndicesClusterStateService.AllocatedIndices.IndexRemovalReason) {
+        // cancel the index task only if the index is closed
+        val indexMetadata = indexService.indexSettings.indexMetadata
+        log.debug("onIndexRemoved called")
+        if(indexMetadata.state != IndexMetadata.State.OPEN) {
+            log.info("onIndexRemoved cancelling the task")
+            cancelTask("${indexService.index().name} was closed.")
+        }
+    }
+
     override fun clusterChanged(event: ClusterChangedEvent) {
         log.debug("Cluster metadata listener invoked on index task...")
         if (event.metadataChanged()) {
             val replicationStateParams = getReplicationStateParamsForIndex(clusterService, followerIndexName)
+            log.info("$replicationStateParams from the cluster state")
             if (replicationStateParams == null) {
-                if (PersistentTasksNodeService.Status(State.STARTED) == status)
+                if (PersistentTasksNodeService.Status(State.STARTED) == status) {
+                    log.debug("Cancelling index replication stop")
                     cancelTask("Index replication task received an interrupt.")
+                }
             } else if (replicationStateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE] == ReplicationOverallState.PAUSED.name){
                 log.info("Pause state received for index $followerIndexName task")
                 cancelTask("Index replication task received a pause.")

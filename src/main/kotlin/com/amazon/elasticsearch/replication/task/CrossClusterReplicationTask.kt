@@ -19,6 +19,7 @@ import com.amazon.elasticsearch.replication.ReplicationSettings
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
 import com.amazon.elasticsearch.replication.task.autofollow.AutoFollowTask
+import com.amazon.elasticsearch.replication.task.shard.ShardReplicationTask
 import com.amazon.elasticsearch.replication.util.coroutineContext
 import com.amazon.elasticsearch.replication.util.suspending
 import kotlinx.coroutines.CancellationException
@@ -35,10 +36,14 @@ import org.elasticsearch.action.ActionResponse
 import org.elasticsearch.client.Client
 import org.elasticsearch.cluster.service.ClusterService
 import org.elasticsearch.common.io.stream.StreamOutput
+import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.xcontent.ToXContent
 import org.elasticsearch.common.xcontent.ToXContentObject
 import org.elasticsearch.common.xcontent.XContentBuilder
+import org.elasticsearch.index.IndexService
+import org.elasticsearch.index.shard.IndexShard
 import org.elasticsearch.index.shard.ShardId
+import org.elasticsearch.indices.cluster.IndicesClusterStateService
 import org.elasticsearch.persistent.AllocatedPersistentTask
 import org.elasticsearch.persistent.PersistentTaskState
 import org.elasticsearch.persistent.PersistentTasksService
@@ -146,8 +151,19 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
         }
     }
 
-    fun onIndexOrShardClosed(indexOrShardId: Any) {
-        cancelTask("$indexOrShardId was closed.")
+    open fun onIndexShardClosed(shardId: ShardId, indexShard: IndexShard?, indexSettings: Settings) {
+        // Replication task are tied to shards/index on the node.
+        // On shard closed event, task running on the node can be cancelled
+        // Sub classes can override this to take action/cancel the task
+        cancelTask("$shardId was closed.")
+    }
+
+    open fun onIndexRemoved(indexService: IndexService,
+                            reason: IndicesClusterStateService.AllocatedIndices.IndexRemovalReason) {
+        // Replication task are tied to shards/index on the node.
+        // On index removed event, task running on the node can be cancelled
+        // Sub classes can override this to take action/cancel the task
+        cancelTask("${indexService.index().name} was closed.")
     }
 
     /**
