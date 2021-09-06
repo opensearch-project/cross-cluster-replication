@@ -26,7 +26,8 @@ class RemoteClusterRetentionLeaseHelper constructor(val followerClusterName: Str
 
     companion object {
         private val log = LogManager.getLogger(RemoteClusterRetentionLeaseHelper::class.java)
-        fun retentionLeaseSource(followerClusterName: String): String = "replication:${followerClusterName}"
+        const val RETENTION_LEASE_PREFIX = "replication:"
+        fun retentionLeaseSource(followerClusterName: String): String = "${RETENTION_LEASE_PREFIX}${followerClusterName}"
 
         fun retentionLeaseIdForShard(followerClusterName: String, followerShardId: ShardId): String {
             val retentionLeaseSource = retentionLeaseSource(followerClusterName)

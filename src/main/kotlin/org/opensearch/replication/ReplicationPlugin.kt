@@ -118,6 +118,10 @@ import org.opensearch.plugins.EnginePlugin
 import org.opensearch.plugins.PersistentTaskPlugin
 import org.opensearch.plugins.Plugin
 import org.opensearch.plugins.RepositoryPlugin
+import org.opensearch.replication.action.stats.LeaderStatsAction
+import org.opensearch.replication.action.stats.TransportLeaderStatsAction
+import org.opensearch.replication.rest.LeaderStatsHandler
+import org.opensearch.replication.seqno.RemoteClusterStats
 import org.opensearch.repositories.RepositoriesService
 import org.opensearch.repositories.Repository
 import org.opensearch.rest.RestController
@@ -184,7 +188,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
     }
 
     override fun getGuiceServiceClasses(): Collection<Class<out LifecycleComponent>> {
-        return listOf(Injectables::class.java,
+        return listOf(Injectables::class.java, RemoteClusterStats::class.java,
                 RemoteClusterRestoreLeaderService::class.java, RemoteClusterTranslogService::class.java)
     }
 
@@ -208,7 +212,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             ActionHandler(SetupChecksAction.INSTANCE, TransportSetupChecksAction::class.java),
             ActionHandler(UpdateReplicationStateAction.INSTANCE, TransportUpdateReplicationStateDetails::class.java),
             ActionHandler(ShardsInfoAction.INSTANCE, TranportShardsInfoAction::class.java),
-            ActionHandler(ReplicationStatusAction.INSTANCE,TransportReplicationStatusAction::class.java)
+            ActionHandler(ReplicationStatusAction.INSTANCE,TransportReplicationStatusAction::class.java),
+            ActionHandler(LeaderStatsAction.INSTANCE, TransportLeaderStatsAction::class.java)
         )
     }
 
@@ -223,7 +228,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             ResumeIndexReplicationHandler(),
             UpdateIndexHandler(),
             StopIndexReplicationHandler(),
-            ReplicationStatusHandler())
+            ReplicationStatusHandler(),
+            LeaderStatsHandler())
     }
 
     override fun getExecutorBuilders(settings: Settings): List<ExecutorBuilder<*>> {
