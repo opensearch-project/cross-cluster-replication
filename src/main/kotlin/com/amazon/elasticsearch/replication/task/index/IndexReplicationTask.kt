@@ -420,9 +420,7 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
                             continue
                         }
                         val setting = indexScopedSettings[key]
-                        if (setting.isPrivateIndex) {
-                            log.info("private setting $key skipping")
-                        } else {
+                        if (!setting.isPrivateIndex) {
                             desiredSettingsBuilder.copy(key, settings);
                         }
                     }

@@ -45,6 +45,8 @@ import com.amazon.elasticsearch.replication.action.setup.SetupChecksAction
 import com.amazon.elasticsearch.replication.action.setup.TransportSetupChecksAction
 import com.amazon.elasticsearch.replication.action.setup.TransportValidatePermissionsAction
 import com.amazon.elasticsearch.replication.action.setup.ValidatePermissionsAction
+import com.amazon.elasticsearch.replication.action.stats.LeaderStatsAction
+import com.amazon.elasticsearch.replication.action.stats.TransportLeaderStatsAction
 import com.amazon.elasticsearch.replication.action.status.ReplicationStatusAction
 import com.amazon.elasticsearch.replication.action.status.ShardsInfoAction
 import com.amazon.elasticsearch.replication.action.status.TranportShardsInfoAction
@@ -69,6 +71,7 @@ import com.amazon.elasticsearch.replication.rest.ResumeIndexReplicationHandler
 import com.amazon.elasticsearch.replication.rest.StopIndexReplicationHandler
 import com.amazon.elasticsearch.replication.rest.UpdateAutoFollowPatternsHandler
 import com.amazon.elasticsearch.replication.rest.UpdateIndexHandler
+import com.amazon.elasticsearch.replication.seqno.RemoteClusterStats
 import com.amazon.elasticsearch.replication.seqno.RemoteClusterTranslogService
 import com.amazon.elasticsearch.replication.task.IndexCloseListener
 import com.amazon.elasticsearch.replication.task.autofollow.AutoFollowExecutor
@@ -131,6 +134,7 @@ import org.elasticsearch.threadpool.FixedExecutorBuilder
 import org.elasticsearch.threadpool.ScalingExecutorBuilder
 import org.elasticsearch.threadpool.ThreadPool
 import org.elasticsearch.watcher.ResourceWatcherService
+import org.opensearch.replication.rest.LeaderStatsHandler
 import java.util.Optional
 import java.util.function.Supplier
 
@@ -186,7 +190,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
     }
 
     override fun getGuiceServiceClasses(): Collection<Class<out LifecycleComponent>> {
-        return listOf(Injectables::class.java,
+        return listOf(Injectables::class.java, RemoteClusterStats::class.java,
                 RemoteClusterRestoreLeaderService::class.java, RemoteClusterTranslogService::class.java)
     }
 
@@ -210,7 +214,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             ActionHandler(SetupChecksAction.INSTANCE, TransportSetupChecksAction::class.java),
             ActionHandler(UpdateReplicationStateAction.INSTANCE, TransportUpdateReplicationStateDetails::class.java),
             ActionHandler(ShardsInfoAction.INSTANCE, TranportShardsInfoAction::class.java),
-            ActionHandler(ReplicationStatusAction.INSTANCE,TransportReplicationStatusAction::class.java)
+            ActionHandler(ReplicationStatusAction.INSTANCE,TransportReplicationStatusAction::class.java),
+            ActionHandler(LeaderStatsAction.INSTANCE, TransportLeaderStatsAction::class.java)
         )
     }
 
@@ -225,7 +230,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             ResumeIndexReplicationHandler(),
             UpdateIndexHandler(),
             StopIndexReplicationHandler(),
-            ReplicationStatusHandler())
+            ReplicationStatusHandler(),
+            LeaderStatsHandler())
     }
 
     override fun getExecutorBuilders(settings: Settings): List<ExecutorBuilder<*>> {

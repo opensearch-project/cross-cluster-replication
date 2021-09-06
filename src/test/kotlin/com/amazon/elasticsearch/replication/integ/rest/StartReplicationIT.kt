@@ -27,6 +27,7 @@ import com.amazon.elasticsearch.replication.replicationStatus
 import com.amazon.elasticsearch.replication.resumeReplication
 import com.amazon.elasticsearch.replication.`validate paused status response due to leader index deleted`
 import com.amazon.elasticsearch.replication.`validate status syncing response`
+import com.amazon.elasticsearch.replication.leaderStats
 import com.amazon.elasticsearch.replication.startReplication
 import com.amazon.elasticsearch.replication.stopReplication
 import com.amazon.elasticsearch.replication.updateAutoFollowPattern
@@ -71,6 +72,7 @@ import org.elasticsearch.index.mapper.MapperService
 import org.elasticsearch.repositories.fs.FsRepository
 import org.elasticsearch.test.ESTestCase.assertBusy
 import org.junit.Assert
+import java.lang.Thread.sleep
 import java.nio.file.Files
 import java.util.concurrent.TimeUnit
 
@@ -156,7 +158,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             leaderClient.lowLevelClient.performRequest(Request("POST", "/" + leaderIndexName + "/_close"))
             assertBusy ({
                 try {
-                    assertThat(followerClient.replicationStatus(followerIndexName)).containsKey("status")
+                    assertThat(followerClient.replicationStatus(followerIndexName)).containsKey("status1")
                     var statusResp = followerClient.replicationStatus(followerIndexName)
                     `validate paused status on closed index`(statusResp)
                 } catch (e : Exception) {
@@ -940,6 +942,52 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         assertThatThrownBy {
             followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
         }.isInstanceOf(ResponseException::class.java).hasMessageContaining("Cannot Replicate an index where the setting index.soft_deletes.enabled is disabled")
+    }
+
+    @AwaitsFix(bugUrl = "")
+    fun `test leader stats`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+
+        val settings = Settings.builder()
+                .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 2)
+                .build()
+
+        val createIndexResponse = leaderClient.indices().create(
+                CreateIndexRequest(leaderIndexName).settings(settings),
+                RequestOptions.DEFAULT
+        )
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+
+        try {
+            followerClient.startReplication(
+                    StartReplicationRequest("source", leaderIndexName, followerIndexName),
+                    TimeValue.timeValueSeconds(10),
+                    true
+            )
+
+            val docCount = 50
+
+            for (i in 1..docCount) {
+                val sourceMap = mapOf("name" to randomAlphaOfLength(5))
+                leaderClient.index(IndexRequest(leaderIndexName).id(i.toString()).source(sourceMap), RequestOptions.DEFAULT)
+            }
+
+
+            TimeUnit.SECONDS.sleep(5)
+
+            val stats = leaderClient.leaderStats()
+            assertThat(stats.size).isEqualTo(9)
+            assertThat(stats.getValue("num_replicated_indices").toString()).isEqualTo("1")
+            assertThat(stats.getValue("operations_read").toString()).isEqualTo(docCount.toString())
+            assertThat(stats.getValue("operations_read_lucene").toString()).isEqualTo("0")
+            assertThat(stats.getValue("operations_read_translog").toString()).isEqualTo(docCount.toString())
+
+        } finally {
+            followerClient.stopReplication(followerIndexName)
+        }
     }
 
     fun `test that replication cannot be started on invalid indexName`() {
