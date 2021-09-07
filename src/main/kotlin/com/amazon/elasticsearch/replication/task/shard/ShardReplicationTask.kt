@@ -238,6 +238,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                         //reset backoff after every successful getChanges call
                         backOffForRetry = initialBackoffMillis
                     } catch (e: ElasticsearchTimeoutException) {
+                        //TimeoutException is thrown if leader fails to send new changes in 1 minute, so we dont need a backoff again here for this exception
                         logInfo("Timed out waiting for new changes. Current seqNo: $fromSeqNo. $e")
                         changeTracker.updateBatchFetched(false, fromSeqNo, toSeqNo, fromSeqNo - 1,-1)
                     } catch (e: NodeNotConnectedException) {
