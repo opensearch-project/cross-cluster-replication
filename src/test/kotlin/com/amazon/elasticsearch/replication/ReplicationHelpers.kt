@@ -52,6 +52,7 @@ const val REST_REPLICATION_STATUS_VERBOSE = "$REST_REPLICATION_PREFIX{index}/_st
 const val REST_REPLICATION_STATUS = "$REST_REPLICATION_PREFIX{index}/_status"
 const val REST_AUTO_FOLLOW_PATTERN = "${REST_REPLICATION_PREFIX}_autofollow"
 const val REST_REPLICATION_TASKS = "_tasks?actions=*replication*&detailed&pretty"
+const val REST_LEADER_STATS = "${REST_REPLICATION_PREFIX}leader_stats"
 const val INDEX_TASK_CANCELLATION_REASON = "Index replication task was cancelled by user"
 const val STATUS_REASON_USER_INITIATED = "User initiated"
 const val STATUS_REASON_SHARD_TASK_CANCELLED = "Shard task killed or cancelled."
@@ -214,6 +215,7 @@ fun RestHighLevelClient.stopReplication(index: String, shouldWait: Boolean = tru
     if (shouldWait) waitForReplicationStop(index)
 }
 
+
 fun RestHighLevelClient.pauseReplication(index: String, requestOptions: RequestOptions = RequestOptions.DEFAULT) {
     val lowLevelPauseRequest = Request("POST", REST_REPLICATION_PAUSE.replace("{index}", index,true))
     lowLevelPauseRequest.setJsonEntity("{}")
@@ -254,6 +256,14 @@ fun RestHighLevelClient.waitForReplicationStart(index: String, waitFor : TimeVal
                 .withFailMessage("replication tasks not started")
                 .isNotEmpty
         }, waitFor.seconds, TimeUnit.SECONDS)
+}
+
+fun RestHighLevelClient.leaderStats() : Map<String, Any>  {
+    var request = Request("GET", REST_LEADER_STATS)
+    request.setJsonEntity("{}")
+    val lowLevelStatusResponse = lowLevelClient.performRequest(request)
+    val statusResponse: Map<String, Any> = ESRestTestCase.entityAsMap(lowLevelStatusResponse)
+    return statusResponse
 }
 
 fun RestHighLevelClient.waitForNoInitializingShards() {
