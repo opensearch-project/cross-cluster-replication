@@ -36,7 +36,8 @@ import org.elasticsearch.threadpool.ThreadPool
 class ShardReplicationExecutor(executor: String, private val clusterService : ClusterService,
                                private val threadPool: ThreadPool, private val client: Client,
                                private val replicationMetadataManager: ReplicationMetadataManager,
-                               private val replicationSettings: ReplicationSettings) :
+                               private val replicationSettings: ReplicationSettings,
+                               private val stats: FollowerClusterStats) :
     PersistentTasksExecutor<ShardReplicationParams>(TASK_NAME, executor) {
 
     companion object {
@@ -78,7 +79,7 @@ class ShardReplicationExecutor(executor: String, private val clusterService : Cl
                             headers: Map<String, String>): AllocatedPersistentTask {
         return ShardReplicationTask(id, type, action, getDescription(taskInProgress), parentTaskId,
                                     taskInProgress.params!!, executor, clusterService, threadPool,
-                                    client, replicationMetadataManager, replicationSettings)
+                                    client, replicationMetadataManager, replicationSettings, stats)
     }
 
     override fun getDescription(taskInProgress: PersistentTask<ShardReplicationParams>): String {

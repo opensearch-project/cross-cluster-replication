@@ -67,15 +67,14 @@ class TransportLeaderStatsAction @Inject constructor(transportService: Transport
          val indexService = indicesService.indexService(shardId.index) ?: return false
          val indexShard = indexService.getShard(shardId.id) ?: return false
 
-         var leaseExist = false
          val retentionLeases = indexShard.getRetentionLeases().leases()
          for (retentionLease in retentionLeases) {
              if (retentionLease.id().startsWith(RETENTION_LEASE_PREFIX)) {
-                 leaseExist = true
+                 return true
              }
          }
 
-         return leaseExist
+         return false
     }
 
     override fun nodeOperation(nodeStatRequest: NodeStatsRequest?): LeaderNodeStatsResponse {

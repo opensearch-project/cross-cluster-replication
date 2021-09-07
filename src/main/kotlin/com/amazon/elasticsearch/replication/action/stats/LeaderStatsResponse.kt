@@ -13,7 +13,7 @@ package com.amazon.elasticsearch.replication.action.stats
 
 
 import com.amazon.elasticsearch.replication.seqno.RemoteShardMetric
-import com.amazon.elasticsearch.replication.seqno.RemoteShardMetric.RemoteShardStats
+import com.amazon.elasticsearch.replication.seqno.RemoteShardMetric.RemoteStats
 import org.apache.logging.log4j.LogManager
 import org.elasticsearch.action.FailedNodeException
 import org.elasticsearch.action.support.nodes.BaseNodesResponse
@@ -28,41 +28,27 @@ import org.elasticsearch.common.xcontent.XContentBuilder
 import org.elasticsearch.common.xcontent.XContentFactory
 import java.io.IOException
 
+
 class LeaderStatsResponse : BaseNodesResponse<LeaderNodeStatsResponse?>, ToXContentObject {
-    var remoteStats :MutableMap<String, RemoteShardMetric.RemoteShardStats> = mutableMapOf()
-    var ops :Long = 0
-    var tlogSize :Long = 0
-    var opsLucene :Long = 0
-    var opsTlog :Long = 0
-    var latencyLucene :Long = 0
-    var latencyTlog :Long = 0
-    var bytesRead :Long = 0
+    var remoteStats :MutableMap<String, RemoteStats> = mutableMapOf()
+    var stats = RemoteShardMetric.RemoteStatsFrag()
 
     companion object {
         private val log = LogManager.getLogger(LeaderStatsResponse::class.java)
     }
 
     constructor(inp: StreamInput) : super(inp) {
-        remoteStats = inp.readMap(StreamInput::readString, ::RemoteShardStats)
+        remoteStats = inp.readMap(StreamInput::readString, ::RemoteStats)
     }
-    
-    fun add(stat :RemoteShardStats) {
-        ops += stat.ops
-        tlogSize += stat.tlogSize
-        opsLucene += stat.opsLucene
-        opsTlog += stat.opsTlog
-        latencyLucene += stat.latencyLucene
-        latencyTlog += stat.latencyTlog
-        bytesRead += stat.bytesRead
-    }
+
 
     constructor(clusterName: ClusterName?, leaderNodeRespons: List<LeaderNodeStatsResponse>?, failures: List<FailedNodeException?>?) : super(clusterName, leaderNodeRespons, failures) {
         if (leaderNodeRespons != null) {
             for (response in leaderNodeRespons) {
                 for (entry in response.remoteStats) {
-                    remoteStats[entry.key.indexName] = remoteStats.getOrDefault(entry.key.indexName, RemoteShardStats())
+                    remoteStats[entry.key.indexName] = remoteStats.getOrDefault(entry.key.indexName, RemoteStats())
                     remoteStats[entry.key.indexName]!!.add(entry.value)
-                    add(entry.value)
+                    stats.add(entry.value)
                 }
             }
         }
@@ -82,13 +68,7 @@ class LeaderStatsResponse : BaseNodesResponse<LeaderNodeStatsResponse?>, ToXCont
     override fun toXContent(builder: XContentBuilder, params: Params?): XContentBuilder {
         builder.startObject()
         builder.field("num_replicated_indices", remoteStats.size)
-        builder.field("operations_read", ops)
-        builder.field("translog_size_bytes", tlogSize)
-        builder.field("operations_read_lucene", opsLucene)
-        builder.field("operations_read_translog", opsTlog)
-        builder.field("total_read_time_lucene_millis", latencyLucene)
-        builder.field("total_read_time_translog_millis", latencyTlog)
-        builder.field("bytes_read", bytesRead)
+        stats.toXContent(builder, params)
         builder.field("index_details").map(remoteStats)
         builder.endObject()
         return builder

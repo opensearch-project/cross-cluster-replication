@@ -63,7 +63,7 @@ import java.time.Duration
 class ShardReplicationTask(id: Long, type: String, action: String, description: String, parentTask: TaskId,
                            params: ShardReplicationParams, executor: String, clusterService: ClusterService,
                            threadPool: ThreadPool, client: Client, replicationMetadataManager: ReplicationMetadataManager,
-                           replicationSettings: ReplicationSettings)
+                           replicationSettings: ReplicationSettings, private val followerClusterStats: FollowerClusterStats)
     : CrossClusterReplicationTask(id, type, action, description, parentTask, emptyMap(),
                                   executor, clusterService, threadPool, client, replicationMetadataManager, replicationSettings) {
 
@@ -170,6 +170,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         * it continues to be called even after the task is completed.
          */
         clusterService.removeListener(clusterStateListenerForTaskInterruption)
+        this.followerClusterStats.stats.remove(followerShardId)
         if (paused) {
             logDebug("Pausing and not removing lease for index $followerIndexName and shard $followerShardId task")
             return
@@ -210,11 +211,12 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         logInfo("Adding retentionlease at follower sequence number: ${indexShard.lastSyncedGlobalCheckpoint}")
         retentionLeaseHelper.addRetentionLease(leaderShardId, indexShard.lastSyncedGlobalCheckpoint , followerShardId)
         addListenerToInterruptTask()
+        this.followerClusterStats.stats[followerShardId] = FollowerShardMetric()
 
         // Since this setting is not dynamic, setting update would only reflect after pause-resume or on a new replication job.
         val rateLimiter = Semaphore(replicationSettings.readersPerShard)
         val sequencer = TranslogSequencer(scope, replicationMetadata, followerShardId, leaderAlias, leaderShardId.indexName,
-                                          TaskId(clusterService.nodeName, id), client, indexShard.localCheckpoint)
+                                          TaskId(clusterService.nodeName, id), client, indexShard.localCheckpoint, followerClusterStats)
 
         val changeTracker = ShardReplicationChangesTracker(indexShard, replicationSettings)
 
@@ -242,20 +244,25 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                         logInfo("Timed out waiting for new changes. Current seqNo: $fromSeqNo. $e")
                         changeTracker.updateBatchFetched(false, fromSeqNo, toSeqNo, fromSeqNo - 1,-1)
                     } catch (e: NodeNotConnectedException) {
+                        followerClusterStats.stats[followerShardId]!!.opsReadFailures.addAndGet(1)
                         logInfo("Node not connected. Retrying request using a different node. ${e.stackTraceToString()}")
                         delay(backOffForRetry)
                         backOffForRetry = (backOffForRetry * factor).toLong().coerceAtMost(maxTimeOut)
                         changeTracker.updateBatchFetched(false, fromSeqNo, toSeqNo, fromSeqNo - 1,-1)
                     } catch (e: Exception) {
+                        followerClusterStats.stats[followerShardId]!!.opsReadFailures.addAndGet(1)
                         logInfo("Unable to get changes from seqNo: $fromSeqNo. ${e.stackTraceToString()}")
                         changeTracker.updateBatchFetched(false, fromSeqNo, toSeqNo, fromSeqNo - 1,-1)
 
                         // Propagate 4xx exceptions up the chain and halt replication as they are irrecoverable
                         val range4xx = 400.rangeTo(499)
                         if (e is ElasticsearchException &&
-                            range4xx.contains(e.status().status) &&
-                            e.status().status != RestStatus.TOO_MANY_REQUESTS.status) {
-                            throw e
+                                range4xx.contains(e.status().status) ) {
+                            if (e.status().status == RestStatus.TOO_MANY_REQUESTS.status) {
+                                followerClusterStats.stats[followerShardId]!!.opsReadThrottles.addAndGet(1)
+                            } else {
+                                throw e
+                            }
                         }
                         delay(backOffForRetry)
                         backOffForRetry = (backOffForRetry * factor).toLong().coerceAtMost(maxTimeOut)
@@ -267,6 +274,8 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                 //renew retention lease with global checkpoint so that any shard that picks up shard replication task has data until then.
                 try {
                     retentionLeaseHelper.renewRetentionLease(leaderShardId, indexShard.lastSyncedGlobalCheckpoint, followerShardId)
+                    followerClusterStats.stats[followerShardId]!!.followerCheckpoint = indexShard.lastSyncedGlobalCheckpoint
+
                 } catch (ex: Exception) {
                     when (ex) {
                         is RetentionLeaseInvalidRetainingSeqNoException, is RetentionLeaseNotFoundException -> {
@@ -283,8 +292,11 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     private suspend fun getChanges(fromSeqNo: Long, toSeqNo: Long): GetChangesResponse {
         val remoteClient = client.getRemoteClusterClient(leaderAlias)
         val request = GetChangesRequest(leaderShardId, fromSeqNo, toSeqNo)
-        return remoteClient.suspendExecuteWithRetries(replicationMetadata = replicationMetadata,
+        var changesResp =  remoteClient.suspendExecuteWithRetries(replicationMetadata = replicationMetadata,
                 action = GetChangesAction.INSTANCE, req = request, log = log)
+        followerClusterStats.stats[followerShardId]!!.leaderCheckpoint = changesResp.lastSyncedGlobalCheckpoint
+        followerClusterStats.stats[followerShardId]!!.opsRead.addAndGet(changesResp.changes.size.toLong())
+        return changesResp
     }
     private fun logDebug(msg: String) {
         log.debug("${Thread.currentThread().name}: $msg")

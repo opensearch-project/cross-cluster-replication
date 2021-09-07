@@ -24,13 +24,11 @@ import java.util.*
 
 class TranportShardsInfoAction  @Inject constructor(clusterService: ClusterService,
                                                     transportService: TransportService,
-                                                    replicationMetadataManager: ReplicationMetadataManager,
                                                     threadPool: ThreadPool,
                                                     actionFilters: ActionFilters,
-                                                    client: Client,
                                                     indexNameExpressionResolver: IndexNameExpressionResolver?,
                                                     private val indicesService: IndicesService
-                                                    )
+)
        : TransportBroadcastByNodeAction<
                 ShardInfoRequest,
                 ReplicationStatusResponse,
@@ -74,7 +72,7 @@ class TranportShardsInfoAction  @Inject constructor(clusterService: ClusterServi
         val indexShard = indexService.getShard(shardRouting.shardId().id())
 
         var indexState = indexShard.recoveryState().index
-        if (indexShard.recoveryState().recoverySource.type.equals(org.elasticsearch.cluster.routing.RecoverySource.Type.SNAPSHOT) and
+        if (indexShard.recoveryState().recoverySource.type.equals(RecoverySource.Type.SNAPSHOT) and
                 (indexState.recoveredBytesPercent() <100)) {
             return ShardInfoResponse(shardRouting.shardId(),"BOOTSTRAPPING",
                     RestoreDetails(indexState.totalBytes(), indexState.recoveredBytes(),
