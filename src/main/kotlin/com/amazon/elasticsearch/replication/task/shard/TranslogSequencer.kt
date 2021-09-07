@@ -20,7 +20,7 @@ import com.amazon.elasticsearch.replication.action.changes.GetChangesResponse
 import com.amazon.elasticsearch.replication.action.replay.ReplayChangesAction
 import com.amazon.elasticsearch.replication.action.replay.ReplayChangesRequest
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
-import com.amazon.elasticsearch.replication.util.suspendExecute
+import com.amazon.elasticsearch.replication.util.suspendExecuteWithRetries
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ObsoleteCoroutinesApi
@@ -66,7 +66,7 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
                                                          leaderAlias, leaderIndexName)
                 replayRequest.parentTask = parentTaskId
                 launch {
-                    val replayResponse = client.suspendExecute(replicationMetadata, ReplayChangesAction.INSTANCE, replayRequest)
+                    val replayResponse = client.suspendExecuteWithRetries(replicationMetadata, ReplayChangesAction.INSTANCE, replayRequest, log = log)
                     if (replayResponse.shardInfo.failed > 0) {
                         replayResponse.shardInfo.failures.forEachIndexed { i, failure ->
                             log.error("Failed replaying changes. Failure:$i:$failure")
