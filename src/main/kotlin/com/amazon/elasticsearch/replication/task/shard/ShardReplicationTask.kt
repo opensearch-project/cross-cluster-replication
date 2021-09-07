@@ -41,6 +41,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.supervisorScope
 import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
+
 import org.elasticsearch.ElasticsearchException
 import org.elasticsearch.ElasticsearchTimeoutException
 import org.elasticsearch.client.Client
@@ -48,6 +49,7 @@ import org.elasticsearch.cluster.ClusterChangedEvent
 import org.elasticsearch.cluster.ClusterStateListener
 import org.elasticsearch.cluster.service.ClusterService
 import org.elasticsearch.common.logging.Loggers
+import org.elasticsearch.index.seqno.RetentionLeaseActions
 import org.elasticsearch.index.seqno.RetentionLeaseInvalidRetainingSeqNoException
 import org.elasticsearch.index.seqno.RetentionLeaseNotFoundException
 import org.elasticsearch.index.shard.ShardId
@@ -83,6 +85,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     private val maxTimeOut = 60000L
     //Backoff factor after every retry
     private val factor = 2.0
+    private var lastLeaseRenewalMillis = System.currentTimeMillis()
 
     private val clusterStateListenerForTaskInterruption = ClusterStateListenerForTaskInterruption()
 
@@ -206,10 +209,9 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         updateTaskState(FollowingState)
         val followerIndexService = indicesService.indexServiceSafe(followerShardId.index)
         val indexShard = followerIndexService.getShard(followerShardId.id)
-        // Adding retention lease at local checkpoint of a node. This makes sure
-        // new tasks spawned after node changes/shard movements are handled properly
-        logInfo("Adding retentionlease at follower sequence number: ${indexShard.lastSyncedGlobalCheckpoint}")
-        retentionLeaseHelper.addRetentionLease(leaderShardId, indexShard.lastSyncedGlobalCheckpoint , followerShardId)
+        // Renewing retention lease with retain all. After the task starts getting changes, retention lease would be
+        // renewed based on lastSyncedGlobalCheckpoint.
+        retentionLeaseHelper.renewRetentionLease(leaderShardId, RetentionLeaseActions.RETAIN_ALL , followerShardId)
         addListenerToInterruptTask()
         this.followerClusterStats.stats[followerShardId] = FollowerShardMetric()
 
@@ -219,7 +221,6 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                                           TaskId(clusterService.nodeName, id), client, indexShard.localCheckpoint, followerClusterStats)
 
         val changeTracker = ShardReplicationChangesTracker(indexShard, replicationSettings)
-
         coroutineScope {
             while (isActive) {
                 rateLimiter.acquire()
@@ -275,11 +276,18 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                 try {
                     retentionLeaseHelper.renewRetentionLease(leaderShardId, indexShard.lastSyncedGlobalCheckpoint, followerShardId)
                     followerClusterStats.stats[followerShardId]!!.followerCheckpoint = indexShard.lastSyncedGlobalCheckpoint
-
+                    lastLeaseRenewalMillis = System.currentTimeMillis()
                 } catch (ex: Exception) {
                     when (ex) {
-                        is RetentionLeaseInvalidRetainingSeqNoException, is RetentionLeaseNotFoundException -> {
-                            throw ex
+                        is RetentionLeaseNotFoundException ->  throw ex
+                        is RetentionLeaseInvalidRetainingSeqNoException -> {
+                            if (System.currentTimeMillis() - lastLeaseRenewalMillis >  replicationSettings.leaseRenewalMaxFailureDuration.millis) {
+                                log.error("Retention lease renewal has been failing for last " +
+                                        "${replicationSettings.leaseRenewalMaxFailureDuration.minutes} minutes")
+                                throw ex
+                            } else {
+                                log.error("Retention lease renewal failed. Ignoring. ${ex.message}")
+                            }
                         }
                         else -> logInfo("Exception renewing retention lease. Not an issue - ${ex.stackTraceToString()}")
                     }
