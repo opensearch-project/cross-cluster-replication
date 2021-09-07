@@ -11,7 +11,6 @@
 
 package org.opensearch.replication.action.index
 
-import org.opensearch.replication.ReplicationException
 import org.opensearch.replication.ReplicationPlugin
 import org.opensearch.replication.action.setup.SetupChecksAction
 import org.opensearch.replication.action.setup.SetupChecksRequest
@@ -36,7 +35,6 @@ import org.opensearch.common.inject.Inject
 import org.opensearch.env.Environment
 import org.opensearch.index.IndexNotFoundException
 import org.opensearch.index.IndexSettings
-import org.opensearch.indices.InvalidIndexNameException
 import org.opensearch.tasks.Task
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
@@ -61,9 +59,9 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
             listener.completeWith {
 
                 val followerReplContext = ReplicationContext(request.followerIndex,
-                        user?.overrideFgacRole(request.assumeRoles?.get(ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE)))
+                        user?.overrideFgacRole(request.useRoles?.get(ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE)))
                 val leaderReplContext = ReplicationContext(request.leaderIndex,
-                        user?.overrideFgacRole(request.assumeRoles?.get(ReplicateIndexRequest.LEADER_CLUSTER_ROLE)))
+                        user?.overrideFgacRole(request.useRoles?.get(ReplicateIndexRequest.LEADER_CLUSTER_ROLE)))
 
                 // For autofollow request, setup checks are already made during addition of the pattern with
                 // original user

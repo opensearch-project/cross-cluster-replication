@@ -38,7 +38,7 @@ class SecurityContext {
     companion object {
         private val log = LogManager.getLogger(SecurityContext::class.java)
         const val OPENDISTRO_SECURITY_USER = "_opendistro_security_user"
-        const val OPENDISTRO_SECURITY_ASSUME_ROLES = "opendistro_security_assume_roles"
+        const val OPENDISTRO_SECURITY_INJECTED_ROLES_VALIDATION = "opendistro_security_injected_roles_validation"
         const val REPLICATION_PLUGIN_USER = "ccr_user"
 
         val ADMIN_USER = User(REPLICATION_PLUGIN_USER, null, listOf("all_access"), null)

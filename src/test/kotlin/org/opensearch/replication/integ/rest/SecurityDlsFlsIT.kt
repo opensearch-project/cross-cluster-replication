@@ -25,7 +25,6 @@ import org.opensearch.test.OpenSearchTestCase
 import org.junit.Assert
 import org.junit.Assume
 import org.junit.Before
-import org.junit.BeforeClass
 
 @MultiClusterAnnotations.ClusterConfigurations(
         MultiClusterAnnotations.ClusterConfiguration(clusterName = LEADER, forceInitSecurityConfiguration = true),
@@ -51,7 +50,7 @@ class SecurityDlsFlsIT: SecurityBase() {
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
 
         var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
-                    assumeRoles = AssumeRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerDlsRole"))
+                    useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerDlsRole"))
 
         Assertions.assertThatThrownBy { followerClient.startReplication(startReplicationRequest,
                     requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser3","password")) }
@@ -81,7 +80,7 @@ class SecurityDlsFlsIT: SecurityBase() {
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
         try {
             var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
-                    assumeRoles = AssumeRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
+                    useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
 
             followerClient.startReplication(startReplicationRequest, waitForRestore = true,
                     requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
@@ -107,7 +106,7 @@ class SecurityDlsFlsIT: SecurityBase() {
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
         try {
             var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
-                    assumeRoles = AssumeRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
+                    useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
 
             followerClient.startReplication(startReplicationRequest, waitForRestore = true,
                     requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
@@ -140,7 +139,7 @@ class SecurityDlsFlsIT: SecurityBase() {
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
         try {
             followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName,
-                    assumeRoles = AssumeRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms")),
+                    useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms")),
                     requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
             assertBusy {
                 Assertions.assertThat(followerClient.indices()
@@ -182,7 +181,7 @@ class SecurityDlsFlsIT: SecurityBase() {
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
 
         var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
-                assumeRoles = AssumeRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerFlsRole"))
+                useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerFlsRole"))
 
         Assertions.assertThatThrownBy { followerClient.startReplication(startReplicationRequest,
                 requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser4","password")) }
@@ -202,7 +201,7 @@ class SecurityDlsFlsIT: SecurityBase() {
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
 
         var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
-                assumeRoles = AssumeRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerFieldMaskRole"))
+                useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerFieldMaskRole"))
 
         Assertions.assertThatThrownBy { followerClient.startReplication(startReplicationRequest,
                 requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser5","password")) }
@@ -222,7 +221,7 @@ class SecurityDlsFlsIT: SecurityBase() {
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
 
         var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
-                assumeRoles = AssumeRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerFieldMaskRole2"))
+                useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerFieldMaskRole2"))
         followerClient.startReplication(startReplicationRequest,
                 requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser7","password"))
 

@@ -38,7 +38,7 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
     lateinit var followerIndex: String
     lateinit var leaderAlias: String
     lateinit var leaderIndex: String
-    var assumeRoles: HashMap<String, String>? = null // roles to assume - {leader_fgac_role: role1, follower_fgac_role: role2}
+    var useRoles: HashMap<String, String>? = null // roles to use - {leader_fgac_role: role1, follower_fgac_role: role2}
     // Used for integ tests to wait until the restore from leader cluster completes
     var waitForRestore: Boolean = false
     // Triggered from autofollow to skip permissions check based on user as this is already validated
@@ -60,17 +60,17 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
         const val LEADER_CLUSTER_ROLE = "leader_cluster_role"
         const val FOLLOWER_CLUSTER_ROLE = "follower_cluster_role"
         private val INDEX_REQ_PARSER = ObjectParser<ReplicateIndexRequest, Void>("FollowIndexRequestParser") { ReplicateIndexRequest() }
-        val FGAC_ROLES_PARSER = ObjectParser<HashMap<String, String>, Void>("AssumeRolesParser") { HashMap() }
+        val FGAC_ROLES_PARSER = ObjectParser<HashMap<String, String>, Void>("UseRolesParser") { HashMap() }
         init {
-            FGAC_ROLES_PARSER.declareStringOrNull({assumeRoles: HashMap<String, String>, role: String -> assumeRoles[LEADER_CLUSTER_ROLE] = role},
+            FGAC_ROLES_PARSER.declareStringOrNull({useRoles: HashMap<String, String>, role: String -> useRoles[LEADER_CLUSTER_ROLE] = role},
                     ParseField(LEADER_CLUSTER_ROLE))
-            FGAC_ROLES_PARSER.declareStringOrNull({assumeRoles: HashMap<String, String>, role: String -> assumeRoles[FOLLOWER_CLUSTER_ROLE] = role},
+            FGAC_ROLES_PARSER.declareStringOrNull({useRoles: HashMap<String, String>, role: String -> useRoles[FOLLOWER_CLUSTER_ROLE] = role},
                     ParseField(FOLLOWER_CLUSTER_ROLE))
 
             INDEX_REQ_PARSER.declareString(ReplicateIndexRequest::leaderAlias::set, ParseField("leader_alias"))
             INDEX_REQ_PARSER.declareString(ReplicateIndexRequest::leaderIndex::set, ParseField("leader_index"))
-            INDEX_REQ_PARSER.declareObjectOrDefault(BiConsumer {reqParser: ReplicateIndexRequest, roles: HashMap<String, String> -> reqParser.assumeRoles = roles},
-                    FGAC_ROLES_PARSER, null, ParseField("assume_roles"))
+            INDEX_REQ_PARSER.declareObjectOrDefault(BiConsumer {reqParser: ReplicateIndexRequest, roles: HashMap<String, String> -> reqParser.useRoles = roles},
+                    FGAC_ROLES_PARSER, null, ParseField("use_roles"))
             INDEX_REQ_PARSER.declareObjectOrDefault(BiConsumer{ request: ReplicateIndexRequest, settings: Settings -> request.settings = settings}, BiFunction{ p: XContentParser?, c: Void? -> Settings.fromXContent(p) },
                     null, ParseField(KEY_SETTINGS))
         }
@@ -79,8 +79,8 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
         fun fromXContent(parser: XContentParser, followerIndex: String): ReplicateIndexRequest {
             val followIndexRequest = INDEX_REQ_PARSER.parse(parser, null)
             followIndexRequest.followerIndex = followerIndex
-            if(followIndexRequest.assumeRoles?.size == 0) {
-                followIndexRequest.assumeRoles = null
+            if(followIndexRequest.useRoles?.size == 0) {
+                followIndexRequest.useRoles = null
             }
 
             if (followIndexRequest.settings == null) {
@@ -102,8 +102,8 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
         validateName(leaderIndex, validationException)
         validateName(followerIndex, validationException)
 
-        if(assumeRoles != null && (assumeRoles!!.size < 2 || assumeRoles!![LEADER_CLUSTER_ROLE] == null ||
-                assumeRoles!![FOLLOWER_CLUSTER_ROLE] == null)) {
+        if(useRoles != null && (useRoles!!.size < 2 || useRoles!![LEADER_CLUSTER_ROLE] == null ||
+                useRoles!![FOLLOWER_CLUSTER_ROLE] == null)) {
             validationException.addValidationError("Need roles for $LEADER_CLUSTER_ROLE and $FOLLOWER_CLUSTER_ROLE")
         }
         return if(validationException.validationErrors().isEmpty()) return null else validationException
@@ -128,9 +128,9 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
 
         var leaderClusterRole = inp.readOptionalString()
         var followerClusterRole = inp.readOptionalString()
-        assumeRoles = HashMap()
-        if(leaderClusterRole != null) assumeRoles!![LEADER_CLUSTER_ROLE] = leaderClusterRole
-        if(followerClusterRole != null) assumeRoles!![FOLLOWER_CLUSTER_ROLE] = followerClusterRole
+        useRoles = HashMap()
+        if(leaderClusterRole != null) useRoles!![LEADER_CLUSTER_ROLE] = leaderClusterRole
+        if(followerClusterRole != null) useRoles!![FOLLOWER_CLUSTER_ROLE] = followerClusterRole
 
         waitForRestore = inp.readBoolean()
         isAutoFollowRequest = inp.readBoolean()
@@ -143,8 +143,8 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
         out.writeString(leaderAlias)
         out.writeString(leaderIndex)
         out.writeString(followerIndex)
-        out.writeOptionalString(assumeRoles?.get(LEADER_CLUSTER_ROLE))
-        out.writeOptionalString(assumeRoles?.get(FOLLOWER_CLUSTER_ROLE))
+        out.writeOptionalString(useRoles?.get(LEADER_CLUSTER_ROLE))
+        out.writeOptionalString(useRoles?.get(FOLLOWER_CLUSTER_ROLE))
         out.writeBoolean(waitForRestore)
         out.writeBoolean(isAutoFollowRequest)
 
@@ -157,11 +157,11 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
         builder.field("leader_alias", leaderAlias)
         builder.field("leader_index", leaderIndex)
         builder.field("follower_index", followerIndex)
-        if(assumeRoles != null && assumeRoles!!.size == 2) {
-            builder.field("assume_roles")
+        if(useRoles != null && useRoles!!.size == 2) {
+            builder.field("use_roles")
             builder.startObject()
-            builder.field(LEADER_CLUSTER_ROLE, assumeRoles!![LEADER_CLUSTER_ROLE])
-            builder.field(FOLLOWER_CLUSTER_ROLE, assumeRoles!![FOLLOWER_CLUSTER_ROLE])
+            builder.field(LEADER_CLUSTER_ROLE, useRoles!![LEADER_CLUSTER_ROLE])
+            builder.field(FOLLOWER_CLUSTER_ROLE, useRoles!![FOLLOWER_CLUSTER_ROLE])
             builder.endObject()
         }
         builder.field("wait_for_restore", waitForRestore)

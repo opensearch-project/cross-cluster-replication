@@ -11,7 +11,6 @@
 
 package org.opensearch.replication.action.autofollow
 
-import org.opensearch.replication.ReplicationException
 import org.opensearch.replication.action.index.ReplicateIndexRequest
 import org.opensearch.replication.metadata.ReplicationMetadataManager
 import org.opensearch.replication.metadata.ReplicationOverallState
@@ -79,8 +78,8 @@ class TransportAutoFollowMasterNodeAction @Inject constructor(transportService: 
                         throw org.opensearch.replication.ReplicationException("Failed to update empty autofollow pattern")
                     }
                     // Pattern is same for leader and follower
-                    val followerClusterRole = request.assumeRoles?.get(ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE)
-                    val leaderClusterRole = request.assumeRoles?.get(ReplicateIndexRequest.LEADER_CLUSTER_ROLE)
+                    val followerClusterRole = request.useRoles?.get(ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE)
+                    val leaderClusterRole = request.useRoles?.get(ReplicateIndexRequest.LEADER_CLUSTER_ROLE)
 
                     indexScopedSettings.validate(request.settings,
                             false,
