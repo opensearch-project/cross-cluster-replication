@@ -71,8 +71,16 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     private val remoteClient = client.getRemoteClusterClient(leaderAlias)
     private val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
     private var paused = false
-    private val backOffForNodeDiscovery = 1000L
     private var lastLeaseRenewalMillis = System.currentTimeMillis()
+
+    //Start backOff for exceptions with a second
+    private val initialBackoffMillis = 1000L
+    //Start backOff for exceptions with a second
+    private var backOffForRetry = initialBackoffMillis
+    //Max timeout for backoff
+    private val maxTimeOut = 60000L
+    //Backoff factor after every retry
+    private val factor = 2.0
 
     private val clusterStateListenerForTaskInterruption = ClusterStateListenerForTaskInterruption()
 
@@ -216,6 +224,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                     val batchToFetch = changeTracker.requestBatchToFetch()
                     val fromSeqNo = batchToFetch.first
                     val toSeqNo = batchToFetch.second
+
                     try {
                         logDebug("Getting changes $fromSeqNo-$toSeqNo")
                         val changesResponse = getChanges(fromSeqNo, toSeqNo)
@@ -224,14 +233,17 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                         logDebug("pushed to sequencer $fromSeqNo-$toSeqNo")
                         changeTracker.updateBatchFetched(true, fromSeqNo, toSeqNo, changesResponse.changes.lastOrNull()?.seqNo() ?: fromSeqNo - 1,
                             changesResponse.lastSyncedGlobalCheckpoint)
-
+                        //reset backoff after every successful getChanges call
+                        backOffForRetry = initialBackoffMillis
                     } catch (e: OpenSearchTimeoutException) {
+                        //TimeoutException is thrown if leader fails to send new changes in 1 minute, so we dont need a backoff again here for this exception
                         logInfo("Timed out waiting for new changes. Current seqNo: $fromSeqNo. $e")
                         changeTracker.updateBatchFetched(false, fromSeqNo, toSeqNo, fromSeqNo - 1,-1)
                     } catch (e: NodeNotConnectedException) {
                         followerClusterStats.stats[followerShardId]!!.opsReadFailures.addAndGet(1)
                         logInfo("Node not connected. Retrying request using a different node. ${e.stackTraceToString()}")
-                        delay(backOffForNodeDiscovery)
+                        delay(backOffForRetry)
+                        backOffForRetry = (backOffForRetry * factor).toLong().coerceAtMost(maxTimeOut)
                         changeTracker.updateBatchFetched(false, fromSeqNo, toSeqNo, fromSeqNo - 1,-1)
                     } catch (e: Exception) {
                         followerClusterStats.stats[followerShardId]!!.opsReadFailures.addAndGet(1)
@@ -248,6 +260,8 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                                 throw e
                             }
                         }
+                        delay(backOffForRetry)
+                        backOffForRetry = (backOffForRetry * factor).toLong().coerceAtMost(maxTimeOut)
                     } finally {
                         rateLimiter.release()
                     }
