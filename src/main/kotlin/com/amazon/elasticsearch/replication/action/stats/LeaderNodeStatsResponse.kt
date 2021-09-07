@@ -12,7 +12,7 @@
 package com.amazon.elasticsearch.replication.action.stats
 
 import com.amazon.elasticsearch.replication.seqno.RemoteShardMetric
-import com.amazon.elasticsearch.replication.seqno.RemoteShardMetric.RemoteShardStats
+import com.amazon.elasticsearch.replication.seqno.RemoteShardMetric.RemoteStats
 import org.elasticsearch.action.support.nodes.BaseNodeResponse
 import org.elasticsearch.cluster.node.DiscoveryNode
 import org.elasticsearch.common.io.stream.StreamInput
@@ -21,10 +21,10 @@ import org.elasticsearch.index.shard.ShardId
 import java.io.IOException
 
 class LeaderNodeStatsResponse : BaseNodeResponse {
-    var remoteStats :Map<ShardId, RemoteShardMetric.RemoteShardStats>
+    var remoteStats :Map<ShardId, RemoteStats>
 
     constructor(inp: StreamInput) : super(inp) {
-        remoteStats = inp.readMap(::ShardId, ::RemoteShardStats)
+        remoteStats = inp.readMap(::ShardId, ::RemoteStats)
     }
 
     constructor(node : DiscoveryNode, remoteClusterStats: Map<ShardId, RemoteShardMetric>) : super(node) {

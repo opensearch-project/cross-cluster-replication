@@ -53,6 +53,7 @@ const val REST_REPLICATION_STATUS = "$REST_REPLICATION_PREFIX{index}/_status"
 const val REST_AUTO_FOLLOW_PATTERN = "${REST_REPLICATION_PREFIX}_autofollow"
 const val REST_REPLICATION_TASKS = "_tasks?actions=*replication*&detailed&pretty"
 const val REST_LEADER_STATS = "${REST_REPLICATION_PREFIX}leader_stats"
+const val REST_FOLLOWER_STATS = "${REST_REPLICATION_PREFIX}follower_stats"
 const val INDEX_TASK_CANCELLATION_REASON = "Index replication task was cancelled by user"
 const val STATUS_REASON_USER_INITIATED = "User initiated"
 const val STATUS_REASON_SHARD_TASK_CANCELLED = "Shard task killed or cancelled."
@@ -216,14 +217,14 @@ fun RestHighLevelClient.stopReplication(index: String, shouldWait: Boolean = tru
 }
 
 
-fun RestHighLevelClient.pauseReplication(index: String, requestOptions: RequestOptions = RequestOptions.DEFAULT) {
+fun RestHighLevelClient.pauseReplication(index: String, shouldWait: Boolean = true, requestOptions: RequestOptions = RequestOptions.DEFAULT) {
     val lowLevelPauseRequest = Request("POST", REST_REPLICATION_PAUSE.replace("{index}", index,true))
     lowLevelPauseRequest.setJsonEntity("{}")
     lowLevelPauseRequest.setOptions(requestOptions)
     val lowLevelPauseResponse = lowLevelClient.performRequest(lowLevelPauseRequest)
     val response = getAckResponse(lowLevelPauseResponse)
     assertThat(response.isAcknowledged).withFailMessage("Replication could not be paused").isTrue()
-    waitForReplicationStop(index)
+    if (shouldWait) waitForReplicationStop(index)
 }
 
 fun RestHighLevelClient.resumeReplication(index: String, requestOptions: RequestOptions = RequestOptions.DEFAULT) {
@@ -266,6 +267,14 @@ fun RestHighLevelClient.leaderStats() : Map<String, Any>  {
     return statusResponse
 }
 
+fun RestHighLevelClient.followerStats() : Map<String, Any>  {
+    var request = Request("GET", REST_FOLLOWER_STATS)
+    request.setJsonEntity("{}")
+    val lowLevelStatusResponse = lowLevelClient.performRequest(request)
+    val statusResponse: Map<String, Any> = ESRestTestCase.entityAsMap(lowLevelStatusResponse)
+    return statusResponse
+}
+
 fun RestHighLevelClient.waitForNoInitializingShards() {
     val request = ClusterHealthRequest().waitForNoInitializingShards(true)
         .timeout(TimeValue.timeValueSeconds(70))
@@ -288,7 +297,10 @@ fun RestHighLevelClient.waitForReplicationStop(index: String, waitFor : TimeValu
                                                                           IndexReplicationExecutor.TASK_NAME + "*")
 
             val response = tasks().list(request,RequestOptions.DEFAULT)
-            assertThat(response.tasks)
+            //Index Task : "description" : "replication:source:[leader_index][0] -> [follower_index_3][0]",
+            //Shard Task :  "description" : "replication:source:[leader_index/92E2lgyoTOW1n5o3sUhHag] -> follower_index_3",
+            var indexTask = response.tasks.filter { t -> t.description.contains(index)   }
+            assertThat(indexTask)
                 .withFailMessage("replication tasks not stopped.")
                 .isEmpty()
         }, waitFor.seconds, TimeUnit.SECONDS)

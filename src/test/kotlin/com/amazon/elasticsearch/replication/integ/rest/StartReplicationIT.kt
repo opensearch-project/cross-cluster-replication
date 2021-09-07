@@ -27,6 +27,7 @@ import com.amazon.elasticsearch.replication.replicationStatus
 import com.amazon.elasticsearch.replication.resumeReplication
 import com.amazon.elasticsearch.replication.`validate paused status response due to leader index deleted`
 import com.amazon.elasticsearch.replication.`validate status syncing response`
+import com.amazon.elasticsearch.replication.followerStats
 import com.amazon.elasticsearch.replication.leaderStats
 import com.amazon.elasticsearch.replication.startReplication
 import com.amazon.elasticsearch.replication.stopReplication
@@ -987,6 +988,63 @@ class StartReplicationIT: MultiClusterRestTestCase() {
 
         } finally {
             followerClient.stopReplication(followerIndexName)
+        }
+    }
+
+    fun `test follower stats`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+
+        val followerIndex2 = "follower_index_2"
+        val followerIndex3 = "follower_index_3"
+
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+
+        val createIndexResponse = leaderClient.indices().create(
+                CreateIndexRequest(leaderIndexName),
+                RequestOptions.DEFAULT
+        )
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+
+        try {
+            followerClient.startReplication(
+                    StartReplicationRequest("source", leaderIndexName, followerIndexName),
+                    TimeValue.timeValueSeconds(10),
+                    true
+            )
+            followerClient.startReplication(
+                    StartReplicationRequest("source", leaderIndexName, followerIndex2),
+                    TimeValue.timeValueSeconds(10),
+                    true
+            )
+            followerClient.startReplication(
+                    StartReplicationRequest("source", leaderIndexName, followerIndex3),
+                    TimeValue.timeValueSeconds(10),
+                    true
+            )
+            val docCount = 50
+            for (i in 1..docCount) {
+                val sourceMap = mapOf("name" to randomAlphaOfLength(5))
+                leaderClient.index(IndexRequest(leaderIndexName).id(i.toString()).source(sourceMap), RequestOptions.DEFAULT)
+            }
+
+            followerClient.pauseReplication(followerIndex2)
+            followerClient.stopReplication(followerIndex3)
+
+            val stats = followerClient.followerStats()
+            assertThat(stats.getValue("num_syncing_indices").toString()).isEqualTo("1")
+            assertThat(stats.getValue("num_paused_indices").toString()).isEqualTo("1")
+            assertThat(stats.getValue("num_shard_tasks").toString()).isEqualTo("1")
+            assertThat(stats.getValue("num_index_tasks").toString()).isEqualTo("1")
+            assertThat(stats.getValue("operations_written").toString()).isEqualTo("50")
+            assertThat(stats.getValue("operations_read").toString()).isEqualTo("50")
+            assertThat(stats.getValue("failed_read_requests").toString()).isEqualTo("0")
+            assertThat(stats.getValue("failed_write_requests").toString()).isEqualTo("0")
+            assertThat(stats.containsKey("index_stats"))
+            assertThat(stats.size).isEqualTo(15)
+        } finally {
+            followerClient.stopReplication(followerIndexName)
+            followerClient.stopReplication(followerIndex2)
         }
     }
 

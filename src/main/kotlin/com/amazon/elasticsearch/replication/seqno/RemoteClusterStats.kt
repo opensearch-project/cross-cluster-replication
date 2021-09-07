@@ -16,7 +16,7 @@ import org.elasticsearch.common.inject.Singleton
 import org.elasticsearch.common.io.stream.StreamInput
 import org.elasticsearch.common.io.stream.StreamOutput
 import org.elasticsearch.common.xcontent.ToXContent
-import org.elasticsearch.common.xcontent.ToXContentObject
+import org.elasticsearch.common.xcontent.ToXContentFragment
 import org.elasticsearch.common.xcontent.XContentBuilder
 import org.elasticsearch.index.shard.ShardId
 import java.util.concurrent.atomic.AtomicLong
@@ -36,13 +36,13 @@ class RemoteShardMetric  {
     /**
      * Creates a serializable representation for these metrics.
      */
-    fun createStats() : RemoteShardStats {
-        return RemoteShardStats(ops.get(), tlogSize.get(), opsLucene.get(), opsTlog.get(),
+    fun createStats() : RemoteStats {
+        return RemoteStats(ops.get(), tlogSize.get(), opsLucene.get(), opsTlog.get(),
                 latencyLucene.get(), latencyTlog.get(), bytesRead.get(), lastFetchTime.get())
     }
 
-     class RemoteShardStats(ops :Long=0, tlogSize :Long=0, opsLucene :Long=0, opsTlog :Long=0, latencyLucene :Long=0, latencyTlog :Long=0,
-                            bytesRead :Long=0, lastFetchTime :Long=0) : ToXContentObject {
+     open class RemoteStats(ops :Long=0, tlogSize :Long=0, opsLucene :Long=0, opsTlog :Long=0, latencyLucene :Long=0, latencyTlog :Long=0,
+                       bytesRead :Long=0, lastFetchTime :Long=0) : ToXContentFragment {
 
         var ops = ops
         var tlogSize = tlogSize
@@ -55,15 +55,20 @@ class RemoteShardMetric  {
 
         override fun toXContent(builder: XContentBuilder, params: ToXContent.Params?): XContentBuilder {
             builder.startObject()
-            builder.field("operations_read", ops)
-            builder.field("translog_size_bytes", tlogSize)
-            builder.field("operations_read_lucene", opsLucene)
-            builder.field("operations_read_translog", opsTlog)
-            builder.field("total_read_time_lucene_millis", latencyLucene)
-            builder.field("total_read_time_translog_millis", latencyTlog)
-            builder.field("bytes_read", bytesRead)
+            toXContentFragment(builder, params)
             return builder.endObject()
         }
+
+         fun toXContentFragment(builder: XContentBuilder, params: ToXContent.Params?): XContentBuilder {
+             builder.field("operations_read", ops)
+             builder.field("translog_size_bytes", tlogSize)
+             builder.field("operations_read_lucene", opsLucene)
+             builder.field("operations_read_translog", opsTlog)
+             builder.field("total_read_time_lucene_millis", latencyLucene)
+             builder.field("total_read_time_translog_millis", latencyTlog)
+             builder.field("bytes_read", bytesRead)
+             return builder
+         }
 
         constructor(inp: StreamInput) : this()  {
             ops = inp.readLong()
@@ -87,7 +92,7 @@ class RemoteShardMetric  {
             out.writeLong(lastFetchTime)
         }
 
-        fun add(stat :RemoteShardStats): RemoteShardStats {
+        fun add(stat :RemoteStats): RemoteStats {
             var newStat = this
             newStat.ops += stat.ops
             newStat.tlogSize += stat.tlogSize
@@ -101,6 +106,13 @@ class RemoteShardMetric  {
             return newStat
         }
     }
+
+    class RemoteStatsFrag() : RemoteShardMetric.RemoteStats(), ToXContentFragment {
+        override fun toXContent(builder: XContentBuilder, params: ToXContent.Params?): XContentBuilder {
+            return toXContentFragment(builder, params)
+        }
+    }
+
 }
 
 @Singleton
