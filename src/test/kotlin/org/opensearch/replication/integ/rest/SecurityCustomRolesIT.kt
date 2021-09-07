@@ -58,7 +58,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
         try {
             var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
-                    assumeRoles = AssumeRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
+                    useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
 
             followerClient.startReplication(startReplicationRequest,
                     requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
@@ -80,7 +80,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
 
         var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
-                assumeRoles = AssumeRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleNoPerms"))
+                useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleNoPerms"))
 
         Assertions.assertThatThrownBy { followerClient.startReplication(startReplicationRequest,
                 requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser2","password")) }
@@ -118,7 +118,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
         try {
             var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
-                    assumeRoles = AssumeRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
+                    useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
             var requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password")
             followerClient.startReplication(startReplicationRequest, waitForRestore = true,
                     requestOptions = requestOptions)
@@ -149,7 +149,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
         try {
             var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
-                    assumeRoles = AssumeRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
+                    useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
 
             followerClient.startReplication(startReplicationRequest, waitForRestore = true,
                     requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
@@ -175,7 +175,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
         try {
             var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
-                    assumeRoles = AssumeRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
+                    useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
 
             followerClient.startReplication(startReplicationRequest,  waitForRestore = true,
                     requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
@@ -199,7 +199,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
         try {
             var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
-                    assumeRoles = AssumeRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
+                    useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
 
             followerClient.startReplication(startReplicationRequest, waitForRestore = true,
                     requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
@@ -231,7 +231,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
         try {
             followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName,
-                assumeRoles = AssumeRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms")),
+                useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms")),
                 requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
             assertBusy {
                 Assertions.assertThat(followerClient.indices()
@@ -283,7 +283,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
         try {
             followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName,
-                    assumeRoles = AssumeRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms")),
+                    useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms")),
                     requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
             assertBusy {
                 Assertions.assertThat(followerClient.indices()
@@ -326,7 +326,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
 
         try {
             followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern,
-                    assumeRoles = AssumeRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"),
+                    assumeRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"),
                     requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
 
             // Verify that existing index matching the pattern are replicated.
@@ -360,7 +360,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
 
         Assertions.assertThatThrownBy {
             followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern,
-                    assumeRoles = AssumeRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleNoPerms"),
+                    assumeRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleNoPerms"),
                     requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser2","password"))
         }.isInstanceOf(ResponseException::class.java)
         .hasMessageContaining("403 Forbidden")
@@ -392,7 +392,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
         try {
             var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
-                    assumeRoles = AssumeRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
+                    useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
 
             followerClient.startReplication(startReplicationRequest, waitForRestore = true,
                     requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))

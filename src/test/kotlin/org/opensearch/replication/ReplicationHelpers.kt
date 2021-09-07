@@ -17,7 +17,6 @@ import org.assertj.core.api.Assertions.assertThat
 import org.opensearch.action.admin.cluster.health.ClusterHealthRequest
 import org.opensearch.action.admin.cluster.node.tasks.list.ListTasksRequest
 import org.opensearch.action.support.master.AcknowledgedResponse
-import org.opensearch.client.HttpAsyncResponseConsumerFactory.HeapBufferedResponseConsumerFactory
 import org.opensearch.client.Request
 import org.opensearch.client.RequestOptions
 import org.opensearch.client.Response
@@ -30,14 +29,13 @@ import org.opensearch.common.xcontent.XContentType
 import org.opensearch.test.OpenSearchTestCase.assertBusy
 import org.opensearch.test.rest.OpenSearchRestTestCase
 import org.junit.Assert
-import org.opensearch.replication.task.index.IndexReplicationExecutor.Companion.log
 import java.util.concurrent.TimeUnit
 import java.util.stream.Collectors
 
-data class AssumeRoles(val leaderClusterRole: String = "leader_role", val followerClusterRole: String = "follower_role")
+data class UseRoles(val leaderClusterRole: String = "leader_role", val followerClusterRole: String = "follower_role")
 
 data class StartReplicationRequest(val leaderAlias: String, val leaderIndex: String, val toIndex: String,
-                                   val settings: Settings = Settings.EMPTY, val assumeRoles: AssumeRoles = AssumeRoles())
+                                   val settings: Settings = Settings.EMPTY, val useRoles: UseRoles = UseRoles())
 
 const val REST_REPLICATION_PREFIX = "/_plugins/_replication/"
 const val REST_REPLICATION_START = "$REST_REPLICATION_PREFIX{index}/_start"
@@ -68,9 +66,9 @@ fun RestHighLevelClient.startReplication(request: StartReplicationRequest,
         lowLevelRequest.setJsonEntity("""{
                                        "leader_alias" : "${request.leaderAlias}",
                                        "leader_index": "${request.leaderIndex}",
-                                       "assume_roles": {
-                                        "leader_cluster_role": "${request.assumeRoles.leaderClusterRole}",
-                                        "follower_cluster_role": "${request.assumeRoles.followerClusterRole}"
+                                       "use_roles": {
+                                        "leader_cluster_role": "${request.useRoles.leaderClusterRole}",
+                                        "follower_cluster_role": "${request.useRoles.followerClusterRole}"
                                        }
                                      }            
                                   """)
@@ -78,9 +76,9 @@ fun RestHighLevelClient.startReplication(request: StartReplicationRequest,
         lowLevelRequest.setJsonEntity("""{
                                        "leader_alias" : "${request.leaderAlias}",
                                        "leader_index": "${request.leaderIndex}",
-                                       "assume_roles": {
-                                        "leader_cluster_role": "${request.assumeRoles.leaderClusterRole}",
-                                        "follower_cluster_role": "${request.assumeRoles.followerClusterRole}"
+                                       "use_roles": {
+                                        "leader_cluster_role": "${request.useRoles.leaderClusterRole}",
+                                        "follower_cluster_role": "${request.useRoles.followerClusterRole}"
                                        },
                                        "settings": ${request.settings}
                                      }            
@@ -305,7 +303,7 @@ fun RestHighLevelClient.waitForReplicationStop(index: String, waitFor : TimeValu
 
 fun RestHighLevelClient.updateAutoFollowPattern(connection: String, patternName: String, pattern: String,
                                                 settings: Settings = Settings.EMPTY,
-                                                assumeRoles: AssumeRoles = AssumeRoles(),
+                                                useRoles: UseRoles = UseRoles(),
                                                 requestOptions: RequestOptions = RequestOptions.DEFAULT) {
     val lowLevelRequest = Request("POST", REST_AUTO_FOLLOW_PATTERN)
     if (settings == Settings.EMPTY) {
@@ -313,9 +311,9 @@ fun RestHighLevelClient.updateAutoFollowPattern(connection: String, patternName:
                                        "leader_alias" : "${connection}",
                                        "name" : "${patternName}",
                                        "pattern": "${pattern}",
-                                       "assume_roles": {
-                                        "leader_cluster_role": "${assumeRoles.leaderClusterRole}",
-                                        "follower_cluster_role": "${assumeRoles.followerClusterRole}"
+                                       "use_roles": {
+                                        "leader_cluster_role": "${useRoles.leaderClusterRole}",
+                                        "follower_cluster_role": "${useRoles.followerClusterRole}"
                                        }
                                      }""")
     } else {
@@ -323,9 +321,9 @@ fun RestHighLevelClient.updateAutoFollowPattern(connection: String, patternName:
                                        "leader_alias" : "${connection}",
                                        "name" : "${patternName}",
                                        "pattern": "${pattern}",
-                                       "assume_roles": {
-                                        "leader_cluster_role": "${assumeRoles.leaderClusterRole}",
-                                        "follower_cluster_role": "${assumeRoles.followerClusterRole}"
+                                       "use_roles": {
+                                        "leader_cluster_role": "${useRoles.leaderClusterRole}",
+                                        "follower_cluster_role": "${useRoles.followerClusterRole}"
                                        },
                                        "settings": $settings
                                      }""")
