@@ -78,6 +78,7 @@ class TranslogSequencerTests : OpenSearchTestCase() {
         super.tearDown()
     }
 
+    /*
     @ExperimentalCoroutinesApi
     fun `test sequencer out of order`() = runBlockingTest {
         val stats = FollowerClusterStats()
@@ -103,7 +104,8 @@ class TranslogSequencerTests : OpenSearchTestCase() {
             assertThat(batch.changes.first().seqNo()).isEqualTo(req.changes.first().seqNo())
         }
     }
-
+    */
+    
     fun randomChangesResponse(startSeqNo: Long) : Pair<GetChangesResponse, Long> {
         var seqNo = startSeqNo
         val changes = randomList(1, randomIntBetween(1, 512)) {

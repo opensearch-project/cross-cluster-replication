@@ -172,6 +172,7 @@ test {
             suspend = false
         }
     }
+    failFast = true
 }
 
 // Setting RunTask.debug = true configures the JVM to use a debugger in listen mode (server=n,suspend=y).  This is a
@@ -385,6 +386,7 @@ integTest {
     }
     systemProperty "build.dir", "${buildDir}"
     systemProperty "java.security.policy", "file://${projectDir}/src/test/resources/plugin-security.policy"
+    failFast = true
 }
 
 run {

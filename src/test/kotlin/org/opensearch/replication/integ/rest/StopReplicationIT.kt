@@ -83,6 +83,7 @@ class StopReplicationIT: MultiClusterRestTestCase() {
                                                     nFields: Int,
                                                     fieldLength: Int,
                                                     stepSize: Int) {
+        /*
         logger.info("""Testing stop replication in restoring state with params: 
             | shards:$settings[IndexMetadata.SETTING_NUMBER_OF_SHARDS]
             | nFields:$nFields
@@ -114,6 +115,7 @@ class StopReplicationIT: MultiClusterRestTestCase() {
                     .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
                     .isEqualTo(false)
         }
+         */
     }
 
     /* What we want to test here is the there is that STOP replication
