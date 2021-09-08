@@ -85,6 +85,7 @@ class TranslogSequencerTests : ESTestCase() {
     @ExperimentalCoroutinesApi
     fun `test sequencer out of order`() = runBlockingTest {
         val stats = FollowerClusterStats()
+        stats.stats[followerShardId]  = FollowerShardMetric()
         val startSeqNo = randomNonNegativeLong()
         val sequencer = TranslogSequencer(this, replicationMetadata, followerShardId, leaderAlias, leaderIndex, EMPTY_TASK_ID,
                                           client, startSeqNo, stats)
