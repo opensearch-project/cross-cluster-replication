@@ -112,7 +112,7 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
 
                 // Translog fetch is disabled or not found
                 if(!fetchFromTranslog) {
-                    log.info("Fetching changes from lucene for ${request.shardId} - from:${request.fromSeqNo}, to:$toSeqNo")
+                    log.debug("Fetching changes from lucene for ${request.shardId} - from:${request.fromSeqNo}, to:$toSeqNo")
                     relativeStartNanos  = System.nanoTime()
                     indexShard.newChangesSnapshot("odr", request.fromSeqNo, toSeqNo, true).use { snapshot ->
                         ops = ArrayList(snapshot.totalOperations())
