@@ -209,9 +209,14 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         updateTaskState(FollowingState)
         val followerIndexService = indicesService.indexServiceSafe(followerShardId.index)
         val indexShard = followerIndexService.getShard(followerShardId.id)
-        // Renewing retention lease with retain all. After the task starts getting changes, retention lease would be
-        // renewed based on lastSyncedGlobalCheckpoint.
-        retentionLeaseHelper.renewRetentionLease(leaderShardId, RetentionLeaseActions.RETAIN_ALL , followerShardId)
+        // Adding retention lease at lastSyncedGlobalCheckpoint. This makes sure
+        // new tasks spawned after node changes/shard movements are handled properly
+        try {
+            logInfo("Adding retention lease")
+            retentionLeaseHelper.addRetentionLease(leaderShardId, indexShard.lastSyncedGlobalCheckpoint, followerShardId)
+        } catch (e: RetentionLeaseInvalidRetainingSeqNoException) {
+            logInfo("Retention lease add failed. Ignoring ${e.stackTraceToString()}")
+        }
         addListenerToInterruptTask()
         this.followerClusterStats.stats[followerShardId] = FollowerShardMetric()
 
