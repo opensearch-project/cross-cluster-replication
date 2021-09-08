@@ -1040,19 +1040,17 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             followerClient.pauseReplication(followerIndex2)
             followerClient.stopReplication(followerIndex3)
 
-            assertBusy {
-                val stats = followerClient.followerStats()
-                assertThat(stats.getValue("num_syncing_indices").toString()).isEqualTo("1")
-                assertThat(stats.getValue("num_paused_indices").toString()).isEqualTo("1")
-                assertThat(stats.getValue("num_shard_tasks").toString()).isEqualTo("1")
-                assertThat(stats.getValue("num_index_tasks").toString()).isEqualTo("1")
-                assertThat(stats.getValue("operations_written").toString()).isEqualTo("50")
-                assertThat(stats.getValue("operations_read").toString()).isEqualTo("50")
-                assertThat(stats.getValue("failed_read_requests").toString()).isEqualTo("0")
-                assertThat(stats.getValue("failed_write_requests").toString()).isEqualTo("0")
-                assertThat(stats.containsKey("index_stats"))
-                assertThat(stats.size).isEqualTo(15)
-            }
+
+            val stats = followerClient.followerStats()
+            assertThat(stats.getValue("num_syncing_indices").toString()).isEqualTo("1")
+            assertThat(stats.getValue("num_paused_indices").toString()).isEqualTo("1")
+            assertThat(stats.getValue("num_shard_tasks").toString()).isEqualTo("1")
+            assertThat(stats.getValue("operations_written").toString()).isEqualTo("50")
+            assertThat(stats.getValue("operations_read").toString()).isEqualTo("50")
+            assertThat(stats.getValue("failed_read_requests").toString()).isEqualTo("0")
+            assertThat(stats.getValue("failed_write_requests").toString()).isEqualTo("0")
+            assertThat(stats.containsKey("index_stats"))
+            assertThat(stats.size).isEqualTo(15)
         } finally {
             followerClient.stopReplication(followerIndexName)
             followerClient.stopReplication(followerIndex2)
