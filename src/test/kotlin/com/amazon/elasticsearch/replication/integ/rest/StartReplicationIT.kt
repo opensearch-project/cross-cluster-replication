@@ -159,7 +159,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             leaderClient.lowLevelClient.performRequest(Request("POST", "/" + leaderIndexName + "/_close"))
             assertBusy ({
                 try {
-                    assertThat(followerClient.replicationStatus(followerIndexName)).containsKey("status1")
+                    assertThat(followerClient.replicationStatus(followerIndexName)).containsKey("status")
                     var statusResp = followerClient.replicationStatus(followerIndexName)
                     `validate paused status on closed index`(statusResp)
                 } catch (e : Exception) {
