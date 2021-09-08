@@ -326,7 +326,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
 
         try {
             followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern,
-                    assumeRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"),
+                    useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"),
                     requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
 
             // Verify that existing index matching the pattern are replicated.
@@ -360,7 +360,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
 
         Assertions.assertThatThrownBy {
             followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern,
-                    assumeRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleNoPerms"),
+                    useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleNoPerms"),
                     requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser2","password"))
         }.isInstanceOf(ResponseException::class.java)
         .hasMessageContaining("403 Forbidden")
