@@ -63,10 +63,12 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
         try {
             followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
 
+            val myReason = "I want to pause!"
+
             /* At this point, the follower cluster should be in FOLLOWING state. Next, we pause replication
             and verify the same
              */
-            followerClient.pauseReplication(followerIndexName)
+            followerClient.pauseReplication(followerIndexName, myReason)
             // Since, we were still in FOLLOWING phase when pause was called, the index
             // in follower index should not have been deleted in follower cluster
             assertBusy {
@@ -74,6 +76,9 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
                         .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
                         .isEqualTo(true)
             }
+
+            val statusResp = followerClient.replicationStatus(followerIndexName)
+            `validate paused status response`(statusResp, myReason)
 
             var settings = Settings.builder()
                     .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0)
@@ -207,8 +212,7 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
 
             followerClient.pauseReplication(followerIndexName)
 
-            followerClient.replicationStatus(followerIndexName, verbose = false)
-            var statusResp = followerClient.replicationStatus(followerIndexName)
+            val statusResp = followerClient.replicationStatus(followerIndexName)
             `validate paused status response`(statusResp)
 
         } finally {
