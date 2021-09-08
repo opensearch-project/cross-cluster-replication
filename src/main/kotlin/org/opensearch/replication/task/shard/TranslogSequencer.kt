@@ -16,7 +16,7 @@ import org.opensearch.replication.action.changes.GetChangesResponse
 import org.opensearch.replication.action.replay.ReplayChangesAction
 import org.opensearch.replication.action.replay.ReplayChangesRequest
 import org.opensearch.replication.metadata.store.ReplicationMetadata
-import org.opensearch.replication.util.suspendExecute
+import org.opensearch.replication.util.suspendExecuteWithRetries
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ObsoleteCoroutinesApi
@@ -65,7 +65,7 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
                 replayRequest.parentTask = parentTaskId
                 launch {
                     var relativeStartNanos  = System.nanoTime()
-                    val replayResponse = client.suspendExecute(replicationMetadata, ReplayChangesAction.INSTANCE, replayRequest)
+                    val replayResponse = client.suspendExecuteWithRetries(replicationMetadata, ReplayChangesAction.INSTANCE, replayRequest, log = log)
                     if (replayResponse.shardInfo.failed > 0) {
                         replayResponse.shardInfo.failures.forEachIndexed { i, failure ->
                             log.error("Failed replaying changes. Failure:$i:$failure")
