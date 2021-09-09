@@ -1,0 +1,64 @@
+name: Test and Build Workflow
+# This workflow is triggered on pull requests to main branch
+on:
+  pull_request:
+    branches:
+      - '*'
+  push:
+    branches:
+      - '*'
+
+jobs:
+  build:
+    # Job name
+    name: Build Replication plugin
+    runs-on: ubuntu-latest
+    steps:
+      # This step uses the setup-java Github action: https://github.com/actions/setup-java
+      - name: Set Up JDK 14
+        uses: actions/setup-java@v1
+        with:
+          java-version: 14
+      # dependencies: OpenSearch
+      - name: Checkout OpenSearch
+        uses: actions/checkout@v2
+        with:
+          # TODO: Switch to OS 1.x branch
+          repository: 'saikaranam-amazon/OpenSearch'
+          path: OpenSearch
+          ref: 'karanas-os-replication-all-changes'
+      - name: Build OpenSearch
+        working-directory: ./OpenSearch
+        run: |
+          ./gradlew publishToMavenLocal -Dbuild.snapshot=true
+      # dependencies: common-utils
+      - name: Checkout common-utils
+        uses: actions/checkout@v2
+        with:
+          ref: 'main'
+          repository: 'opensearch-project/common-utils'
+          path: common-utils
+      - name: Build common-utils
+        working-directory: ./common-utils
+        run: ./gradlew publishToMavenLocal -Dbuild.snapshot=true -Dopensearch.version=1.1.0-SNAPSHOT
+      # This step uses the checkout Github action: https://github.com/actions/checkout
+      - name: Checkout Branch
+        uses: actions/checkout@v2
+      - name: Build and run Replication tests
+        run: |
+          ./gradlew clean release -Dbuild.snapshot=true -Dopensearch.version=1.1.0-SNAPSHOT
+      - name: Upload failed logs
+        uses: actions/upload-artifact@v2
+        if: failure()
+        with:
+          name: logs
+          path: |
+            build/testclusters/integTest-*/logs/*
+            build/testclusters/leaderCluster-*/logs/*
+            build/testclusters/followCluster-*/logs/*
+      - name: Create Artifact Path
+        run: |
+          mkdir -p cross-cluster-replication-artifacts
+          cp ./build/distributions/*.zip cross-cluster-replication-artifacts
+      - name: Uploads coverage
+        uses: codecov/codecov-action@v1.2.1
