@@ -66,6 +66,7 @@ import org.opensearch.index.mapper.MapperService
 import org.opensearch.repositories.fs.FsRepository
 import org.opensearch.test.OpenSearchTestCase.assertBusy
 import org.junit.Assert
+import org.opensearch.replication.ReplicationPlugin.Companion.INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING
 import org.opensearch.replication.followerStats
 import org.opensearch.replication.leaderStats
 import org.opensearch.replication.task.index.IndexReplicationExecutor.Companion.log
@@ -384,13 +385,13 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                         .isEqualTo(true)
                 assertThat(followerClient.indices()
                         .getSettings(GetSettingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
-                        .getSetting(followerIndexName, IndexSettings.INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key)
+                        .getSetting(followerIndexName, INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key)
                         .isNullOrEmpty())
             }
 
             assertThat(leaderClient.indices()
                     .getSettings(GetSettingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
-                    .getSetting(leaderIndexName, IndexSettings.INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key) == "true")
+                    .getSetting(leaderIndexName, INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key) == "true")
 
         } finally {
             followerClient.stopReplication(followerIndexName)
@@ -414,7 +415,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                         .isEqualTo(true)
             }
             // Turn-off the settings and index doc
-            val settingsBuilder = Settings.builder().put(IndexSettings.INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key, false)
+            val settingsBuilder = Settings.builder().put(INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key, false)
             val settingsUpdateResponse = leaderClient.indices().putSettings(UpdateSettingsRequest(leaderIndexName)
                     .settings(settingsBuilder.build()), RequestOptions.DEFAULT)
             Assert.assertEquals(settingsUpdateResponse.isAcknowledged, true)

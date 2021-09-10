@@ -34,7 +34,7 @@ class RemoteClusterTranslogService : AbstractLifecycleComponent(){
 
     override fun doClose() {
     }
-    
+
     public fun getHistoryOfOperations(indexShard: IndexShard, startSeqNo: Long, toSeqNo: Long): List<Translog.Operation> {
         if(!indexShard.hasCompleteHistoryOperations(SOURCE_NAME, Engine.HistorySource.TRANSLOG, startSeqNo)) {
             log.debug("Doesn't have history of operations starting from $startSeqNo")

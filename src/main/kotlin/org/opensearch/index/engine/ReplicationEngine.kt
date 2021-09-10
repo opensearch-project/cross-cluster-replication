@@ -9,10 +9,8 @@
  * GitHub history for details.
  */
 
-package org.opensearch.replication
+package org.opensearch.index.engine
 
-import org.opensearch.index.engine.EngineConfig
-import org.opensearch.index.engine.InternalEngine
 import org.opensearch.index.seqno.SequenceNumbers
 
 class ReplicationEngine(config: EngineConfig) : InternalEngine(config) {
@@ -24,7 +22,7 @@ class ReplicationEngine(config: EngineConfig) : InternalEngine(config) {
     }
 
     override fun generateSeqNoForOperationOnPrimary(operation: Operation): Long {
-        check(operation.seqNo() != SequenceNumbers.UNASSIGNED_SEQ_NO) { "Expected valid sequence number for replicate op but was unassigned"}
+        check(operation.seqNo() != SequenceNumbers.UNASSIGNED_SEQ_NO) { "Expected valid sequence number for replicate op but was unassigned" }
         return operation.seqNo()
     }
 

@@ -11,8 +11,8 @@
 
 package org.opensearch.replication.task.index
 
-import org.opensearch.replication.ReplicationException
 import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATED_INDEX_SETTING
+import org.opensearch.replication.ReplicationPlugin.Companion.INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING
 import org.opensearch.replication.ReplicationSettings
 import org.opensearch.replication.action.index.block.IndexBlockUpdateType
 import org.opensearch.replication.action.index.block.UpdateIndexBlockAction
@@ -78,7 +78,6 @@ import org.opensearch.common.xcontent.XContentBuilder
 import org.opensearch.index.Index
 import org.opensearch.index.IndexService
 import org.opensearch.index.IndexSettings
-import org.opensearch.index.IndexSettings.INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING
 import org.opensearch.index.shard.IndexShard
 import org.opensearch.index.shard.ShardId
 import org.opensearch.indices.cluster.IndicesClusterStateService
