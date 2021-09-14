@@ -19,28 +19,6 @@ jobs:
         uses: actions/setup-java@v1
         with:
           java-version: 14
-      # dependencies: OpenSearch
-      - name: Checkout OpenSearch
-        uses: actions/checkout@v2
-        with:
-          # TODO: Switch to OS 1.x branch
-          repository: 'saikaranam-amazon/OpenSearch'
-          path: OpenSearch
-          ref: 'karanas-os-replication-all-changes'
-      - name: Build OpenSearch
-        working-directory: ./OpenSearch
-        run: |
-          ./gradlew publishToMavenLocal -Dbuild.snapshot=true
-      # dependencies: common-utils
-      - name: Checkout common-utils
-        uses: actions/checkout@v2
-        with:
-          ref: 'main'
-          repository: 'opensearch-project/common-utils'
-          path: common-utils
-      - name: Build common-utils
-        working-directory: ./common-utils
-        run: ./gradlew publishToMavenLocal -Dbuild.snapshot=true -Dopensearch.version=1.1.0-SNAPSHOT
       # This step uses the checkout Github action: https://github.com/actions/checkout
       - name: Checkout Branch
         uses: actions/checkout@v2
