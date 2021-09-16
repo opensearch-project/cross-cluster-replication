@@ -40,6 +40,8 @@ import java.util.Locale
 import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.cluster.metadata.MetadataCreateIndexService
 import org.opensearch.replication.ReplicationPlugin
+import org.opensearch.replication.waitForReplicationStart
+import org.opensearch.replication.waitForShardTaskStart
 import org.opensearch.test.OpenSearchTestCase.assertBusy
 import java.util.concurrent.TimeUnit
 
@@ -54,6 +56,8 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
     private val indexPatternName = "test_pattern"
     private val connectionAlias = "test_conn"
     private val longIndexPatternName = "index_".repeat(43)
+    private val waitForShardTask = TimeValue.timeValueSeconds(10)
+
     fun `test auto follow pattern`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
@@ -78,6 +82,8 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
                 Assertions.assertThat(followerClient.indices()
                         .exists(GetIndexRequest(leaderIndexNameNew), RequestOptions.DEFAULT))
                         .isEqualTo(true)
+                followerClient.waitForShardTaskStart(leaderIndexNameNew, waitForShardTask)
+                followerClient.waitForShardTaskStart(leaderIndexName, waitForShardTask)
             }, 60, TimeUnit.SECONDS)
         } finally {
             followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
@@ -106,7 +112,10 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
                 Assertions.assertThat(followerClient.indices()
                         .exists(GetIndexRequest(leaderIndexNameNew), RequestOptions.DEFAULT))
                         .isEqualTo(true)
+                followerClient.waitForShardTaskStart(leaderIndexNameNew, waitForShardTask)
             }, 30, TimeUnit.SECONDS)
+
+
         } finally {
             followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
             followerClient.stopReplication(leaderIndexNameNew)
@@ -146,6 +155,7 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
                                 .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
                                 .indexToSettings[leaderIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
                 )
+                followerClient.waitForShardTaskStart(leaderIndexName, waitForShardTask)
             }, 15, TimeUnit.SECONDS)
 
         } finally {
@@ -177,9 +187,12 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
             try {
                 followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern)
 
-                // Assert that there is still only one index replication task
-                Assertions.assertThat(getAutoFollowTasks(FOLLOWER).size).isEqualTo(1)
-                Assertions.assertThat(getIndexReplicationTasks(FOLLOWER).size).isEqualTo(1)
+                assertBusy({
+                    // Assert that there is still only one index replication task
+                    Assertions.assertThat(getAutoFollowTasks(FOLLOWER).size).isEqualTo(1)
+                    Assertions.assertThat(getIndexReplicationTasks(FOLLOWER).size).isEqualTo(1)
+                    followerClient.waitForShardTaskStart(leaderIndexName, waitForShardTask)
+                },30, TimeUnit.SECONDS)
             } finally {
                 followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
             }
@@ -254,6 +267,7 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
 
             Assertions.assertThat(getAutoFollowTasks(FOLLOWER).size).isEqualTo(1)
             Assertions.assertThat(getIndexReplicationTasks(FOLLOWER).size).isEqualTo(1)
+            followerClient.waitForShardTaskStart(leaderIndexName, waitForShardTask)
         } finally {
             followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
         }
@@ -264,6 +278,7 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
         }, 30, TimeUnit.SECONDS)
 
         Assertions.assertThat(getIndexReplicationTasks(FOLLOWER).size).isEqualTo(1)
+        followerClient.stopReplication(leaderIndexName)
     }
 
     fun createRandomIndex(client: RestHighLevelClient): String {
