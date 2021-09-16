@@ -118,19 +118,25 @@ import org.opensearch.plugins.EnginePlugin
 import org.opensearch.plugins.PersistentTaskPlugin
 import org.opensearch.plugins.Plugin
 import org.opensearch.plugins.RepositoryPlugin
+import org.opensearch.replication.action.stats.AutoFollowStatsAction
+import org.opensearch.replication.action.stats.AutoFollowStatsAction.Companion.NAME
 import org.opensearch.replication.action.stats.FollowerStatsAction
 import org.opensearch.replication.action.stats.LeaderStatsAction
+import org.opensearch.replication.action.stats.TransportAutoFollowStatsAction
 import org.opensearch.replication.action.stats.TransportFollowerStatsAction
 import org.opensearch.replication.action.stats.TransportLeaderStatsAction
+import org.opensearch.replication.rest.AutoFollowStatsHandler
 import org.opensearch.replication.rest.FollowerStatsHandler
 import org.opensearch.replication.rest.LeaderStatsHandler
 import org.opensearch.replication.seqno.RemoteClusterStats
+import org.opensearch.replication.task.autofollow.AutoFollowStat
 import org.opensearch.replication.task.shard.FollowerClusterStats
 import org.opensearch.repositories.RepositoriesService
 import org.opensearch.repositories.Repository
 import org.opensearch.rest.RestController
 import org.opensearch.rest.RestHandler
 import org.opensearch.script.ScriptService
+import org.opensearch.tasks.Task
 import org.opensearch.threadpool.ExecutorBuilder
 import org.opensearch.threadpool.FixedExecutorBuilder
 import org.opensearch.threadpool.ScalingExecutorBuilder
@@ -221,7 +227,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             ActionHandler(ShardsInfoAction.INSTANCE, TranportShardsInfoAction::class.java),
             ActionHandler(ReplicationStatusAction.INSTANCE,TransportReplicationStatusAction::class.java),
             ActionHandler(LeaderStatsAction.INSTANCE, TransportLeaderStatsAction::class.java),
-            ActionHandler(FollowerStatsAction.INSTANCE, TransportFollowerStatsAction::class.java)
+            ActionHandler(FollowerStatsAction.INSTANCE, TransportFollowerStatsAction::class.java),
+            ActionHandler(AutoFollowStatsAction.INSTANCE, TransportAutoFollowStatsAction::class.java)
         )
     }
 
@@ -238,7 +245,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             StopIndexReplicationHandler(),
             ReplicationStatusHandler(),
             LeaderStatsHandler(),
-            FollowerStatsHandler())
+            FollowerStatsHandler(),
+            AutoFollowStatsHandler())
     }
 
     override fun getExecutorBuilders(settings: Settings): List<ExecutorBuilder<*>> {
@@ -296,8 +304,9 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             NamedWriteableRegistry.Entry(Metadata.Custom::class.java, ReplicationStateMetadata.NAME,
                 Writeable.Reader { inp -> ReplicationStateMetadata(inp) }),
             NamedWriteableRegistry.Entry(NamedDiff::class.java, ReplicationStateMetadata.NAME,
-                Writeable.Reader { inp -> ReplicationStateMetadata.Diff(inp) })
-
+                Writeable.Reader { inp -> ReplicationStateMetadata.Diff(inp) }),
+            NamedWriteableRegistry.Entry(Task.Status::class.java, AutoFollowStat.NAME,
+                    Writeable.Reader { inp -> AutoFollowStat(inp) })
         )
     }
 
