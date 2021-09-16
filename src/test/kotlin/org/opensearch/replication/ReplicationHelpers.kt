@@ -165,9 +165,9 @@ fun `validate not paused status aggregated response`(statusResp: Map<String, Any
     Assert.assertTrue((statusResp.getValue("syncing_details")).toString().contains("leader_checkpoint"))
 }
 
-fun `validate paused status response`(statusResp: Map<String, Any>) {
+fun `validate paused status response`(statusResp: Map<String, Any>, reason: String? = null) {
     Assert.assertEquals("PAUSED", statusResp.getValue("status"))
-    Assert.assertEquals(STATUS_REASON_USER_INITIATED, statusResp.getValue("reason"))
+    Assert.assertEquals(reason ?: STATUS_REASON_USER_INITIATED, statusResp.getValue("reason"))
     Assert.assertFalse(statusResp.containsKey("shard_replication_details"))
     Assert.assertFalse(statusResp.containsKey("follower_checkpoint"))
     Assert.assertFalse(statusResp.containsKey("leader_checkpoint"))
@@ -212,9 +212,13 @@ fun RestHighLevelClient.stopReplication(index: String, shouldWait: Boolean = tru
 }
 
 
-fun RestHighLevelClient.pauseReplication(index: String, shouldWait: Boolean = true, requestOptions: RequestOptions = RequestOptions.DEFAULT) {
+fun RestHighLevelClient.pauseReplication(index: String, reason:String? = null, shouldWait: Boolean = true, requestOptions: RequestOptions = RequestOptions.DEFAULT) {
     val lowLevelPauseRequest = Request("POST", REST_REPLICATION_PAUSE.replace("{index}", index,true))
-    lowLevelPauseRequest.setJsonEntity("{}")
+    if (null == reason) {
+        lowLevelPauseRequest.setJsonEntity("{}")
+    } else {
+        lowLevelPauseRequest.setJsonEntity("{\"reason\":\"$reason\"}")
+    }
     lowLevelPauseRequest.setOptions(requestOptions)
     val lowLevelPauseResponse = lowLevelClient.performRequest(lowLevelPauseRequest)
     val response = getAckResponse(lowLevelPauseResponse)
