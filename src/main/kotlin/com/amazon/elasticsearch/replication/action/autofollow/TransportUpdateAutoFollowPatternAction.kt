@@ -58,8 +58,8 @@ class TransportUpdateAutoFollowPatternAction @Inject constructor(transportServic
             listener.completeWith {
                 if (request.action == UpdateAutoFollowPatternRequest.Action.ADD) {
                     // Pattern is same for leader and follower
-                    val followerClusterRole = request.assumeRoles?.get(ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE)
-                    val leaderClusterRole = request.assumeRoles?.get(ReplicateIndexRequest.LEADER_CLUSTER_ROLE)
+                    val followerClusterRole = request.useRoles?.get(ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE)
+                    val leaderClusterRole = request.useRoles?.get(ReplicateIndexRequest.LEADER_CLUSTER_ROLE)
                     val setupChecksRequest = SetupChecksRequest(ReplicationContext(request.pattern!!, user?.overrideFgacRole(followerClusterRole)),
                             ReplicationContext(request.pattern!!, user?.overrideFgacRole(leaderClusterRole)),
                             request.connection)

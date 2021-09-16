@@ -40,7 +40,6 @@ import org.elasticsearch.common.inject.Inject
 import org.elasticsearch.env.Environment
 import org.elasticsearch.index.IndexNotFoundException
 import org.elasticsearch.index.IndexSettings
-import org.elasticsearch.indices.InvalidIndexNameException
 import org.elasticsearch.tasks.Task
 import org.elasticsearch.threadpool.ThreadPool
 import org.elasticsearch.transport.TransportService
@@ -65,9 +64,9 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
             listener.completeWith {
 
                 val followerReplContext = ReplicationContext(request.followerIndex,
-                        user?.overrideFgacRole(request.assumeRoles?.get(ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE)))
+                        user?.overrideFgacRole(request.useRoles?.get(ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE)))
                 val leaderReplContext = ReplicationContext(request.leaderIndex,
-                        user?.overrideFgacRole(request.assumeRoles?.get(ReplicateIndexRequest.LEADER_CLUSTER_ROLE)))
+                        user?.overrideFgacRole(request.useRoles?.get(ReplicateIndexRequest.LEADER_CLUSTER_ROLE)))
 
                 // For autofollow request, setup checks are already made during addition of the pattern with
                 // original user

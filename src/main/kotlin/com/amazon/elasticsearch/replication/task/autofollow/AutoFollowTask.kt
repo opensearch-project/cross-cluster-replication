@@ -139,9 +139,9 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
             val followerRole = replicationMetadata.followerContext?.user?.roles?.get(0)
             val leaderRole = replicationMetadata.leaderContext?.user?.roles?.get(0)
             if(followerRole != null && leaderRole != null) {
-                request.assumeRoles = HashMap<String, String>()
-                request.assumeRoles!![ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE] = followerRole
-                request.assumeRoles!![ReplicateIndexRequest.LEADER_CLUSTER_ROLE] = leaderRole
+                request.useRoles = HashMap<String, String>()
+                request.useRoles!![ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE] = followerRole
+                request.useRoles!![ReplicateIndexRequest.LEADER_CLUSTER_ROLE] = leaderRole
             }
             request.settings = replicationMetadata.settings
             val response = client.suspendExecute(replicationMetadata, ReplicateIndexAction.INSTANCE, request)

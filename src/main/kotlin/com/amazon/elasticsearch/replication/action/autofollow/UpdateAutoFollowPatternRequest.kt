@@ -39,7 +39,7 @@ class UpdateAutoFollowPatternRequest: AcknowledgedRequest<UpdateAutoFollowPatter
     lateinit var connection: String
     lateinit var patternName: String
     var pattern: String? = null
-    var assumeRoles: HashMap<String, String>? = null // roles to assume - {leader_fgac_role: role1, follower_fgac_role: role2}
+    var useRoles: HashMap<String, String>? = null // roles to use - {leader_fgac_role: role1, follower_fgac_role: role2}
     var settings : Settings = Settings.EMPTY
 
     enum class Action {
@@ -57,16 +57,16 @@ class UpdateAutoFollowPatternRequest: AcknowledgedRequest<UpdateAutoFollowPatter
             AUTOFOLLOW_REQ_PARSER.declareString(UpdateAutoFollowPatternRequest::pattern::set, ParseField("pattern"))
 
             AUTOFOLLOW_REQ_PARSER.declareObjectOrDefault(BiConsumer { reqParser: UpdateAutoFollowPatternRequest,
-                                                                      roles: HashMap<String, String> -> reqParser.assumeRoles = roles},
-                    ReplicateIndexRequest.FGAC_ROLES_PARSER, null, ParseField("assume_roles"))
+                                                                      roles: HashMap<String, String> -> reqParser.useRoles = roles},
+                    ReplicateIndexRequest.FGAC_ROLES_PARSER, null, ParseField("use_roles"))
             AUTOFOLLOW_REQ_PARSER.declareObjectOrDefault(BiConsumer{ request: UpdateAutoFollowPatternRequest, settings: Settings -> request.settings = settings}, BiFunction{ p: XContentParser?, c: Void? -> Settings.fromXContent(p) },
                     null, ParseField(KEY_SETTINGS))
         }
         fun fromXContent(xcp: XContentParser, action: Action) : UpdateAutoFollowPatternRequest {
             val updateAutofollowReq = AUTOFOLLOW_REQ_PARSER.parse(xcp, null)
             updateAutofollowReq.action = action
-            if(updateAutofollowReq.assumeRoles?.size == 0) {
-                updateAutofollowReq.assumeRoles = null
+            if(updateAutofollowReq.useRoles?.size == 0) {
+                updateAutofollowReq.useRoles = null
             }
             if (updateAutofollowReq.settings == null) {
                 updateAutofollowReq.settings = Settings.EMPTY
@@ -91,9 +91,9 @@ class UpdateAutoFollowPatternRequest: AcknowledgedRequest<UpdateAutoFollowPatter
         action = inp.readEnum(Action::class.java)
         var leaderClusterRole = inp.readOptionalString()
         var followerClusterRole = inp.readOptionalString()
-        assumeRoles = HashMap()
-        if(leaderClusterRole != null) assumeRoles!![ReplicateIndexRequest.LEADER_CLUSTER_ROLE] = leaderClusterRole
-        if(followerClusterRole != null) assumeRoles!![ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE] = followerClusterRole
+        useRoles = HashMap()
+        if(leaderClusterRole != null) useRoles!![ReplicateIndexRequest.LEADER_CLUSTER_ROLE] = leaderClusterRole
+        if(followerClusterRole != null) useRoles!![ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE] = followerClusterRole
         settings = Settings.readSettingsFromStream(inp)
     }
 
@@ -107,8 +107,8 @@ class UpdateAutoFollowPatternRequest: AcknowledgedRequest<UpdateAutoFollowPatter
         }
 
         validateName(patternName, validationException)
-        if(assumeRoles != null && (assumeRoles!!.size < 2 || assumeRoles!![ReplicateIndexRequest.LEADER_CLUSTER_ROLE] == null ||
-                        assumeRoles!![ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE] == null)) {
+        if(useRoles != null && (useRoles!!.size < 2 || useRoles!![ReplicateIndexRequest.LEADER_CLUSTER_ROLE] == null ||
+                        useRoles!![ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE] == null)) {
             validationException.addValidationError("Need roles for ${ReplicateIndexRequest.LEADER_CLUSTER_ROLE} and " +
                     "${ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE}")
         }
@@ -130,8 +130,8 @@ class UpdateAutoFollowPatternRequest: AcknowledgedRequest<UpdateAutoFollowPatter
         out.writeString(patternName)
         out.writeOptionalString(pattern)
         out.writeEnum(action)
-        out.writeOptionalString(assumeRoles?.get(ReplicateIndexRequest.LEADER_CLUSTER_ROLE))
-        out.writeOptionalString(assumeRoles?.get(ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE))
+        out.writeOptionalString(useRoles?.get(ReplicateIndexRequest.LEADER_CLUSTER_ROLE))
+        out.writeOptionalString(useRoles?.get(ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE))
         Settings.writeSettingsToStream(settings, out)
     }
 
@@ -141,11 +141,11 @@ class UpdateAutoFollowPatternRequest: AcknowledgedRequest<UpdateAutoFollowPatter
         builder.field("pattern_name", patternName)
         builder.field("pattern", pattern)
         builder.field("action", action.name)
-        if(assumeRoles != null) {
-            builder.field("assume_roles")
+        if(useRoles != null) {
+            builder.field("use_roles")
             builder.startObject()
-            builder.field("leader_cluster_role", assumeRoles!!.get(ReplicateIndexRequest.LEADER_CLUSTER_ROLE))
-            builder.field("follower_cluster_role", assumeRoles!!.get(ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE))
+            builder.field("leader_cluster_role", useRoles!!.get(ReplicateIndexRequest.LEADER_CLUSTER_ROLE))
+            builder.field("follower_cluster_role", useRoles!!.get(ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE))
             builder.endObject()
         }
 
