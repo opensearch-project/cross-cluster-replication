@@ -16,6 +16,7 @@ import org.opensearch.action.ActionRequestValidationException
 import org.opensearch.action.IndicesRequest
 import org.opensearch.action.support.IndicesOptions
 import org.opensearch.action.support.master.AcknowledgedRequest
+import org.opensearch.common.ParseField
 import org.opensearch.common.io.stream.StreamInput
 import org.opensearch.common.io.stream.StreamOutput
 import org.opensearch.common.xcontent.ObjectParser
@@ -45,6 +46,10 @@ class PauseIndexReplicationRequest : AcknowledgedRequest<PauseIndexReplicationRe
     companion object {
         private val PARSER = ObjectParser<PauseIndexReplicationRequest, Void>("PauseReplicationRequestParser") {
             PauseIndexReplicationRequest()
+        }
+
+        init {
+            PARSER.declareString(PauseIndexReplicationRequest::reason::set, ParseField("reason"))
         }
 
         fun fromXContent(parser: XContentParser, followerIndex: String): PauseIndexReplicationRequest {
