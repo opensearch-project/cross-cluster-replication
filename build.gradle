@@ -383,6 +383,7 @@ integTest {
             configureCluster(cluster, securityEnabled)
         }
     }
+    failFast = true
     systemProperty "build.dir", "${buildDir}"
     systemProperty "java.security.policy", "file://${projectDir}/src/test/resources/plugin-security.policy"
 }
