@@ -36,7 +36,7 @@ class SecurityCustomRolesLeaderIT: SecurityBase() {
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
 
         var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
-                assumeRoles = AssumeRoles(leaderClusterRole = "leaderRoleNoPerms",followerClusterRole = "followerRoleValidPerms"))
+                useRoles = UseRoles(leaderClusterRole = "leaderRoleNoPerms",followerClusterRole = "followerRoleValidPerms"))
 
         Assertions.assertThatThrownBy { followerClient.startReplication(startReplicationRequest,
                 requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser6","password")) }
@@ -55,7 +55,7 @@ class SecurityCustomRolesLeaderIT: SecurityBase() {
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
         try {
             var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
-                    assumeRoles = AssumeRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
+                    useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
 
             followerClient.startReplication(startReplicationRequest, waitForRestore = true,
                     requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
@@ -99,7 +99,7 @@ class SecurityCustomRolesLeaderIT: SecurityBase() {
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
         try {
             var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
-                    assumeRoles = AssumeRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
+                    useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
 
             updateFileChunkPermissions("","leaderRoleValidPerms", false)
             followerClient.startReplication(startReplicationRequest,

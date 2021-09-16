@@ -140,21 +140,21 @@ class TransportSetupChecksAction @Inject constructor(transportService: Transport
     private fun triggerPermissionsValidation(client: Client,
                                              cluster: String,
                                              replContext: ReplicationContext,
-                                             shouldAssumeRole: Boolean,
+                                             shouldUseRole: Boolean,
                                              permissionListener: ActionListener<AcknowledgedResponse>) {
 
         var storedContext: ThreadContext.StoredContext? = null
         try {
-            // Remove the assume roles transient from the previous call
+            // Remove the use roles transient from the previous call
             storedContext = client.threadPool().threadContext.newStoredContext(false,
-                    listOf(SecurityContext.OPENDISTRO_SECURITY_ASSUME_ROLES))
-            val assumeRole = replContext.user?.roles?.get(0)
-            val inThreadContextRole = client.threadPool().threadContext.getTransient<String?>(SecurityContext.OPENDISTRO_SECURITY_ASSUME_ROLES)
-            log.debug("assume role is $inThreadContextRole for $cluster")
-            if(shouldAssumeRole) {
-                client.threadPool().threadContext.putTransient(SecurityContext.OPENDISTRO_SECURITY_ASSUME_ROLES, assumeRole)
+                    listOf(SecurityContext.OPENDISTRO_SECURITY_ROLES_VALIDATION))
+            val useRole = replContext.user?.roles?.get(0)
+            val inThreadContextRole = client.threadPool().threadContext.getTransient<String?>(SecurityContext.OPENDISTRO_SECURITY_ROLES_VALIDATION)
+            log.debug("use_role is $inThreadContextRole for $cluster")
+            if(shouldUseRole) {
+                client.threadPool().threadContext.putTransient(SecurityContext.OPENDISTRO_SECURITY_ROLES_VALIDATION, useRole)
             }
-            val validateReq = ValidatePermissionsRequest(cluster, replContext.resource, assumeRole)
+            val validateReq = ValidatePermissionsRequest(cluster, replContext.resource, useRole)
             client.execute(ValidatePermissionsAction.INSTANCE, validateReq, permissionListener)
         } finally {
             storedContext?.close()
