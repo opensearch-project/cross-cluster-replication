@@ -945,7 +945,6 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         }.isInstanceOf(ResponseException::class.java).hasMessageContaining("Cannot Replicate an index where the setting index.soft_deletes.enabled is disabled")
     }
 
-    @AwaitsFix(bugUrl = "")
     fun `test leader stats`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
@@ -976,15 +975,15 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                 leaderClient.index(IndexRequest(leaderIndexName).id(i.toString()).source(sourceMap), RequestOptions.DEFAULT)
             }
 
-
-            TimeUnit.SECONDS.sleep(5)
-
-            val stats = leaderClient.leaderStats()
-            assertThat(stats.size).isEqualTo(9)
-            assertThat(stats.getValue("num_replicated_indices").toString()).isEqualTo("1")
-            assertThat(stats.getValue("operations_read").toString()).isEqualTo(docCount.toString())
-            assertThat(stats.getValue("operations_read_lucene").toString()).isEqualTo("0")
-            assertThat(stats.getValue("operations_read_translog").toString()).isEqualTo(docCount.toString())
+            assertBusy {
+                val stats = leaderClient.leaderStats()
+                assertThat(stats.size).isEqualTo(9)
+                assertThat(stats.getValue("num_replicated_indices").toString()).isEqualTo("1")
+                assertThat(stats.getValue("operations_read").toString()).isEqualTo(docCount.toString())
+                assertThat(stats.getValue("operations_read_lucene").toString()).isEqualTo("0")
+                assertThat(stats.getValue("operations_read_translog").toString()).isEqualTo(docCount.toString())
+                assertThat(stats.containsKey("index_stats"))
+            }
 
         } finally {
             followerClient.stopReplication(followerIndexName)
