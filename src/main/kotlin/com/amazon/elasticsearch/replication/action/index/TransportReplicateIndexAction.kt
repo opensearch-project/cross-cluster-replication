@@ -17,6 +17,7 @@ package com.amazon.elasticsearch.replication.action.index
 
 import com.amazon.elasticsearch.replication.ReplicationException
 import com.amazon.elasticsearch.replication.ReplicationPlugin
+import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.KNN_INDEX_SETTING
 import com.amazon.elasticsearch.replication.action.setup.SetupChecksAction
 import com.amazon.elasticsearch.replication.action.setup.SetupChecksRequest
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationContext
@@ -94,6 +95,13 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
                 if (!leaderSettings.getAsBoolean(IndexSettings.INDEX_SOFT_DELETES_SETTING.key, true)) {
                     throw IllegalArgumentException("Cannot Replicate an index where the setting ${IndexSettings.INDEX_SOFT_DELETES_SETTING.key} is disabled")
                 }
+
+                // For k-NN indices, k-NN loads its own engine and this conflicts with the replication follower engine
+                // Blocking k-NN indices for replication
+                if(leaderSettings.getAsBoolean(KNN_INDEX_SETTING, false)) {
+                    throw IllegalArgumentException("Cannot Replicate k-NN index - ${request.leaderIndex}")
+                }
+
                 ValidationUtil.validateAnalyzerSettings(environment, leaderSettings, request.settings)
 
                 // Setup checks are successful and trigger replication for the index

@@ -15,6 +15,7 @@
 
 package com.amazon.elasticsearch.replication.action.resume
 
+import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.KNN_INDEX_SETTING
 import com.amazon.elasticsearch.replication.action.index.ReplicateIndexResponse
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
@@ -101,7 +102,16 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
                     remoteClient.admin().indices()::getSettings,
                     injectSecurityContext = true
                 )(getSettingsRequest)
-                ValidationUtil.validateAnalyzerSettings(environment, settingsResponse.indexToSettings.get(params.leaderIndex.name), replMetdata.settings)
+
+                val leaderSettings = settingsResponse.indexToSettings.get(params.leaderIndex.name) ?: throw IndexNotFoundException(params.leaderIndex.name)
+
+                // k-NN Setting is a static setting. In case the setting is changed at the leader index before resume,
+                // block the resume.
+                if(leaderSettings.getAsBoolean(KNN_INDEX_SETTING, false)) {
+                    throw IllegalStateException("Index setting (index.knn) changed. Cannot resume k-NN index - ${params.leaderIndex.name}")
+                }
+
+                ValidationUtil.validateAnalyzerSettings(environment, leaderSettings, replMetdata.settings)
 
                 replicationMetadataManager.updateIndexReplicationState(request.indexName, ReplicationOverallState.RUNNING)
                 val task = persistentTasksService.startTask("replication:index:${request.indexName}",
