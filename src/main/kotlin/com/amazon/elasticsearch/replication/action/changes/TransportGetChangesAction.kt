@@ -15,7 +15,6 @@
 
 package com.amazon.elasticsearch.replication.action.changes
 
-import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.PLUGINS_REPLICATION_TRANSLOG_PRUNING_SETTING
 import com.amazon.elasticsearch.replication.util.completeWith
 import com.amazon.elasticsearch.replication.util.coroutineContext
 import com.amazon.elasticsearch.replication.util.waitForGlobalCheckpoint
@@ -149,7 +148,7 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
 
     private fun isTranslogPruningByRetentionLeaseEnabled(shardId: ShardId): Boolean {
         val enabled = clusterService.state().metadata.indices.get(shardId.indexName)
-                ?.settings?.getAsBoolean(PLUGINS_REPLICATION_TRANSLOG_PRUNING_SETTING, false)
+                ?.settings?.getAsBoolean(IndexSettings.INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key, false)
         if(enabled != null) {
             return enabled
         }
