@@ -16,6 +16,7 @@
 package com.amazon.elasticsearch.replication.repository
 
 import com.amazon.elasticsearch.replication.ReplicationPlugin
+import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.PLUGINS_REPLICATION_TRANSLOG_PRUNING_SETTING
 import com.amazon.elasticsearch.replication.ReplicationSettings
 import com.amazon.elasticsearch.replication.action.repository.GetStoreMetadataAction
 import com.amazon.elasticsearch.replication.action.repository.GetStoreMetadataRequest
@@ -243,7 +244,7 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         builder.put(ReplicationPlugin.REPLICATED_INDEX_SETTING.key, replicatedIndex)
 
         // Remove translog pruning for the follower index
-        builder.remove(IndexSettings.INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key)
+        builder.remove(PLUGINS_REPLICATION_TRANSLOG_PRUNING_SETTING)
 
         val indexMdBuilder = IndexMetadata.builder(indexMetadata).settings(builder)
         indexMetadata.aliases.valuesIt().forEach {
