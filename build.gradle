@@ -193,7 +193,6 @@ def securityPluginFile = new Callable<RegularFile>() {
         }
     }
 
-
 // Clone of WaitForHttpResource with updated code to support Cross cluster usecase
 class CrossClusterWaitForHttpResource {
 

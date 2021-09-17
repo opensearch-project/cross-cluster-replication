@@ -157,6 +157,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
     companion object {
         const val REPLICATION_EXECUTOR_NAME_LEADER = "replication_leader"
         const val REPLICATION_EXECUTOR_NAME_FOLLOWER = "replication_follower"
+        const val KNN_INDEX_SETTING = "index.knn"
         val REPLICATED_INDEX_SETTING: Setting<String> = Setting.simpleString("index.plugins.replication.replicated",
             Setting.Property.InternalIndex, Setting.Property.IndexScope)
         val REPLICATION_FOLLOWER_OPS_BATCH_SIZE: Setting<Int> = Setting.intSetting("plugins.replication.follower.index.ops_batch_size", 50000, 16,
