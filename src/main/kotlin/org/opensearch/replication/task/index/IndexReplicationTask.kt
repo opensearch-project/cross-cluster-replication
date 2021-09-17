@@ -11,7 +11,6 @@
 
 package org.opensearch.replication.task.index
 
-import org.opensearch.replication.ReplicationException
 import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATED_INDEX_SETTING
 import org.opensearch.replication.ReplicationSettings
 import org.opensearch.replication.action.index.block.IndexBlockUpdateType
@@ -49,7 +48,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.opensearch.OpenSearchException
 import org.opensearch.OpenSearchTimeoutException
-import org.opensearch.ResourceNotFoundException
 import org.opensearch.action.ActionListener
 import org.opensearch.action.admin.indices.alias.IndicesAliasesRequest
 import org.opensearch.action.admin.indices.alias.IndicesAliasesRequest.AliasActions
@@ -91,6 +89,7 @@ import org.opensearch.persistent.PersistentTasksService
 import org.opensearch.tasks.TaskId
 import org.opensearch.tasks.TaskManager
 import org.opensearch.threadpool.ThreadPool
+import java.util.Collections
 import java.util.function.Predicate
 import java.util.stream.Collectors
 import kotlin.coroutines.resume
@@ -760,15 +759,15 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
             if (doesValidIndexExists()) {
                 return InitFollowState
             } else {
-                throw ResourceNotFoundException("""
-                    Unable to find in progress restore for remote index: $leaderAlias:$leaderIndex. 
+                return FailedState(Collections.emptyMap(), """
+                    Unable to find in progress restore for remote index: $leaderAlias:$leaderIndex.
                     This can happen if there was a badly timed master node failure.""".trimIndent())
             }
         } else if (restore.state() == RestoreInProgress.State.FAILURE) {
             val failureReason = restore.shards().values().find {
                 it.value.state() == RestoreInProgress.State.FAILURE
             }!!.value.reason()
-            throw org.opensearch.replication.ReplicationException("Remote restore failed: $failureReason")
+            return FailedState(Collections.emptyMap(), failureReason)
         } else {
             return InitFollowState
         }
