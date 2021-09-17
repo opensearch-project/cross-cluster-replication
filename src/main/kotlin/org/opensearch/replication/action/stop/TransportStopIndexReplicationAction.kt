@@ -90,13 +90,16 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
         launch(Dispatchers.Unconfined + threadPool.coroutineContext()) {
             try {
                 log.info("Stopping index replication on index:" + request.indexName)
-                val isPaused = validateStopReplicationRequest(request)
 
+                // NOTE: We remove the block first before validation since it is harmless idempotent operations and
+                //       gives back control of the index even if any failure happens in one of the steps post this.
                 val updateIndexBlockRequest = UpdateIndexBlockRequest(request.indexName,IndexBlockUpdateType.REMOVE_BLOCK)
                 val updateIndexBlockResponse = client.suspendExecute(UpdateIndexBlockAction.INSTANCE, updateIndexBlockRequest, injectSecurityContext = true)
                 if(!updateIndexBlockResponse.isAcknowledged) {
                     throw OpenSearchException("Failed to remove index block on ${request.indexName}")
                 }
+
+                val isPaused = validateStopReplicationRequest(request)
 
                 // Index will be deleted if replication is stopped while it is restoring.  So no need to close/reopen
                 val restoring = clusterService.state().custom<RestoreInProgress>(RestoreInProgress.TYPE, RestoreInProgress.EMPTY).any { entry ->
@@ -178,10 +181,12 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                 ?:
             throw IllegalArgumentException("No replication in progress for index:${request.indexName}")
         val replicationOverallState = replicationStateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE]
-        if (replicationOverallState == ReplicationOverallState.RUNNING.name)
-            return false
-        else if (replicationOverallState == ReplicationOverallState.PAUSED.name)
+        if (replicationOverallState == ReplicationOverallState.PAUSED.name)
             return true
+        else if (replicationOverallState == ReplicationOverallState.RUNNING.name ||
+            replicationOverallState == ReplicationOverallState.STOPPED.name ||
+            replicationOverallState == ReplicationOverallState.FAILED.name)
+            return false
         throw IllegalStateException("Unknown value of replication state:$replicationOverallState")
     }
 
