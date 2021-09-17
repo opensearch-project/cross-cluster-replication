@@ -94,7 +94,7 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
                 // For k-NN indices, k-NN loads its own engine and this conflicts with the replication follower engine
                 // Blocking k-NN indices for replication
                 if(leaderSettings.getAsBoolean(KNN_INDEX_SETTING, false)) {
-                    throw IllegalArgumentException("Cannot Replicate k-NN index - ${request.leaderIndex}")
+                    throw IllegalArgumentException("Cannot replicate k-NN index - ${request.leaderIndex}")
                 }
 
                 ValidationUtil.validateAnalyzerSettings(environment, leaderSettings, request.settings)

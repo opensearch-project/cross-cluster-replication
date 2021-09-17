@@ -105,7 +105,7 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
                 // k-NN Setting is a static setting. In case the setting is changed at the leader index before resume,
                 // block the resume.
                 if(leaderSettings.getAsBoolean(KNN_INDEX_SETTING, false)) {
-                    throw IllegalStateException("Index setting (index.knn) changed. Cannot resume k-NN index - ${params.leaderIndex.name}")
+                    throw IllegalStateException("Cannot resume replication for k-NN enabled index ${params.leaderIndex.name}.")
                 }
 
                 ValidationUtil.validateAnalyzerSettings(environment, leaderSettings, replMetdata.settings)
