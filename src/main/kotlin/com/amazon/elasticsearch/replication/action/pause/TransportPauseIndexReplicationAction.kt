@@ -99,7 +99,7 @@ class TransportPauseIndexReplicationAction @Inject constructor(transportService:
         if (replicationOverallState == ReplicationOverallState.PAUSED.name)
             throw ResourceAlreadyExistsException("Index ${request.indexName} is already paused")
         else if (replicationOverallState != ReplicationOverallState.RUNNING.name)
-            throw IllegalStateException("Unknown value of replication state:$replicationOverallState")
+            throw IllegalStateException("Cannot pause when in $replicationOverallState state")
     }
 
     override fun executor(): String {
