@@ -15,6 +15,10 @@
 
 package com.amazon.elasticsearch.replication
 
+import com.amazon.elasticsearch.replication.action.stats.AutoFollowStatsAction
+import com.amazon.elasticsearch.replication.action.stats.AutoFollowStatsHandler
+import com.amazon.elasticsearch.replication.action.stats.LeaderStatsHandler
+import com.amazon.elasticsearch.replication.action.stats.TransportAutoFollowStatsAction
 import com.amazon.elasticsearch.replication.action.stats.FollowerStatsHandler
 import com.amazon.elasticsearch.replication.action.stats.TransportFollowerStatsAction
 import com.amazon.elasticsearch.replication.task.shard.FollowerClusterStats
@@ -80,6 +84,7 @@ import com.amazon.elasticsearch.replication.seqno.RemoteClusterTranslogService
 import com.amazon.elasticsearch.replication.task.IndexCloseListener
 import com.amazon.elasticsearch.replication.task.autofollow.AutoFollowExecutor
 import com.amazon.elasticsearch.replication.task.autofollow.AutoFollowParams
+import com.amazon.elasticsearch.replication.task.autofollow.AutoFollowStat
 import com.amazon.elasticsearch.replication.task.index.IndexReplicationExecutor
 import com.amazon.elasticsearch.replication.task.index.IndexReplicationParams
 import com.amazon.elasticsearch.replication.task.index.IndexReplicationState
@@ -133,12 +138,12 @@ import org.elasticsearch.repositories.Repository
 import org.elasticsearch.rest.RestController
 import org.elasticsearch.rest.RestHandler
 import org.elasticsearch.script.ScriptService
+import org.elasticsearch.tasks.Task
 import org.elasticsearch.threadpool.ExecutorBuilder
 import org.elasticsearch.threadpool.FixedExecutorBuilder
 import org.elasticsearch.threadpool.ScalingExecutorBuilder
 import org.elasticsearch.threadpool.ThreadPool
 import org.elasticsearch.watcher.ResourceWatcherService
-import org.opensearch.replication.rest.LeaderStatsHandler
 import java.util.Optional
 import java.util.function.Supplier
 
@@ -224,7 +229,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             ActionHandler(ShardsInfoAction.INSTANCE, TranportShardsInfoAction::class.java),
             ActionHandler(ReplicationStatusAction.INSTANCE,TransportReplicationStatusAction::class.java),
             ActionHandler(LeaderStatsAction.INSTANCE, TransportLeaderStatsAction::class.java),
-            ActionHandler(FollowerStatsAction.INSTANCE, TransportFollowerStatsAction::class.java)
+            ActionHandler(FollowerStatsAction.INSTANCE, TransportFollowerStatsAction::class.java),
+            ActionHandler(AutoFollowStatsAction.INSTANCE, TransportAutoFollowStatsAction::class.java)
         )
     }
 
@@ -241,7 +247,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             StopIndexReplicationHandler(),
             ReplicationStatusHandler(),
             LeaderStatsHandler(),
-            FollowerStatsHandler())
+            FollowerStatsHandler(),
+            AutoFollowStatsHandler())
     }
 
     override fun getExecutorBuilders(settings: Settings): List<ExecutorBuilder<*>> {
@@ -299,8 +306,9 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             NamedWriteableRegistry.Entry(Metadata.Custom::class.java, ReplicationStateMetadata.NAME,
                 Writeable.Reader { inp -> ReplicationStateMetadata(inp) }),
             NamedWriteableRegistry.Entry(NamedDiff::class.java, ReplicationStateMetadata.NAME,
-                Writeable.Reader { inp -> ReplicationStateMetadata.Diff(inp) })
-
+                Writeable.Reader { inp -> ReplicationStateMetadata.Diff(inp) }),
+            NamedWriteableRegistry.Entry(Task.Status::class.java, AutoFollowStat.NAME,
+                    Writeable.Reader { inp -> AutoFollowStat(inp) })
         )
     }
 

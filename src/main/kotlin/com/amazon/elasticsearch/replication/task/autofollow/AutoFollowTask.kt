@@ -33,8 +33,13 @@ import org.elasticsearch.action.admin.indices.get.GetIndexRequest
 import org.elasticsearch.action.support.IndicesOptions
 import org.elasticsearch.client.Client
 import org.elasticsearch.cluster.service.ClusterService
+import org.elasticsearch.common.io.stream.StreamInput
+import org.elasticsearch.common.io.stream.StreamOutput
 import org.elasticsearch.common.logging.Loggers
+import org.elasticsearch.common.xcontent.ToXContent
+import org.elasticsearch.common.xcontent.XContentBuilder
 import org.elasticsearch.persistent.PersistentTaskState
+import org.elasticsearch.tasks.Task
 import org.elasticsearch.tasks.TaskId
 import org.elasticsearch.threadpool.Scheduler
 import org.elasticsearch.threadpool.ThreadPool
@@ -59,9 +64,10 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
     private var trackingIndicesOnTheCluster = setOf<String>()
     private var failedIndices = ConcurrentSkipListSet<String>() // Failed indices for replication from this autofollow task
     private var retryScheduler: Scheduler.ScheduledCancellable? = null
-    private var failureCount = 0
+    lateinit var stat: AutoFollowStat
 
     override suspend fun execute(scope: CoroutineScope, initialState: PersistentTaskState?) {
+        stat = AutoFollowStat(params.patternName, replicationMetadata.leaderContext.resource)
         while (scope.isActive) {
             addRetryScheduler()
             autoFollow()
@@ -102,10 +108,9 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
         } catch (e: Exception) {
             // Ideally, Calls to the remote cluster shouldn't fail and autofollow task should be able to pick-up the newly created indices
             // matching the pattern. Should be safe to retry after configured delay.
-            failureCount++
-            if(failureCount > 10) {
+            stat.failedLeaderCall++
+            if(stat.failedLeaderCall > 0 && stat.failedLeaderCall.rem(10) == 0L) {
                 log.error("Fetching remote indices failed with error - ${e.stackTraceToString()}")
-                failureCount = 0;
             }
         }
 
@@ -120,9 +125,11 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
         }
         remoteIndices = remoteIndices.minus(currentIndices).minus(failedIndices)
 
+        stat.failCounterForRun = 0
         for (newRemoteIndex in remoteIndices) {
             startReplication(newRemoteIndex)
         }
+        stat.failCount = stat.failCounterForRun
     }
 
     private suspend fun startReplication(leaderIndex: String) {
@@ -131,6 +138,8 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
                         |exists.""".trimMargin())
             return
         }
+
+        var successStart = false
 
         try {
             log.info("Auto follow starting replication from ${leaderAlias}:$leaderIndex -> $leaderIndex")
@@ -148,15 +157,26 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
             if (!response.isAcknowledged) {
                 throw ReplicationException("Failed to auto follow leader index $leaderIndex")
             }
+            successStart = true
         } catch (e: ElasticsearchSecurityException) {
             // For permission related failures, Adding as part of failed indices as autofollow role doesn't have required permissions.
             log.trace("Cannot start replication on $leaderIndex due to missing permissions $e")
             failedIndices.add(leaderIndex)
+
         } catch (e: Exception) {
             // Any failure other than security exception can be safely retried and not adding to the failed indices
             log.warn("Failed to start replication for $leaderAlias:$leaderIndex -> $leaderIndex.", e)
+        } finally {
+            if (successStart) {
+                stat.successCount++
+                stat.failedIndices.remove(leaderIndex)
+            } else {
+                stat.failCounterForRun++
+                stat.failedIndices.add(leaderIndex)
+            }
         }
     }
+
 
     override fun toString(): String {
         return "AutoFollowTask(from=${leaderAlias} with pattern=${params.patternName})"
@@ -164,5 +184,62 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
 
     override fun replicationTaskResponse(): CrossClusterReplicationTaskResponse {
         return CrossClusterReplicationTaskResponse(ReplicationState.COMPLETED.name)
+    }
+
+    override fun getStatus(): AutoFollowStat {
+        return stat
+    }
+}
+
+class AutoFollowStat: Task.Status {
+    companion object {
+        val NAME = "autofollow_stat"
+    }
+
+    val name :String
+    val pattern :String
+    var failCount: Long=0
+    var failedIndices :MutableSet<String> = mutableSetOf()
+    var failCounterForRun :Long=0
+    var successCount: Long=0
+    var failedLeaderCall :Long=0
+
+
+    constructor(name: String, pattern: String) {
+        this.name = name
+        this.pattern = pattern
+    }
+
+    constructor(inp: StreamInput) {
+        name = inp.readString()
+        pattern = inp.readString()
+        failCount = inp.readLong()
+        failedIndices = inp.readSet(StreamInput::readString)
+        successCount = inp.readLong()
+        failedLeaderCall = inp.readLong()
+    }
+
+    override fun writeTo(out: StreamOutput) {
+       out.writeString(name)
+       out.writeString(pattern)
+       out.writeLong(failCount)
+       out.writeCollection(failedIndices, StreamOutput::writeString)
+       out.writeLong(successCount)
+       out.writeLong(failedLeaderCall)
+    }
+
+    override fun getWriteableName(): String {
+        return NAME
+    }
+
+    override fun toXContent(builder: XContentBuilder, p1: ToXContent.Params?): XContentBuilder {
+        builder.startObject()
+        builder.field("name", name)
+        builder.field("pattern", pattern)
+        builder.field("num_success_start_replication", successCount)
+        builder.field("num_failed_start_replication", failCount)
+        builder.field("num_failed_leader_calls", failedLeaderCall)
+        builder.field("failed_indices", failedIndices)
+        return builder.endObject()
     }
 }
