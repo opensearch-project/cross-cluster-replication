@@ -69,7 +69,7 @@ class LeaderStatsResponse : BaseNodesResponse<LeaderNodeStatsResponse?>, ToXCont
         builder.startObject()
         builder.field("num_replicated_indices", remoteStats.size)
         stats.toXContent(builder, params)
-        builder.field("index_details").map(remoteStats)
+        builder.field("index_stats").map(remoteStats)
         builder.endObject()
         return builder
     }
