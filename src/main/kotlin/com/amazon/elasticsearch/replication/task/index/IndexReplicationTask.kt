@@ -136,7 +136,7 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
     private var metadataPoller: Job? = null
     companion object {
         val blSettings  : Set<Setting<*>> = setOf(
-                INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING,
+                IndexSettings.INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING,
                 IndexMetadata.INDEX_READ_ONLY_SETTING,
                 IndexMetadata.INDEX_BLOCKS_READ_SETTING,
                 IndexMetadata.INDEX_BLOCKS_WRITE_SETTING,
