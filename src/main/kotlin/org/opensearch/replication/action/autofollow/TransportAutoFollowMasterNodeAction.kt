@@ -41,6 +41,7 @@ import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Inject
 import org.opensearch.common.io.stream.StreamInput
 import org.opensearch.common.settings.IndexScopedSettings
+import org.opensearch.replication.ReplicationException
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
 
@@ -75,7 +76,7 @@ class TransportAutoFollowMasterNodeAction @Inject constructor(transportService: 
                 if (request.action == UpdateAutoFollowPatternRequest.Action.ADD) {
                     // Should start the task if there were no follow patterns before adding this
                     if(request.pattern == null) {
-                        throw org.opensearch.replication.ReplicationException("Failed to update empty autofollow pattern")
+                        throw ReplicationException("Failed to update empty autofollow pattern")
                     }
                     // Pattern is same for leader and follower
                     val followerClusterRole = request.useRoles?.get(ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE)

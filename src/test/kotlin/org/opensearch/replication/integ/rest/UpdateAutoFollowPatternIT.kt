@@ -39,10 +39,11 @@ import org.junit.Assert
 import java.util.Locale
 import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.cluster.metadata.MetadataCreateIndexService
+import org.opensearch.replication.AutoFollowStats
 import org.opensearch.replication.ReplicationPlugin
-import org.opensearch.replication.waitForReplicationStart
 import org.opensearch.replication.waitForShardTaskStart
 import org.opensearch.test.OpenSearchTestCase.assertBusy
+import java.util.HashMap
 import java.util.concurrent.TimeUnit
 
 
@@ -74,7 +75,10 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
                         .exists(GetIndexRequest(leaderIndexName), RequestOptions.DEFAULT))
                         .isEqualTo(true)
             }, 30, TimeUnit.SECONDS)
-            Assertions.assertThat(getAutoFollowTasks(FOLLOWER).size).isEqualTo(1)
+
+            assertBusy ({
+                Assertions.assertThat(getAutoFollowTasks(FOLLOWER).size).isEqualTo(1)
+            }, 10, TimeUnit.SECONDS)
 
             leaderIndexNameNew = createRandomIndex(leaderClient)
             // Verify that newly created index on leader which match the pattern are also replicated.
@@ -84,6 +88,13 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
                         .isEqualTo(true)
                 followerClient.waitForShardTaskStart(leaderIndexNameNew, waitForShardTask)
                 followerClient.waitForShardTaskStart(leaderIndexName, waitForShardTask)
+                var stats = followerClient.AutoFollowStats()
+                var af_stats = stats.get("autofollow_stats")!! as ArrayList<HashMap<String, Any>>
+                for (key in af_stats) {
+                    assert(key["num_success_start_replication"]!! as Int == 2)
+                }
+                assertTrue(stats.size == 5)
+                assertTrue(stats.get("num_success_start_replication")!! == 2)
             }, 60, TimeUnit.SECONDS)
         } finally {
             followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
@@ -157,10 +168,53 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
                 )
                 followerClient.waitForShardTaskStart(leaderIndexName, waitForShardTask)
             }, 15, TimeUnit.SECONDS)
-
         } finally {
             followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
             followerClient.stopReplication(leaderIndexName)
+        }
+    }
+    
+    fun `test auto follow stats`() {
+        val indexPatternName2 = "test_pattern2"
+        val indexPattern2 = "lead_index*"
+        val leaderIndexName2 = "lead_index1"
+
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        val leaderIndexName = createRandomIndex(leaderClient)
+        leaderClient.indices().create(CreateIndexRequest(leaderIndexName2), RequestOptions.DEFAULT)
+        createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
+
+        try {
+            followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern)
+            followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName2, indexPattern2)
+
+            assertBusy ({
+                Assertions.assertThat(getAutoFollowTasks(FOLLOWER).size).isEqualTo(2)
+            }, 30, TimeUnit.SECONDS)
+
+            // Verify that existing index matching the pattern are replicated.
+            assertBusy ({
+                Assertions.assertThat(followerClient.indices()
+                        .exists(GetIndexRequest(leaderIndexName2), RequestOptions.DEFAULT))
+                        .isEqualTo(true)
+
+                var stats = followerClient.AutoFollowStats()
+                Assertions.assertThat(stats.size).isEqualTo(5)
+                assert(stats["num_success_start_replication"]!! as Int == 2)
+                var af_stats = stats.get("autofollow_stats")!! as ArrayList<HashMap<String, Any>>
+                for (key in af_stats) {
+                    assert(key["num_success_start_replication"]!! as Int == 1)
+                }
+                assertTrue(af_stats.size == 2)
+            }, 30, TimeUnit.SECONDS)
+        } finally {
+            followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
+            followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName2)
+            followerClient.waitForShardTaskStart(leaderIndexName)
+            followerClient.stopReplication(leaderIndexName)
+            followerClient.waitForShardTaskStart(leaderIndexName2)
+            followerClient.stopReplication(leaderIndexName2)
         }
     }
 
