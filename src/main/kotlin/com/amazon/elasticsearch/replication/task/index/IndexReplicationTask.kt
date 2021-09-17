@@ -16,7 +16,6 @@
 package com.amazon.elasticsearch.replication.task.index
 
 import com.amazon.elasticsearch.replication.ReplicationException
-import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.PLUGINS_REPLICATION_TRANSLOG_PRUNING_SETTING
 import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.REPLICATED_INDEX_SETTING
 import com.amazon.elasticsearch.replication.ReplicationSettings
 import com.amazon.elasticsearch.replication.action.index.block.IndexBlockUpdateType
@@ -83,6 +82,7 @@ import org.elasticsearch.common.xcontent.XContentBuilder
 import org.elasticsearch.index.Index
 import org.elasticsearch.index.IndexService
 import org.elasticsearch.index.IndexSettings
+import org.elasticsearch.index.IndexSettings.INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING
 import org.elasticsearch.index.shard.IndexShard
 import org.elasticsearch.index.shard.ShardId
 import org.elasticsearch.indices.cluster.IndicesClusterStateService
@@ -702,7 +702,7 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
     private suspend fun setupAndStartRestore(): IndexReplicationState {
         // Enable translog based fetch on the leader(remote) cluster
         val remoteClient = client.getRemoteClusterClient(leaderAlias)
-        val settingsBuilder = Settings.builder().put(PLUGINS_REPLICATION_TRANSLOG_PRUNING_SETTING, true)
+        val settingsBuilder = Settings.builder().put(INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key, true)
         val updateSettingsRequest = remoteClient.admin().indices().prepareUpdateSettings().setSettings(settingsBuilder).setIndices(leaderIndex.name).request()
         val updateResponse = remoteClient.suspending(remoteClient.admin().indices()::updateSettings, injectSecurityContext = true)(updateSettingsRequest)
         if(!updateResponse.isAcknowledged) {
