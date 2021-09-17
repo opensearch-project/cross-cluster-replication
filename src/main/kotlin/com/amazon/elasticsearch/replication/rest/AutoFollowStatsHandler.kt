@@ -1,8 +1,5 @@
 package com.amazon.elasticsearch.replication.action.stats
 
-import com.amazon.elasticsearch.replication.action.stats.LeaderStatsAction
-import com.amazon.elasticsearch.replication.action.stats.LeaderStatsRequest
-import com.amazon.elasticsearch.replication.action.stats.LeaderStatsResponse
 import org.apache.logging.log4j.LogManager
 import org.elasticsearch.client.node.NodeClient
 import org.elasticsearch.common.xcontent.ToXContent
@@ -19,31 +16,32 @@ import org.elasticsearch.rest.RestStatus
 import org.elasticsearch.rest.action.RestResponseListener
 import java.io.IOException
 
-class LeaderStatsHandler : BaseRestHandler() {
+class AutoFollowStatsHandler : BaseRestHandler() {
     companion object {
-        private val log = LogManager.getLogger(LeaderStatsHandler::class.java)
+        private val log = LogManager.getLogger(AutoFollowStatsHandler::class.java)
     }
 
     override fun routes(): List<RestHandler.Route> {
-        return listOf(RestHandler.Route(RestRequest.Method.GET, "/_plugins/_replication/leader_stats"))
+        return listOf(RestHandler.Route(RestRequest.Method.GET, "/_plugins/_replication/autofollow_stats"))
     }
 
     override fun getName(): String {
-        return "plugins_leader_replication_stats"
+        return "plugins_autofollow_replication_stats"
     }
 
     @Throws(IOException::class)
     override fun prepareRequest(request: RestRequest, client: NodeClient): RestChannelConsumer {
-        val statsRequest = LeaderStatsRequest()
+        val statsRequest = AutoFollowStatsRequest()
         return RestChannelConsumer { channel: RestChannel? ->
             client.admin().cluster()
-                    .execute(LeaderStatsAction.INSTANCE, statsRequest, object : RestResponseListener<LeaderStatsResponse>(channel) {
+                    .execute(AutoFollowStatsAction.INSTANCE, statsRequest, object : RestResponseListener<AutoFollowStatsResponses>(channel) {
                         @Throws(Exception::class)
-                        override fun buildResponse(nodesStatsResponse: LeaderStatsResponse): RestResponse? {
+                        override fun buildResponse(nodesStatsResponses: AutoFollowStatsResponses): RestResponse? {
                             val builder: XContentBuilder = XContentFactory.jsonBuilder().prettyPrint()
-                            return BytesRestResponse(RestStatus.OK, nodesStatsResponse.toXContent(builder, ToXContent.EMPTY_PARAMS))
+                            return BytesRestResponse(RestStatus.OK, nodesStatsResponses.toXContent(builder, ToXContent.EMPTY_PARAMS))
                         }
                     })
         }
     }
 }
+

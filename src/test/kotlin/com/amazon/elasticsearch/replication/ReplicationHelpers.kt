@@ -53,6 +53,7 @@ const val REST_AUTO_FOLLOW_PATTERN = "${REST_REPLICATION_PREFIX}_autofollow"
 const val REST_REPLICATION_TASKS = "_tasks?actions=*replication*&detailed&pretty"
 const val REST_LEADER_STATS = "${REST_REPLICATION_PREFIX}leader_stats"
 const val REST_FOLLOWER_STATS = "${REST_REPLICATION_PREFIX}follower_stats"
+const val REST_AUTO_FOLLOW_STATS = "${REST_REPLICATION_PREFIX}autofollow_stats"
 const val INDEX_TASK_CANCELLATION_REASON = "Index replication task was cancelled by user"
 const val STATUS_REASON_USER_INITIATED = "User initiated"
 const val STATUS_REASON_SHARD_TASK_CANCELLED = "Shard task killed or cancelled."
@@ -352,6 +353,14 @@ fun RestHighLevelClient.updateAutoFollowPattern(connection: String, patternName:
     val lowLevelResponse = lowLevelClient.performRequest(lowLevelRequest)
     val response = getAckResponse(lowLevelResponse)
     assertThat(response.isAcknowledged).isTrue()
+}
+
+fun RestHighLevelClient.AutoFollowStats() : Map<String, Any>  {
+    var request = Request("GET", REST_AUTO_FOLLOW_STATS)
+    request.setJsonEntity("{}")
+    val lowLevelStatusResponse = lowLevelClient.performRequest(request)
+    val response: Map<String, Any> = ESRestTestCase.entityAsMap(lowLevelStatusResponse)
+    return response
 }
 
 fun RestHighLevelClient.deleteAutoFollowPattern(connection: String, patternName: String) {
