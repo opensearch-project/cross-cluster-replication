@@ -53,7 +53,6 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.elasticsearch.ElasticsearchException
 import org.elasticsearch.ElasticsearchTimeoutException
-import org.elasticsearch.ResourceNotFoundException
 import org.elasticsearch.action.ActionListener
 import org.elasticsearch.action.admin.indices.alias.IndicesAliasesRequest
 import org.elasticsearch.action.admin.indices.alias.IndicesAliasesRequest.AliasActions
@@ -94,6 +93,7 @@ import org.elasticsearch.persistent.PersistentTasksNodeService
 import org.elasticsearch.persistent.PersistentTasksService
 import org.elasticsearch.tasks.TaskId
 import org.elasticsearch.threadpool.ThreadPool
+import java.util.Collections
 import java.util.function.Predicate
 import java.util.stream.Collectors
 import kotlin.coroutines.resume
@@ -756,7 +756,7 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
             if (doesValidIndexExists()) {
                 return InitFollowState
             } else {
-                throw ResourceNotFoundException("""
+                return FailedState(Collections.emptyMap(), """
                     Unable to find in progress restore for remote index: $leaderAlias:$leaderIndex. 
                     This can happen if there was a badly timed master node failure.""".trimIndent())
             }
@@ -764,7 +764,7 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
             val failureReason = restore.shards().values().find {
                 it.value.state() == RestoreInProgress.State.FAILURE
             }!!.value.reason()
-            throw ReplicationException("Remote restore failed: $failureReason")
+            return FailedState(Collections.emptyMap(), failureReason)
         } else {
             return InitFollowState
         }

@@ -91,7 +91,7 @@ class TransportUpdateIndexReplicationAction @Inject constructor(transportService
         if (replicationOverallState == ReplicationOverallState.RUNNING.name || replicationOverallState == ReplicationOverallState.PAUSED.name)
             return
 
-        throw IllegalStateException("Unknown value of replication state:$replicationOverallState")
+        throw IllegalStateException("Cannot update settings when in $replicationOverallState state")
     }
 
     override fun executor(): String {
