@@ -262,6 +262,18 @@ fun RestHighLevelClient.waitForReplicationStart(index: String, waitFor : TimeVal
         }, waitFor.seconds, TimeUnit.SECONDS)
 }
 
+fun RestHighLevelClient.waitForShardTaskStart(index: String, waitFor : TimeValue = TimeValue.timeValueSeconds(10)) {
+    assertBusy(
+            {
+                // Persistent tasks service appends identifiers like '[c]' to indicate child task hence the '*' wildcard
+                val request = ListTasksRequest().setDetailed(true).setActions(ShardReplicationExecutor.TASK_NAME + "*")
+                val response = tasks().list(request,RequestOptions.DEFAULT)
+                assertThat(response.tasks)
+                        .withFailMessage("replication shard tasks not started")
+                        .isNotEmpty
+            }, waitFor.seconds, TimeUnit.SECONDS)
+}
+
 fun RestHighLevelClient.leaderStats() : Map<String, Any>  {
     var request = Request("GET", REST_LEADER_STATS)
     request.setJsonEntity("{}")
