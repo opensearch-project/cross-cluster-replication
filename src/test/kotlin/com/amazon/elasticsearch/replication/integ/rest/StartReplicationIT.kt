@@ -19,6 +19,7 @@ package com.amazon.elasticsearch.replication.integ.rest
 import com.amazon.elasticsearch.replication.IndexUtil
 import com.amazon.elasticsearch.replication.MultiClusterAnnotations
 import com.amazon.elasticsearch.replication.MultiClusterRestTestCase
+import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.PLUGINS_REPLICATION_TRANSLOG_PRUNING_SETTING
 import com.amazon.elasticsearch.replication.StartReplicationRequest
 import com.amazon.elasticsearch.replication.`validate not paused status response`
 import com.amazon.elasticsearch.replication.`validate paused status on closed index`
@@ -388,13 +389,13 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                         .isEqualTo(true)
                 assertThat(followerClient.indices()
                         .getSettings(GetSettingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
-                        .getSetting(followerIndexName, IndexSettings.INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key)
+                        .getSetting(followerIndexName, PLUGINS_REPLICATION_TRANSLOG_PRUNING_SETTING)
                         .isNullOrEmpty())
             }
 
             assertThat(leaderClient.indices()
                     .getSettings(GetSettingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
-                    .getSetting(leaderIndexName, IndexSettings.INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key) == "true")
+                    .getSetting(leaderIndexName, PLUGINS_REPLICATION_TRANSLOG_PRUNING_SETTING) == "true")
 
         } finally {
             followerClient.stopReplication(followerIndexName)
@@ -418,7 +419,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                         .isEqualTo(true)
             }
             // Turn-off the settings and index doc
-            val settingsBuilder = Settings.builder().put(IndexSettings.INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key, false)
+            val settingsBuilder = Settings.builder().put(PLUGINS_REPLICATION_TRANSLOG_PRUNING_SETTING, false)
             val settingsUpdateResponse = leaderClient.indices().putSettings(UpdateSettingsRequest(leaderIndexName)
                     .settings(settingsBuilder.build()), RequestOptions.DEFAULT)
             Assert.assertEquals(settingsUpdateResponse.isAcknowledged, true)
