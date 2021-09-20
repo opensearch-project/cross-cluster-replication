@@ -600,7 +600,7 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
             log.info("Going to initiate auto-pause of $followerIndexName due to shard failures - $state")
             val pauseReplicationResponse = client.suspendExecute(
                 replicationMetadata,
-                PauseIndexReplicationAction.INSTANCE, PauseIndexReplicationRequest(followerIndexName, state.errorMsg),
+                PauseIndexReplicationAction.INSTANCE, PauseIndexReplicationRequest(followerIndexName, "AutoPaused: ${state.errorMsg}"),
                 defaultContext = true
             )
             if (!pauseReplicationResponse.isAcknowledged) {
