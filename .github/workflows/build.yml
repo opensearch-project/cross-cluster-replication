@@ -26,7 +26,7 @@ jobs:
           # TODO: Switch to OS 1.x branch
           repository: 'saikaranam-amazon/OpenSearch'
           path: OpenSearch
-          ref: 'karanas-os-replication-all-changes'
+          ref: '1.1-repl-all-changes'
       - name: Build OpenSearch
         working-directory: ./OpenSearch
         run: |

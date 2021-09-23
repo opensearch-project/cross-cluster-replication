@@ -70,6 +70,7 @@ class StopReplicationIT: MultiClusterRestTestCase() {
         }
     }
 
+    @AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/176")
     fun `test stop replication in restoring state with multiple shards`() {
         val settings = Settings.builder()
                 .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 20)
@@ -122,6 +123,7 @@ class StopReplicationIT: MultiClusterRestTestCase() {
         there is some shard task in follower index which which gets started after STOP api has closed
         existing shard tasks. This is how it was tested manually. */
     // TODO: Figure out a way without using @Repeat(iterations = 5)
+    @AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/176")
     fun `test stop replication in restoring state while shards are starting`() {
         val settings = Settings.builder()
                 .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 50)

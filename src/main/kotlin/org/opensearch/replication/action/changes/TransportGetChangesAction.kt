@@ -146,7 +146,7 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
 
     private fun isTranslogPruningByRetentionLeaseEnabled(shardId: ShardId): Boolean {
         val enabled = clusterService.state().metadata.indices.get(shardId.indexName)
-                ?.settings?.getAsBoolean(IndexSettings.INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key, false)
+                ?.settings?.getAsBoolean(IndexSettings.INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key, false)
         if(enabled != null) {
             return enabled
         }
