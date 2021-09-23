@@ -76,7 +76,7 @@ import org.opensearch.common.xcontent.XContentBuilder
 import org.opensearch.index.Index
 import org.opensearch.index.IndexService
 import org.opensearch.index.IndexSettings
-import org.opensearch.index.IndexSettings.INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING
+import org.opensearch.index.IndexSettings.INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING
 import org.opensearch.index.shard.IndexShard
 import org.opensearch.index.shard.ShardId
 import org.opensearch.indices.cluster.IndicesClusterStateService
@@ -132,7 +132,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
     private var metadataPoller: Job? = null
     companion object {
         val blSettings  : Set<Setting<*>> = setOf(
-                INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING,
+                INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING,
                 IndexMetadata.INDEX_READ_ONLY_SETTING,
                 IndexMetadata.INDEX_BLOCKS_READ_SETTING,
                 IndexMetadata.INDEX_BLOCKS_WRITE_SETTING,
@@ -705,7 +705,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
     private suspend fun setupAndStartRestore(): IndexReplicationState {
         // Enable translog based fetch on the leader(remote) cluster
         val remoteClient = client.getRemoteClusterClient(leaderAlias)
-        val settingsBuilder = Settings.builder().put(INDEX_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key, true)
+        val settingsBuilder = Settings.builder().put(INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key, true)
         val updateSettingsRequest = remoteClient.admin().indices().prepareUpdateSettings().setSettings(settingsBuilder).setIndices(leaderIndex.name).request()
         val updateResponse = remoteClient.suspending(remoteClient.admin().indices()::updateSettings, injectSecurityContext = true)(updateSettingsRequest)
         if(!updateResponse.isAcknowledged) {
