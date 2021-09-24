@@ -2,7 +2,7 @@
 
 Compatible with OpenSearch 1.1.0
 
-###Features
+### Features
 - Initial commit to support replication
 - Porting replication plugin to OpenSearch
 - Pause and Resume API (#10)
@@ -11,7 +11,7 @@ Compatible with OpenSearch 1.1.0
 - AutoFollow Stats API Addition (#131)
 
 
-###Enhancements
+### Enhancements
 - Configure the threadpool for leader cluster
 - Renew retention lease with the last known synced checkpoint
 - Handling node disconnections and shard movement
@@ -81,7 +81,7 @@ Compatible with OpenSearch 1.1.0
 - Correcting param name for leader API (#163)
 - Populate "AutoPaused: " prefix in the pause-reason while auto-pausing. (#170)
 
-###Bug Fixes
+### Bug Fixes
 - Fix submitClusterStateUpdateTask source
 - Throw exception if replication is not enabled on the remote domain (#86)
 - Increase wait time for snapshot/forcemerge integ tests
@@ -106,14 +106,14 @@ Compatible with OpenSearch 1.1.0
 - Gracefully fail replication on bootstrap failure. (#166)
 
 
-###Infrastructure
+### Infrastructure
 - Add OpenSearch build script (#119)
 - Add basic github workflow for build and test (#123)
 - Modified github workflow to pick the latest changes (#173)
 
 
 
-###Documentation
+### Documentation
 - Changed the arch diagram.
 - Add OpenSearch Copyright
 - Update documentation for OpenSearch
