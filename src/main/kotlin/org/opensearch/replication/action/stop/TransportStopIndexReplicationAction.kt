@@ -121,7 +121,9 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                 // If paused , we need to make attempt to clear retention leases as Shard Tasks are non-existent
                 if (isPaused) {
                     log.info("Index[${request.indexName}] is in paused state")
-                    attemptRemoveRetentionLease(replMetadata, request.indexName)
+                    val remoteClient = client.getRemoteClusterClient(replMetadata.connectionName)
+                    val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
+                    retentionLeaseHelper.attemptRemoveRetentionLease(clusterService, replMetadata, request.indexName)
                 }
 
                 val clusterStateUpdateResponse : AcknowledgedResponse =
@@ -145,35 +147,6 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                 listener.onFailure(e)
             }
         }
-    }
-
-    private suspend fun attemptRemoveRetentionLease(replMetadata: ReplicationMetadata, followerIndexName: String) {
-        try {
-            val remoteMetadata = getLeaderIndexMetadata(replMetadata.connectionName, replMetadata.leaderContext.resource)
-            val params = IndexReplicationParams(replMetadata.connectionName, remoteMetadata.index, followerIndexName)
-            val remoteClient = client.getRemoteClusterClient(params.leaderAlias)
-            val shards = clusterService.state().routingTable.indicesRouting().get(params.followerIndexName).shards()
-            val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
-            shards.forEach {
-                val followerShardId = it.value.shardId
-                log.debug("Removing lease for $followerShardId.id ")
-                retentionLeaseHelper.attemptRetentionLeaseRemoval(ShardId(params.leaderIndex, followerShardId.id), followerShardId)
-            }
-        } catch (e: Exception) {
-            log.error("Exception while trying to remove Retention Lease ", e )
-        }
-    }
-
-    private suspend fun getLeaderIndexMetadata(leaderAlias: String, leaderIndex: String): IndexMetadata {
-        val leaderClusterClient = client.getRemoteClusterClient(leaderAlias)
-        val clusterStateRequest = leaderClusterClient.admin().cluster().prepareState()
-                .clear()
-                .setIndices(leaderIndex)
-                .setMetadata(true)
-                .setIndicesOptions(IndicesOptions.strictSingleIndexNoExpandForbidClosed())
-                .request()
-        val leaderState = leaderClusterClient.suspending(leaderClusterClient.admin().cluster()::state)(clusterStateRequest).state
-        return leaderState.metadata.index(leaderIndex) ?: throw IndexNotFoundException("${leaderAlias}:${leaderIndex}")
     }
 
     private fun validateStopReplicationRequest(request: StopIndexReplicationRequest): Boolean {

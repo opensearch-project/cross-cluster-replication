@@ -123,7 +123,6 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
 
     override val log = Loggers.getLogger(javaClass, Index(params.followerIndexName, ClusterState.UNKNOWN_UUID))
     private val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
-
     private var shouldCallEvalMonitoring = true
     private var updateSettingsContinuousFailCount = 0
     private var updateAliasContinousFailCount = 0
@@ -646,6 +645,12 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
          * it continues to be called even after the task is completed.
          */
         clusterService.removeListener(this)
+        val replicationStateParams = getReplicationStateParamsForIndex(clusterService, followerIndexName)
+        if (replicationStateParams?.get(REPLICATION_LAST_KNOWN_OVERALL_STATE) != ReplicationOverallState.PAUSED.name) {
+            log.info("Cleaning up retention lease")
+            val replMetadata = replicationMetadataManager.getIndexReplicationMetadata(this.followerIndexName)
+            retentionLeaseHelper.attemptRemoveRetentionLease(clusterService, replMetadata, this.followerIndexName)
+        }
     }
 
     private suspend fun addIndexBlockForReplication() {
