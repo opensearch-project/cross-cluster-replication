@@ -105,6 +105,7 @@ class FollowerStatsResponse : BaseNodesResponse<FollowerNodeStatsResponse?>, ToX
         builder.field("num_syncing_indices", syncingIndices)
         builder.field("num_bootstrapping_indices", bootstrappingIndices)
         builder.field("num_paused_indices", pausedIndices)
+        builder.field("num_failed_indices", failedIndices)
         builder.field("num_shard_tasks", shardTaskCount)
         builder.field("num_index_tasks", indexTaskCount)
         stats.toXContent(builder, params)
