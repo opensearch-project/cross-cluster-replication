@@ -37,6 +37,7 @@ import org.opensearch.replication.seqno.RemoteClusterTranslogService
 import org.opensearch.replication.seqno.RemoteShardMetric
 import org.opensearch.replication.util.completeWith
 import org.opensearch.replication.util.coroutineContext
+import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.replication.util.waitForGlobalCheckpoint
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportActionProxy
@@ -103,9 +104,9 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
                 if(fetchFromTranslog) {
                     try {
                         ops = translogService.getHistoryOfOperations(indexShard, request.fromSeqNo, toSeqNo)
-                    } catch (e: ResourceNotFoundException) {
-                        fetchFromTranslog = false
-                    } catch (e: IllegalStateException) {
+                    } catch (e: Exception) {
+                        log.debug("Fetching changes from translog for ${request.shardId} " +
+                                "- from:${request.fromSeqNo}, to:$toSeqNo failed with exception - ${e.stackTraceToString()}")
                         fetchFromTranslog = false
                     }
                 }
