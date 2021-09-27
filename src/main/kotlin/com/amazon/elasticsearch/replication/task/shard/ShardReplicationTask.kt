@@ -75,7 +75,6 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     private val followerShardId = params.followerShardId
     private val remoteClient = client.getRemoteClusterClient(leaderAlias)
     private val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
-    private var paused = false
 
     //Start backOff for exceptions with a second
     private val initialBackoffMillis = 1000L
@@ -174,11 +173,6 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
          */
         clusterService.removeListener(clusterStateListenerForTaskInterruption)
         this.followerClusterStats.stats.remove(followerShardId)
-        if (paused) {
-            logDebug("Pausing and not removing lease for index $followerIndexName and shard $followerShardId task")
-            return
-        }
-        retentionLeaseHelper.attemptRetentionLeaseRemoval(leaderShardId, followerShardId)
     }
 
     private fun addListenerToInterruptTask() {
@@ -195,7 +189,6 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                         cancelTask("Shard replication task received an interrupt.")
                 } else if (replicationStateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE] == ReplicationOverallState.PAUSED.name){
                     logInfo("Pause state received for index $followerIndexName. Cancelling $followerShardId task")
-                    paused = true
                     cancelTask("Shard replication task received pause.")
                 }
             }
@@ -209,14 +202,15 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         updateTaskState(FollowingState)
         val followerIndexService = indicesService.indexServiceSafe(followerShardId.index)
         val indexShard = followerIndexService.getShard(followerShardId.id)
-        // Adding retention lease at lastSyncedGlobalCheckpoint. This makes sure
-        // new tasks spawned after node changes/shard movements are handled properly
+
         try {
-            logInfo("Adding retention lease")
-            retentionLeaseHelper.addRetentionLease(leaderShardId, indexShard.lastSyncedGlobalCheckpoint, followerShardId)
-        } catch (e: RetentionLeaseInvalidRetainingSeqNoException) {
-            logInfo("Retention lease add failed. Ignoring ${e.stackTraceToString()}")
+            retentionLeaseHelper.renewRetentionLease(leaderShardId, indexShard.lastSyncedGlobalCheckpoint, followerShardId)
+        } catch (ex: Exception) {
+            // In case of a failure, we just log it and move on. All failures scenarios are being handled below with
+            // retries and backoff depending on exception.
+            log.error("Retention lease renewal failed: ${ex.stackTraceToString()}")
         }
+
         addListenerToInterruptTask()
         this.followerClusterStats.stats[followerShardId] = FollowerShardMetric()
 
