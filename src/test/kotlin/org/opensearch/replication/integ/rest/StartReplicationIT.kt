@@ -399,6 +399,29 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         }
     }
 
+    fun `test that translog settings are set on leader`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
+
+            val leaderSettings = leaderClient.indices()
+                    .getSettings(GetSettingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
+            assertThat(leaderSettings.getSetting(leaderIndexName,
+                            IndexSettings.INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key) == "true")
+            assertThat(leaderSettings.getSetting(leaderIndexName,
+                            IndexSettings.INDEX_TRANSLOG_GENERATION_THRESHOLD_SIZE_SETTING.key) == "32mb")
+
+        } finally {
+            followerClient.stopReplication(followerIndexName)
+        }
+    }
+
     fun `test that replication continues after removing translog settings based on retention lease`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
