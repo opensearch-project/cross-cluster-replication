@@ -99,7 +99,7 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                     throw OpenSearchException("Failed to remove index block on ${request.indexName}")
                 }
 
-                val isPaused = validateStopReplicationRequest(request)
+                validateStopReplicationRequest(request)
 
                 // Index will be deleted if replication is stopped while it is restoring.  So no need to close/reopen
                 val restoring = clusterService.state().custom<RestoreInProgress>(RestoreInProgress.TYPE, RestoreInProgress.EMPTY).any { entry ->
@@ -118,11 +118,9 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                     }
                 }
                 val replMetadata = replicationMetadataManager.getIndexReplicationMetadata(request.indexName)
-                // If paused , we need to make attempt to clear retention leases as Shard Tasks are non-existent
-                if (isPaused) {
-                    log.info("Index[${request.indexName}] is in paused state")
-                    attemptRemoveRetentionLease(replMetadata, request.indexName)
-                }
+                val remoteClient = client.getRemoteClusterClient(replMetadata.connectionName)
+                val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
+                retentionLeaseHelper.attemptRemoveRetentionLease(clusterService, replMetadata, request.indexName)
 
                 val clusterStateUpdateResponse : AcknowledgedResponse =
                     clusterService.waitForClusterStateUpdate("stop_replication") { l -> StopReplicationTask(request, l)}
@@ -147,46 +145,16 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
         }
     }
 
-    private suspend fun attemptRemoveRetentionLease(replMetadata: ReplicationMetadata, followerIndexName: String) {
-        try {
-            val remoteMetadata = getLeaderIndexMetadata(replMetadata.connectionName, replMetadata.leaderContext.resource)
-            val params = IndexReplicationParams(replMetadata.connectionName, remoteMetadata.index, followerIndexName)
-            val remoteClient = client.getRemoteClusterClient(params.leaderAlias)
-            val shards = clusterService.state().routingTable.indicesRouting().get(params.followerIndexName).shards()
-            val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
-            shards.forEach {
-                val followerShardId = it.value.shardId
-                log.debug("Removing lease for $followerShardId.id ")
-                retentionLeaseHelper.attemptRetentionLeaseRemoval(ShardId(params.leaderIndex, followerShardId.id), followerShardId)
-            }
-        } catch (e: Exception) {
-            log.error("Exception while trying to remove Retention Lease ", e )
-        }
-    }
-
-    private suspend fun getLeaderIndexMetadata(leaderAlias: String, leaderIndex: String): IndexMetadata {
-        val leaderClusterClient = client.getRemoteClusterClient(leaderAlias)
-        val clusterStateRequest = leaderClusterClient.admin().cluster().prepareState()
-                .clear()
-                .setIndices(leaderIndex)
-                .setMetadata(true)
-                .setIndicesOptions(IndicesOptions.strictSingleIndexNoExpandForbidClosed())
-                .request()
-        val leaderState = leaderClusterClient.suspending(leaderClusterClient.admin().cluster()::state)(clusterStateRequest).state
-        return leaderState.metadata.index(leaderIndex) ?: throw IndexNotFoundException("${leaderAlias}:${leaderIndex}")
-    }
-
-    private fun validateStopReplicationRequest(request: StopIndexReplicationRequest): Boolean {
+    private fun validateStopReplicationRequest(request: StopIndexReplicationRequest) {
         val replicationStateParams = getReplicationStateParamsForIndex(clusterService, request.indexName)
                 ?:
             throw IllegalArgumentException("No replication in progress for index:${request.indexName}")
         val replicationOverallState = replicationStateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE]
-        if (replicationOverallState == ReplicationOverallState.PAUSED.name)
-            return true
-        else if (replicationOverallState == ReplicationOverallState.RUNNING.name ||
+        if (replicationOverallState == ReplicationOverallState.RUNNING.name ||
             replicationOverallState == ReplicationOverallState.STOPPED.name ||
-            replicationOverallState == ReplicationOverallState.FAILED.name)
-            return false
+            replicationOverallState == ReplicationOverallState.FAILED.name ||
+            replicationOverallState == ReplicationOverallState.PAUSED.name)
+            return
         throw IllegalStateException("Unknown value of replication state:$replicationOverallState")
     }
 
