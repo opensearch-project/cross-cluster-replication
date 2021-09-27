@@ -23,6 +23,7 @@ import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.REPLICAT
 import com.amazon.elasticsearch.replication.seqno.RemoteClusterStats
 import com.amazon.elasticsearch.replication.seqno.RemoteClusterTranslogService
 import com.amazon.elasticsearch.replication.seqno.RemoteShardMetric
+import com.amazon.elasticsearch.replication.util.stackTraceToString
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import org.apache.logging.log4j.LogManager
@@ -108,7 +109,9 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
                 if(fetchFromTranslog) {
                     try {
                         ops = translogService.getHistoryOfOperations(indexShard, request.fromSeqNo, toSeqNo)
-                    } catch (e: ResourceNotFoundException) {
+                    } catch (e: Exception) {
+                        log.debug("Fetching changes from translog for ${request.shardId} " +
+                                "- from:${request.fromSeqNo}, to:$toSeqNo failed with exception - ${e.stackTraceToString()}")
                         fetchFromTranslog = false
                     }
                 }

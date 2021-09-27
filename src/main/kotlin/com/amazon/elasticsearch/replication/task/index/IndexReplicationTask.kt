@@ -76,6 +76,8 @@ import org.elasticsearch.common.logging.Loggers
 import org.elasticsearch.common.settings.Setting
 import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.settings.SettingsModule
+import org.elasticsearch.common.unit.ByteSizeUnit
+import org.elasticsearch.common.unit.ByteSizeValue
 import org.elasticsearch.common.xcontent.ToXContent
 import org.elasticsearch.common.xcontent.ToXContentObject
 import org.elasticsearch.common.xcontent.XContentBuilder
@@ -701,7 +703,16 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
     private suspend fun setupAndStartRestore(): IndexReplicationState {
         // Enable translog based fetch on the leader(remote) cluster
         val remoteClient = client.getRemoteClusterClient(leaderAlias)
-        val settingsBuilder = Settings.builder().put(PLUGINS_REPLICATION_TRANSLOG_PRUNING_SETTING, true)
+
+        // These settings enables some of the optimizations at the leader cluster side to retrive translog operations
+        // INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING - This setting enables pruning
+        // of translog based on retention lease. So that, we can directly fetch the ops in decompressed form from translog
+        // INDEX_TRANSLOG_GENERATION_THRESHOLD_SIZE_SETTING - This setting sets each generation size for the translog.
+        // This ensures that, we don't have to search the huge translog files for the given range and ensuring that
+        // the searches are optimal within a generation and skip searching the generations based on translog checkpoints
+        val settingsBuilder = Settings.builder()
+                .put(IndexSettings.INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key, true)
+                .put(IndexSettings.INDEX_TRANSLOG_GENERATION_THRESHOLD_SIZE_SETTING.key, ByteSizeValue(32, ByteSizeUnit.MB))
         val updateSettingsRequest = remoteClient.admin().indices().prepareUpdateSettings().setSettings(settingsBuilder).setIndices(leaderIndex.name).request()
         val updateResponse = remoteClient.suspending(remoteClient.admin().indices()::updateSettings, injectSecurityContext = true)(updateSettingsRequest)
         if(!updateResponse.isAcknowledged) {
