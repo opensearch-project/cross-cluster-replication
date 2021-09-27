@@ -13,12 +13,20 @@ package org.opensearch.replication.seqno
 
 import org.opensearch.replication.util.suspendExecute
 import org.apache.logging.log4j.LogManager
+import org.opensearch.action.support.IndicesOptions
 import org.opensearch.client.Client
+import org.opensearch.cluster.metadata.IndexMetadata
+import org.opensearch.cluster.service.ClusterService
+import org.opensearch.index.IndexNotFoundException
 import org.opensearch.index.seqno.RetentionLeaseActions
 import org.opensearch.index.seqno.RetentionLeaseAlreadyExistsException
 import org.opensearch.index.seqno.RetentionLeaseInvalidRetainingSeqNoException
 import org.opensearch.index.seqno.RetentionLeaseNotFoundException
 import org.opensearch.index.shard.ShardId
+import org.opensearch.replication.action.stop.TransportStopIndexReplicationAction
+import org.opensearch.replication.metadata.store.ReplicationMetadata
+import org.opensearch.replication.task.index.IndexReplicationParams
+import org.opensearch.replication.util.suspending
 
 class RemoteClusterRetentionLeaseHelper constructor(val followerClusterName: String, val client: Client) {
 
@@ -32,20 +40,6 @@ class RemoteClusterRetentionLeaseHelper constructor(val followerClusterName: Str
         fun retentionLeaseIdForShard(followerClusterName: String, followerShardId: ShardId): String {
             val retentionLeaseSource = retentionLeaseSource(followerClusterName)
             return "$retentionLeaseSource:${followerShardId}"
-        }
-    }
-
-    public suspend fun addRetentionLease(leaderShardId: ShardId, seqNo: Long, followerShardId: ShardId) {
-        val retentionLeaseId = retentionLeaseIdForShard(followerClusterName, followerShardId)
-        val request = RetentionLeaseActions.AddRequest(leaderShardId, retentionLeaseId, seqNo, retentionLeaseSource)
-        try {
-            client.suspendExecute(RetentionLeaseActions.Add.INSTANCE, request)
-        } catch (e: RetentionLeaseAlreadyExistsException) {
-            log.error("${e.message}")
-            log.info("Renew retention lease as it already exists $retentionLeaseId with $seqNo")
-            // Only one retention lease should exists for the follower shard
-            // Ideally, this should have got cleaned-up
-            renewRetentionLease(leaderShardId, seqNo, followerShardId)
         }
     }
 
@@ -75,6 +69,36 @@ class RemoteClusterRetentionLeaseHelper constructor(val followerClusterName: Str
         val request = RetentionLeaseActions.RenewRequest(leaderShardId, retentionLeaseId, seqNo, retentionLeaseSource)
         client.suspendExecute(RetentionLeaseActions.Renew.INSTANCE, request)
     }
+
+    public suspend fun attemptRemoveRetentionLease(clusterService: ClusterService, replMetadata: ReplicationMetadata,
+                                                   followerIndexName: String) {
+        try {
+            val remoteMetadata = getLeaderIndexMetadata(replMetadata.connectionName, replMetadata.leaderContext.resource)
+            val params = IndexReplicationParams(replMetadata.connectionName, remoteMetadata.index, followerIndexName)
+            val remoteClient = client.getRemoteClusterClient(params.leaderAlias)
+            val shards = clusterService.state().routingTable.indicesRouting().get(params.followerIndexName).shards()
+            val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
+            shards.forEach {
+                val followerShardId = it.value.shardId
+                log.debug("Removing lease for $followerShardId.id ")
+                retentionLeaseHelper.attemptRetentionLeaseRemoval(ShardId(params.leaderIndex, followerShardId.id), followerShardId)
+            }
+        } catch (e: Exception) {
+            log.error("Exception while trying to remove Retention Lease ", e )
+        }
+    }
+    private suspend fun getLeaderIndexMetadata(leaderAlias: String, leaderIndex: String): IndexMetadata {
+        val leaderClusterClient = client.getRemoteClusterClient(leaderAlias)
+        val clusterStateRequest = leaderClusterClient.admin().cluster().prepareState()
+            .clear()
+            .setIndices(leaderIndex)
+            .setMetadata(true)
+            .setIndicesOptions(IndicesOptions.strictSingleIndexNoExpandForbidClosed())
+            .request()
+        val leaderState = leaderClusterClient.suspending(leaderClusterClient.admin().cluster()::state)(clusterStateRequest).state
+        return leaderState.metadata.index(leaderIndex) ?: throw IndexNotFoundException("${leaderAlias}:${leaderIndex}")
+    }
+
 
     public suspend fun attemptRetentionLeaseRemoval(leaderShardId: ShardId, followerShardId: ShardId) {
         val retentionLeaseId = retentionLeaseIdForShard(followerClusterName, followerShardId)
