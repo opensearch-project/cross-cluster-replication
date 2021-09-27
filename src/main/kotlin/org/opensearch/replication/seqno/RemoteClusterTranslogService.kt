@@ -36,11 +36,6 @@ class RemoteClusterTranslogService : AbstractLifecycleComponent(){
     }
     
     public fun getHistoryOfOperations(indexShard: IndexShard, startSeqNo: Long, toSeqNo: Long): List<Translog.Operation> {
-        if(!indexShard.hasCompleteHistoryOperations(SOURCE_NAME, Engine.HistorySource.TRANSLOG, startSeqNo)) {
-            log.debug("Doesn't have history of operations starting from $startSeqNo")
-            throw ResourceNotFoundException("$indexShard doesn't contain ops starting from $startSeqNo " +
-                    "with source ${Engine.HistorySource.TRANSLOG.name}")
-        }
         log.trace("Fetching translog snapshot for $indexShard - from $startSeqNo to $toSeqNo")
         val snapshot = indexShard.getHistoryOperations(SOURCE_NAME, Engine.HistorySource.TRANSLOG, startSeqNo, toSeqNo)
 
