@@ -23,10 +23,9 @@ jobs:
       - name: Checkout OpenSearch
         uses: actions/checkout@v2
         with:
-          # TODO: Switch to OS 1.x branch
-          repository: 'saikaranam-amazon/OpenSearch'
+          repository: 'opensearch-project/OpenSearch'
           path: OpenSearch
-          ref: '1.1-repl-all-changes'
+          ref: '1.1'
       - name: Build OpenSearch
         working-directory: ./OpenSearch
         run: |
