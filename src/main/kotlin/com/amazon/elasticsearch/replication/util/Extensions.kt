@@ -161,7 +161,7 @@ suspend fun RemoteClusterRepository.restoreShardWithRetries(
                 currentBackoff = (currentBackoff * factor).toLong().coerceAtMost(maxTimeOut)
                 retryCount++
             } else {
-                log.error("Restore of shard from remote cluster repository failed permanently after all retries due to $e")
+                log.error("Restore of shard from remote cluster repository failed permanently after all retries due to ${e.stackTraceToString()}")
                 store.decRef()
                 listener.onFailure(e)
                 return
