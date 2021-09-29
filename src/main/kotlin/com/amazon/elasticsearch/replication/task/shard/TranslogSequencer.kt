@@ -15,12 +15,12 @@
 
 package com.amazon.elasticsearch.replication.task.shard
 
+import com.amazon.elasticsearch.replication.MappingNotAvailableException
 import com.amazon.elasticsearch.replication.ReplicationException
 import com.amazon.elasticsearch.replication.action.changes.GetChangesResponse
 import com.amazon.elasticsearch.replication.action.replay.ReplayChangesAction
 import com.amazon.elasticsearch.replication.action.replay.ReplayChangesRequest
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
-import com.amazon.elasticsearch.replication.util.suspendExecute
 import com.amazon.elasticsearch.replication.util.suspendExecuteWithRetries
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
@@ -33,6 +33,7 @@ import org.elasticsearch.common.logging.Loggers
 import org.elasticsearch.index.shard.ShardId
 import org.elasticsearch.index.translog.Translog
 import org.elasticsearch.tasks.TaskId
+import java.util.ArrayList
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
@@ -70,7 +71,16 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
                 replayRequest.parentTask = parentTaskId
                 launch {
                     var relativeStartNanos  = System.nanoTime()
-                    val replayResponse = client.suspendExecuteWithRetries(replicationMetadata, ReplayChangesAction.INSTANCE, replayRequest, log = log)
+                    val retryOnExceptions = ArrayList<Class<*>>()
+                    retryOnExceptions.add(MappingNotAvailableException::class.java)
+
+                    val replayResponse = client.suspendExecuteWithRetries(
+                        replicationMetadata,
+                        ReplayChangesAction.INSTANCE,
+                        replayRequest,
+                        log = log,
+                        retryOn = retryOnExceptions
+                    )
                     if (replayResponse.shardInfo.failed > 0) {
                         replayResponse.shardInfo.failures.forEachIndexed { i, failure ->
                             log.error("Failed replaying changes. Failure:$i:$failure")
