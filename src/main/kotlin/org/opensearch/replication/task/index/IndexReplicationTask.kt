@@ -283,17 +283,20 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
     }
 
     private suspend fun pollShardTaskStatus(shardTasks: Map<ShardId, PersistentTask<ShardReplicationParams>>): IndexReplicationState {
-        val failedShardTasks = findFailedShardTasks(shardTasks, clusterService.state())
+        val failedShardTasks = findAllReplicationFailedShardTasks(clusterService.state())
         if (failedShardTasks.isNotEmpty()) {
             log.info("Failed shard tasks - ", failedShardTasks)
             var msg = ""
             for ((shard, task) in failedShardTasks) {
                 val taskState = task.state
-                if (taskState is org.opensearch.replication.task.shard.FailedState) {
-                    val exception: OpenSearchException? = taskState.exception
-                    msg += "[${shard} - ${exception?.javaClass?.name} - \"${exception?.message}\"], "
-                } else {
-                    msg += "[${shard} - \"Shard task killed or cancelled.\"], "
+                // Filter tasks related to the follower shard index and construct the error message
+                if (followerIndexName == shard.indexName) {
+                    if (taskState is org.opensearch.replication.task.shard.FailedState) {
+                        val exception: OpenSearchException? = taskState.exception
+                        msg += "[${shard} - ${exception?.javaClass?.name} - \"${exception?.message}\"], "
+                    } else {
+                        msg += "[${shard} - \"Shard task killed or cancelled.\"], "
+                    }
                 }
             }
             return FailedState(failedShardTasks, msg)
@@ -624,7 +627,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         return MonitoringState
     }
 
-    private fun findFailedShardTasks(shardTasks: Map<ShardId, PersistentTask<ShardReplicationParams>>, clusterState: ClusterState)
+    private fun findAllReplicationFailedShardTasks(clusterState: ClusterState)
             :Map<ShardId, PersistentTask<ShardReplicationParams>> {
         val persistentTasks = clusterState.metadata.custom<PersistentTasksCustomMetadata>(PersistentTasksCustomMetadata.TYPE)
 
