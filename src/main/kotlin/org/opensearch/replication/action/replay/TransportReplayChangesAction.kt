@@ -11,6 +11,7 @@
 
 package org.opensearch.replication.action.replay
 
+import org.opensearch.replication.MappingNotAvailableException
 import org.opensearch.replication.metadata.UpdateMetadataAction
 import org.opensearch.replication.metadata.UpdateMetadataRequest
 import org.opensearch.replication.metadata.checkIfIndexBlockedWithLevel
@@ -174,7 +175,12 @@ class TransportReplayChangesAction @Inject constructor(settings: Settings, trans
         val options = IndicesOptions.strictSingleIndexNoExpandForbidClosed()
         val getMappingsRequest = GetMappingsRequest().indices(leaderIndex).indicesOptions(options)
         val getMappingsResponse = remoteClient.suspending(remoteClient.admin().indices()::getMappings, injectSecurityContext = true)(getMappingsRequest)
-        val mappingSource = getMappingsResponse.mappings().get(leaderIndex).get(type).source().string()
+        val mappingSource = getMappingsResponse?.mappings()?.get(leaderIndex)?.get(type)?.source()?.string()
+        if (null == mappingSource) {
+            log.error("Mapping response: $getMappingsResponse")
+            throw MappingNotAvailableException("Mapping for the index $leaderIndex is not available")
+        }
+
 
         // This should use MappingUpdateAction but that uses PutMappingRequest internally and
         // PutMappingRequest#setConcreteIndex has a bug where it throws an NPE.This is fixed upstream in

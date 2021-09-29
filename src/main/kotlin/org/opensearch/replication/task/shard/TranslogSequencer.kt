@@ -11,6 +11,7 @@
 
 package org.opensearch.replication.task.shard
 
+import org.opensearch.replication.MappingNotAvailableException
 import org.opensearch.replication.ReplicationException
 import org.opensearch.replication.action.changes.GetChangesResponse
 import org.opensearch.replication.action.replay.ReplayChangesAction
@@ -28,6 +29,7 @@ import org.opensearch.common.logging.Loggers
 import org.opensearch.index.shard.ShardId
 import org.opensearch.index.translog.Translog
 import org.opensearch.tasks.TaskId
+import java.util.ArrayList
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
 
@@ -65,7 +67,16 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
                 replayRequest.parentTask = parentTaskId
                 launch {
                     var relativeStartNanos  = System.nanoTime()
-                    val replayResponse = client.suspendExecuteWithRetries(replicationMetadata, ReplayChangesAction.INSTANCE, replayRequest, log = log)
+                    val retryOnExceptions = ArrayList<Class<*>>()
+                    retryOnExceptions.add(MappingNotAvailableException::class.java)
+
+                    val replayResponse = client.suspendExecuteWithRetries(
+                        replicationMetadata,
+                        ReplayChangesAction.INSTANCE,
+                        replayRequest,
+                        log = log,
+                        retryOn = retryOnExceptions
+                    )
                     if (replayResponse.shardInfo.failed > 0) {
                         replayResponse.shardInfo.failures.forEachIndexed { i, failure ->
                             log.error("Failed replaying changes. Failure:$i:$failure")
