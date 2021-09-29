@@ -43,6 +43,7 @@ import org.opensearch.common.inject.Inject
 import org.opensearch.common.io.stream.StreamInput
 import org.opensearch.index.Index
 import org.opensearch.index.IndexNotFoundException
+import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.rest.action.admin.indices.AliasesNotFoundException
 import org.opensearch.tasks.Task
 import org.opensearch.threadpool.ThreadPool
@@ -220,7 +221,7 @@ class TransportUpdateMetadataAction @Inject constructor(
                 }
 
                 override fun onFailure(t: Exception) {
-                    log.error("failed to update settings on index ${request.indexName}")
+                    log.error("failed to update settings on index ${request.indexName}", t)
                     listener.onFailure(t)
                 }
         })
@@ -239,7 +240,7 @@ class TransportUpdateMetadataAction @Inject constructor(
                 }
             })
         } catch (ex: IndexNotFoundException) {
-            log.error("Failed to execute UpdateMetadataRequest. Index ${request.indexName} not found. type: ${request.type}: $ex")
+            log.error("Failed to execute UpdateMetadataRequest. Index ${request.indexName} not found. type: ${request.type}: ${ex.stackTraceToString()}")
             throw ex
         }
     }
@@ -259,7 +260,7 @@ class TransportUpdateMetadataAction @Inject constructor(
                     listener.onResponse(AcknowledgedResponse(response.isAcknowledged))
                 }
                 override fun onFailure(ex: Exception) {
-                    log.error("failed to put mappings on indices ${request.indexName} : $ex")
+                    log.error("failed to put mappings on indices ${request.indexName} : ${ex.stackTraceToString()}")
                     listener.onFailure(ex)
                 }
             })

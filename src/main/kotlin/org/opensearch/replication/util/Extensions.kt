@@ -31,6 +31,7 @@ import org.opensearch.index.IndexNotFoundException
 import org.opensearch.index.shard.ShardId
 import org.opensearch.index.store.Store
 import org.opensearch.indices.recovery.RecoveryState
+import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.repositories.IndexId
 import org.opensearch.snapshots.SnapshotId
 import org.opensearch.transport.ConnectTransportException
@@ -157,7 +158,7 @@ suspend fun RemoteClusterRepository.restoreShardWithRetries(
                 currentBackoff = (currentBackoff * factor).toLong().coerceAtMost(maxTimeOut)
                 retryCount++
             } else {
-                log.error("Restore of shard from remote cluster repository failed permanently after all retries due to $e")
+                log.error("Restore of shard from remote cluster repository failed permanently after all retries due to ${e.stackTraceToString()}")
                 store.decRef()
                 listener.onFailure(e)
                 return

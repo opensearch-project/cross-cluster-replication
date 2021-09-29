@@ -43,6 +43,7 @@ import org.opensearch.indices.cluster.IndicesClusterStateService
 import org.opensearch.persistent.AllocatedPersistentTask
 import org.opensearch.persistent.PersistentTaskState
 import org.opensearch.persistent.PersistentTasksService
+import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.tasks.TaskId
 import org.opensearch.tasks.TaskManager
 import org.opensearch.threadpool.ThreadPool
@@ -116,7 +117,7 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
         log.info("Going to mark ${this.javaClass.simpleName}:${this.id} task as completed")
         taskManager.storeResult(this, replicationTaskResponse(), ActionListener.wrap(
                 {log.info("Successfully persisted task status")},
-                {e -> log.warn("Error storing result $e")}
+                {e -> log.warn("Error storing result ${e.stackTraceToString()}")}
         ))
         super.markAsCompleted()
     }
@@ -124,7 +125,7 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
     override fun markAsFailed(e: Exception) {
         taskManager.storeResult(this, e, ActionListener.wrap(
                 {log.info("Successfully persisted failure")},
-                {log.error("Task failed due to $e")}
+                {log.error("Task failed due to ${e.stackTraceToString()}")}
         ))
         super.markAsFailed(e)
     }

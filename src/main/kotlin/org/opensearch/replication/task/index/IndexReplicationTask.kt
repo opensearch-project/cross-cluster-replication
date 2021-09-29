@@ -526,7 +526,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 }
 
             } catch (e: Exception) {
-                log.error("Error in getting the required metadata $e")
+                log.error("Error in getting the required metadata ${e.stackTraceToString()}")
             } finally {
                 withContext(NonCancellable) {
                     log.debug("Metadata sync sleeping for ${replicationSettings.metadataSyncInterval.millis}")
@@ -585,7 +585,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
             try {
                 client.suspendExecute(UpdateMetadataAction.INSTANCE, updateRequest, injectSecurityContext = true)
             } catch (e: Exception) {
-                log.error("Got an error while updating dynamic settings ${followerIndexName} - $e ")
+                log.error("Got an error while updating dynamic settings ${followerIndexName} - ${e.stackTraceToString()} ")
             }
         }
 
@@ -806,7 +806,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                     r -> r.stage != RecoveryState.Stage.DONE }?.toList()
             return activeRecoveries?.size == 0
         } catch (e: Exception) {
-            log.error("Error trying to validate the index. ${e.message}")
+            log.error("Error trying to validate the index", e)
             return false
         }
     }

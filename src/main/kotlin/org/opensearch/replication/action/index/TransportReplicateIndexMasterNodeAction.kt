@@ -43,6 +43,7 @@ import org.opensearch.common.io.stream.StreamInput
 import org.opensearch.common.settings.IndexScopedSettings
 import org.opensearch.index.IndexNotFoundException
 import org.opensearch.persistent.PersistentTasksService
+import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.repositories.RepositoriesService
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
@@ -122,7 +123,7 @@ class TransportReplicateIndexMasterNodeAction @Inject constructor(transportServi
 
                 listener.onResponse(AcknowledgedResponse(true))
             } catch (e: Exception) {
-                log.error("Failed to trigger replication for ${replicateIndexReq.followerIndex} - $e")
+                log.error("Failed to trigger replication for ${replicateIndexReq.followerIndex} - ${e.stackTraceToString()}")
                 listener.onFailure(e)
             }
         }
