@@ -79,7 +79,7 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
                     )
                     if (replayResponse.shardInfo.failed > 0) {
                         replayResponse.shardInfo.failures.forEachIndexed { i, failure ->
-                            log.error("Failed replaying changes. Failure:$i:$failure")
+                            log.error("Failed replaying changes. Failure:$i:$failure}")
                         }
                         followerClusterStats.stats[followerShardId]!!.opsWriteFailures.addAndGet(replayResponse.shardInfo.failed.toLong())
                         throw ReplicationException("failed to replay changes", replayResponse.shardInfo.failures)

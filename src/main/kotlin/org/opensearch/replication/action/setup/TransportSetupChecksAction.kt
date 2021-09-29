@@ -25,6 +25,7 @@ import org.opensearch.client.Client
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Inject
 import org.opensearch.common.util.concurrent.ThreadContext
+import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.rest.RestStatus
 import org.opensearch.tasks.Task
 import org.opensearch.threadpool.ThreadPool
@@ -96,7 +97,7 @@ class TransportSetupChecksAction @Inject constructor(transportService: Transport
                         exceptionToThrow = UnsupportedOperationException("Replication is not enabled on the remote domain")
                     }
                     log.error("Permissions validation failed for role [connection:${request.connectionName}, " +
-                            "resource:${request.leaderContext.resource}] with $exceptionToThrow")
+                            "resource:${request.leaderContext.resource}] with ${exceptionToThrow.stackTraceToString()}")
                     listener.onFailure(unwrapSecurityExceptionIfPresent(exceptionToThrow))
                 }
         )
@@ -109,7 +110,7 @@ class TransportSetupChecksAction @Inject constructor(transportService: Transport
                 },
                 { e ->
                     log.error("Permissions validation failed for role [local:$followerClusterName, " +
-                            "resource:${request.followerContext.resource}] with $e")
+                            "resource:${request.followerContext.resource}] with ${e.stackTraceToString()}")
                     listener.onFailure(unwrapSecurityExceptionIfPresent(e))
                 }
         )
@@ -126,7 +127,7 @@ class TransportSetupChecksAction @Inject constructor(transportService: Transport
                         exceptionToThrow = UnsupportedOperationException("Replication is not enabled on the remote domain")
                     }
                     log.error("Permissions validation failed for User [connection:${request.connectionName}, " +
-                            "resource:${request.leaderContext.resource}] with $exceptionToThrow")
+                            "resource:${request.leaderContext.resource}] with ${exceptionToThrow.stackTraceToString()}")
                     listener.onFailure(unwrapSecurityExceptionIfPresent(exceptionToThrow))
                 }
         )
@@ -139,7 +140,7 @@ class TransportSetupChecksAction @Inject constructor(transportService: Transport
                 },
                 { e ->
                     log.error("Permissions validation failed for User [local:$followerClusterName, " +
-                            "resource:${request.followerContext.resource}] with $e")
+                            "resource:${request.followerContext.resource}] with ${e.stackTraceToString()}")
                     listener.onFailure(unwrapSecurityExceptionIfPresent(e))
                 }
         )

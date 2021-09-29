@@ -57,6 +57,7 @@ import org.opensearch.index.snapshots.IndexShardSnapshotStatus
 import org.opensearch.index.store.Store
 import org.opensearch.indices.recovery.RecoverySettings
 import org.opensearch.indices.recovery.RecoveryState
+import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.repositories.IndexId
 import org.opensearch.repositories.Repository
 import org.opensearch.repositories.RepositoryData
@@ -299,7 +300,7 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
                 leaderShardId, fileMetadata, leaderClusterClient, recoveryState, replicationSettings.chunkSize,
                 object : ActionListener<Void> {
                     override fun onFailure(e: java.lang.Exception?) {
-                        log.error("Restore of ${store.shardId()} failed due to $e")
+                        log.error("Restore of ${store.shardId()} failed due to ${e?.stackTraceToString()}")
                         if (e is NodeDisconnectedException || e is NodeNotConnectedException || e is ConnectTransportException) {
                             log.info("Retrying restore shard for ${store.shardId()}")
                             Thread.sleep(1000) // to get updated leader cluster state
@@ -345,7 +346,7 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
                 log.info("Successfully released resources at the leader cluster for $leaderShardId at $leaderShardNode")
             }
         } catch (e: Exception) {
-            log.error("Releasing leader resource failed due to $e")
+            log.error("Releasing leader resource failed due to ${e.stackTraceToString()}")
         }
 
     }

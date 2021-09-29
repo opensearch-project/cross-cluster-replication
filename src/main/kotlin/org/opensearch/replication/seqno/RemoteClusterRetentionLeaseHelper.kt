@@ -26,6 +26,7 @@ import org.opensearch.index.shard.ShardId
 import org.opensearch.replication.action.stop.TransportStopIndexReplicationAction
 import org.opensearch.replication.metadata.store.ReplicationMetadata
 import org.opensearch.replication.task.index.IndexReplicationParams
+import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.replication.util.suspending
 
 class RemoteClusterRetentionLeaseHelper constructor(val followerClusterName: String, val client: Client) {
@@ -108,7 +109,7 @@ class RemoteClusterRetentionLeaseHelper constructor(val followerClusterName: Str
             log.info("Removed retention lease with id - $retentionLeaseId")
         } catch(e: RetentionLeaseNotFoundException) {
             // log error and bail
-            log.error("${e.message}")
+            log.error(e.stackTraceToString())
         } catch (e: Exception) {
             // We are not bubbling up the exception as the stop action/ task cleanup should succeed
             // even if we fail to remove the retention lease from leader cluster
@@ -127,7 +128,7 @@ class RemoteClusterRetentionLeaseHelper constructor(val followerClusterName: Str
         try {
             client.execute(RetentionLeaseActions.Add.INSTANCE, request).actionGet(timeout)
         } catch (e: RetentionLeaseAlreadyExistsException) {
-            log.error("${e.message}")
+            log.error(e.stackTraceToString())
             log.info("Renew retention lease as it already exists $retentionLeaseId with $seqNo")
             // Only one retention lease should exists for the follower shard
             // Ideally, this should have got cleaned-up
