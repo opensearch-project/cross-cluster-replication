@@ -70,7 +70,7 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
                 replayRequest.parentTask = parentTaskId
                 launch {
                     var relativeStartNanos  = System.nanoTime()
-                    val replayResponse = client.suspendExecute(replicationMetadata, ReplayChangesAction.INSTANCE, replayRequest)
+                    val replayResponse = client.suspendExecuteWithRetries(replicationMetadata, ReplayChangesAction.INSTANCE, replayRequest, log = log)
                     if (replayResponse.shardInfo.failed > 0) {
                         replayResponse.shardInfo.failures.forEachIndexed { i, failure ->
                             log.error("Failed replaying changes. Failure:$i:$failure")
