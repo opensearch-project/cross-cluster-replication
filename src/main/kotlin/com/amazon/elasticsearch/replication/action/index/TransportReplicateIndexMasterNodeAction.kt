@@ -47,6 +47,7 @@ import org.elasticsearch.common.io.stream.StreamInput
 import org.elasticsearch.common.settings.IndexScopedSettings
 import org.elasticsearch.index.IndexNotFoundException
 import org.elasticsearch.persistent.PersistentTasksService
+import com.amazon.elasticsearch.replication.util.stackTraceToString
 import org.elasticsearch.repositories.RepositoriesService
 import org.elasticsearch.threadpool.ThreadPool
 import org.elasticsearch.transport.TransportService
@@ -126,7 +127,7 @@ class TransportReplicateIndexMasterNodeAction @Inject constructor(transportServi
 
                 listener.onResponse(AcknowledgedResponse(true))
             } catch (e: Exception) {
-                log.error("Failed to trigger replication for ${replicateIndexReq.followerIndex} - $e")
+                log.error("Failed to trigger replication for ${replicateIndexReq.followerIndex} - ${e.stackTraceToString()}")
                 listener.onFailure(e)
             }
         }

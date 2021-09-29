@@ -21,6 +21,7 @@ import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
 import com.amazon.elasticsearch.replication.task.autofollow.AutoFollowTask
 import com.amazon.elasticsearch.replication.task.shard.ShardReplicationTask
 import com.amazon.elasticsearch.replication.util.coroutineContext
+import com.amazon.elasticsearch.replication.util.stackTraceToString
 import com.amazon.elasticsearch.replication.util.suspending
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -120,7 +121,7 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
         log.info("Going to mark ${this.javaClass.simpleName}:${this.id} task as completed")
         taskManager.storeResult(this, replicationTaskResponse(), ActionListener.wrap(
                 {log.info("Successfully persisted task status")},
-                {e -> log.warn("Error storing result $e")}
+                {e -> log.warn("Error storing result ${e.stackTraceToString()}")}
         ))
         super.markAsCompleted()
     }
@@ -128,7 +129,7 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
     override fun markAsFailed(e: Exception) {
         taskManager.storeResult(this, e, ActionListener.wrap(
                 {log.info("Successfully persisted failure")},
-                {log.error("Task failed due to $e")}
+                {log.error("Task failed due to ${e.stackTraceToString()}")}
         ))
         super.markAsFailed(e)
     }

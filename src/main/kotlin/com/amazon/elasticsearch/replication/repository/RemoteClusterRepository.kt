@@ -30,6 +30,7 @@ import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
 import com.amazon.elasticsearch.replication.util.coroutineContext
 import com.amazon.elasticsearch.replication.util.execute
+import com.amazon.elasticsearch.replication.util.stackTraceToString
 import com.amazon.elasticsearch.replication.util.suspendExecute
 import kotlinx.coroutines.Dispatchers
 import org.apache.logging.log4j.LogManager
@@ -304,7 +305,7 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
                 leaderShardId, fileMetadata, leaderClusterClient, recoveryState, replicationSettings.chunkSize,
                 object : ActionListener<Void> {
                     override fun onFailure(e: java.lang.Exception?) {
-                        log.error("Restore of ${store.shardId()} failed due to $e")
+                        log.error("Restore of ${store.shardId()} failed due to ${e?.stackTraceToString()}")
                         if (e is NodeDisconnectedException || e is NodeNotConnectedException || e is ConnectTransportException) {
                             log.info("Retrying restore shard for ${store.shardId()}")
                             Thread.sleep(1000) // to get updated leader cluster state
@@ -350,7 +351,7 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
                 log.info("Successfully released resources at the leader cluster for $leaderShardId at $leaderShardNode")
             }
         } catch (e: Exception) {
-            log.error("Releasing leader resource failed due to $e")
+            log.error("Releasing leader resource failed due to ${e.stackTraceToString()}")
         }
 
     }

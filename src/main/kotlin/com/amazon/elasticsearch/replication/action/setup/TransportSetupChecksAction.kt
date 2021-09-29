@@ -2,6 +2,7 @@ package com.amazon.elasticsearch.replication.action.setup
 
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationContext
 import com.amazon.elasticsearch.replication.util.SecurityContext
+import com.amazon.elasticsearch.replication.util.stackTraceToString
 import org.apache.logging.log4j.LogManager
 import org.elasticsearch.ElasticsearchSecurityException
 import org.elasticsearch.ExceptionsHelper
@@ -85,7 +86,7 @@ class TransportSetupChecksAction @Inject constructor(transportService: Transport
                         exceptionToThrow = UnsupportedOperationException("Replication is not enabled on the remote domain")
                     }
                     log.error("Permissions validation failed for role [connection:${request.connectionName}, " +
-                            "resource:${request.leaderContext.resource}] with $exceptionToThrow")
+                            "resource:${request.leaderContext.resource}] with ${exceptionToThrow.stackTraceToString()}")
                     listener.onFailure(unwrapSecurityExceptionIfPresent(exceptionToThrow))
                 }
         )
@@ -98,7 +99,7 @@ class TransportSetupChecksAction @Inject constructor(transportService: Transport
                 },
                 { e ->
                     log.error("Permissions validation failed for role [local:$followerClusterName, " +
-                            "resource:${request.followerContext.resource}] with $e")
+                            "resource:${request.followerContext.resource}] with ${e.stackTraceToString()}")
                     listener.onFailure(unwrapSecurityExceptionIfPresent(e))
                 }
         )
@@ -115,7 +116,7 @@ class TransportSetupChecksAction @Inject constructor(transportService: Transport
                         exceptionToThrow = UnsupportedOperationException("Replication is not enabled on the remote domain")
                     }
                     log.error("Permissions validation failed for User [connection:${request.connectionName}, " +
-                            "resource:${request.leaderContext.resource}] with $exceptionToThrow")
+                            "resource:${request.leaderContext.resource}] with ${exceptionToThrow.stackTraceToString()}")
                     listener.onFailure(unwrapSecurityExceptionIfPresent(exceptionToThrow))
                 }
         )
@@ -128,7 +129,7 @@ class TransportSetupChecksAction @Inject constructor(transportService: Transport
                 },
                 { e ->
                     log.error("Permissions validation failed for User [local:$followerClusterName, " +
-                            "resource:${request.followerContext.resource}] with $e")
+                            "resource:${request.followerContext.resource}] with ${e.stackTraceToString()}")
                     listener.onFailure(unwrapSecurityExceptionIfPresent(e))
                 }
         )

@@ -1,5 +1,6 @@
 package com.amazon.elasticsearch.replication.metadata
 
+import com.amazon.elasticsearch.replication.util.stackTraceToString
 import org.apache.logging.log4j.LogManager
 import org.apache.logging.log4j.message.ParameterizedMessage
 import org.elasticsearch.action.ActionListener
@@ -209,7 +210,7 @@ class TransportUpdateMetadataAction @Inject constructor(
                 }
 
                 override fun onFailure(t: Exception) {
-                    log.error("failed to update settings on index ${request.indexName}")
+                    log.error("failed to update settings on index ${request.indexName}", t)
                     listener.onFailure(t)
                 }
         })
@@ -228,7 +229,7 @@ class TransportUpdateMetadataAction @Inject constructor(
                 }
             })
         } catch (ex: IndexNotFoundException) {
-            log.error("Failed to execute UpdateMetadataRequest. Index ${request.indexName} not found. type: ${request.type}: $ex")
+            log.error("Failed to execute UpdateMetadataRequest. Index ${request.indexName} not found. type: ${request.type}: ${ex.stackTraceToString()}")
             throw ex
         }
     }
@@ -248,7 +249,7 @@ class TransportUpdateMetadataAction @Inject constructor(
                     listener.onResponse(AcknowledgedResponse(response.isAcknowledged))
                 }
                 override fun onFailure(ex: Exception) {
-                    log.error("failed to put mappings on indices ${request.indexName} : $ex")
+                    log.error("failed to put mappings on indices ${request.indexName} : ${ex.stackTraceToString()}")
                     listener.onFailure(ex)
                 }
             })
