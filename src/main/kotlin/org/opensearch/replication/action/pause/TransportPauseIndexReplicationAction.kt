@@ -71,7 +71,7 @@ class TransportPauseIndexReplicationAction @Inject constructor(transportService:
                 validatePauseReplicationRequest(request)
 
                 // Restoring Index can't be paused
-                val restoring = clusterService.state().custom<RestoreInProgress>(RestoreInProgress.TYPE).any { entry ->
+                val restoring = clusterService.state().custom<RestoreInProgress>(RestoreInProgress.TYPE, RestoreInProgress.EMPTY).any { entry ->
                     entry.indices().any { it == request.indexName }
                 }
 
