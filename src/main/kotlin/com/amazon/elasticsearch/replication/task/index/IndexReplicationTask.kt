@@ -280,7 +280,7 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
     }
 
     private suspend fun pollShardTaskStatus(shardTasks: Map<ShardId, PersistentTask<ShardReplicationParams>>): IndexReplicationState {
-        val failedShardTasks = findFailedShardTasks(shardTasks, clusterService.state())
+        val failedShardTasks = findAllReplicationFailedShardTasks(followerIndexName, clusterService.state())
         if (failedShardTasks.isNotEmpty()) {
             log.info("Failed shard tasks - ", failedShardTasks)
             var msg = ""
@@ -621,13 +621,15 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
         return MonitoringState
     }
 
-    private fun findFailedShardTasks(shardTasks: Map<ShardId, PersistentTask<ShardReplicationParams>>, clusterState: ClusterState)
+    private fun findAllReplicationFailedShardTasks(followerIndexName: String, clusterState: ClusterState)
             :Map<ShardId, PersistentTask<ShardReplicationParams>> {
         val persistentTasks = clusterState.metadata.custom<PersistentTasksCustomMetadata>(PersistentTasksCustomMetadata.TYPE)
 
+        // Filter tasks related to the follower shard index and construct the error message
         val failedShardTasks = persistentTasks.findTasks(ShardReplicationExecutor.TASK_NAME, Predicate { true }).stream()
                 .filter { task -> task.state is com.amazon.elasticsearch.replication.task.shard.FailedState }
                 .map { task -> task as PersistentTask<ShardReplicationParams> }
+                .filter { task -> task.params!!.followerShardId.indexName  == followerIndexName}
                 .collect(Collectors.toMap(
                         {t: PersistentTask<ShardReplicationParams> -> t.params!!.followerShardId},
                         {t: PersistentTask<ShardReplicationParams> -> t}))
