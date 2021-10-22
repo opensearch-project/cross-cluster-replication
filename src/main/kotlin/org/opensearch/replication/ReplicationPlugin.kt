@@ -108,6 +108,10 @@ import org.opensearch.env.NodeEnvironment
 import org.opensearch.index.IndexModule
 import org.opensearch.index.IndexSettings
 import org.opensearch.index.engine.EngineFactory
+import org.opensearch.index.seqno.RetentionLeases
+import org.opensearch.index.translog.ReplicationTranslogDeletionPolicy
+import org.opensearch.index.translog.TranslogDeletionPolicy
+import org.opensearch.index.translog.TranslogDeletionPolicyFactory
 import org.opensearch.indices.recovery.RecoverySettings
 import org.opensearch.persistent.PersistentTaskParams
 import org.opensearch.persistent.PersistentTaskState
@@ -119,7 +123,6 @@ import org.opensearch.plugins.PersistentTaskPlugin
 import org.opensearch.plugins.Plugin
 import org.opensearch.plugins.RepositoryPlugin
 import org.opensearch.replication.action.stats.AutoFollowStatsAction
-import org.opensearch.replication.action.stats.AutoFollowStatsAction.Companion.NAME
 import org.opensearch.replication.action.stats.FollowerStatsAction
 import org.opensearch.replication.action.stats.LeaderStatsAction
 import org.opensearch.replication.action.stats.TransportAutoFollowStatsAction
@@ -143,6 +146,7 @@ import org.opensearch.threadpool.ScalingExecutorBuilder
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.watcher.ResourceWatcherService
 import java.util.Optional
+import java.util.function.BiFunction
 import java.util.function.Supplier
 
 @OpenForTesting
@@ -184,6 +188,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                 Setting.Property.Dynamic, Setting.Property.NodeScope)
         val REPLICATION_RETENTION_LEASE_MAX_FAILURE_DURATION = Setting.timeSetting ("plugins.replication.follower.retention_lease_max_failure_duration", TimeValue.timeValueHours(1), TimeValue.timeValueSeconds(1),
             TimeValue.timeValueHours(12), Setting.Property.Dynamic, Setting.Property.NodeScope)
+        val INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING: Setting<Boolean> = Setting.boolSetting("index.translog.retention_lease.pruning.enabled", false,
+            Setting.Property.IndexScope, Setting.Property.Dynamic)
     }
 
     override fun createComponents(client: Client, clusterService: ClusterService, threadPool: ThreadPool,
@@ -340,7 +346,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                 REPLICATION_FOLLOWER_RECOVERY_CHUNK_SIZE, REPLICATION_FOLLOWER_RECOVERY_PARALLEL_CHUNKS,
                 REPLICATION_PARALLEL_READ_POLL_INTERVAL, REPLICATION_AUTOFOLLOW_REMOTE_INDICES_POLL_INTERVAL,
                 REPLICATION_AUTOFOLLOW_REMOTE_INDICES_RETRY_POLL_INTERVAL, REPLICATION_METADATA_SYNC_INTERVAL,
-                REPLICATION_RETENTION_LEASE_MAX_FAILURE_DURATION)
+                REPLICATION_RETENTION_LEASE_MAX_FAILURE_DURATION, INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING)
     }
 
     override fun getInternalRepositories(env: Environment, namedXContentRegistry: NamedXContentRegistry,
@@ -356,6 +362,12 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
         } else {
             Optional.empty()
         }
+    }
+
+    override fun getCustomTranslogDeletionPolicyFactory(): Optional<TranslogDeletionPolicyFactory> {
+       return Optional.of(TranslogDeletionPolicyFactory{
+               indexSettings, retentionLeasesSupplier -> ReplicationTranslogDeletionPolicy(indexSettings, retentionLeasesSupplier)
+       })
     }
 
     override fun onIndexModule(indexModule: IndexModule) {

@@ -78,7 +78,6 @@ import org.opensearch.common.xcontent.XContentBuilder
 import org.opensearch.index.Index
 import org.opensearch.index.IndexService
 import org.opensearch.index.IndexSettings
-import org.opensearch.index.IndexSettings.INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING
 import org.opensearch.index.shard.IndexShard
 import org.opensearch.index.shard.ShardId
 import org.opensearch.indices.cluster.IndicesClusterStateService
@@ -88,6 +87,7 @@ import org.opensearch.persistent.PersistentTasksCustomMetadata
 import org.opensearch.persistent.PersistentTasksCustomMetadata.PersistentTask
 import org.opensearch.persistent.PersistentTasksNodeService
 import org.opensearch.persistent.PersistentTasksService
+import org.opensearch.replication.ReplicationPlugin.Companion.INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING
 import org.opensearch.tasks.TaskId
 import org.opensearch.tasks.TaskManager
 import org.opensearch.threadpool.ThreadPool
