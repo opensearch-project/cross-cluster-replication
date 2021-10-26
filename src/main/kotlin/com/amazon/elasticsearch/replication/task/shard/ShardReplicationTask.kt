@@ -204,7 +204,9 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         val indexShard = followerIndexService.getShard(followerShardId.id)
 
         try {
-            retentionLeaseHelper.renewRetentionLease(leaderShardId, indexShard.lastSyncedGlobalCheckpoint, followerShardId)
+            //Retention leases preserve the operations including and starting from the retainingSequenceNumber we specify when we take the lease .
+            //hence renew retention lease with lastSyncedGlobalCheckpoint + 1
+            retentionLeaseHelper.renewRetentionLease(leaderShardId, indexShard.lastSyncedGlobalCheckpoint + 1, followerShardId)
         } catch (ex: Exception) {
             // In case of a failure, we just log it and move on. All failures scenarios are being handled below with
             // retries and backoff depending on exception.
@@ -271,9 +273,11 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                     }
                 }
 
-                //renew retention lease with global checkpoint so that any shard that picks up shard replication task has data until then.
+
+                //Retention leases preserve the operations including and starting from the retainingSequenceNumber we specify when we take the lease .
+                //hence renew retention lease with lastSyncedGlobalCheckpoint + 1 so that any shard that picks up shard replication task has data until then.
                 try {
-                    retentionLeaseHelper.renewRetentionLease(leaderShardId, indexShard.lastSyncedGlobalCheckpoint, followerShardId)
+                    retentionLeaseHelper.renewRetentionLease(leaderShardId, indexShard.lastSyncedGlobalCheckpoint + 1, followerShardId)
                     followerClusterStats.stats[followerShardId]!!.followerCheckpoint = indexShard.lastSyncedGlobalCheckpoint
                     lastLeaseRenewalMillis = System.currentTimeMillis()
                 } catch (ex: Exception) {
