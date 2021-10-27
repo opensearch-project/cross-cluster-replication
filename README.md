@@ -39,9 +39,6 @@ The replication machinery is implemented as an OpenSearch plugin that exposes AP
 
 The project in this package uses the [Gradle](https://docs.gradle.org/current/userguide/userguide.html) build system. Gradle comes with excellent documentation that should be your first stop when trying to figure out how to operate or modify the build.
 
-### Prerequisites  
-Follow the steps outlined under [#94](https://github.com/opensearch-project/cross-cluster-replication/issues/94) to get related changes working for OS 1.1
-
 ### Building from the command line
 Set JAVA_HOME to JDK-14 or above  
 
