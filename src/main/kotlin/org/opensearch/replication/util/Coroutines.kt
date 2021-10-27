@@ -125,7 +125,7 @@ suspend fun ClusterStateObserver.waitForNextChange(reason: String, predicate: (C
             override fun onTimeout(timeout: TimeValue?) {
                 cont.resumeWithException(OpenSearchTimeoutException("timed out waiting for $reason"))
             }
-        }, predicate)
+        }, predicate,  TimeValue(60000))
     }
 }
 
