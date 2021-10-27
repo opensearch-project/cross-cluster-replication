@@ -45,7 +45,7 @@ import org.opensearch.common.io.stream.StreamInput
 import org.opensearch.common.io.stream.Writeable
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.xcontent.XContentType
-import org.opensearch.index.IndexingPressure
+import org.opensearch.index.IndexingPressureService
 import org.opensearch.index.engine.Engine
 import org.opensearch.index.shard.IndexShard
 import org.opensearch.index.translog.Translog
@@ -63,7 +63,7 @@ class TransportReplayChangesAction @Inject constructor(settings: Settings, trans
                                                        clusterService: ClusterService, indicesService: IndicesService,
                                                        threadPool: ThreadPool, shardStateAction: ShardStateAction,
                                                        actionFilters: ActionFilters,
-                                                       indexingPressure: IndexingPressure,
+                                                       indexingPressureService: IndexingPressureService,
                                                        systemIndices: SystemIndices,
                                                        private val client: Client,
                                                        // Unused for now because of a bug in creating the PutMappingRequest
@@ -71,7 +71,7 @@ class TransportReplayChangesAction @Inject constructor(settings: Settings, trans
     TransportWriteAction<ReplayChangesRequest, ReplayChangesRequest, ReplayChangesResponse>(
         settings, ReplayChangesAction.NAME, transportService, clusterService, indicesService, threadPool, shardStateAction,
         actionFilters, Writeable.Reader { inp -> ReplayChangesRequest(inp) }, Writeable.Reader { inp -> ReplayChangesRequest(inp) },
-            EXECUTOR_NAME_FUNCTION, false, indexingPressure, systemIndices) {
+            EXECUTOR_NAME_FUNCTION, false, indexingPressureService, systemIndices) {
 
     companion object {
         private val log = LogManager.getLogger(TransportReplayChangesAction::class.java)!!
