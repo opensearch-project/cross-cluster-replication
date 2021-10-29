@@ -58,7 +58,14 @@ class SecurityContext {
                 UpdateAutoFollowPatternAction.NAME)
 
         fun fromSecurityThreadContext(threadContext: ThreadContext): User? {
-            val userInfo = threadContext.getTransient<String?>(ConfigConstants.OPENDISTRO_SECURITY_USER_INFO_THREAD_CONTEXT)
+            var userInfo = threadContext.getTransient<String?>(ConfigConstants.OPENDISTRO_SECURITY_USER_INFO_THREAD_CONTEXT)
+            val userObj = threadContext.getTransient<Any?>(OPENDISTRO_SECURITY_USER)
+            if(userInfo == null && userObj != null) {
+                // Case: When admin certs are used, security plugin skips populating the user info in thread context.
+                // If userObj(obj) is present and userInfo(String) is not populated, assuming admin role for the user and
+                // only passed role(use_roles) in the request is stored after checks (as admin should have access to all roles)
+                userInfo = "adminDN|"
+            }
             return User.parse(userInfo)
         }
 
