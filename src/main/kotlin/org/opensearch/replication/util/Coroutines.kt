@@ -91,6 +91,16 @@ suspend fun <Req: ActionRequest, Resp: ActionResponse>
     }
 }
 
+suspend fun <Req: ActionRequest, Resp: ActionResponse>
+        OpenSearchClient.suspendExecute(replicationMetadata: ReplicationMetadata?,
+                                           action: ActionType<Resp>, req: Req, injectSecurityContext: Boolean = false, defaultContext: Boolean = false) : Resp {
+    return if(replicationMetadata != null) {
+        suspendExecute(replicationMetadata, action, req, defaultContext = defaultContext)
+    } else {
+        suspendExecute(action, req, injectSecurityContext = injectSecurityContext, defaultContext = defaultContext)
+    }
+}
+
 suspend fun IndexShard.waitForGlobalCheckpoint(waitingForGlobalCheckpoint: Long, timeout: TimeValue?) : Long {
     return suspendCancellableCoroutine {  cont ->
         val listener = object : GlobalCheckpointListeners.GlobalCheckpointListener {
