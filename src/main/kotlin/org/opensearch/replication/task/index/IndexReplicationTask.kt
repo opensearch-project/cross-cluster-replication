@@ -88,6 +88,7 @@ import org.opensearch.persistent.PersistentTasksCustomMetadata
 import org.opensearch.persistent.PersistentTasksCustomMetadata.PersistentTask
 import org.opensearch.persistent.PersistentTasksNodeService
 import org.opensearch.persistent.PersistentTasksService
+import org.opensearch.rest.RestStatus
 import org.opensearch.tasks.TaskId
 import org.opensearch.tasks.TaskManager
 import org.opensearch.threadpool.ThreadPool
@@ -163,76 +164,91 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         followingTaskState = FollowingState(emptyMap())
         currentTaskState = initialState as IndexReplicationState
         while (scope.isActive) {
-            val newState = when (currentTaskState.state) {
-                ReplicationState.INIT -> {
-                    addListenerToInterruptTask()
-                    if (isResumed()) {
-                        log.debug("Resuming tasks now.")
-                        InitFollowState
-                    } else {
-                        setupAndStartRestore()
-                    }
-                }
-                ReplicationState.RESTORING -> {
-                    log.info("In restoring state")
-                    waitForRestore()
-                }
-                ReplicationState.INIT_FOLLOW -> {
-                    log.info("Starting shard tasks")
-                    addIndexBlockForReplication()
-                    startShardFollowTasks(emptyMap())
-                }
-                ReplicationState.FOLLOWING -> {
-                    if (currentTaskState is FollowingState) {
-                        followingTaskState = (currentTaskState as FollowingState)
-                        shouldCallEvalMonitoring = false
-                        MonitoringState
-                    } else {
-                        throw org.opensearch.replication.ReplicationException("Wrong state type: ${currentTaskState::class}")
-                    }
-                }
-                ReplicationState.MONITORING -> {
-                    var state = evalMonitoringState()
-                    if (metadataPoller == null) {
-                        metadataPoller = scope.launch {
-                             pollForMetadata(this)
+            try {
+                val newState = when (currentTaskState.state) {
+                    ReplicationState.INIT -> {
+                        addListenerToInterruptTask()
+                        if (isResumed()) {
+                            log.debug("Resuming tasks now.")
+                            InitFollowState
+                        } else {
+                            setupAndStartRestore()
                         }
                     }
+                    ReplicationState.RESTORING -> {
+                        log.info("In restoring state")
+                        waitForRestore()
+                    }
+                    ReplicationState.INIT_FOLLOW -> {
+                        log.info("Starting shard tasks")
+                        addIndexBlockForReplication()
+                        startShardFollowTasks(emptyMap())
+                    }
+                    ReplicationState.FOLLOWING -> {
+                        if (currentTaskState is FollowingState) {
+                            followingTaskState = (currentTaskState as FollowingState)
+                            shouldCallEvalMonitoring = false
+                            MonitoringState
+                        } else {
+                            throw org.opensearch.replication.ReplicationException("Wrong state type: ${currentTaskState::class}")
+                        }
+                    }
+                    ReplicationState.MONITORING -> {
+                        var state = evalMonitoringState()
+                        if (metadataPoller == null) {
+                            metadataPoller = scope.launch {
+                                pollForMetadata(this)
+                            }
+                        }
 
-                    if (state !is MonitoringState) {
-                        // Tasks need to be started
-                        state
-                    } else {
-                        state = pollShardTaskStatus((followingTaskState as FollowingState).shardReplicationTasks)
-                        followingTaskState = startMissingShardTasks((followingTaskState as FollowingState).shardReplicationTasks)
-                        when (state) {
-                            is MonitoringState -> {
-                                updateMetadata()
-                            }
-                            is FailedState -> {
-                                // Try pausing first if we get Failed state. This returns failed state if pause failed
-                                pauseReplication(state)
-                            }
-                            else -> {
-                                state
+                        if (state !is MonitoringState) {
+                            // Tasks need to be started
+                            state
+                        } else {
+                            state = pollShardTaskStatus((followingTaskState as FollowingState).shardReplicationTasks)
+                            followingTaskState = startMissingShardTasks((followingTaskState as FollowingState).shardReplicationTasks)
+                            when (state) {
+                                is MonitoringState -> {
+                                    updateMetadata()
+                                }
+                                is FailedState -> {
+                                    // Try pausing first if we get Failed state. This returns failed state if pause failed
+                                    pauseReplication(state)
+                                }
+                                else -> {
+                                    state
+                                }
                             }
                         }
                     }
+                    ReplicationState.FAILED -> {
+                        assert(currentTaskState is FailedState)
+                        failReplication(currentTaskState as FailedState)
+                        currentTaskState
+                    }
+                    ReplicationState.COMPLETED -> {
+                        markAsCompleted()
+                        CompletedState
+                    }
                 }
-                ReplicationState.FAILED -> {
-                    assert(currentTaskState is FailedState)
-                    failReplication(currentTaskState as FailedState)
-                    currentTaskState
+                if (newState != currentTaskState) {
+                    currentTaskState = updateState(newState)
                 }
-                ReplicationState.COMPLETED -> {
-                    markAsCompleted()
-                    CompletedState
-                }
+                if (isCompleted) break
             }
-            if (newState != currentTaskState) {
-                currentTaskState = updateState(newState)
+            catch(e: OpenSearchException) {
+                val status = e.status().status
+                // Index replication task shouldn't exit before shard replication tasks
+                // As long as shard replication tasks doesn't encounter any errors, Index task
+                // should continue to poll and Any failure encoutered from shard task should
+                // invoke state transition and exit
+                if(status < 500 && status != RestStatus.TOO_MANY_REQUESTS.status) {
+                    log.error("Exiting index replication task", e)
+                    throw e
+                }
+                log.debug("Encountered transient error while running index replication task", e)
+                delay(SLEEP_TIME_BETWEEN_POLL_MS)
             }
-            if (isCompleted) break
         }
     }
 
@@ -853,6 +869,10 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 cancelTask("Index replication task received a pause.")
             }
         }
+    }
+
+    override suspend fun setReplicationMetadata() {
+        this.replicationMetadata = replicationMetadataManager.getIndexReplicationMetadata(followerIndexName, fetch_from_primary = true)
     }
 
     override fun replicationTaskResponse(): CrossClusterReplicationTaskResponse {

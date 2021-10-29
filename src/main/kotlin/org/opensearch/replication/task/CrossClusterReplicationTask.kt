@@ -22,11 +22,13 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
 import org.apache.logging.log4j.Logger
+import org.opensearch.OpenSearchException
 import org.opensearch.action.ActionListener
 import org.opensearch.action.ActionResponse
 import org.opensearch.client.Client
@@ -43,6 +45,7 @@ import org.opensearch.indices.cluster.IndicesClusterStateService
 import org.opensearch.persistent.AllocatedPersistentTask
 import org.opensearch.persistent.PersistentTaskState
 import org.opensearch.persistent.PersistentTasksService
+import org.opensearch.rest.RestStatus
 import org.opensearch.tasks.TaskId
 import org.opensearch.tasks.TaskManager
 import org.opensearch.threadpool.ThreadPool
@@ -64,6 +67,10 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
     protected lateinit var replicationMetadata: ReplicationMetadata
     @Volatile private lateinit var taskManager: TaskManager
 
+    companion object {
+        const val DEFAULT_WAIT_ON_ERRORS = 60000L
+    }
+
     override fun init(persistentTasksService: PersistentTasksService, taskManager: TaskManager,
                       persistentTaskId: String, allocationId: Long) {
         super.init(persistentTasksService, taskManager, persistentTaskId, allocationId)
@@ -84,7 +91,7 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
             var exception : Throwable? = null
             try {
                 registerCloseListeners()
-                setReplicationMetadata()
+                waitAndSetReplicationMetadata()
                 execute(this, initialState)
                 markAsCompleted()
             } catch (e: Exception) {
@@ -189,22 +196,33 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
         }
     }
 
+    private suspend fun waitAndSetReplicationMetadata() {
+        if (this::replicationMetadata.isInitialized) {
+            return
+        } else {
+            while(overallTaskScope.isActive) {
+                try {
+                    setReplicationMetadata()
+                    return
+                } catch (e: OpenSearchException) {
+                    if(e.status().status < 500 && e.status() != RestStatus.TOO_MANY_REQUESTS) {
+                        throw e
+                    }
+                    log.error("Failed to fetch replication metadata due to ", e)
+                    delay(DEFAULT_WAIT_ON_ERRORS)
+                }
+            }
+        }
+    }
+
     /**
      * Sets the security context
      */
-    open suspend fun setReplicationMetadata() {
-        replicationMetadata = if(this is AutoFollowTask) {
-            replicationMetadataManager.getAutofollowMetadata(followerIndexName, leaderAlias, fetch_from_primary = true)
-        }
-        else {
-            replicationMetadataManager.getIndexReplicationMetadata(followerIndexName, fetch_from_primary = true)
-        }
-    }
+    protected abstract suspend fun setReplicationMetadata()
 
     //used only in testing
     open suspend fun setReplicationMetadata(rm :ReplicationMetadata) {
         replicationMetadata = rm
-
     }
 
     open class CrossClusterReplicationTaskResponse(val status: String): ActionResponse(), ToXContentObject {
