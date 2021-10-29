@@ -16,7 +16,6 @@
 package com.amazon.elasticsearch.replication.task.index
 
 import com.amazon.elasticsearch.replication.task.ReplicationState
-import com.amazon.elasticsearch.replication.task.autofollow.AutoFollowParams
 import com.amazon.elasticsearch.replication.task.shard.ShardReplicationParams
 import org.elasticsearch.common.ParseField
 import org.elasticsearch.common.io.stream.StreamInput
@@ -53,7 +52,7 @@ sealed class IndexReplicationState : PersistentTaskState {
         private val PARSER = ObjectParser<Builder, Void>(NAME, true) { Builder() }
 
         init {
-            PARSER.declareString(Builder::state, ParseField("state"))
+            PARSER.declareString(Builder::setIndexTaskState, ParseField("state"))
         }
 
         @Throws(IOException::class)
@@ -81,11 +80,17 @@ sealed class IndexReplicationState : PersistentTaskState {
     class Builder {
         lateinit var state: String
 
-        fun state(state: String) {
+        fun setIndexTaskState(state: String) {
             this.state = state
         }
 
         fun build(): IndexReplicationState {
+            // Issue details - https://github.com/opensearch-project/cross-cluster-replication/issues/223
+            state = if(!this::state.isInitialized) {
+                ReplicationState.MONITORING.name
+            } else {
+                state
+            }
             return when (state) {
                 ReplicationState.INIT.name -> InitialState
                 ReplicationState.RESTORING.name -> RestoreState
