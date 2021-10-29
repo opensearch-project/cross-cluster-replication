@@ -1,7 +1,5 @@
 package org.opensearch.index.translog
 
-import org.opensearch.common.unit.ByteSizeValue
-import org.opensearch.common.unit.TimeValue
 import org.opensearch.index.IndexSettings
 import org.opensearch.index.seqno.RetentionLease
 import org.opensearch.index.seqno.RetentionLeases
@@ -12,35 +10,36 @@ import java.util.function.Supplier
 class ReplicationTranslogDeletionPolicy(
     indexSettings: IndexSettings,
     private val retentionLeasesSupplier: Supplier<RetentionLeases>
-) : TranslogDeletionPolicy(
-    indexSettings.translogRetentionSize.bytes,
-    indexSettings.translogRetentionAge.millis,
-    indexSettings.translogRetentionTotalFiles
-) {
+) : TranslogDeletionPolicy() {
     @Volatile
     private var translogPruningEnabled: Boolean =
         ReplicationPlugin.INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.get(indexSettings.settings)
 
     @Volatile
-    private var translogRetentionSize: ByteSizeValue = indexSettings.translogRetentionSize
+    private var retentionSizeInBytes: Long = indexSettings.translogRetentionSize.bytes
 
     @Volatile
-    private var translogRetentionAge: TimeValue = indexSettings.translogRetentionAge
+    private var retentionAgeInMillis: Long = indexSettings.translogRetentionAge.millis
 
-    private val translogRetentionTotalFiles: Int = indexSettings.translogRetentionTotalFiles
+    @Volatile
+    private var retentionTotalFiles: Int = indexSettings.translogRetentionTotalFiles
 
     init {
         indexSettings.scopedSettings.addSettingsUpdateConsumer(
             ReplicationPlugin.INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING
         ) { value: Boolean -> translogPruningEnabled = value }
+    }
 
-        indexSettings.scopedSettings.addSettingsUpdateConsumer(
-            IndexSettings.INDEX_TRANSLOG_RETENTION_SIZE_SETTING
-        ) { value: ByteSizeValue -> translogRetentionSize = value }
+    override fun setRetentionSizeInBytes(bytes: Long) {
+        retentionSizeInBytes = bytes
+    }
 
-        indexSettings.scopedSettings.addSettingsUpdateConsumer(
-            IndexSettings.INDEX_TRANSLOG_RETENTION_AGE_SETTING
-        ) { value: TimeValue -> translogRetentionAge = value }
+    override fun setRetentionAgeInMillis(ageInMillis: Long) {
+        retentionAgeInMillis = ageInMillis
+    }
+
+    override fun setRetentionTotalFiles(retentionTotalFiles: Int) {
+        this.retentionTotalFiles = retentionTotalFiles
     }
 
     /**
@@ -53,21 +52,21 @@ class ReplicationTranslogDeletionPolicy(
     @Synchronized
     @Throws(IOException::class)
     override fun minTranslogGenRequired(readers: List<TranslogReader>, writer: TranslogWriter): Long {
-        val minBySize: Long = getMinTranslogGenBySize(readers, writer, translogRetentionSize.bytes)
+        val minBySize: Long = getMinTranslogGenBySize(readers, writer, retentionSizeInBytes)
         var minByRetentionLeasesAndSize = Long.MAX_VALUE
         if (translogPruningEnabled) {
             // If retention size is specified, size takes precedence.
             val minByRetentionLeases: Long = getMinTranslogGenByRetentionLease(readers, writer)
             minByRetentionLeasesAndSize = minBySize.coerceAtLeast(minByRetentionLeases)
         }
-        val minByAge = getMinTranslogGenByAge(readers, writer, translogRetentionAge.millis, System.currentTimeMillis())
+        val minByAge = getMinTranslogGenByAge(readers, writer, retentionAgeInMillis, System.currentTimeMillis())
         val minByAgeAndSize = if (minBySize == Long.MIN_VALUE && minByAge == Long.MIN_VALUE) {
             // both size and age are disabled;
             Long.MAX_VALUE
         } else {
             minByAge.coerceAtLeast(minBySize)
         }
-        val minByNumFiles = getMinTranslogGenByTotalFiles(readers, writer, translogRetentionTotalFiles)
+        val minByNumFiles = getMinTranslogGenByTotalFiles(readers, writer, retentionTotalFiles)
         val minByLocks: Long = minTranslogGenRequiredByLocks
         val minByTranslogGenSettings = minByAgeAndSize.coerceAtLeast(minByNumFiles).coerceAtMost(minByLocks)
 
