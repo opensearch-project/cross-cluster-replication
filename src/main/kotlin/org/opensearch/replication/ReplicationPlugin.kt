@@ -108,9 +108,7 @@ import org.opensearch.env.NodeEnvironment
 import org.opensearch.index.IndexModule
 import org.opensearch.index.IndexSettings
 import org.opensearch.index.engine.EngineFactory
-import org.opensearch.index.seqno.RetentionLeases
 import org.opensearch.index.translog.ReplicationTranslogDeletionPolicy
-import org.opensearch.index.translog.TranslogDeletionPolicy
 import org.opensearch.index.translog.TranslogDeletionPolicyFactory
 import org.opensearch.indices.recovery.RecoverySettings
 import org.opensearch.persistent.PersistentTaskParams
@@ -146,7 +144,6 @@ import org.opensearch.threadpool.ScalingExecutorBuilder
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.watcher.ResourceWatcherService
 import java.util.Optional
-import java.util.function.BiFunction
 import java.util.function.Supplier
 
 @OpenForTesting
@@ -278,7 +275,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
         return FixedExecutorBuilder(settings, REPLICATION_EXECUTOR_NAME_LEADER, leaderThreadPoolSize, leaderThreadPoolQueueSize, REPLICATION_EXECUTOR_NAME_LEADER)
     }
 
-    fun leaderThreadPoolSize(allocatedProcessors: Int): Int {
+    private fun leaderThreadPoolSize(allocatedProcessors: Int): Int {
         return allocatedProcessors * 3 / 2 + 1
     }
 
@@ -358,7 +355,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
 
     override fun getEngineFactory(indexSettings: IndexSettings): Optional<EngineFactory> {
         return if (indexSettings.settings.get(REPLICATED_INDEX_SETTING.key) != null) {
-            Optional.of(EngineFactory { config -> org.opensearch.replication.ReplicationEngine(config) })
+            Optional.of(EngineFactory { config -> ReplicationEngine(config) })
         } else {
             Optional.empty()
         }

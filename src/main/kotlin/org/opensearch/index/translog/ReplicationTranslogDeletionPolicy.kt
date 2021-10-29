@@ -1,7 +1,6 @@
 package org.opensearch.index.translog
 
 import org.opensearch.index.IndexSettings
-import org.opensearch.index.IndexSettings.INDEX_TRANSLOG_RETENTION_SIZE_SETTING
 import org.opensearch.index.seqno.RetentionLease
 import org.opensearch.index.seqno.RetentionLeases
 import org.opensearch.replication.ReplicationPlugin
@@ -9,13 +8,22 @@ import java.io.IOException
 import java.util.function.Supplier
 
 class ReplicationTranslogDeletionPolicy(
-    private val indexSettings: IndexSettings,
+    indexSettings: IndexSettings,
     private val retentionLeasesSupplier: Supplier<RetentionLeases>
 ) : TranslogDeletionPolicy(
     indexSettings.translogRetentionSize.bytes,
     indexSettings.translogRetentionAge.millis,
     indexSettings.translogRetentionTotalFiles
 ) {
+    @Volatile
+    private var translogPruningEnabled: Boolean =
+        ReplicationPlugin.INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.get(indexSettings.settings)
+
+    init {
+        indexSettings.scopedSettings.addSettingsUpdateConsumer(
+            ReplicationPlugin.INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING
+        ) { value: Boolean -> translogPruningEnabled = value }
+    }
 
     /**
      * returns the minimum translog generation that is still required by the system. Any generation below
@@ -27,17 +35,26 @@ class ReplicationTranslogDeletionPolicy(
     @Synchronized
     @Throws(IOException::class)
     override fun minTranslogGenRequired(readers: List<TranslogReader>, writer: TranslogWriter): Long {
-        var retentionSizeInBytes: Long = indexSettings.translogRetentionSize.bytes
-        if (retentionSizeInBytes == -1L && indexSettings.settings.getAsBoolean(
-                ReplicationPlugin.INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key, false)) {
-            retentionSizeInBytes = INDEX_TRANSLOG_RETENTION_SIZE_SETTING.get(indexSettings.settings).bytes
-        }
         val minBySize: Long = getMinTranslogGenBySize(readers, writer, retentionSizeInBytes)
-        val minByRetentionLeases: Long = getMinTranslogGenByRetentionLease(readers, writer)
-        val minByTranslogGenSettings = super.minTranslogGenRequired(readers, writer)
+        var minByRetentionLeasesAndSize = Long.MAX_VALUE
+        if (translogPruningEnabled) {
+            // If retention size is specified, size takes precedence.
+            val minByRetentionLeases: Long = getMinTranslogGenByRetentionLease(readers, writer)
+            minByRetentionLeasesAndSize = minBySize.coerceAtLeast(minByRetentionLeases)
+        }
+        val minByAge = getMinTranslogGenByAge(readers, writer, retentionAgeInMillis, currentTime())
+        val minByAgeAndSize = if (minBySize == Long.MIN_VALUE && minByAge == Long.MIN_VALUE) {
+            // both size and age are disabled;
+            Long.MAX_VALUE
+        } else {
+            minByAge.coerceAtLeast(minBySize)
+        }
+        val minByNumFiles = getMinTranslogGenByTotalFiles(readers, writer, retentionTotalFiles)
+        val minByLocks: Long = minTranslogGenRequiredByLocks
+        val minByTranslogGenSettings = minByAgeAndSize.coerceAtLeast(minByNumFiles).coerceAtMost(minByLocks)
 
         // If retention size is specified, size takes precedence.
-        return minByTranslogGenSettings.coerceAtMost(minBySize.coerceAtLeast(minByRetentionLeases))
+        return minByTranslogGenSettings.coerceAtMost(minBySize.coerceAtLeast(minByRetentionLeasesAndSize))
     }
 
     private fun getMinTranslogGenByRetentionLease(readers: List<TranslogReader>, writer: TranslogWriter): Long {
@@ -51,8 +68,9 @@ class ReplicationTranslogDeletionPolicy(
 
         for (i in readers.size - 1 downTo 0) {
             val reader: TranslogReader = readers[i]
-            if(reader.checkpoint.minSeqNo <= minimumRetainingSequenceNumber &&
-                reader.checkpoint.maxSeqNo >= minimumRetainingSequenceNumber) {
+            if (reader.minSeqNo <= minimumRetainingSequenceNumber &&
+                reader.maxSeqNo >= minimumRetainingSequenceNumber
+            ) {
                 minGen = minGen.coerceAtMost(reader.getGeneration());
             }
         }
