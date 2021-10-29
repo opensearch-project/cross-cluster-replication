@@ -1,5 +1,7 @@
 package org.opensearch.index.translog
 
+import org.opensearch.common.unit.ByteSizeValue
+import org.opensearch.common.unit.TimeValue
 import org.opensearch.index.IndexSettings
 import org.opensearch.index.seqno.RetentionLease
 import org.opensearch.index.seqno.RetentionLeases
@@ -19,10 +21,26 @@ class ReplicationTranslogDeletionPolicy(
     private var translogPruningEnabled: Boolean =
         ReplicationPlugin.INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.get(indexSettings.settings)
 
+    @Volatile
+    private var translogRetentionSize: ByteSizeValue = indexSettings.translogRetentionSize
+
+    @Volatile
+    private var translogRetentionAge: TimeValue = indexSettings.translogRetentionAge
+
+    private val translogRetentionTotalFiles: Int = indexSettings.translogRetentionTotalFiles
+
     init {
         indexSettings.scopedSettings.addSettingsUpdateConsumer(
             ReplicationPlugin.INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING
         ) { value: Boolean -> translogPruningEnabled = value }
+
+        indexSettings.scopedSettings.addSettingsUpdateConsumer(
+            IndexSettings.INDEX_TRANSLOG_RETENTION_SIZE_SETTING
+        ) { value: ByteSizeValue -> translogRetentionSize = value }
+
+        indexSettings.scopedSettings.addSettingsUpdateConsumer(
+            IndexSettings.INDEX_TRANSLOG_RETENTION_AGE_SETTING
+        ) { value: TimeValue -> translogRetentionAge = value }
     }
 
     /**
@@ -35,21 +53,21 @@ class ReplicationTranslogDeletionPolicy(
     @Synchronized
     @Throws(IOException::class)
     override fun minTranslogGenRequired(readers: List<TranslogReader>, writer: TranslogWriter): Long {
-        val minBySize: Long = getMinTranslogGenBySize(readers, writer, retentionSizeInBytes)
+        val minBySize: Long = getMinTranslogGenBySize(readers, writer, translogRetentionSize.bytes)
         var minByRetentionLeasesAndSize = Long.MAX_VALUE
         if (translogPruningEnabled) {
             // If retention size is specified, size takes precedence.
             val minByRetentionLeases: Long = getMinTranslogGenByRetentionLease(readers, writer)
             minByRetentionLeasesAndSize = minBySize.coerceAtLeast(minByRetentionLeases)
         }
-        val minByAge = getMinTranslogGenByAge(readers, writer, retentionAgeInMillis, currentTime())
+        val minByAge = getMinTranslogGenByAge(readers, writer, translogRetentionAge.millis, System.currentTimeMillis())
         val minByAgeAndSize = if (minBySize == Long.MIN_VALUE && minByAge == Long.MIN_VALUE) {
             // both size and age are disabled;
             Long.MAX_VALUE
         } else {
             minByAge.coerceAtLeast(minBySize)
         }
-        val minByNumFiles = getMinTranslogGenByTotalFiles(readers, writer, retentionTotalFiles)
+        val minByNumFiles = getMinTranslogGenByTotalFiles(readers, writer, translogRetentionTotalFiles)
         val minByLocks: Long = minTranslogGenRequiredByLocks
         val minByTranslogGenSettings = minByAgeAndSize.coerceAtLeast(minByNumFiles).coerceAtMost(minByLocks)
 
