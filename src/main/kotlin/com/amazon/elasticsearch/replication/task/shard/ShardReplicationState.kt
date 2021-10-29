@@ -16,7 +16,6 @@
 package com.amazon.elasticsearch.replication.task.shard
 
 import com.amazon.elasticsearch.replication.task.ReplicationState
-import com.amazon.elasticsearch.replication.task.index.IndexReplicationState
 import org.elasticsearch.ElasticsearchException
 import org.elasticsearch.common.ParseField
 import org.elasticsearch.common.io.stream.StreamInput
@@ -25,9 +24,7 @@ import org.elasticsearch.common.xcontent.ObjectParser
 import org.elasticsearch.common.xcontent.ToXContent
 import org.elasticsearch.common.xcontent.XContentBuilder
 import org.elasticsearch.common.xcontent.XContentParser
-import org.elasticsearch.index.shard.ShardId
 import org.elasticsearch.persistent.PersistentTaskState
-import org.elasticsearch.persistent.PersistentTasksCustomMetadata
 import java.io.IOException
 import java.lang.IllegalArgumentException
 import java.lang.IllegalStateException
@@ -52,7 +49,7 @@ sealed class ShardReplicationState : PersistentTaskState {
 
         private val PARSER = ObjectParser<Builder, Void>(NAME, true) { Builder() }
         init {
-            PARSER.declareString(Builder::state, ParseField("state"))
+            PARSER.declareString(Builder::setShardTaskState, ParseField("state"))
         }
 
         @Throws(IOException::class)
@@ -82,10 +79,16 @@ sealed class ShardReplicationState : PersistentTaskState {
     class Builder {
         lateinit var state: String
 
-        fun state(state: String) {
+        fun setShardTaskState(state: String) {
             this.state = state
         }
         fun build(): ShardReplicationState {
+            // Issue details - https://github.com/opensearch-project/cross-cluster-replication/issues/223
+            state = if(!this::state.isInitialized) {
+                ReplicationState.FOLLOWING.name
+            } else {
+                state
+            }
             return when (state) {
                 ReplicationState.INIT.name -> throw IllegalArgumentException("INIT - Illegal state for shard replication task")
                 ReplicationState.RESTORING.name -> throw IllegalArgumentException("RESTORING - Illegal state for shard replication task")
