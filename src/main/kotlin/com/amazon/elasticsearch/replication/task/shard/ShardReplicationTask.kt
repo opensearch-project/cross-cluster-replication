@@ -319,6 +319,10 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         log.error("${Thread.currentThread().name}: $msg")
     }
 
+    override suspend fun setReplicationMetadata() {
+        this.replicationMetadata = replicationMetadataManager.getIndexReplicationMetadata(followerIndexName, fetch_from_primary = true)
+    }
+
     override fun toString(): String {
         return "ShardReplicationTask(from=${leaderAlias}$leaderShardId to=$followerShardId)"
     }
