@@ -12,7 +12,6 @@
 package org.opensearch.replication.task.shard
 
 import org.opensearch.replication.task.ReplicationState
-import org.opensearch.replication.task.index.IndexReplicationState
 import org.opensearch.OpenSearchException
 import org.opensearch.common.ParseField
 import org.opensearch.common.io.stream.StreamInput
@@ -21,9 +20,7 @@ import org.opensearch.common.xcontent.ObjectParser
 import org.opensearch.common.xcontent.ToXContent
 import org.opensearch.common.xcontent.XContentBuilder
 import org.opensearch.common.xcontent.XContentParser
-import org.opensearch.index.shard.ShardId
 import org.opensearch.persistent.PersistentTaskState
-import org.opensearch.persistent.PersistentTasksCustomMetadata
 import java.io.IOException
 import java.lang.IllegalArgumentException
 import java.lang.IllegalStateException
@@ -48,7 +45,7 @@ sealed class ShardReplicationState : PersistentTaskState {
 
         private val PARSER = ObjectParser<Builder, Void>(NAME, true) { Builder() }
         init {
-            PARSER.declareString(Builder::state, ParseField("state"))
+            PARSER.declareString(Builder::setShardTaskState, ParseField("state"))
         }
 
         @Throws(IOException::class)
@@ -78,10 +75,16 @@ sealed class ShardReplicationState : PersistentTaskState {
     class Builder {
         lateinit var state: String
 
-        fun state(state: String) {
+        fun setShardTaskState(state: String) {
             this.state = state
         }
         fun build(): ShardReplicationState {
+            // Issue details - https://github.com/opensearch-project/cross-cluster-replication/issues/223
+            state = if(!this::state.isInitialized) {
+                ReplicationState.FOLLOWING.name
+            } else {
+                state
+            }
             return when (state) {
                 ReplicationState.INIT.name -> throw IllegalArgumentException("INIT - Illegal state for shard replication task")
                 ReplicationState.RESTORING.name -> throw IllegalArgumentException("RESTORING - Illegal state for shard replication task")
