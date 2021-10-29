@@ -1,5 +1,6 @@
 package org.opensearch.index.translog
 
+import org.opensearch.common.unit.ByteSizeValue
 import org.opensearch.index.IndexSettings
 import org.opensearch.index.seqno.RetentionLease
 import org.opensearch.index.seqno.RetentionLeases
@@ -13,10 +14,14 @@ class ReplicationTranslogDeletionPolicy(
 ) : TranslogDeletionPolicy() {
     @Volatile
     private var translogPruningEnabled: Boolean =
-        ReplicationPlugin.INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.get(indexSettings.settings)
+        ReplicationPlugin.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING.get(indexSettings.settings)
 
     @Volatile
-    private var retentionSizeInBytes: Long = indexSettings.translogRetentionSize.bytes
+    private var retentionSizeInBytes: Long =
+        if (translogPruningEnabled)
+            ReplicationPlugin.REPLICATION_INDEX_TRANSLOG_RETENTION_SIZE.get(indexSettings.settings).bytes
+        else indexSettings.translogRetentionSize.bytes
+
 
     @Volatile
     private var retentionAgeInMillis: Long = indexSettings.translogRetentionAge.millis
@@ -26,12 +31,18 @@ class ReplicationTranslogDeletionPolicy(
 
     init {
         indexSettings.scopedSettings.addSettingsUpdateConsumer(
-            ReplicationPlugin.INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING
+            ReplicationPlugin.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING
         ) { value: Boolean -> translogPruningEnabled = value }
+
+        indexSettings.scopedSettings.addSettingsUpdateConsumer(
+            ReplicationPlugin.REPLICATION_INDEX_TRANSLOG_RETENTION_SIZE
+        ) { value: ByteSizeValue -> if (translogPruningEnabled) retentionSizeInBytes = value.bytes }
     }
 
     override fun setRetentionSizeInBytes(bytes: Long) {
-        retentionSizeInBytes = bytes
+        if (!translogPruningEnabled) {
+            retentionSizeInBytes = bytes
+        }
     }
 
     override fun setRetentionAgeInMillis(ageInMillis: Long) {

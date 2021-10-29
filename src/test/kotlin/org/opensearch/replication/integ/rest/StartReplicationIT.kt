@@ -30,7 +30,6 @@ import org.apache.http.HttpStatus
 import org.apache.http.entity.ContentType
 import org.apache.http.nio.entity.NStringEntity
 import org.apache.http.util.EntityUtils
-import org.assertj.core.api.Assertions
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.opensearch.OpenSearchStatusException
@@ -66,11 +65,9 @@ import org.opensearch.index.mapper.MapperService
 import org.opensearch.repositories.fs.FsRepository
 import org.opensearch.test.OpenSearchTestCase.assertBusy
 import org.junit.Assert
-import org.opensearch.replication.ReplicationPlugin.Companion.INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING
+import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING
 import org.opensearch.replication.followerStats
 import org.opensearch.replication.leaderStats
-import org.opensearch.replication.task.index.IndexReplicationExecutor.Companion.log
-import java.lang.Thread.sleep
 import java.nio.file.Files
 import java.util.concurrent.TimeUnit
 
@@ -386,14 +383,14 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                 assertThat(followerClient.indices()
                         .getSettings(GetSettingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
                         .getSetting(followerIndexName,
-                                INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key)
+                                REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING.key)
                         .isNullOrEmpty())
             }
 
             assertThat(leaderClient.indices()
                     .getSettings(GetSettingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
                     .getSetting(leaderIndexName,
-                            INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key) == "true")
+                            REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING.key) == "true")
 
         } finally {
             followerClient.stopReplication(followerIndexName)
@@ -414,7 +411,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             val leaderSettings = leaderClient.indices()
                     .getSettings(GetSettingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
             assertThat(leaderSettings.getSetting(leaderIndexName,
-                            INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key) == "true")
+                            REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING.key) == "true")
             assertThat(leaderSettings.getSetting(leaderIndexName,
                             IndexSettings.INDEX_TRANSLOG_GENERATION_THRESHOLD_SIZE_SETTING.key) == "32mb")
 
@@ -441,7 +438,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             }
             // Turn-off the settings and index doc
             val settingsBuilder = Settings.builder()
-                    .put(INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key, false)
+                    .put(REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING.key, false)
             val settingsUpdateResponse = leaderClient.indices().putSettings(UpdateSettingsRequest(leaderIndexName)
                     .settings(settingsBuilder.build()), RequestOptions.DEFAULT)
             Assert.assertEquals(settingsUpdateResponse.isAcknowledged, true)

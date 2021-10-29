@@ -50,14 +50,13 @@ import org.opensearch.common.UUIDs
 import org.opensearch.common.component.AbstractLifecycleComponent
 import org.opensearch.common.metrics.CounterMetric
 import org.opensearch.common.settings.Settings
-import org.opensearch.index.IndexSettings
 import org.opensearch.index.mapper.MapperService
 import org.opensearch.index.shard.ShardId
 import org.opensearch.index.snapshots.IndexShardSnapshotStatus
 import org.opensearch.index.store.Store
 import org.opensearch.indices.recovery.RecoverySettings
 import org.opensearch.indices.recovery.RecoveryState
-import org.opensearch.replication.ReplicationPlugin.Companion.INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING
+import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING
 import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.repositories.IndexId
 import org.opensearch.repositories.Repository
@@ -241,7 +240,7 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         builder.put(ReplicationPlugin.REPLICATED_INDEX_SETTING.key, replicatedIndex)
 
         // Remove translog pruning for the follower index
-        builder.remove(INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key)
+        builder.remove(REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING.key)
 
         val indexMdBuilder = IndexMetadata.builder(indexMetadata).settings(builder)
         indexMetadata.aliases.valuesIt().forEach {

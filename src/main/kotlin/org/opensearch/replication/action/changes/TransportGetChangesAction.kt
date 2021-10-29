@@ -15,7 +15,6 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import org.apache.logging.log4j.LogManager
 import org.opensearch.OpenSearchTimeoutException
-import org.opensearch.ResourceNotFoundException
 import org.opensearch.action.ActionListener
 import org.opensearch.action.support.ActionFilters
 import org.opensearch.action.support.single.shard.TransportSingleShardAction
@@ -27,11 +26,10 @@ import org.opensearch.common.inject.Inject
 import org.opensearch.common.io.stream.StreamInput
 import org.opensearch.common.io.stream.Writeable
 import org.opensearch.common.unit.TimeValue
-import org.opensearch.index.IndexSettings
 import org.opensearch.index.shard.ShardId
 import org.opensearch.index.translog.Translog
 import org.opensearch.indices.IndicesService
-import org.opensearch.replication.ReplicationPlugin.Companion.INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING
+import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING
 import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATION_EXECUTOR_NAME_LEADER
 import org.opensearch.replication.seqno.RemoteClusterStats
 import org.opensearch.replication.seqno.RemoteClusterTranslogService
@@ -148,7 +146,7 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
 
     private fun isTranslogPruningByRetentionLeaseEnabled(shardId: ShardId): Boolean {
         val enabled = clusterService.state().metadata.indices.get(shardId.indexName)
-                ?.settings?.getAsBoolean(INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key, false)
+                ?.settings?.getAsBoolean(REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING.key, false)
         if(enabled != null) {
             return enabled
         }
