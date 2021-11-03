@@ -36,11 +36,11 @@ class ReplicationTranslogDeletionPolicy(
 
         indexSettings.scopedSettings.addSettingsUpdateConsumer(
             ReplicationPlugin.REPLICATION_INDEX_TRANSLOG_RETENTION_SIZE
-        ) { value: ByteSizeValue -> if (translogPruningEnabled) retentionSizeInBytes = value.bytes }
+        ) { value: ByteSizeValue -> retentionSizeInBytes = if (translogPruningEnabled) value.bytes else -1 }
     }
 
     override fun setRetentionSizeInBytes(bytes: Long) {
-        if (!translogPruningEnabled) {
+        if (translogPruningEnabled) {
             retentionSizeInBytes = bytes
         }
     }
@@ -63,45 +63,69 @@ class ReplicationTranslogDeletionPolicy(
     @Synchronized
     @Throws(IOException::class)
     override fun minTranslogGenRequired(readers: List<TranslogReader>, writer: TranslogWriter): Long {
-        val minBySize: Long = getMinTranslogGenBySize(readers, writer, retentionSizeInBytes)
-        var minByRetentionLeasesAndSize = Long.MAX_VALUE
-        if (translogPruningEnabled) {
-            // If retention size is specified, size takes precedence.
-            val minByRetentionLeases: Long = getMinTranslogGenByRetentionLease(readers, writer)
-            minByRetentionLeasesAndSize = minBySize.coerceAtLeast(minByRetentionLeases)
-        }
-        val minByAge = getMinTranslogGenByAge(readers, writer, retentionAgeInMillis, System.currentTimeMillis())
-        val minByAgeAndSize = if (minBySize == Long.MIN_VALUE && minByAge == Long.MIN_VALUE) {
-            // both size and age are disabled;
-            Long.MAX_VALUE
-        } else {
-            minByAge.coerceAtLeast(minBySize)
-        }
-        val minByNumFiles = getMinTranslogGenByTotalFiles(readers, writer, retentionTotalFiles)
-        val minByLocks: Long = minTranslogGenRequiredByLocks
-        val minByTranslogGenSettings = minByAgeAndSize.coerceAtLeast(minByNumFiles).coerceAtMost(minByLocks)
-
-        // If retention size is specified, size takes precedence.
-        return minByTranslogGenSettings.coerceAtMost(minBySize.coerceAtLeast(minByRetentionLeasesAndSize))
+        return minTranslogGenRequired(
+            readers,
+            writer,
+            translogPruningEnabled,
+            retentionSizeInBytes,
+            retentionAgeInMillis,
+            retentionTotalFiles,
+            minTranslogGenRequiredByLocks,
+            retentionLeasesSupplier
+        )
     }
 
-    private fun getMinTranslogGenByRetentionLease(readers: List<TranslogReader>, writer: TranslogWriter): Long {
-        var minGen: Long = writer.getGeneration();
-        val minimumRetainingSequenceNumber: Long = retentionLeasesSupplier.get()
-            .leases()
-            .stream()
-            .mapToLong(RetentionLease::retainingSequenceNumber)
-            .min()
-            .orElse(Long.MAX_VALUE);
-
-        for (i in readers.size - 1 downTo 0) {
-            val reader: TranslogReader = readers[i]
-            if (reader.minSeqNo <= minimumRetainingSequenceNumber &&
-                reader.maxSeqNo >= minimumRetainingSequenceNumber
-            ) {
-                minGen = minGen.coerceAtMost(reader.getGeneration());
+    companion object {
+        fun minTranslogGenRequired(
+            readers: List<TranslogReader>, writer: TranslogWriter,
+            translogPruningEnabled: Boolean, retentionSizeInBytes: Long,
+            retentionAgeInMillis: Long, retentionTotalFiles: Int,
+            minTranslogGenRequiredByLocks: Long, retentionLeasesSupplier: Supplier<RetentionLeases>
+        ): Long {
+            val minBySize: Long = getMinTranslogGenBySize(readers, writer, retentionSizeInBytes)
+            var minByRetentionLeasesAndSize = Long.MAX_VALUE
+            if (translogPruningEnabled) {
+                // If retention size is specified, size takes precedence.
+                val minByRetentionLeases: Long =
+                    getMinTranslogGenByRetentionLease(readers, writer, retentionLeasesSupplier)
+                minByRetentionLeasesAndSize = minBySize.coerceAtLeast(minByRetentionLeases)
             }
+            val minByAge = getMinTranslogGenByAge(readers, writer, retentionAgeInMillis, System.currentTimeMillis())
+            val minByAgeAndSize = if (minBySize == Long.MIN_VALUE && minByAge == Long.MIN_VALUE) {
+                // both size and age are disabled;
+                Long.MAX_VALUE
+            } else {
+                minByAge.coerceAtLeast(minBySize)
+            }
+            val minByNumFiles = getMinTranslogGenByTotalFiles(readers, writer, retentionTotalFiles)
+            val minByLocks: Long = minTranslogGenRequiredByLocks
+            val minByTranslogGenSettings = minByAgeAndSize.coerceAtLeast(minByNumFiles).coerceAtMost(minByLocks)
+
+            // If retention size is specified, size takes precedence.
+            return minByTranslogGenSettings.coerceAtMost(minByRetentionLeasesAndSize)
         }
-        return minGen;
+
+        fun getMinTranslogGenByRetentionLease(
+            readers: List<TranslogReader>, writer: TranslogWriter,
+            retentionLeasesSupplier: Supplier<RetentionLeases>
+        ): Long {
+            var minGen: Long = writer.getGeneration();
+            val minimumRetainingSequenceNumber: Long = retentionLeasesSupplier.get()
+                .leases()
+                .stream()
+                .mapToLong(RetentionLease::retainingSequenceNumber)
+                .min()
+                .orElse(Long.MAX_VALUE);
+
+            for (i in readers.size - 1 downTo 0) {
+                val reader: TranslogReader = readers[i]
+                if (reader.minSeqNo <= minimumRetainingSequenceNumber &&
+                    reader.maxSeqNo >= minimumRetainingSequenceNumber
+                ) {
+                    minGen = minGen.coerceAtMost(reader.getGeneration());
+                }
+            }
+            return minGen;
+        }
     }
 }
