@@ -78,7 +78,6 @@ import org.opensearch.common.xcontent.XContentBuilder
 import org.opensearch.index.Index
 import org.opensearch.index.IndexService
 import org.opensearch.index.IndexSettings
-import org.opensearch.index.IndexSettings.INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING
 import org.opensearch.index.shard.IndexShard
 import org.opensearch.index.shard.ShardId
 import org.opensearch.indices.cluster.IndicesClusterStateService
@@ -88,6 +87,7 @@ import org.opensearch.persistent.PersistentTasksCustomMetadata
 import org.opensearch.persistent.PersistentTasksCustomMetadata.PersistentTask
 import org.opensearch.persistent.PersistentTasksNodeService
 import org.opensearch.persistent.PersistentTasksService
+import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING
 import org.opensearch.tasks.TaskId
 import org.opensearch.tasks.TaskManager
 import org.opensearch.threadpool.ThreadPool
@@ -133,7 +133,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
     private var metadataPoller: Job? = null
     companion object {
         val blSettings  : Set<Setting<*>> = setOf(
-                INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING,
+                REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING,
                 IndexMetadata.INDEX_READ_ONLY_SETTING,
                 IndexMetadata.INDEX_BLOCKS_READ_SETTING,
                 IndexMetadata.INDEX_BLOCKS_WRITE_SETTING,
@@ -717,7 +717,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         // This ensures that, we don't have to search the huge translog files for the given range and ensuring that
         // the searches are optimal within a generation and skip searching the generations based on translog checkpoints
         val settingsBuilder = Settings.builder()
-                .put(INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key, true)
+                .put(REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING.key, true)
                 .put(IndexSettings.INDEX_TRANSLOG_GENERATION_THRESHOLD_SIZE_SETTING.key, ByteSizeValue(32, ByteSizeUnit.MB))
         val updateSettingsRequest = remoteClient.admin().indices().prepareUpdateSettings().setSettings(settingsBuilder).setIndices(leaderIndex.name).request()
         val updateResponse = remoteClient.suspending(remoteClient.admin().indices()::updateSettings, injectSecurityContext = true)(updateSettingsRequest)

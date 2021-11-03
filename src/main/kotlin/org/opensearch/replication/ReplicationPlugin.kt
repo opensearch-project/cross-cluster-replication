@@ -108,6 +108,8 @@ import org.opensearch.env.NodeEnvironment
 import org.opensearch.index.IndexModule
 import org.opensearch.index.IndexSettings
 import org.opensearch.index.engine.EngineFactory
+import org.opensearch.index.translog.ReplicationTranslogDeletionPolicy
+import org.opensearch.index.translog.TranslogDeletionPolicyFactory
 import org.opensearch.indices.recovery.RecoverySettings
 import org.opensearch.persistent.PersistentTaskParams
 import org.opensearch.persistent.PersistentTaskState
@@ -119,7 +121,6 @@ import org.opensearch.plugins.PersistentTaskPlugin
 import org.opensearch.plugins.Plugin
 import org.opensearch.plugins.RepositoryPlugin
 import org.opensearch.replication.action.stats.AutoFollowStatsAction
-import org.opensearch.replication.action.stats.AutoFollowStatsAction.Companion.NAME
 import org.opensearch.replication.action.stats.FollowerStatsAction
 import org.opensearch.replication.action.stats.LeaderStatsAction
 import org.opensearch.replication.action.stats.TransportAutoFollowStatsAction
@@ -184,6 +185,10 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                 Setting.Property.Dynamic, Setting.Property.NodeScope)
         val REPLICATION_RETENTION_LEASE_MAX_FAILURE_DURATION = Setting.timeSetting ("plugins.replication.follower.retention_lease_max_failure_duration", TimeValue.timeValueHours(1), TimeValue.timeValueSeconds(1),
             TimeValue.timeValueHours(12), Setting.Property.Dynamic, Setting.Property.NodeScope)
+        val REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING: Setting<Boolean> = Setting.boolSetting("index.plugins.replication.translog.pruning.enabled", false,
+            Setting.Property.IndexScope, Setting.Property.Dynamic)
+        val REPLICATION_INDEX_TRANSLOG_RETENTION_SIZE: Setting<ByteSizeValue> = Setting.byteSizeSetting("index.plugins.replication.translog.retention_size",
+            ByteSizeValue(512, ByteSizeUnit.MB), Setting.Property.Dynamic, Setting.Property.IndexScope)
     }
 
     override fun createComponents(client: Client, clusterService: ClusterService, threadPool: ThreadPool,
@@ -272,7 +277,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
         return FixedExecutorBuilder(settings, REPLICATION_EXECUTOR_NAME_LEADER, leaderThreadPoolSize, leaderThreadPoolQueueSize, REPLICATION_EXECUTOR_NAME_LEADER)
     }
 
-    fun leaderThreadPoolSize(allocatedProcessors: Int): Int {
+    private fun leaderThreadPoolSize(allocatedProcessors: Int): Int {
         return allocatedProcessors * 3 / 2 + 1
     }
 
@@ -340,7 +345,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                 REPLICATION_FOLLOWER_RECOVERY_CHUNK_SIZE, REPLICATION_FOLLOWER_RECOVERY_PARALLEL_CHUNKS,
                 REPLICATION_PARALLEL_READ_POLL_INTERVAL, REPLICATION_AUTOFOLLOW_REMOTE_INDICES_POLL_INTERVAL,
                 REPLICATION_AUTOFOLLOW_REMOTE_INDICES_RETRY_POLL_INTERVAL, REPLICATION_METADATA_SYNC_INTERVAL,
-                REPLICATION_RETENTION_LEASE_MAX_FAILURE_DURATION)
+                REPLICATION_RETENTION_LEASE_MAX_FAILURE_DURATION, REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING,
+                REPLICATION_INDEX_TRANSLOG_RETENTION_SIZE)
     }
 
     override fun getInternalRepositories(env: Environment, namedXContentRegistry: NamedXContentRegistry,
@@ -352,10 +358,16 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
 
     override fun getEngineFactory(indexSettings: IndexSettings): Optional<EngineFactory> {
         return if (indexSettings.settings.get(REPLICATED_INDEX_SETTING.key) != null) {
-            Optional.of(EngineFactory { config -> org.opensearch.replication.ReplicationEngine(config) })
+            Optional.of(EngineFactory { config -> ReplicationEngine(config) })
         } else {
             Optional.empty()
         }
+    }
+
+    override fun getCustomTranslogDeletionPolicyFactory(): Optional<TranslogDeletionPolicyFactory> {
+       return Optional.of(TranslogDeletionPolicyFactory{
+               indexSettings, retentionLeasesSupplier -> ReplicationTranslogDeletionPolicy(indexSettings, retentionLeasesSupplier)
+       })
     }
 
     override fun onIndexModule(indexModule: IndexModule) {
