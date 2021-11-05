@@ -18,6 +18,8 @@ import org.opensearch.commons.authuser.User
 import kotlinx.coroutines.delay
 import org.apache.logging.log4j.Logger
 import org.opensearch.OpenSearchException
+import org.opensearch.OpenSearchSecurityException
+import org.opensearch.ResourceNotFoundException
 import org.opensearch.action.ActionListener
 import org.opensearch.action.ActionRequest
 import org.opensearch.action.ActionResponse
@@ -31,8 +33,10 @@ import org.opensearch.index.IndexNotFoundException
 import org.opensearch.index.shard.ShardId
 import org.opensearch.index.store.Store
 import org.opensearch.indices.recovery.RecoveryState
+import org.opensearch.replication.ReplicationException
 import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.repositories.IndexId
+import org.opensearch.rest.RestStatus
 import org.opensearch.snapshots.SnapshotId
 import org.opensearch.transport.ConnectTransportException
 import org.opensearch.transport.NodeDisconnectedException
@@ -92,7 +96,7 @@ fun IndexRequestBuilder.execute(id: String, listener: ActionListener<IndexRespon
  * @param block - the block of code to retry. This should be a suspend function.
  */
 suspend fun <Req: ActionRequest, Resp: ActionResponse> Client.suspendExecuteWithRetries(
-        replicationMetadata: ReplicationMetadata,
+        replicationMetadata: ReplicationMetadata?,
         action: ActionType<Resp>,
         req: Req,
         numberOfRetries: Int = 5,
@@ -101,16 +105,22 @@ suspend fun <Req: ActionRequest, Resp: ActionResponse> Client.suspendExecuteWith
         factor: Double = 2.0,
         log: Logger,
         retryOn: ArrayList<Class<*>> = ArrayList(),
+        injectSecurityContext: Boolean = false,
         defaultContext: Boolean = false): Resp {
     var currentBackoff = backoff
     retryOn.addAll(defaultRetryableExceptions())
     repeat(numberOfRetries - 1) {
         try {
-            return suspendExecute(replicationMetadata, action, req, defaultContext = defaultContext)
+            return suspendExecute(replicationMetadata, action, req,
+                    injectSecurityContext = injectSecurityContext, defaultContext = defaultContext)
         } catch (e: OpenSearchException) {
             // Not retrying for IndexNotFoundException as it is not a transient failure
             // TODO Remove this check for IndexNotFoundException: https://github.com/opensearch-project/cross-cluster-replication/issues/78
-            if (e !is IndexNotFoundException && (retryOn.contains(e.javaClass) || TransportActions.isShardNotAvailableException(e))) {
+            if (e !is IndexNotFoundException && (retryOn.contains(e.javaClass)
+                            || TransportActions.isShardNotAvailableException(e)
+                            // This waits for the dependencies to load and retry. Helps during boot-up
+                            || e.status().status >= 500
+                            || e.status() == RestStatus.TOO_MANY_REQUESTS)) {
                 log.warn("Encountered a failure while executing in $req. Retrying in ${currentBackoff/1000} seconds" +
                         ".", e)
                 delay(currentBackoff)
@@ -120,7 +130,8 @@ suspend fun <Req: ActionRequest, Resp: ActionResponse> Client.suspendExecuteWith
             }
         }
     }
-    return suspendExecute(replicationMetadata, action, req) // last attempt
+    return suspendExecute(replicationMetadata, action, req,
+            injectSecurityContext = injectSecurityContext, defaultContext = defaultContext) // last attempt
 }
 
 /**

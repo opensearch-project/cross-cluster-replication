@@ -23,6 +23,7 @@ import org.opensearch.replication.util.suspending
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
+import org.opensearch.OpenSearchException
 import org.opensearch.OpenSearchSecurityException
 import org.opensearch.action.admin.indices.get.GetIndexRequest
 import org.opensearch.action.support.IndicesOptions
@@ -35,6 +36,7 @@ import org.opensearch.common.xcontent.ToXContent
 import org.opensearch.common.xcontent.XContentBuilder
 import org.opensearch.persistent.PersistentTaskState
 import org.opensearch.replication.ReplicationException
+import org.opensearch.rest.RestStatus
 import org.opensearch.tasks.Task
 import org.opensearch.tasks.TaskId
 import org.opensearch.threadpool.Scheduler
@@ -65,9 +67,21 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
     override suspend fun execute(scope: CoroutineScope, initialState: PersistentTaskState?) {
         stat = AutoFollowStat(params.patternName, replicationMetadata.leaderContext.resource)
         while (scope.isActive) {
-            addRetryScheduler()
-            autoFollow()
-            delay(replicationSettings.autofollowFetchPollDuration.millis)
+            try {
+                addRetryScheduler()
+                autoFollow()
+                delay(replicationSettings.autofollowFetchPollDuration.millis)
+            }
+            catch(e: OpenSearchException) {
+                // Any transient error encountered during auto follow execution should be re-tried
+                val status = e.status().status
+                if(status < 500 && status != RestStatus.TOO_MANY_REQUESTS.status) {
+                    log.error("Exiting autofollow task", e)
+                    throw e
+                }
+                log.debug("Encountered transient error while running autofollow task", e)
+                delay(replicationSettings.autofollowFetchPollDuration.millis)
+            }
         }
     }
 
@@ -184,6 +198,10 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
 
     override fun getStatus(): AutoFollowStat {
         return stat
+    }
+
+    override suspend fun setReplicationMetadata() {
+        this.replicationMetadata = replicationMetadataManager.getAutofollowMetadata(followerIndexName, leaderAlias, fetch_from_primary = true)
     }
 }
 
