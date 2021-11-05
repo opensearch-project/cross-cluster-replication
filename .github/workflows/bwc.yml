@@ -1,0 +1,37 @@
+name: Test and Build Workflow
+# This workflow is triggered on pull requests to main branch
+on:
+  pull_request:
+    branches:
+      - '*'
+  push:
+    branches:
+      - '*'
+
+jobs:
+  build:
+    # Job name
+    name: Backward Compatible tests
+    runs-on: ubuntu-latest
+    steps:
+      # This step uses the setup-java Github action: https://github.com/actions/setup-java
+      - name: Set Up JDK 14
+        uses: actions/setup-java@v1
+        with:
+          java-version: 14
+      # This step uses the checkout Github action: https://github.com/actions/checkout
+      - name: Checkout Branch
+        uses: actions/checkout@v2
+      - name: Run Backwards Compatibility Tests
+        run: |
+          echo "Running backwards compatibility tests ..."
+          ./gradlew bwcTestSuite --stacktrace -Dorg.gradle.jvmargs=-Xmx1536m
+      - name: Upload failed logs
+        uses: actions/upload-artifact@v2
+        if: failure()
+        with:
+          name: logs
+          path: |
+            build/testclusters/integTest-*/logs/*
+            build/testclusters/leaderCluster-*/logs/*
+            build/testclusters/followCluster-*/logs/*
