@@ -301,7 +301,7 @@ fun RestHighLevelClient.waitForNoRelocatingShards() {
     this.cluster().health(request, RequestOptions.DEFAULT)
 }
 
-fun RestHighLevelClient.waitForReplicationStop(index: String, waitFor : TimeValue = TimeValue.timeValueSeconds(10)) {
+fun RestHighLevelClient.waitForReplicationStop(index: String, waitFor : TimeValue = TimeValue.timeValueSeconds(30)) {
     assertBusy(
         {
             // Persistent tasks service appends modifiers to task action hence the '*'

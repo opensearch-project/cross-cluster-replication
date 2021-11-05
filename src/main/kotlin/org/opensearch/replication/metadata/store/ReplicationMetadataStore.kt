@@ -17,6 +17,8 @@ import org.apache.logging.log4j.LogManager
 import org.opensearch.ExceptionsHelper
 import org.opensearch.ResourceAlreadyExistsException
 import org.opensearch.ResourceNotFoundException
+import org.opensearch.action.admin.cluster.health.ClusterHealthAction
+import org.opensearch.action.admin.cluster.health.ClusterHealthRequest
 import org.opensearch.action.admin.indices.create.CreateIndexRequest
 import org.opensearch.action.admin.indices.create.CreateIndexResponse
 import org.opensearch.action.admin.indices.mapping.put.PutMappingRequest
@@ -25,12 +27,14 @@ import org.opensearch.action.delete.DeleteResponse
 import org.opensearch.action.get.GetRequest
 import org.opensearch.action.index.IndexResponse
 import org.opensearch.client.Client
+import org.opensearch.cluster.health.ClusterHealthStatus
 import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.component.AbstractLifecycleComponent
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.util.concurrent.ThreadContext
 import org.opensearch.common.xcontent.*
+import org.opensearch.replication.util.suspendExecuteWithRetries
 
 class ReplicationMetadataStore constructor(val client: Client, val clusterService: ClusterService,
                                val namedXContentRegistry: NamedXContentRegistry): AbstractLifecycleComponent() {
@@ -89,6 +93,7 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
             }
         }
 
+        checkAndWaitForStoreHealth()
         checkAndUpdateMapping()
 
         val id = getId(addReq.replicationMetadata.metadataType, addReq.replicationMetadata.connectionName,
@@ -125,11 +130,13 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
             throw ResourceNotFoundException("Metadata for $id doesn't exist")
         }
 
+        checkAndWaitForStoreHealth()
+
         val getReq = GetRequest(REPLICATION_CONFIG_SYSTEM_INDEX, id)
         getReq.realtime(true)
         getReq.refresh(true)
         if(fetch_from_primary) {
-            val preference = getPreferenceOnPrimaryNode() ?: throw throw IllegalStateException("Primary shard to fetch id[$id] in index[$REPLICATION_CONFIG_SYSTEM_INDEX] doesn't exist")
+            val preference = getPreferenceOnPrimaryNode() ?: throw IllegalStateException("Primary shard to fetch id[$id] in index[$REPLICATION_CONFIG_SYSTEM_INDEX] doesn't exist")
             getReq.preference(preference)
         }
 
@@ -150,6 +157,10 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
         if(!configStoreExists()) {
             throw ResourceNotFoundException("Metadata for $id doesn't exist")
         }
+
+        val clusterHealthReq = ClusterHealthRequest(REPLICATION_CONFIG_SYSTEM_INDEX).waitForYellowStatus()
+        val clusterHealthRes = client.admin().cluster().health(clusterHealthReq).actionGet(timeout)
+        assert(clusterHealthRes.status <= ClusterHealthStatus.YELLOW) { "Replication metadata store is unhealthy" }
 
         val getReq = GetRequest(REPLICATION_CONFIG_SYSTEM_INDEX, id)
         getReq.realtime(true)
@@ -200,6 +211,8 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
             throw ResourceNotFoundException("Metadata for $id doesn't exist")
         }
 
+        checkAndWaitForStoreHealth()
+
         val delReq = DeleteRequest(REPLICATION_CONFIG_SYSTEM_INDEX, id)
         return client.suspending(client::delete, defaultContext = true)(delReq)
     }
@@ -210,6 +223,7 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
         if(!configStoreExists()) {
             throw ResourceNotFoundException("Metadata for $id doesn't exist")
         }
+        checkAndWaitForStoreHealth()
         checkAndUpdateMapping()
 
         val indexReqBuilder = client.prepareIndex(REPLICATION_CONFIG_SYSTEM_INDEX, MAPPING_TYPE, id)
@@ -255,5 +269,15 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
     }
 
     override fun doClose() {
+    }
+
+    private suspend fun checkAndWaitForStoreHealth() {
+        if(!configStoreExists()) {
+            return
+        }
+        val clusterHealthReq = ClusterHealthRequest(REPLICATION_CONFIG_SYSTEM_INDEX).waitForYellowStatus()
+        // This should ensure that security plugin and shards are active during boot-up before triggering the requests
+        val clusterHealthRes = client.suspendExecuteWithRetries(null, ClusterHealthAction.INSTANCE,
+                clusterHealthReq, log=log, defaultContext = true)
     }
 }

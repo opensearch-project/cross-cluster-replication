@@ -21,6 +21,9 @@ import org.opensearch.replication.util.overrideFgacRole
 import org.opensearch.replication.util.suspendExecute
 import org.opensearch.commons.authuser.User
 import org.apache.logging.log4j.LogManager
+import org.apache.logging.log4j.Logger
+import org.opensearch.OpenSearchException
+import org.opensearch.ResourceNotFoundException
 import org.opensearch.action.DocWriteResponse
 import org.opensearch.client.Client
 import org.opensearch.cluster.service.ClusterService
@@ -67,12 +70,14 @@ open class ReplicationMetadataManager constructor(private val clusterService: Cl
     }
 
     private suspend fun addMetadata(metadataReq: AddReplicationMetadataRequest) {
-        val response = replicaionMetadataStore.addMetadata(metadataReq)
-        if(response.result != DocWriteResponse.Result.CREATED &&
-                response.result != DocWriteResponse.Result.UPDATED) {
-            log.error("Encountered error with result - ${response.result}, while adding metadata")
-            throw org.opensearch.replication.ReplicationException("Error adding replication metadata")
-        }
+        executeAndWrapExceptionIfAny({
+            val response = replicaionMetadataStore.addMetadata(metadataReq)
+            if(response.result != DocWriteResponse.Result.CREATED &&
+                    response.result != DocWriteResponse.Result.UPDATED) {
+                log.error("Encountered error with result - ${response.result}, while adding metadata")
+                throw ReplicationException("Error adding replication metadata")
+            }
+        }, log, "Error adding replication metadata")
     }
 
     suspend fun updateIndexReplicationState(followerIndex: String,
@@ -100,12 +105,14 @@ open class ReplicationMetadataManager constructor(private val clusterService: Cl
     }
 
     private suspend fun updateMetadata(updateReq: UpdateReplicationMetadataRequest) {
-        val response = replicaionMetadataStore.updateMetadata(updateReq)
-        if(response.result != DocWriteResponse.Result.CREATED &&
-                response.result != DocWriteResponse.Result.UPDATED) {
-            log.error("Encountered error with result - ${response.result}, while updating metadata")
-            throw org.opensearch.replication.ReplicationException("Error updating replication metadata")
-        }
+        executeAndWrapExceptionIfAny({
+            val response = replicaionMetadataStore.updateMetadata(updateReq)
+            if(response.result != DocWriteResponse.Result.CREATED &&
+                    response.result != DocWriteResponse.Result.UPDATED) {
+                log.error("Encountered error with result - ${response.result}, while updating metadata")
+                throw org.opensearch.replication.ReplicationException("Error updating replication metadata")
+            }
+        }, log, "Error updating replication metadata")
     }
 
     suspend fun updateSettings(followerIndex: String, settings: Settings) {
@@ -129,16 +136,20 @@ open class ReplicationMetadataManager constructor(private val clusterService: Cl
     }
 
     private suspend fun deleteMetadata(deleteReq: DeleteReplicationMetadataRequest) {
-        val delRes = replicaionMetadataStore.deleteMetadata(deleteReq)
-        if(delRes.result != DocWriteResponse.Result.DELETED && delRes.result != DocWriteResponse.Result.NOT_FOUND) {
-            log.error("Encountered error with result - ${delRes.result}, while deleting metadata")
-            throw org.opensearch.replication.ReplicationException("Error deleting replication metadata")
-        }
+        executeAndWrapExceptionIfAny({
+            val delRes = replicaionMetadataStore.deleteMetadata(deleteReq)
+            if(delRes.result != DocWriteResponse.Result.DELETED && delRes.result != DocWriteResponse.Result.NOT_FOUND) {
+                log.error("Encountered error with result - ${delRes.result}, while deleting metadata")
+                throw ReplicationException("Error deleting replication metadata")
+            }
+        }, log, "Error deleting replication metadata")
     }
 
     suspend fun getIndexReplicationMetadata(followerIndex: String, fetch_from_primary: Boolean = false): ReplicationMetadata {
         val getReq = GetReplicationMetadataRequest(ReplicationStoreMetadataType.INDEX.name, null, followerIndex)
-        return replicaionMetadataStore.getMetadata(getReq, fetch_from_primary).replicationMetadata
+        return executeAndWrapExceptionIfAny({
+            replicaionMetadataStore.getMetadata(getReq, fetch_from_primary).replicationMetadata
+        }, log, "Failed to fetch replication metadata") as ReplicationMetadata
     }
 
     fun getIndexReplicationMetadata(followerIndex: String,
@@ -146,14 +157,24 @@ open class ReplicationMetadataManager constructor(private val clusterService: Cl
                                     fetch_from_primary: Boolean = false,
                                     timeout: Long = RemoteClusterRepository.REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC): ReplicationMetadata {
         val getReq = GetReplicationMetadataRequest(ReplicationStoreMetadataType.INDEX.name, connectionName, followerIndex)
-        return replicaionMetadataStore.getMetadata(getReq, fetch_from_primary, timeout).replicationMetadata
+        try {
+            return replicaionMetadataStore.getMetadata(getReq, fetch_from_primary, timeout).replicationMetadata
+        } catch (e: ResourceNotFoundException) {
+            log.error("Encountered exception - ", e)
+            throw e
+        } catch (e: Exception) {
+            log.error("Failed to fetch replication metadata", e)
+            throw ReplicationException("Failed to fetch replication metadata")
+        }
     }
 
     suspend fun getAutofollowMetadata(patternName: String,
                                       connectionName: String,
                                       fetch_from_primary: Boolean = false): ReplicationMetadata {
         val getReq = GetReplicationMetadataRequest(ReplicationStoreMetadataType.AUTO_FOLLOW.name, connectionName, patternName)
-        return replicaionMetadataStore.getMetadata(getReq, fetch_from_primary).replicationMetadata
+        return executeAndWrapExceptionIfAny({
+            replicaionMetadataStore.getMetadata(getReq, fetch_from_primary).replicationMetadata
+        }, log, "Failed to fetch replication metadata") as ReplicationMetadata
     }
 
     private suspend fun updateReplicationState(indexName: String, overallState: ReplicationOverallState) {
@@ -165,6 +186,20 @@ open class ReplicationMetadataManager constructor(private val clusterService: Cl
         }
         val updateReplicationStateDetailsRequest = UpdateReplicationStateDetailsRequest(indexName, replicationStateParamMap,
                 updateType)
-        client.suspendExecute(UpdateReplicationStateAction.INSTANCE, updateReplicationStateDetailsRequest, defaultContext = true)
+        executeAndWrapExceptionIfAny({
+            client.suspendExecute(UpdateReplicationStateAction.INSTANCE, updateReplicationStateDetailsRequest, defaultContext = true)
+        }, log, "Error updating replicaiton metadata")
+    }
+
+    private suspend fun executeAndWrapExceptionIfAny(tryBlock: suspend () -> Any?, log: Logger, errorMessage: String): Any? {
+        try {
+            return tryBlock()
+        } catch (e: OpenSearchException) {
+            log.error("Encountered exception - ", e)
+            throw e
+        } catch (e: Exception) {
+            log.error("Encountered exception - ", e)
+            throw ReplicationException(errorMessage)
+        }
     }
 }
