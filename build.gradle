@@ -25,15 +25,20 @@ import java.util.function.Predicate
 import java.util.concurrent.TimeUnit
 import java.util.stream.Collectors
 import org.opensearch.gradle.testclusters.OpenSearchCluster
+import org.opensearch.gradle.test.RestIntegTestTask
 
 buildscript {
-
     ext {
         isSnapshot = "true" == System.getProperty("build.snapshot", "false")
         opensearch_version = System.getProperty("opensearch.version", "1.2.0-SNAPSHOT")
         // Taken from https://github.com/opensearch-project/alerting/blob/main/build.gradle#L33
         // 1.0.0 -> 1.0.0.0, and 1.0.0-SNAPSHOT -> 1.0.0.0-SNAPSHOT
         opensearch_build = opensearch_version.replaceAll(/(\.\d)([^\d]*)$/, '$1.0$2')
+
+        // for bwc tests
+        opensearch_previous_version = System.getProperty("bwc_older_version", "1.1.0-SNAPSHOT")
+        plugin_previous_version = opensearch_previous_version.replaceAll(/(\.\d)([^\d]*)$/, '$1.0$2')
+
         common_utils_version = System.getProperty("common_utils.version", opensearch_build)
         kotlin_version = System.getProperty("kotlin.version", "1.3.72")
 
@@ -190,7 +195,7 @@ def securityPluginFile = new Callable<RegularFile>() {
             return new RegularFile() {
                 @Override
                 File getAsFile() {
-                    return fileTree("$projectDir/src/test/resources/security/plugin").getSingleFile()
+                    return fileTree("$projectDir/src/test/resources/security/plugin/opensearch-security-${opensearch_build}.zip").getSingleFile()
                 }
             }
         }
@@ -370,6 +375,10 @@ def configureCluster(OpenSearchCluster cluster, Boolean securityEnabled) {
 integTest {
     useCluster testClusters.leaderCluster
     useCluster testClusters.followCluster
+    // We skip BWC test here as those get run as part of separate target `bwcTestSuite`.
+    filter {
+        excludeTestsMatching "org.opensearch.replication.bwc.*IT"
+    }
     doFirst {
         getClusters().forEach { cluster ->
             String alltransportSocketURI = cluster.nodes.stream().flatMap { node ->
@@ -418,4 +427,290 @@ testingConventions {
 
 task release {
     dependsOn 'build'
+}
+
+//========================== BWC Test setup ======================================================
+
+// TODO: Get from repo after its available: https://github.com/opensearch-project/opensearch-build/issues/184
+String repl_old_zip = "src/test/resources/replication/opensearch-cross-cluster-replication-${plugin_previous_version}.zip"
+
+def securityPluginOld = new Callable<RegularFile>() {
+    @Override
+    RegularFile call() throws Exception {
+        return new RegularFile() {
+            @Override
+            File getAsFile() {
+                return fileTree("$projectDir/src/test/resources/security/plugin/opensearch-security-${plugin_previous_version}.zip").getSingleFile()
+            }
+        }
+    }
+}
+
+// We maintain 2 set of clusters here. One for full cluster restart and one for rolling restart + mixed cluster.
+List<String> clusters = ["bwcLeader0", "bwcFollower0", "bwcLeader1", "bwcFollower1"]
+// TODO: Make BWC test work with security plugin
+clusters.each { name ->
+    testClusters {
+        "$name" {
+            versions = [opensearch_previous_version, opensearch_version]
+            plugin(provider(new Callable<RegularFile>() {
+                @Override
+                RegularFile call() throws Exception {
+                    return new RegularFile() {
+                        @Override
+                        File getAsFile() {
+                            return fileTree(repl_old_zip).getSingleFile()
+                        }
+                    }
+                }
+            }))
+
+            if (securityEnabled) {
+                plugin(provider(securityPluginOld))
+                cliSetup("opensearch-security/install_demo_configuration.sh", "-y")
+            }
+            // Currently fetching the ARCHIVE distribution fails on mac as it tries to fetch the Mac specific "DARWIN" distribution
+            // for Opensearch which is not publish yet. Changing this to INTEG_TEST to make it work on mac.
+            if (System.getProperty("os.name").startsWith("Mac")) {
+                testDistribution = "INTEG_TEST"
+            } else {
+                testDistribution = "ARCHIVE"
+            }
+
+            if (_numNodes != 3) numberOfNodes = 3
+            setting 'path.repo', repo.absolutePath
+        }
+    }
+}
+List<Provider<RegularFile>> replPluginProvider = [
+    provider(new Callable<RegularFile>(){
+        @Override
+        RegularFile call() throws Exception {
+            return new RegularFile() {
+                @Override
+                File getAsFile() {
+                    return fileTree(project.tasks.bundlePlugin.archiveFile).getSingleFile()
+                }
+            }
+        }
+    })
+]
+if(securityEnabled) {
+    replPluginProvider.append(provider(securityPluginFile))
+}
+
+/*
+    Sets up and runs sanity test on older version clusters. We maintain 2 set of tasks here with.
+    One for full cluster restart and one for rolling restart + mixed cluster.
+ */
+2.times { i ->
+    task "oldVersionClusterTask$i" (type: RestIntegTestTask) {
+        useCluster testClusters.bwcLeader0
+        useCluster testClusters.bwcFollower0
+        useCluster testClusters.bwcLeader1
+        useCluster testClusters.bwcFollower1
+        doFirst {
+            getClusters().forEach { cluster ->
+                String alltransportSocketURI = cluster.nodes.stream().flatMap { node ->
+                    node.getAllTransportPortURI().stream()
+                }.collect(Collectors.joining(","))
+                String allHttpSocketURI = cluster.nodes.stream().flatMap { node ->
+                    node.getAllHttpSocketURI().stream()
+                }.collect(Collectors.joining(","))
+
+                systemProperty "tests.cluster.${cluster.name}.http_hosts", "${-> allHttpSocketURI}"
+                systemProperty "tests.cluster.${cluster.name}.transport_hosts", "${-> alltransportSocketURI}"
+                systemProperty "tests.cluster.${cluster.name}.security_enabled", "${-> securityEnabled.toString()}"
+                configureCluster(cluster, securityEnabled)
+            }
+        }
+        systemProperty "build.dir", "${buildDir}"
+        systemProperty "java.security.policy", "file://${projectDir}/src/test/resources/plugin-security.policy"
+        nonInputProperties.systemProperty('tests.cluster_suffix', i)
+        nonInputProperties.systemProperty('tests.bwcTask', "oldVersionClusterTask")
+        filter {
+            setIncludePatterns("org.opensearch.replication.bwc.BackwardsCompatibilityIT")
+        }
+    }
+}
+/*
+    Can be executed with `./gradlew mixedClusterTask`
+
+    Upgrades one node of the old cluster to new OpenSearch version with upgraded plugin version
+    This results in a mixed cluster with 2 nodes on the old version and 1 upgraded node.
+    This is also used as a one third upgraded cluster for a rolling upgrade.
+ */
+task "mixedClusterTask"(type: RestIntegTestTask) {
+    dependsOn "oldVersionClusterTask0"
+    useCluster testClusters.bwcLeader0
+    useCluster testClusters.bwcFollower0
+    useCluster testClusters.bwcLeader1
+    useCluster testClusters.bwcFollower1
+
+    doFirst {
+        testClusters.bwcLeader0.upgradeNodeAndPluginToNextVersion(replPluginProvider)
+        testClusters.bwcFollower0.upgradeNodeAndPluginToNextVersion(replPluginProvider)
+        getClusters().forEach { cluster ->
+            String alltransportSocketURI = cluster.nodes.stream().flatMap { node ->
+                node.getAllTransportPortURI().stream()
+            }.collect(Collectors.joining(","))
+            String allHttpSocketURI = cluster.nodes.stream().flatMap { node ->
+                node.getAllHttpSocketURI().stream()
+            }.collect(Collectors.joining(","))
+
+            systemProperty "tests.cluster.${cluster.name}.http_hosts", "${-> allHttpSocketURI}"
+            systemProperty "tests.cluster.${cluster.name}.transport_hosts", "${-> alltransportSocketURI}"
+            systemProperty "tests.cluster.${cluster.name}.security_enabled", "${-> securityEnabled.toString()}"
+            configureCluster(cluster, securityEnabled)
+        }
+    }
+    nonInputProperties.systemProperty('tests.bwcTask', "mixedClusterTask")
+    nonInputProperties.systemProperty('tests.cluster_suffix', "0")
+    filter {
+        setIncludePatterns("org.opensearch.replication.bwc.BackwardsCompatibilityIT")
+    }
+}
+
+// Upgrades the second node to new OpenSearch version with upgraded plugin version after the first node is upgraded.
+// This results in a mixed cluster with 1 node on the old version and 2 upgraded nodes.
+// This is used for rolling upgrade.
+task "twoThirdsUpgradedClusterTask"(type: RestIntegTestTask) {
+    dependsOn "mixedClusterTask"
+    useCluster testClusters.bwcLeader0
+    useCluster testClusters.bwcFollower0
+    useCluster testClusters.bwcLeader1
+    useCluster testClusters.bwcFollower1
+    doFirst {
+        testClusters.bwcLeader0.upgradeNodeAndPluginToNextVersion(replPluginProvider)
+        testClusters.bwcFollower0.upgradeNodeAndPluginToNextVersion(replPluginProvider)
+        getClusters().forEach { cluster ->
+            String alltransportSocketURI = cluster.nodes.stream().flatMap { node ->
+                node.getAllTransportPortURI().stream()
+            }.collect(Collectors.joining(","))
+            String allHttpSocketURI = cluster.nodes.stream().flatMap { node ->
+                node.getAllHttpSocketURI().stream()
+            }.collect(Collectors.joining(","))
+
+            systemProperty "tests.cluster.${cluster.name}.http_hosts", "${-> allHttpSocketURI}"
+            systemProperty "tests.cluster.${cluster.name}.transport_hosts", "${-> alltransportSocketURI}"
+            systemProperty "tests.cluster.${cluster.name}.security_enabled", "${-> securityEnabled.toString()}"
+            configureCluster(cluster, securityEnabled)
+        }
+    }
+    nonInputProperties.systemProperty('tests.bwcTask', "twoThirdsUpgradedClusterTask")
+    nonInputProperties.systemProperty('tests.cluster_suffix', "0")
+    filter {
+        setIncludePatterns("org.opensearch.replication.bwc.BackwardsCompatibilityIT")
+    }
+}
+
+/*
+    Can be executed with `./gradlew rollingUpgradeClusterTask`
+
+    Upgrades the third node to new OpenSearch version with upgraded plugin version after the second node is upgraded.
+    This results in a fully upgraded cluster.
+    This is used for rolling upgrade.
+*/
+task "rollingUpgradeClusterTask"(type: RestIntegTestTask) {
+    dependsOn "twoThirdsUpgradedClusterTask"
+    useCluster testClusters.bwcLeader0
+    useCluster testClusters.bwcFollower0
+    useCluster testClusters.bwcLeader1
+    useCluster testClusters.bwcFollower1
+    doFirst {
+        testClusters.bwcLeader0.upgradeNodeAndPluginToNextVersion(replPluginProvider)
+        testClusters.bwcFollower0.upgradeNodeAndPluginToNextVersion(replPluginProvider)
+        getClusters().forEach { cluster ->
+            String alltransportSocketURI = cluster.nodes.stream().flatMap { node ->
+                node.getAllTransportPortURI().stream()
+            }.collect(Collectors.joining(","))
+            String allHttpSocketURI = cluster.nodes.stream().flatMap { node ->
+                node.getAllHttpSocketURI().stream()
+            }.collect(Collectors.joining(","))
+
+            systemProperty "tests.cluster.${cluster.name}.http_hosts", "${-> allHttpSocketURI}"
+            systemProperty "tests.cluster.${cluster.name}.transport_hosts", "${-> alltransportSocketURI}"
+            systemProperty "tests.cluster.${cluster.name}.security_enabled", "${-> securityEnabled.toString()}"
+            configureCluster(cluster, securityEnabled)
+        }
+    }
+    nonInputProperties.systemProperty('tests.cluster_suffix', "0")
+    nonInputProperties.systemProperty('tests.bwcTask', "rollingUpgradeClusterTask")
+    filter {
+        setIncludePatterns("org.opensearch.replication.bwc.BackwardsCompatibilityIT")
+    }
+}
+
+/*
+    Can be executed with `./gradlew fullRestartClusterTask`
+
+    Upgrades all the nodes of the old cluster to new OpenSearch version with upgraded plugin version
+    at the same time resulting in a fully upgraded cluster.
+*/
+task "fullRestartClusterTask"(type: RestIntegTestTask) {
+    dependsOn "oldVersionClusterTask1"
+    useCluster testClusters.bwcLeader0
+    useCluster testClusters.bwcFollower0
+    useCluster testClusters.bwcLeader1
+    useCluster testClusters.bwcFollower1
+    doFirst {
+        testClusters.bwcLeader1.upgradeAllNodesAndPluginsToNextVersion(replPluginProvider)
+        testClusters.bwcFollower1.upgradeAllNodesAndPluginsToNextVersion(replPluginProvider)
+        getClusters().forEach { cluster ->
+            String alltransportSocketURI = cluster.nodes.stream().flatMap { node ->
+                node.getAllTransportPortURI().stream()
+            }.collect(Collectors.joining(","))
+            String allHttpSocketURI = cluster.nodes.stream().flatMap { node ->
+                node.getAllHttpSocketURI().stream()
+            }.collect(Collectors.joining(","))
+
+            systemProperty "tests.cluster.${cluster.name}.http_hosts", "${-> allHttpSocketURI}"
+            systemProperty "tests.cluster.${cluster.name}.transport_hosts", "${-> alltransportSocketURI}"
+            systemProperty "tests.cluster.${cluster.name}.security_enabled", "${-> securityEnabled.toString()}"
+            configureCluster(cluster, securityEnabled)
+        }
+    }
+    nonInputProperties.systemProperty('tests.cluster_suffix', "1")
+    nonInputProperties.systemProperty('tests.bwcTask', "fullRestartClusterTask")
+    filter {
+        setIncludePatterns("org.opensearch.replication.bwc.BackwardsCompatibilityIT")
+    }
+}
+
+/*
+    Can be executed with `./gradlew bwcTestSuite`
+
+    Executes all 3 following upgrade scenarios as part of this test suite.
+    - mixed cluster:  oldVersionClusterTask0 --> mixedClusterTask
+    - rolling restart:  oldVersionClusterTask0 --> mixedClusterTask -> twoThirdsUpgradedClusterTask -> rollingUpgradeClusterTask
+    - full cluster restart:  oldVersionClusterTask1 --> fullRestartClusterTask
+ */
+task "bwcTestSuite"(type: RestIntegTestTask) {
+    useCluster testClusters.bwcLeader0
+    useCluster testClusters.bwcFollower0
+    useCluster testClusters.bwcLeader1
+    useCluster testClusters.bwcFollower1
+    doFirst {
+        getClusters().forEach { cluster ->
+            String alltransportSocketURI = cluster.nodes.stream().flatMap { node ->
+                node.getAllTransportPortURI().stream()
+            }.collect(Collectors.joining(","))
+            String allHttpSocketURI = cluster.nodes.stream().flatMap { node ->
+                node.getAllHttpSocketURI().stream()
+            }.collect(Collectors.joining(","))
+
+            systemProperty "tests.cluster.${cluster.name}.http_hosts", "${-> allHttpSocketURI}"
+            systemProperty "tests.cluster.${cluster.name}.transport_hosts", "${-> alltransportSocketURI}"
+            systemProperty "tests.cluster.${cluster.name}.security_enabled", "${-> securityEnabled.toString()}"
+            configureCluster(cluster, securityEnabled)
+        }
+    }
+    filter {
+        setIncludePatterns("org.opensearch.replication.bwc.BackwardsCompatibilityIT")
+    }
+    nonInputProperties.systemProperty('tests.cluster_suffix', "1")
+    nonInputProperties.systemProperty('tests.bwcTask', "bwcTestSuite")
+    dependsOn tasks.named("mixedClusterTask")
+    dependsOn tasks.named("rollingUpgradeClusterTask")
+    dependsOn tasks.named("fullRestartClusterTask")
 }

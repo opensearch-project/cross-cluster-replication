@@ -90,6 +90,16 @@ Signed-off-by: Jane Smith <jane.smith@email.com>
 
 You may type this line on your own when writing your commit messages. However, if your user.name and user.email are set in your git configs, you can use `-s` or `– – signoff` to add the `Signed-off-by` line to the end of the commit message.
 
+## Backward Compatibility tests
+We run BWC test suite on all the changes to ensure that we do not break backward compatibility of the plugin.
+
+Run this command to trigger the complete bwc testsuite`./gradlew bwcTestSuite`
+
+Test suite covers following 3 scenarios:
+1. Mixed cluster: We create 3 node leader and follower cluster and upgrade one node on both clusters. After the upgrade, we verify that the ongoing replication keeps working as expected. Run this individual test using ``./gradlew mixedClusterTask``     
+2. Rolling upgrade: We create 3 node leader and follower cluster and upgrade all nodes one by one. After the upgrade, we verify that the ongoing replication keeps working as expected. Run this individual test using ``./gradlew rollingUpgradeClusterTask``
+3. Full cluster restart: We create 3 node leader and follower cluster and upgrade all nodes simultaneously. After the upgrade, we verify that the ongoing replication keeps working as expected. Run this individual test using ``./gradlew fullRestartClusterTask``
+
 ## License Headers
 
 New files in your code contributions should contain the following license header. If you are modifying existing files with license headers, or including new files that already have license headers, do not remove or modify them without guidance.
