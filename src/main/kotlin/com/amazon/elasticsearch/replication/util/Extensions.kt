@@ -15,6 +15,7 @@
 
 package com.amazon.elasticsearch.replication.util
 
+import com.amazon.elasticsearch.replication.ReplicationException
 import com.amazon.elasticsearch.replication.repository.RemoteClusterRepository
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationContext
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
@@ -36,6 +37,7 @@ import org.elasticsearch.index.shard.ShardId
 import org.elasticsearch.index.store.Store
 import org.elasticsearch.indices.recovery.RecoveryState
 import org.elasticsearch.repositories.IndexId
+import org.elasticsearch.rest.RestStatus
 import org.elasticsearch.snapshots.SnapshotId
 import org.elasticsearch.transport.ConnectTransportException
 import org.elasticsearch.transport.NodeDisconnectedException
@@ -95,7 +97,7 @@ fun IndexRequestBuilder.execute(id: String, listener: ActionListener<IndexRespon
  * @param block - the block of code to retry. This should be a suspend function.
  */
 suspend fun <Req: ActionRequest, Resp: ActionResponse> Client.suspendExecuteWithRetries(
-        replicationMetadata: ReplicationMetadata,
+        replicationMetadata: ReplicationMetadata?,
         action: ActionType<Resp>,
         req: Req,
         numberOfRetries: Int = 5,
@@ -104,16 +106,23 @@ suspend fun <Req: ActionRequest, Resp: ActionResponse> Client.suspendExecuteWith
         factor: Double = 2.0,
         log: Logger,
         retryOn: ArrayList<Class<*>> = ArrayList(),
+        injectSecurityContext: Boolean = false,
         defaultContext: Boolean = false): Resp {
     var currentBackoff = backoff
     retryOn.addAll(defaultRetryableExceptions())
+
     repeat(numberOfRetries - 1) {
         try {
-            return suspendExecute(replicationMetadata, action, req, defaultContext = defaultContext)
+            return suspendExecute(replicationMetadata, action, req,
+                    injectSecurityContext = injectSecurityContext, defaultContext = defaultContext)
         } catch (e: ElasticsearchException) {
             // Not retrying for IndexNotFoundException as it is not a transient failure
             // TODO Remove this check for IndexNotFoundException: https://github.com/opensearch-project/cross-cluster-replication/issues/78
-            if (e !is IndexNotFoundException && (retryOn.contains(e.javaClass) || TransportActions.isShardNotAvailableException(e))) {
+            if (e !is IndexNotFoundException && (retryOn.contains(e.javaClass)
+                            || TransportActions.isShardNotAvailableException(e)
+                            // This waits for the dependencies to load and retry. Helps during boot-up
+                            || e.status().status >= 500
+                            || e.status() == RestStatus.TOO_MANY_REQUESTS)) {
                 log.warn("Encountered a failure while executing in $req. Retrying in ${currentBackoff/1000} seconds" +
                         ".", e)
                 delay(currentBackoff)
@@ -123,8 +132,11 @@ suspend fun <Req: ActionRequest, Resp: ActionResponse> Client.suspendExecuteWith
             }
         }
     }
-    return suspendExecute(replicationMetadata, action, req) // last attempt
+
+    return suspendExecute(replicationMetadata, action, req,
+            injectSecurityContext = injectSecurityContext, defaultContext = defaultContext) // last attempt
 }
+
 
 /**
  * Restore shard from leader cluster with retries.
