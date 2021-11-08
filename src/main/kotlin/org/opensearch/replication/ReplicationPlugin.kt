@@ -185,7 +185,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                 Setting.Property.Dynamic, Setting.Property.NodeScope)
         val REPLICATION_RETENTION_LEASE_MAX_FAILURE_DURATION = Setting.timeSetting ("plugins.replication.follower.retention_lease_max_failure_duration", TimeValue.timeValueHours(1), TimeValue.timeValueSeconds(1),
             TimeValue.timeValueHours(12), Setting.Property.Dynamic, Setting.Property.NodeScope)
-        val REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING: Setting<Boolean> = Setting.boolSetting("index.plugins.replication.translog.pruning.enabled", false,
+        val REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING: Setting<Boolean> = Setting.boolSetting("index.plugins.replication.translog.retention_lease.pruning.enabled", false,
             Setting.Property.IndexScope, Setting.Property.Dynamic)
         val REPLICATION_INDEX_TRANSLOG_RETENTION_SIZE: Setting<ByteSizeValue> = Setting.byteSizeSetting("index.plugins.replication.translog.retention_size",
             ByteSizeValue(512, ByteSizeUnit.MB), Setting.Property.Dynamic, Setting.Property.IndexScope)
