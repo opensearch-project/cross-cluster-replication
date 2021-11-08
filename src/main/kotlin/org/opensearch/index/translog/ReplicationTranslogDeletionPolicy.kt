@@ -19,9 +19,7 @@ class ReplicationTranslogDeletionPolicy(
 
     @Volatile
     private var replicationRetentionSizeInBytes: Long =
-        if (translogPruningEnabled)
             ReplicationPlugin.REPLICATION_INDEX_TRANSLOG_RETENTION_SIZE.get(indexSettings.settings).bytes
-        else indexSettings.translogRetentionSize.bytes
 
     @Volatile
     private var retentionSizeInBytes: Long = indexSettings.translogRetentionSize.bytes
@@ -43,7 +41,7 @@ class ReplicationTranslogDeletionPolicy(
 
         indexSettings.scopedSettings.addSettingsUpdateConsumer(
                 IndexSettings.INDEX_TRANSLOG_RETENTION_SIZE_SETTING
-        ) { value: ByteSizeValue -> retentionSizeInBytes = value.bytes }
+        ) { value: ByteSizeValue -> retentionSizeInBytes = if(indexSettings.isSoftDeleteEnabled) -1 else value.bytes }
     }
 
     fun getRetentionSizeInBytes(): Long {
