@@ -14,14 +14,17 @@ class ReplicationTranslogDeletionPolicy(
 ) : TranslogDeletionPolicy() {
     @Volatile
     private var translogPruningEnabled: Boolean =
-        ReplicationPlugin.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING.get(indexSettings.settings)
+            indexSettings.isSoftDeleteEnabled
+                    && ReplicationPlugin.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING.get(indexSettings.settings)
 
     @Volatile
-    private var retentionSizeInBytes: Long =
+    private var replicationRetentionSizeInBytes: Long =
         if (translogPruningEnabled)
             ReplicationPlugin.REPLICATION_INDEX_TRANSLOG_RETENTION_SIZE.get(indexSettings.settings).bytes
         else indexSettings.translogRetentionSize.bytes
 
+    @Volatile
+    private var retentionSizeInBytes: Long = indexSettings.translogRetentionSize.bytes
 
     @Volatile
     private var retentionAgeInMillis: Long = indexSettings.translogRetentionAge.millis
@@ -32,17 +35,30 @@ class ReplicationTranslogDeletionPolicy(
     init {
         indexSettings.scopedSettings.addSettingsUpdateConsumer(
             ReplicationPlugin.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING
-        ) { value: Boolean -> translogPruningEnabled = value }
+        ) { value: Boolean -> translogPruningEnabled = if (indexSettings.isSoftDeleteEnabled) value else false }
 
         indexSettings.scopedSettings.addSettingsUpdateConsumer(
             ReplicationPlugin.REPLICATION_INDEX_TRANSLOG_RETENTION_SIZE
-        ) { value: ByteSizeValue -> retentionSizeInBytes = if (translogPruningEnabled) value.bytes else -1 }
+        ) { value: ByteSizeValue -> replicationRetentionSizeInBytes = value.bytes }
+
+        indexSettings.scopedSettings.addSettingsUpdateConsumer(
+                IndexSettings.INDEX_TRANSLOG_RETENTION_SIZE_SETTING
+        ) { value: ByteSizeValue -> retentionSizeInBytes = value.bytes }
+    }
+
+    fun getRetentionSizeInBytes(): Long {
+        if (getIndexTranslogPruningEnabled()) {
+            return replicationRetentionSizeInBytes
+        }
+        return retentionSizeInBytes
+    }
+
+    fun getIndexTranslogPruningEnabled(): Boolean {
+        return translogPruningEnabled
     }
 
     override fun setRetentionSizeInBytes(bytes: Long) {
-        if (translogPruningEnabled) {
-            retentionSizeInBytes = bytes
-        }
+        retentionSizeInBytes = bytes
     }
 
     override fun setRetentionAgeInMillis(ageInMillis: Long) {
@@ -63,15 +79,14 @@ class ReplicationTranslogDeletionPolicy(
     @Synchronized
     @Throws(IOException::class)
     override fun minTranslogGenRequired(readers: List<TranslogReader>, writer: TranslogWriter): Long {
-        return minTranslogGenRequired(
-            readers,
-            writer,
-            translogPruningEnabled,
-            retentionSizeInBytes,
-            retentionAgeInMillis,
-            retentionTotalFiles,
-            minTranslogGenRequiredByLocks,
-            retentionLeasesSupplier
+        return minTranslogGenRequired(readers,
+                writer,
+                getIndexTranslogPruningEnabled(),
+                getRetentionSizeInBytes(),
+                retentionAgeInMillis,
+                retentionTotalFiles,
+                minTranslogGenRequiredByLocks,
+                retentionLeasesSupplier
         )
     }
 
