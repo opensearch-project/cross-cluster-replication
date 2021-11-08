@@ -1023,6 +1023,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         }
     }
 
+    @AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/176")
     fun `test follower stats`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
@@ -1075,6 +1076,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             assertThat(stats.getValue("failed_write_requests").toString()).isEqualTo("0")
             assertThat(stats.containsKey("index_stats"))
             assertThat(stats.size).isEqualTo(16)
+
         } finally {
             followerClient.stopReplication(followerIndexName)
             followerClient.stopReplication(followerIndex2)
