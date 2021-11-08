@@ -16,6 +16,8 @@ import org.opensearch.action.ActionListener
 import org.opensearch.action.ActionRequest
 import org.opensearch.action.ActionResponse
 import org.opensearch.action.ActionType
+import org.opensearch.action.admin.cluster.health.ClusterHealthAction
+import org.opensearch.action.admin.cluster.health.ClusterHealthResponse
 import org.opensearch.action.admin.cluster.snapshots.restore.RestoreSnapshotAction
 import org.opensearch.action.admin.cluster.snapshots.restore.RestoreSnapshotResponse
 import org.opensearch.action.admin.indices.recovery.RecoveryAction
@@ -130,6 +132,10 @@ open class NoOpClient(testName :String) : NoOpNodeClient(testName) {
             var result = GetResult(ReplicationMetadataStore.REPLICATION_CONFIG_SYSTEM_INDEX, "_doc", IndexReplicationTaskTests.followerIndex, 1, 1, 1, true, by, null, null)
             var getResponse = GetResponse(result)
             listener.onResponse(getResponse as Response)
+        } else if (action == ClusterHealthAction.INSTANCE) {
+            // Store health response
+            val replicationStoreResponse = ClusterHealthResponse()
+            listener.onResponse(replicationStoreResponse as Response)
         }
     }
 }
