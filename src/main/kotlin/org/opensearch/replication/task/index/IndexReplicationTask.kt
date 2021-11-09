@@ -88,6 +88,7 @@ import org.opensearch.persistent.PersistentTasksCustomMetadata
 import org.opensearch.persistent.PersistentTasksCustomMetadata.PersistentTask
 import org.opensearch.persistent.PersistentTasksNodeService
 import org.opensearch.persistent.PersistentTasksService
+import org.opensearch.replication.ReplicationException
 import org.opensearch.rest.RestStatus
 import org.opensearch.tasks.TaskId
 import org.opensearch.tasks.TaskManager
@@ -190,7 +191,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                             shouldCallEvalMonitoring = false
                             MonitoringState
                         } else {
-                            throw org.opensearch.replication.ReplicationException("Wrong state type: ${currentTaskState::class}")
+                            throw ReplicationException("Wrong state type: ${currentTaskState::class}")
                         }
                     }
                     ReplicationState.MONITORING -> {
@@ -235,8 +236,10 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                     currentTaskState = updateState(newState)
                 }
                 if (isCompleted) break
-            }
-            catch(e: OpenSearchException) {
+            } catch(e: ReplicationException) {
+                log.error("Exiting index replication task", e)
+                throw e
+            } catch(e: OpenSearchException) {
                 val status = e.status().status
                 // Index replication task shouldn't exit before shard replication tasks
                 // As long as shard replication tasks doesn't encounter any errors, Index task
@@ -624,7 +627,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 defaultContext = true
             )
             if (!pauseReplicationResponse.isAcknowledged) {
-                throw org.opensearch.replication.ReplicationException(
+                throw ReplicationException(
                     "Failed to gracefully pause replication after one or more shard tasks failed. " +
                             "Replication tasks may need to be paused manually."
                 )
@@ -754,7 +757,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         val response = client.suspending(client.admin().cluster()::restoreSnapshot, defaultContext = true)(restoreRequest)
         if (response.restoreInfo != null) {
             if (response.restoreInfo.failedShards() != 0) {
-                throw org.opensearch.replication.ReplicationException("Restore failed: $response")
+                throw ReplicationException("Restore failed: $response")
             }
             return FollowingState(emptyMap())
         }
