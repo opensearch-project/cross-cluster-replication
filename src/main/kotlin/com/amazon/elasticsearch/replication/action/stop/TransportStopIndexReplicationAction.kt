@@ -124,9 +124,14 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                     }
                 }
                 val replMetadata = replicationMetadataManager.getIndexReplicationMetadata(request.indexName)
-                val remoteClient = client.getRemoteClusterClient(replMetadata.connectionName)
-                val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
-                retentionLeaseHelper.attemptRemoveRetentionLease(clusterService, replMetadata, request.indexName)
+
+                try {
+                    val remoteClient = client.getRemoteClusterClient(replMetadata.connectionName)
+                    val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
+                    retentionLeaseHelper.attemptRemoveRetentionLease(clusterService, replMetadata, request.indexName)
+                } catch(e: Exception) {
+                    log.error("Failed to remove retention lease from the leader cluster", e)
+                }
 
                 val clusterStateUpdateResponse : AcknowledgedResponse =
                     clusterService.waitForClusterStateUpdate("stop_replication") { l -> StopReplicationTask(request, l)}
