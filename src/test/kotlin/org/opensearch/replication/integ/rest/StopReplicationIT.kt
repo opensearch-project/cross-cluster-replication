@@ -204,4 +204,34 @@ class StopReplicationIT: MultiClusterRestTestCase() {
         val sourceMap = mapOf("name" to randomAlphaOfLength(5))
         followerClient.index(IndexRequest(followerIndexName).id("2").source(sourceMap), RequestOptions.DEFAULT)
     }
+
+    fun `test stop replication when leader cluster is removed`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER, "source")
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
+                waitForRestore = true)
+        // Need to wait till index blocks appear into state
+        assertBusy ({
+            val clusterBlocksResponse = followerClient.lowLevelClient.performRequest(Request("GET", "/_cluster/state/blocks"))
+            val clusterResponseString = EntityUtils.toString(clusterBlocksResponse.entity)
+            assertThat(clusterResponseString.contains("cross-cluster-replication"))
+                    .withFailMessage("Cant find replication block after starting replication")
+                    .isTrue()
+        }, 10, TimeUnit.SECONDS)
+
+        // Remove leader cluster from settings
+        val settings: Settings = Settings.builder()
+                .putNull("cluster.remote.source.seeds")
+                .build()
+        val updateSettingsRequest = ClusterUpdateSettingsRequest()
+        updateSettingsRequest.persistentSettings(settings)
+        followerClient.cluster().putSettings(updateSettingsRequest, RequestOptions.DEFAULT)
+
+        followerClient.stopReplication(followerIndexName)
+        val sourceMap = mapOf("name" to randomAlphaOfLength(5))
+        followerClient.index(IndexRequest(followerIndexName).id("2").source(sourceMap), RequestOptions.DEFAULT)
+    }
 }
