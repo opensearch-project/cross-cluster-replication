@@ -235,8 +235,10 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
                     currentTaskState = updateState(newState)
                 }
                 if (isCompleted) break
-            }
-            catch(e: ElasticsearchException) {
+            } catch(e: ReplicationException) {
+                log.error("Exiting index replication task", e)
+                throw e
+            } catch(e: ElasticsearchException) {
                 val status = e.status().status
                 // Index replication task shouldn't exit before shard replication tasks
                 // As long as shard replication tasks doesn't encounter any errors, Index task
