@@ -24,7 +24,7 @@ jobs:
         uses: actions/checkout@v2
       - name: Build and run Replication tests
         run: |
-          ./gradlew clean release -Dbuild.snapshot=true -Dopensearch.version=1.2.0-SNAPSHOT
+          ./gradlew release -Dbuild.snapshot=true -Dopensearch.version=1.2.0-SNAPSHOT -x test -x IntegTest
       - name: Run Backwards Compatibility Tests
         run: |
           echo "Running backwards compatibility tests ..."
