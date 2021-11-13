@@ -176,7 +176,7 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
                         }
                     }
                     ReplicationState.RESTORING -> {
-                        log.info("In restoring state")
+                        log.info("In restoring state for $followerIndexName")
                         waitForRestore()
                     }
                     ReplicationState.INIT_FOLLOW -> {
@@ -751,12 +751,18 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
         val replMetadata = replicationMetadataManager.getIndexReplicationMetadata(this.followerIndexName)
         restoreRequest.indexSettings(replMetadata.settings)
 
-        val response = client.suspending(client.admin().cluster()::restoreSnapshot, defaultContext = true)(restoreRequest)
-        if (response.restoreInfo != null) {
-            if (response.restoreInfo.failedShards() != 0) {
-                throw ReplicationException("Restore failed: $response")
+        try {
+            val response = client.suspending(client.admin().cluster()::restoreSnapshot, defaultContext = true)(restoreRequest)
+            if (response.restoreInfo != null) {
+                if (response.restoreInfo.failedShards() != 0) {
+                    throw ReplicationException("Restore failed: $response")
+                }
+                return FollowingState(emptyMap())
             }
-            return FollowingState(emptyMap())
+        } catch (e: Exception) {
+            val err = "Unable to initiate restore call for $followerIndexName from $leaderAlias:${leaderIndex.name}"
+            log.error(err, e)
+            return FailedState(Collections.emptyMap(), err)
         }
         cso.waitForNextChange("remote restore start") { inProgressRestore(it) != null }
         return RestoreState
@@ -858,7 +864,7 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
         log.debug("Cluster metadata listener invoked on index task...")
         if (event.metadataChanged()) {
             val replicationStateParams = getReplicationStateParamsForIndex(clusterService, followerIndexName)
-            log.info("$replicationStateParams from the cluster state")
+            log.debug("$replicationStateParams from the cluster state")
             if (replicationStateParams == null) {
                 if (PersistentTasksNodeService.Status(State.STARTED) == status) {
                     log.debug("Cancelling index replication stop")

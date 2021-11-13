@@ -36,8 +36,11 @@ import org.elasticsearch.action.ActionListener
 import org.elasticsearch.action.admin.indices.settings.get.GetSettingsRequest
 import org.elasticsearch.action.support.ActionFilters
 import org.elasticsearch.action.support.HandledTransportAction
+import org.elasticsearch.action.support.IndicesOptions
 import org.elasticsearch.client.Client
+import org.elasticsearch.cluster.metadata.IndexMetadata
 import org.elasticsearch.common.inject.Inject
+import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.env.Environment
 import org.elasticsearch.index.IndexNotFoundException
 import org.elasticsearch.index.IndexSettings
@@ -83,11 +86,12 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
 
                 // Any checks on the settings is followed by setup checks to ensure all relevant changes are
                 // present across the plugins
-                val remoteClient = client.getRemoteClusterClient(request.leaderAlias)
-                val getSettingsRequest = GetSettingsRequest().includeDefaults(false).indices(request.leaderIndex)
-                val settingsResponse = remoteClient.suspending(remoteClient.admin().indices()::getSettings, injectSecurityContext = true)(getSettingsRequest)
-                val leaderSettings = settingsResponse.indexToSettings.get(request.leaderIndex) ?: throw IndexNotFoundException(request.leaderIndex)
 
+                // validate index metadata on the leader cluster
+                val leaderIndexMetadata = getLeaderIndexMetadata(request.leaderAlias, request.leaderIndex)
+                ValidationUtil.validateLeaderIndexMetadata(leaderIndexMetadata)
+
+                val leaderSettings = getLeaderIndexSettings(request.leaderAlias, request.leaderIndex)
                 if (leaderSettings.keySet().contains(ReplicationPlugin.REPLICATED_INDEX_SETTING.key) and
                         !leaderSettings.get(ReplicationPlugin.REPLICATED_INDEX_SETTING.key).isNullOrBlank()) {
                     throw IllegalArgumentException("Cannot Replicate a Replicated Index ${request.leaderIndex}")
@@ -112,4 +116,25 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
             }
         }
     }
-}
+
+    private suspend fun getLeaderIndexMetadata(leaderAlias: String, leaderIndex: String): IndexMetadata {
+        val remoteClusterClient = client.getRemoteClusterClient(leaderAlias)
+        val clusterStateRequest = remoteClusterClient.admin().cluster().prepareState()
+                .clear()
+                .setIndices(leaderIndex)
+                .setMetadata(true)
+                .setIndicesOptions(IndicesOptions.strictSingleIndexNoExpandForbidClosed())
+                .request()
+        val remoteState = remoteClusterClient.suspending(remoteClusterClient.admin().cluster()::state,
+                injectSecurityContext = true, defaultContext = true)(clusterStateRequest).state
+        return remoteState.metadata.index(leaderIndex) ?: throw IndexNotFoundException("${leaderAlias}:${leaderIndex}")
+    }
+
+    private suspend fun getLeaderIndexSettings(leaderAlias: String, leaderIndex: String): Settings {
+        val remoteClient = client.getRemoteClusterClient(leaderAlias)
+        val getSettingsRequest = GetSettingsRequest().includeDefaults(false).indices(leaderIndex)
+        val settingsResponse = remoteClient.suspending(remoteClient.admin().indices()::getSettings,
+                injectSecurityContext = true)(getSettingsRequest)
+        return settingsResponse.indexToSettings.get(leaderIndex) ?: throw IndexNotFoundException("${leaderAlias}:${leaderIndex}")
+    }
+ }
