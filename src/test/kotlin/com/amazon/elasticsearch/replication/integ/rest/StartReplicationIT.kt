@@ -34,6 +34,7 @@ import com.amazon.elasticsearch.replication.startReplication
 import com.amazon.elasticsearch.replication.stopReplication
 import com.amazon.elasticsearch.replication.updateAutoFollowPattern
 import com.amazon.elasticsearch.replication.updateReplication
+import com.amazon.elasticsearch.replication.updateReplicationStartBlockSetting
 import org.apache.http.HttpStatus
 import org.apache.http.entity.ContentType
 import org.apache.http.nio.entity.NStringEntity
@@ -43,6 +44,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.elasticsearch.ElasticsearchStatusException
 import org.elasticsearch.action.admin.cluster.repositories.put.PutRepositoryRequest
+import org.elasticsearch.action.admin.cluster.settings.ClusterUpdateSettingsRequest
 import org.elasticsearch.action.admin.cluster.snapshots.create.CreateSnapshotRequest
 import org.elasticsearch.action.admin.indices.alias.Alias
 import org.elasticsearch.action.admin.indices.alias.IndicesAliasesRequest
@@ -1108,6 +1110,36 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             "Value $longIndexName must not be longer than ${MetadataCreateIndexService.MAX_INDEX_NAME_BYTES} bytes")
         assertValidationFailure(followerClient, ".leaderIndex", followerIndexName,
             "Value .leaderIndex must not start with '.'")
+    }
+
+    fun `test that replication is not started when start block is set`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+        val createIndexResponse = leaderClient.indices().create(
+                CreateIndexRequest(leaderIndexName),
+                RequestOptions.DEFAULT
+        )
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+
+        // Setting to add replication start block
+        followerClient.updateReplicationStartBlockSetting(true)
+
+        assertThatThrownBy { followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
+                waitForRestore = true) }
+                .isInstanceOf(ResponseException::class.java)
+                .hasMessageContaining("[FORBIDDEN] Replication START block is set")
+
+        // Remove replication start block and start replication
+        followerClient.updateReplicationStartBlockSetting(false)
+
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
+                    waitForRestore = true)
+        } finally {
+            followerClient.stopReplication(followerIndexName)
+        }
     }
 
     private fun assertValidationFailure(client: RestHighLevelClient, leader: String, follower: String, errrorMsg: String) {

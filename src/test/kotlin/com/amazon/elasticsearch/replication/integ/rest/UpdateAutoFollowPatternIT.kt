@@ -45,8 +45,10 @@ import java.util.Locale
 import org.elasticsearch.cluster.metadata.IndexMetadata
 import org.elasticsearch.cluster.metadata.MetadataCreateIndexService
 import com.amazon.elasticsearch.replication.ReplicationPlugin
+import com.amazon.elasticsearch.replication.updateReplicationStartBlockSetting
 import com.amazon.elasticsearch.replication.waitForShardTaskStart
 import org.elasticsearch.test.ESTestCase.assertBusy
+import java.lang.Thread.sleep
 import java.util.concurrent.TimeUnit
 
 
@@ -336,6 +338,38 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
 
         Assertions.assertThat(getIndexReplicationTasks(FOLLOWER).size).isEqualTo(1)
         followerClient.stopReplication(leaderIndexName)
+    }
+
+    fun `test autofollow task with start replication block`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
+
+        val leaderIndexName = createRandomIndex(leaderClient)
+        try {
+
+            // Add replication start block
+            followerClient.updateReplicationStartBlockSetting(true)
+            followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern)
+            sleep(30000) // Default poll for auto follow in worst case
+
+            // verify both index replication tasks and autofollow tasks
+            // Replication shouldn't have been started - 0 tasks
+            // Autofollow task should still be up - 1 task
+            Assertions.assertThat(getIndexReplicationTasks(FOLLOWER).size).isEqualTo(0)
+            Assertions.assertThat(getAutoFollowTasks(FOLLOWER).size).isEqualTo(1)
+
+            // Remove replication start block
+            followerClient.updateReplicationStartBlockSetting(false)
+            sleep(45000) // poll for auto follow in worst case
+
+            // Index should be replicated and autofollow task should be present
+            Assertions.assertThat(getIndexReplicationTasks(FOLLOWER).size).isEqualTo(1)
+            Assertions.assertThat(getAutoFollowTasks(FOLLOWER).size).isEqualTo(1)
+        } finally {
+            followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
+            followerClient.stopReplication(leaderIndexName)
+        }
     }
 
     fun createRandomIndex(client: RestHighLevelClient): String {

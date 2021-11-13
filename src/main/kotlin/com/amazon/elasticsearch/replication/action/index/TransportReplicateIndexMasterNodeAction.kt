@@ -15,6 +15,7 @@
 
 package com.amazon.elasticsearch.replication.action.index
 
+import com.amazon.elasticsearch.replication.ReplicationPlugin
 import com.amazon.elasticsearch.replication.metadata.ReplicationMetadataManager
 import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
 import com.amazon.elasticsearch.replication.task.ReplicationState
@@ -48,7 +49,10 @@ import org.elasticsearch.common.settings.IndexScopedSettings
 import org.elasticsearch.index.IndexNotFoundException
 import org.elasticsearch.persistent.PersistentTasksService
 import com.amazon.elasticsearch.replication.util.stackTraceToString
+import org.elasticsearch.ElasticsearchException
+import org.elasticsearch.ElasticsearchStatusException
 import org.elasticsearch.repositories.RepositoriesService
+import org.elasticsearch.rest.RestStatus
 import org.elasticsearch.threadpool.ThreadPool
 import org.elasticsearch.transport.TransportService
 import java.io.IOException
@@ -92,6 +96,11 @@ class TransportReplicateIndexMasterNodeAction @Inject constructor(transportServi
         // for each shard. If that takes too long we can start the task asynchronously and return the response first.
         launch(Dispatchers.Unconfined + threadPool.coroutineContext()) {
             try {
+                if(clusterService.clusterSettings.get(ReplicationPlugin.REPLICATION_FOLLOWER_BLOCK_START)) {
+                    log.debug("Replication cannot be started as " +
+                            "start block(${ReplicationPlugin.REPLICATION_FOLLOWER_BLOCK_START}) is set")
+                    throw ElasticsearchStatusException("[FORBIDDEN] Replication START block is set", RestStatus.FORBIDDEN)
+                }
                 val remoteMetadata = getRemoteIndexMetadata(replicateIndexReq.leaderAlias, replicateIndexReq.leaderIndex)
 
                 if (state.routingTable.hasIndex(replicateIndexReq.followerIndex)) {
