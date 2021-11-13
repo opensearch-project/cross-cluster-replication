@@ -13,6 +13,8 @@ package org.opensearch.replication.util
 
 import org.apache.logging.log4j.LogManager
 import org.opensearch.ResourceNotFoundException
+import org.opensearch.Version
+import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.cluster.metadata.MetadataCreateIndexService
 import org.opensearch.common.Strings
 import org.opensearch.common.ValidationException
@@ -72,5 +74,26 @@ object ValidationUtil {
         // Additionally we don't allow replication for system indices i.e. starts with '.'
         if(name.startsWith("."))
             validationException.addValidationError("Value $name must not start with '.'")
+    }
+
+    /**
+     * validate leader index version for compatibility
+     * If on higher version - Replication will not be allowed
+     *  - Upgrade path - Upgrade Follower cluster to higher version
+     *    and then upgrade leader
+     */
+    fun validateLeaderIndexMetadata(leaderIndexMetadata: IndexMetadata) {
+        if(Version.CURRENT.before(leaderIndexMetadata.creationVersion)) {
+            val err = "Leader index[${leaderIndexMetadata.index.name}] is on " +
+                    "higher version [${leaderIndexMetadata.creationVersion}] than follower [${Version.CURRENT}]"
+            log.error(err)
+            throw IllegalArgumentException(err)
+        }
+        if(Version.CURRENT.before(leaderIndexMetadata.upgradedVersion)) {
+            val err = "Leader index[${leaderIndexMetadata.index.name}] is upgraded with " +
+                    "higher version [${leaderIndexMetadata.upgradedVersion}] than follower [${Version.CURRENT}]"
+            log.error(err)
+            throw IllegalArgumentException(err)
+        }
     }
 }
