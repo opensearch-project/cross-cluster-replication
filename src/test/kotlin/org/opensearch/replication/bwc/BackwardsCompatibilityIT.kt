@@ -40,9 +40,7 @@ const val CONNECTION_NAME = "bwc_connection"
  */
 @MultiClusterAnnotations.ClusterConfigurations(
     MultiClusterAnnotations.ClusterConfiguration(clusterName = "${LEADER}0", preserveIndices = true, preserveClusterSettings = true),
-    MultiClusterAnnotations.ClusterConfiguration(clusterName = "${FOLLOWER}0", preserveIndices = true, preserveClusterSettings = true),
-    MultiClusterAnnotations.ClusterConfiguration(clusterName = "${LEADER}1", preserveIndices = true, preserveClusterSettings = true),
-    MultiClusterAnnotations.ClusterConfiguration(clusterName = "${FOLLOWER}1", preserveIndices = true, preserveClusterSettings = true)
+    MultiClusterAnnotations.ClusterConfiguration(clusterName = "${FOLLOWER}0", preserveIndices = true, preserveClusterSettings = true)
 )
 class BackwardsCompatibilityIT : MultiClusterRestTestCase() {
     private val clusterSuffix = System.getProperty("tests.cluster_suffix")

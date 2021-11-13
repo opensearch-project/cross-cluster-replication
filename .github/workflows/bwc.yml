@@ -1,14 +1,14 @@
-name: Test and Build Workflow
+name: Backward Compatible tests
 # This workflow is triggered on pull requests to main branch
 on:
-  pull_request:
+  push:
     branches:
       - '*'
 
 jobs:
   build:
     # Job name
-    name: Build Replication plugin
+    name: Backward Compatible tests
     runs-on: ubuntu-latest
     steps:
       # This step uses the setup-java Github action: https://github.com/actions/setup-java
@@ -19,21 +19,17 @@ jobs:
       # This step uses the checkout Github action: https://github.com/actions/checkout
       - name: Checkout Branch
         uses: actions/checkout@v2
-      - name: Build and run Replication tests
+      - name: Run Backwards Compatibility Tests
         run: |
-          ./gradlew release -Dbuild.snapshot=true -Dopensearch.version=1.2.0-SNAPSHOT -x test -x IntegTest
+          echo "Running backwards compatibility tests ..."
+          ./gradlew mixedClusterTask --stacktrace -Dorg.gradle.jvmargs=-Xmx1536m
       - name: Upload failed logs
         uses: actions/upload-artifact@v2
         if: failure()
         with:
           name: logs
           path: |
-            build/testclusters/integTest-*/logs/*
-            build/testclusters/leaderCluster-*/logs/*
-            build/testclusters/followCluster-*/logs/*
-      - name: Create Artifact Path
-        run: |
-          mkdir -p cross-cluster-replication-artifacts
-          cp ./build/distributions/*.zip cross-cluster-replication-artifacts
-      - name: Uploads coverage
-        uses: codecov/codecov-action@v1.2.1
+            build/testclusters/mixedClusterTask*/logs/*
+            build/testclusters/bwcLeader*/logs/*
+            build/testclusters/bwcFollower*/logs/*
+            build/reports/tests/*
