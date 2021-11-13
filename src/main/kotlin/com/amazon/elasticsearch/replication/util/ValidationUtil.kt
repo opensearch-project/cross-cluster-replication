@@ -2,12 +2,15 @@ package com.amazon.elasticsearch.replication.util
 
 import org.apache.logging.log4j.LogManager
 import org.elasticsearch.ResourceNotFoundException
+import org.elasticsearch.Version
+import org.elasticsearch.cluster.metadata.IndexMetadata
 import org.elasticsearch.cluster.metadata.MetadataCreateIndexService
 import org.elasticsearch.common.Strings
 import org.elasticsearch.common.ValidationException
 import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.env.Environment
 import java.io.UnsupportedEncodingException
+import java.lang.IllegalArgumentException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Locale
@@ -61,5 +64,26 @@ object ValidationUtil {
         // Additionally we don't allow replication for system indices i.e. starts with '.'
         if(name.startsWith("."))
             validationException.addValidationError("Value $name must not start with '.'")
+    }
+
+    /**
+     * validate leader index version for compatibility
+     * If on higher version - Replication will not be allowed
+     *  - Upgrade path - Upgrade Follower cluster to higher version
+     *    and then upgrade leader
+     */
+    fun validateLeaderIndexMetadata(leaderIndexMetadata: IndexMetadata) {
+        if(Version.CURRENT.before(leaderIndexMetadata.creationVersion)) {
+            val err = "Leader index[${leaderIndexMetadata.index.name}] is on " +
+                    "higher version [${leaderIndexMetadata.creationVersion}] than follower [${Version.CURRENT}]"
+            log.error(err)
+            throw IllegalArgumentException(err)
+        }
+        if(Version.CURRENT.before(leaderIndexMetadata.upgradedVersion)) {
+            val err = "Leader index[${leaderIndexMetadata.index.name}] is upgraded with " +
+                    "higher version [${leaderIndexMetadata.creationVersion}] than follower [${Version.CURRENT}]"
+            log.error(err)
+            throw IllegalArgumentException(err)
+        }
     }
 }
