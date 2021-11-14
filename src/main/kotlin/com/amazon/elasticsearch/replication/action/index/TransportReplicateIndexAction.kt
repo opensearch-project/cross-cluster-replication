@@ -18,6 +18,7 @@ package com.amazon.elasticsearch.replication.action.index
 import com.amazon.elasticsearch.replication.ReplicationException
 import com.amazon.elasticsearch.replication.ReplicationPlugin
 import com.amazon.elasticsearch.replication.ReplicationPlugin.Companion.KNN_INDEX_SETTING
+import com.amazon.elasticsearch.replication.ReplicationSettings
 import com.amazon.elasticsearch.replication.action.setup.SetupChecksAction
 import com.amazon.elasticsearch.replication.action.setup.SetupChecksRequest
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationContext
@@ -62,10 +63,10 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
     }
 
     override fun doExecute(task: Task, request: ReplicateIndexRequest, listener: ActionListener<ReplicateIndexResponse>) {
-        log.info("Setting-up replication for ${request.leaderAlias}:${request.leaderIndex} -> ${request.followerIndex}")
-        val user = SecurityContext.fromSecurityThreadContext(threadPool.threadContext)
         launch(threadPool.coroutineContext()) {
             listener.completeWith {
+                log.info("Setting-up replication for ${request.leaderAlias}:${request.leaderIndex} -> ${request.followerIndex}")
+                val user = SecurityContext.fromSecurityThreadContext(threadPool.threadContext)
 
                 val followerReplContext = ReplicationContext(request.followerIndex,
                         user?.overrideFgacRole(request.useRoles?.get(ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE)))

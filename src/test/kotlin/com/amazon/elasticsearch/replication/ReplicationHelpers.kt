@@ -20,6 +20,7 @@ import com.amazon.elasticsearch.replication.task.shard.ShardReplicationExecutor
 import org.assertj.core.api.Assertions.assertThat
 import org.elasticsearch.action.admin.cluster.health.ClusterHealthRequest
 import org.elasticsearch.action.admin.cluster.node.tasks.list.ListTasksRequest
+import org.elasticsearch.action.admin.cluster.settings.ClusterUpdateSettingsRequest
 import org.elasticsearch.action.support.master.AcknowledgedResponse
 import org.elasticsearch.client.Request
 import org.elasticsearch.client.RequestOptions
@@ -371,5 +372,15 @@ fun RestHighLevelClient.deleteAutoFollowPattern(connection: String, patternName:
                                      }""")
     val lowLevelResponse = lowLevelClient.performRequest(lowLevelRequest)
     val response = getAckResponse(lowLevelResponse)
+    assertThat(response.isAcknowledged).isTrue()
+}
+
+fun RestHighLevelClient.updateReplicationStartBlockSetting(enabled: Boolean) {
+    var settings: Settings = Settings.builder()
+            .put("plugins.replication.follower.block.start", enabled)
+            .build()
+    var updateSettingsRequest = ClusterUpdateSettingsRequest()
+    updateSettingsRequest.persistentSettings(settings)
+    val response = this.cluster().putSettings(updateSettingsRequest, RequestOptions.DEFAULT)
     assertThat(response.isAcknowledged).isTrue()
 }
