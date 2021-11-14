@@ -26,6 +26,7 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import org.apache.logging.log4j.LogManager
+import org.opensearch.OpenSearchStatusException
 import org.opensearch.action.ActionListener
 import org.opensearch.action.support.ActionFilters
 import org.opensearch.action.support.IndicesOptions
@@ -43,8 +44,10 @@ import org.opensearch.common.io.stream.StreamInput
 import org.opensearch.common.settings.IndexScopedSettings
 import org.opensearch.index.IndexNotFoundException
 import org.opensearch.persistent.PersistentTasksService
+import org.opensearch.replication.ReplicationPlugin
 import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.repositories.RepositoriesService
+import org.opensearch.rest.RestStatus
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
 import java.io.IOException
@@ -88,6 +91,12 @@ class TransportReplicateIndexMasterNodeAction @Inject constructor(transportServi
         // for each shard. If that takes too long we can start the task asynchronously and return the response first.
         launch(Dispatchers.Unconfined + threadPool.coroutineContext()) {
             try {
+                if(clusterService.clusterSettings.get(ReplicationPlugin.REPLICATION_FOLLOWER_BLOCK_START)) {
+                    log.debug("Replication cannot be started as " +
+                            "start block(${ReplicationPlugin.REPLICATION_FOLLOWER_BLOCK_START}) is set")
+                    throw OpenSearchStatusException("[FORBIDDEN] Replication START block is set", RestStatus.FORBIDDEN)
+                }
+
                 val remoteMetadata = getRemoteIndexMetadata(replicateIndexReq.leaderAlias, replicateIndexReq.leaderIndex)
 
                 if (state.routingTable.hasIndex(replicateIndexReq.followerIndex)) {
