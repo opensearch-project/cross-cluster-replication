@@ -70,6 +70,7 @@ import org.opensearch.replication.followerStats
 import org.opensearch.replication.leaderStats
 import org.opensearch.replication.task.index.IndexReplicationExecutor.Companion.log
 import java.lang.Thread.sleep
+import org.opensearch.replication.updateReplicationStartBlockSetting
 import java.nio.file.Files
 import java.util.concurrent.TimeUnit
 
@@ -1119,6 +1120,36 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             "Value $longIndexName must not be longer than ${MetadataCreateIndexService.MAX_INDEX_NAME_BYTES} bytes")
         assertValidationFailure(followerClient, ".leaderIndex", followerIndexName,
             "Value .leaderIndex must not start with '.'")
+    }
+
+    fun `test that replication is not started when start block is set`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+        val createIndexResponse = leaderClient.indices().create(
+                CreateIndexRequest(leaderIndexName),
+                RequestOptions.DEFAULT
+        )
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+
+        // Setting to add replication start block
+        followerClient.updateReplicationStartBlockSetting(true)
+
+        assertThatThrownBy { followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
+                waitForRestore = true) }
+                .isInstanceOf(ResponseException::class.java)
+                .hasMessageContaining("[FORBIDDEN] Replication START block is set")
+
+        // Remove replication start block and start replication
+        followerClient.updateReplicationStartBlockSetting(false)
+
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
+                    waitForRestore = true)
+        } finally {
+            followerClient.stopReplication(followerIndexName)
+        }
     }
 
     private fun assertValidationFailure(client: RestHighLevelClient, leader: String, follower: String, errrorMsg: String) {

@@ -57,10 +57,10 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
     }
 
     override fun doExecute(task: Task, request: ReplicateIndexRequest, listener: ActionListener<ReplicateIndexResponse>) {
-        log.info("Setting-up replication for ${request.leaderAlias}:${request.leaderIndex} -> ${request.followerIndex}")
-        val user = SecurityContext.fromSecurityThreadContext(threadPool.threadContext)
         launch(threadPool.coroutineContext()) {
             listener.completeWith {
+                log.info("Setting-up replication for ${request.leaderAlias}:${request.leaderIndex} -> ${request.followerIndex}")
+                val user = SecurityContext.fromSecurityThreadContext(threadPool.threadContext)
 
                 val followerReplContext = ReplicationContext(request.followerIndex,
                         user?.overrideFgacRole(request.useRoles?.get(ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE)))
