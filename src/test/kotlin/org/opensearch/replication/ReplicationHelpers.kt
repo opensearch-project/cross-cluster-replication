@@ -29,6 +29,7 @@ import org.opensearch.common.xcontent.XContentType
 import org.opensearch.test.OpenSearchTestCase.assertBusy
 import org.opensearch.test.rest.OpenSearchRestTestCase
 import org.junit.Assert
+import org.opensearch.action.admin.cluster.settings.ClusterUpdateSettingsRequest
 import java.util.concurrent.TimeUnit
 import java.util.stream.Collectors
 
@@ -367,5 +368,15 @@ fun RestHighLevelClient.deleteAutoFollowPattern(connection: String, patternName:
                                      }""")
     val lowLevelResponse = lowLevelClient.performRequest(lowLevelRequest)
     val response = getAckResponse(lowLevelResponse)
+    assertThat(response.isAcknowledged).isTrue()
+}
+
+fun RestHighLevelClient.updateReplicationStartBlockSetting(enabled: Boolean) {
+    var settings: Settings = Settings.builder()
+            .put("plugins.replication.follower.block.start", enabled)
+            .build()
+    var updateSettingsRequest = ClusterUpdateSettingsRequest()
+    updateSettingsRequest.persistentSettings(settings)
+    val response = this.cluster().putSettings(updateSettingsRequest, RequestOptions.DEFAULT)
     assertThat(response.isAcknowledged).isTrue()
 }

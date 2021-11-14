@@ -189,6 +189,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             Setting.Property.IndexScope, Setting.Property.Dynamic)
         val REPLICATION_INDEX_TRANSLOG_RETENTION_SIZE: Setting<ByteSizeValue> = Setting.byteSizeSetting("index.plugins.replication.translog.retention_size",
             ByteSizeValue(512, ByteSizeUnit.MB), Setting.Property.Dynamic, Setting.Property.IndexScope)
+        val REPLICATION_FOLLOWER_BLOCK_START: Setting<Boolean> = Setting.boolSetting("plugins.replication.follower.block.start", false,
+                Setting.Property.Dynamic, Setting.Property.NodeScope)
     }
 
     override fun createComponents(client: Client, clusterService: ClusterService, threadPool: ThreadPool,
@@ -346,7 +348,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                 REPLICATION_PARALLEL_READ_POLL_INTERVAL, REPLICATION_AUTOFOLLOW_REMOTE_INDICES_POLL_INTERVAL,
                 REPLICATION_AUTOFOLLOW_REMOTE_INDICES_RETRY_POLL_INTERVAL, REPLICATION_METADATA_SYNC_INTERVAL,
                 REPLICATION_RETENTION_LEASE_MAX_FAILURE_DURATION, REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING,
-                REPLICATION_INDEX_TRANSLOG_RETENTION_SIZE)
+                REPLICATION_INDEX_TRANSLOG_RETENTION_SIZE, REPLICATION_FOLLOWER_BLOCK_START)
     }
 
     override fun getInternalRepositories(env: Environment, namedXContentRegistry: NamedXContentRegistry,
