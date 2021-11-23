@@ -115,8 +115,13 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
         var isSecurityPropertyEnabled = false
         var forceInitSecurityConfiguration = false
 
-        private fun createTestCluster(configuration: ClusterConfiguration) : TestCluster {
-            val cluster = configuration.clusterName
+        internal fun createTestCluster(configuration: ClusterConfiguration) : TestCluster {
+            return createTestCluster(configuration.clusterName, configuration.preserveSnapshots, configuration.preserveIndices,
+                configuration.preserveClusterSettings)
+        }
+
+        internal fun createTestCluster(cluster: String, preserveSnapshots: Boolean, preserveIndices: Boolean,
+                                       preserveClusterSettings: Boolean) : TestCluster {
             val systemProperties = BootstrapInfo.getSystemProperties()
             val httpHostsProp = systemProperties.get("tests.cluster.${cluster}.http_hosts") as String?
             val transportHostsProp = systemProperties.get("tests.cluster.${cluster}.transport_hosts") as String?
@@ -132,12 +137,12 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
                 isSecurityPropertyEnabled = true
             }
 
-            forceInitSecurityConfiguration = isSecurityPropertyEnabled && configuration.forceInitSecurityConfiguration
+            forceInitSecurityConfiguration = isSecurityPropertyEnabled && forceInitSecurityConfiguration
 
             val httpHosts = httpHostsProp.split(',').map { HttpHost.create("$protocol://$it") }
             val transportPorts = transportHostsProp.split(',')
-            return TestCluster(cluster, httpHosts, transportPorts, configuration.preserveSnapshots,
-                               configuration.preserveIndices, configuration.preserveClusterSettings, securityEnabled.equals("true", true))
+            return TestCluster(cluster, httpHosts, transportPorts, preserveSnapshots,
+                               preserveIndices, preserveClusterSettings, securityEnabled.equals("true", true))
         }
 
         private fun getClusterConfigurations(): List<ClusterConfiguration> {
