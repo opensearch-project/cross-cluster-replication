@@ -35,7 +35,7 @@ Install cross-cluster-replication plugin on all nodes of both leader and followe
 ```bash
 #TODO: Update repo
 sudo bin/opensearch-plugin install \
-https://github.com/opensearch-project/cross-cluster-replication/releases/download/v1.1.0.0/opensearch-cross-cluster-replication-1.1.0.0.zip
+https://github.com/opensearch-project/cross-cluster-replication/archive/refs/tags/1.1.0.0.zip
 ```
 #### Ensure all follower nodes can act as remote_cluster_client
 
