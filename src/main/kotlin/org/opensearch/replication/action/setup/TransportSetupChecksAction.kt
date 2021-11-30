@@ -56,7 +56,7 @@ class TransportSetupChecksAction @Inject constructor(transportService: Transport
     }
 
     override fun doExecute(task: Task, request: SetupChecksRequest, listener: ActionListener<AcknowledgedResponse>) {
-        var leaderClusterClient: Client? = null
+        var leaderClusterClient: Client?
         val followerClusterName = clusterService.clusterName.value()
         try {
             leaderClusterClient = client.getRemoteClusterClient(request.connectionName)

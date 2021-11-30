@@ -80,6 +80,7 @@ fun <T>Client.executeBlockUnderSecurityContext(replContext: ReplicationContext, 
     }
 }
 
+@Suppress("UNUSED_PARAMETER")
 fun IndexRequestBuilder.execute(id: String, listener: ActionListener<IndexResponse>) {
     execute(listener)
 }

@@ -60,6 +60,7 @@ class RemoteShardMetric  {
             return builder.endObject()
         }
 
+         @Suppress("UNUSED_PARAMETER")
          fun toXContentFragment(builder: XContentBuilder, params: ToXContent.Params?): XContentBuilder {
              builder.field("operations_read", ops)
              builder.field("translog_size_bytes", tlogSize)

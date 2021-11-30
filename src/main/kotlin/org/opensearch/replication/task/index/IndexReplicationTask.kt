@@ -206,7 +206,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                             // Tasks need to be started
                             state
                         } else {
-                            state = pollShardTaskStatus((followingTaskState as FollowingState).shardReplicationTasks)
+                            state = pollShardTaskStatus()
                             followingTaskState = startMissingShardTasks((followingTaskState as FollowingState).shardReplicationTasks)
                             when (state) {
                                 is MonitoringState -> {
@@ -301,7 +301,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         return FollowingState(shardTasks)
     }
 
-    private suspend fun pollShardTaskStatus(shardTasks: Map<ShardId, PersistentTask<ShardReplicationParams>>): IndexReplicationState {
+    private suspend fun pollShardTaskStatus(): IndexReplicationState {
         val failedShardTasks = findAllReplicationFailedShardTasks(clusterService.state())
         if (failedShardTasks.isNotEmpty()) {
             log.info("Failed shard tasks - ", failedShardTasks)

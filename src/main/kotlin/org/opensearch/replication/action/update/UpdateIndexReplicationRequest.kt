@@ -50,6 +50,7 @@ class UpdateIndexReplicationRequest : AcknowledgedRequest<UpdateIndexReplication
             PARSER.declareString(UpdateIndexReplicationRequest::indexName::set, ParseField("indexName"))
         }
 
+        @Suppress("UNUSED_PARAMETER")
         @Throws(IOException::class)
         fun fromXContent(parser: XContentParser, followerIndex: String): UpdateIndexReplicationRequest {
             throw IOException("Not supported for $this")

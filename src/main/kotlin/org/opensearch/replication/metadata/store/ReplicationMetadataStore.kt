@@ -45,7 +45,8 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
         const val MAPPING_META = "_meta"
         const val MAPPING_SCHEMA_VERSION = "schema_version"
         const val DEFAULT_SCHEMA_VERSION = 1
-        val REPLICATION_CONFIG_SYSTEM_INDEX_MAPPING = javaClass.classLoader.getResource("mappings/replication-metadata-store.json").readText()
+        val REPLICATION_CONFIG_SYSTEM_INDEX_MAPPING = ReplicationMetadataStore::class.java
+            .classLoader.getResource("mappings/replication-metadata-store.json")!!.readText()
         var REPLICATION_STORE_MAPPING_VERSION: Int
         init {
             REPLICATION_STORE_MAPPING_VERSION = getSchemaVersion(REPLICATION_CONFIG_SYSTEM_INDEX_MAPPING)
@@ -277,7 +278,7 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
         }
         val clusterHealthReq = ClusterHealthRequest(REPLICATION_CONFIG_SYSTEM_INDEX).waitForYellowStatus()
         // This should ensure that security plugin and shards are active during boot-up before triggering the requests
-        val clusterHealthRes = client.suspendExecuteWithRetries(null, ClusterHealthAction.INSTANCE,
+        client.suspendExecuteWithRetries(null, ClusterHealthAction.INSTANCE,
                 clusterHealthReq, log=log, defaultContext = true)
     }
 }

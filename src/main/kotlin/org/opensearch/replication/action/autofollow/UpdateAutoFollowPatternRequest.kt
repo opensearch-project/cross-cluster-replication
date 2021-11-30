@@ -55,7 +55,9 @@ class UpdateAutoFollowPatternRequest: AcknowledgedRequest<UpdateAutoFollowPatter
             AUTOFOLLOW_REQ_PARSER.declareObjectOrDefault(BiConsumer { reqParser: UpdateAutoFollowPatternRequest,
                                                                       roles: HashMap<String, String> -> reqParser.useRoles = roles},
                     ReplicateIndexRequest.FGAC_ROLES_PARSER, null, ParseField("use_roles"))
-            AUTOFOLLOW_REQ_PARSER.declareObjectOrDefault(BiConsumer{ request: UpdateAutoFollowPatternRequest, settings: Settings -> request.settings = settings}, BiFunction{ p: XContentParser?, c: Void? -> Settings.fromXContent(p) },
+            AUTOFOLLOW_REQ_PARSER.declareObjectOrDefault(
+                { request: UpdateAutoFollowPatternRequest, settings: Settings -> request.settings = settings},
+                { p: XContentParser?, _: Void? -> Settings.fromXContent(p) },
                     null, ParseField(KEY_SETTINGS))
         }
         fun fromXContent(xcp: XContentParser, action: Action) : UpdateAutoFollowPatternRequest {
@@ -64,9 +66,7 @@ class UpdateAutoFollowPatternRequest: AcknowledgedRequest<UpdateAutoFollowPatter
             if(updateAutofollowReq.useRoles?.size == 0) {
                 updateAutofollowReq.useRoles = null
             }
-            if (updateAutofollowReq.settings == null) {
-                updateAutofollowReq.settings = Settings.EMPTY
-            }
+
             return updateAutofollowReq
         }
     }

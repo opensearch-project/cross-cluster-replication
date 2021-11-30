@@ -59,6 +59,7 @@ class TransportUpddateIndexBlockAction @Inject constructor(transportService: Tra
     @Throws(Exception::class)
     override fun masterOperation(request: UpdateIndexBlockRequest?, state: ClusterState?, listener: ActionListener<AcknowledgedResponse>) {
         val followerIndexName = request!!.indexName
+        log.debug("Adding index block for $followerIndexName")
         launch(threadPool.coroutineContext(ThreadPool.Names.MANAGEMENT)) {
             listener.completeWith { addIndexBlockForReplication(request) }
         }

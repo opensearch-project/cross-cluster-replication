@@ -155,8 +155,8 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
             log.info("Auto follow starting replication from ${leaderAlias}:$leaderIndex -> $leaderIndex")
             val request = ReplicateIndexRequest(leaderIndex, leaderAlias, leaderIndex )
             request.isAutoFollowRequest = true
-            val followerRole = replicationMetadata.followerContext?.user?.roles?.get(0)
-            val leaderRole = replicationMetadata.leaderContext?.user?.roles?.get(0)
+            val followerRole = replicationMetadata.followerContext.user?.roles?.get(0)
+            val leaderRole = replicationMetadata.leaderContext.user?.roles?.get(0)
             if(followerRole != null && leaderRole != null) {
                 request.useRoles = HashMap<String, String>()
                 request.useRoles!![ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE] = followerRole

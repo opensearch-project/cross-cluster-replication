@@ -331,7 +331,6 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
             releaseLeaderResources(restoreUUID, leaderShardNode, leaderShardId, followerShardId, followerIndexName)
             listener.onResponse(null)
         } else {
-            val replMetadata = getReplicationMetadata(followerIndexName)
             multiChunkTransfer.start()
         }
     }

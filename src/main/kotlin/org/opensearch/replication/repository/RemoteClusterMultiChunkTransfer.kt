@@ -100,6 +100,7 @@ class RemoteClusterMultiChunkTransfer(val logger: Logger,
 
     }
 
+    @Suppress("DEPRECATION")
     override fun nextChunkRequest(md: StoreFileMetadata): RemoteClusterRepositoryFileChunk {
         val chunkReq = RemoteClusterRepositoryFileChunk(md, offset, chunkSize.bytesAsInt())
         offset += chunkSize.bytesAsInt()

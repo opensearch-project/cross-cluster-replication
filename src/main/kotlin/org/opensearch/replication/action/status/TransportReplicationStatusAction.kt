@@ -47,7 +47,7 @@ class TransportReplicationStatusAction @Inject constructor(transportService: Tra
         launch(threadPool.coroutineContext()) {
             listener.completeWith {
                 try {
-                    val metadata = replicationMetadataManager.getIndexReplicationMetadata(request!!.indices()[0])
+                    val metadata = replicationMetadataManager.getIndexReplicationMetadata(request.indices()[0])
                     var status = if (metadata.overallState.isNullOrEmpty()) "STOPPED" else metadata.overallState
                     var reason = metadata.reason
                     if (!status.equals("RUNNING")) {

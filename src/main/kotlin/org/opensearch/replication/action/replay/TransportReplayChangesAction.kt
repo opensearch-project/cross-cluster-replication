@@ -228,6 +228,7 @@ class TransportReplayChangesAction @Inject constructor(settings: Settings, trans
         }
     }
 
+    @Suppress("DEPRECATION")
     private fun Translog.Operation.unSetAutoGenTimeStamp(): Translog.Operation {
         // Unset auto gen timestamp as we use external Id from the leader index
         if (opType()!! == Translog.Operation.Type.CREATE || opType()!! == Translog.Operation.Type.INDEX ) {
