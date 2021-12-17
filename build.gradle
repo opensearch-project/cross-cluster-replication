@@ -30,7 +30,7 @@ buildscript {
 
     ext {
         isSnapshot = "true" == System.getProperty("build.snapshot", "false")
-        opensearch_version = System.getProperty("opensearch.version", "1.2.2-SNAPSHOT")
+        opensearch_version = System.getProperty("opensearch.version", "1.2.3-SNAPSHOT")
         // Taken from https://github.com/opensearch-project/alerting/blob/main/build.gradle#L33
         // 1.0.0 -> 1.0.0.0, and 1.0.0-SNAPSHOT -> 1.0.0.0-SNAPSHOT
         opensearch_build = opensearch_version.replaceAll(/(\.\d)([^\d]*)$/, '$1.0$2')
