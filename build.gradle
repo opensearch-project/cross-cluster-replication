@@ -67,6 +67,7 @@ plugins {
 
 allprojects {
     group = "org.opensearch"
+    version = "${opensearch_version}" - "-SNAPSHOT" + ".0"
     if (isSnapshot) {
         version += "-SNAPSHOT"
     }
