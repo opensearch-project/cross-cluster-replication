@@ -13,9 +13,10 @@
 
 BUILD_DIR=$1
 LEADER_CONFIG_DIR=$BUILD_DIR/testclusters/leaderCluster-0/config
-LEADER_PLUGIN_DIR=$BUILD_DIR/testclusters/leaderCluster-0/distro/1.2.4-INTEG_TEST/plugins/opensearch-security/
+LEADER_PLUGIN_DIR=$BUILD_DIR/testclusters/leaderCluster-0/distro/1.3.0-INTEG_TEST/plugins/opensearch-security/
 FOLLOWER_CONFIG_DIR=$BUILD_DIR/testclusters/followCluster-0/config
-FOLLOWER_PLUGIN_DIR=$BUILD_DIR/testclusters/followCluster-0/distro/1.2.4-INTEG_TEST/plugins/opensearch-security/
+FOLLOWER_PLUGIN_DIR=$BUILD_DIR/testclusters/followCluster-0/distro/1.3.0-INTEG_TEST/plugins/opensearch-security/
+>>>>>>> ce6da91 (Increment version to 1.3.0.)
 
 "$LEADER_PLUGIN_DIR/tools/securityadmin.sh" -p 9300 \
 -cd "$LEADER_PLUGIN_DIR/securityconfig" \
