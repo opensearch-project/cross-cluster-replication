@@ -10,6 +10,8 @@
  */
 
 
+import javax.management.remote.JMXConnectorFactory
+import javax.management.remote.JMXServiceURL
 import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLContext
@@ -57,13 +59,14 @@ buildscript {
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:${kotlin_version}"
         classpath "org.jetbrains.kotlin:kotlin-allopen:${kotlin_version}"
         classpath "io.gitlab.arturbosch.detekt:detekt-gradle-plugin:1.0.0-RC15"
-        //classpath "org.jacoco:org.jacoco.agent:0.8.5"
+        classpath "org.jacoco:org.jacoco.agent:0.8.5"
     }
 }
 
 plugins {
     id 'nebula.ospackage' version "8.3.0"
     id "com.dorongold.task-tree" version "1.5"
+    id "jacoco"
 }
 
 allprojects {
@@ -75,7 +78,7 @@ allprojects {
 }
 
 apply plugin: 'java'
-//apply plugin: 'jacoco'
+apply plugin: 'jacoco'
 apply plugin: 'idea'
 apply plugin: 'opensearch.opensearchplugin'
 apply plugin: 'opensearch.testclusters'
@@ -181,6 +184,7 @@ test {
             suspend = false
         }
     }
+    finalizedBy jacocoTestReport
 }
 
 // Setting RunTask.debug = true configures the JVM to use a debugger in listen mode (server=n,suspend=y).  This is a
@@ -371,13 +375,48 @@ def configureCluster(OpenSearchCluster cluster, Boolean securityEnabled) {
     cluster.waitForAllConditions()
 }
 
+int startJmxPort=7777
+int endJmxPort = startJmxPort
 integTest {
     useCluster testClusters.leaderCluster
     useCluster testClusters.followCluster
+
     // We skip BWC test here as those get run as part of separate target `bwcTestSuite`.
     filter {
         excludeTestsMatching "org.opensearch.replication.bwc.*IT"
     }
+
+    /*
+        Jacoco doesn't work with TestClusters as it doesn't rely on JavaForkOption to spin up the clusters. So it
+        requires some workaround to make it work. These are the steps:
+        1. Attach jacoco java agent to all the nodes in every cluster: Jacoco adds task extension for every gradle task
+            of type "Test" which adds the jvmArgs to the attach the agent. We read the arguments and pass it to test
+            cluster's jvm Args. Since test clusters are started even before the task starts, this needs to be setup before
+            task is initialized.
+        2. Enable JMX on all nodes(on different ports) and set jmx=true for jacoco as well.
+        3. After the integ tests are complete, Fetch the execution data from each node and append it to the jacoco exec
+            file. This data is then picked up by "jacocoTestReport" to generate coverage report.
+    */
+    setBeforeStart {
+        String jvmArgs = getExtensions().getByType(JacocoTaskExtension.class).getAsJvmArg()
+        // Change to absolute path.
+        String newArgs = jvmArgs.replace("../..", "${buildDir}")
+        getClusters().forEach { cluster ->
+            cluster.jvmArgs(newArgs)
+            cluster.nodes.each { node ->
+                node.systemProperty('com.sun.management.jmxremote.port', "${-> endJmxPort++}")
+                node.systemProperty('com.sun.management.jmxremote', "true")
+                node.systemProperty('com.sun.management.jmxremote.authenticate', "false")
+                node.systemProperty('com.sun.management.jmxremote.ssl', "false")
+                node.systemProperty('java.rmi.server.hostname', "127.0.0.1")
+                node.systemProperty('tests.security.manager', 'false')
+            }
+        }
+    }
+    jacoco {
+        jmx = true
+    }
+
     doFirst {
         getClusters().forEach { cluster ->
             String alltransportSocketURI = cluster.nodes.stream().flatMap { node ->
@@ -394,8 +433,31 @@ integTest {
             configureCluster(cluster, securityEnabled)
         }
     }
+
+    doLast {
+        for (int port=startJmxPort; port<endJmxPort; port++) {
+            def serverUrl = "service:jmx:rmi:///jndi/rmi://127.0.0.1:" + port + "/jmxrmi"
+            def connector = JMXConnectorFactory.connect(new JMXServiceURL(serverUrl))
+            try {
+                def jacocoMBean = new GroovyMBean(connector.MBeanServerConnection, "org.jacoco:type=Runtime")
+                byte[] data = jacocoMBean.getExecutionData(false)
+                file(jacoco.destinationFile).append(data)
+            } finally {
+                connector.close()
+            }
+        }
+    }
+
     systemProperty "build.dir", "${buildDir}"
     systemProperty "java.security.policy", "file://${projectDir}/src/test/resources/plugin-security.policy"
+    finalizedBy jacocoTestReport
+}
+
+jacocoTestReport {
+    dependsOn test
+    dependsOn integTest
+    // We're combining the coverage data for both test and integ tests.
+    getExecutionData().setFrom(fileTree(buildDir).include("/jacoco/*.exec"))
 }
 
 def addSecurityConfig(OpenSearchNode node, Boolean securityEnabled) {
@@ -439,6 +501,7 @@ afterEvaluate {
         addSecurityConfig(node, securityEnabled)
     }
 }
+check.dependsOn jacocoTestReport
 
 run {
     useCluster testClusters.leaderCluster
