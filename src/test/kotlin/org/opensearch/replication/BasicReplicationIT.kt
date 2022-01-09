@@ -57,11 +57,11 @@ class BasicReplicationIT : MultiClusterRestTestCase() {
             var response = leader.index(IndexRequest(leaderIndex).id("1").source(source), RequestOptions.DEFAULT)
             assertThat(response.result).isEqualTo(Result.CREATED)
 
-            assertBusy {
+            assertBusy({
                 val getResponse = follower.get(GetRequest(followerIndex, "1"), RequestOptions.DEFAULT)
                 assertThat(getResponse.isExists).isTrue()
                 assertThat(getResponse.sourceAsMap).isEqualTo(source)
-            }
+            }, 60L, TimeUnit.SECONDS)
 
             // Ensure force merge on leader doesn't impact replication
             for (i in 2..5) {
@@ -73,13 +73,13 @@ class BasicReplicationIT : MultiClusterRestTestCase() {
                 response = leader.index(IndexRequest(leaderIndex).id("$i").source(source), RequestOptions.DEFAULT)
                 assertThat(response.result).isEqualTo(Result.CREATED)
             }
-            assertBusy {
+            assertBusy({
                 for (i in 2..10) {
                     val getResponse = follower.get(GetRequest(followerIndex, "$i"), RequestOptions.DEFAULT)
                     assertThat(getResponse.isExists).isTrue()
                     assertThat(getResponse.sourceAsMap).isEqualTo(source)
                 }
-            }
+            }, 60L, TimeUnit.SECONDS)
 
             // Force merge on follower however isn't allowed due to WRITE block
             Assertions.assertThatThrownBy {
@@ -131,31 +131,31 @@ class BasicReplicationIT : MultiClusterRestTestCase() {
             var response = leaderClient.index(IndexRequest(leaderIndexName).id("1").source(source), RequestOptions.DEFAULT)
             assertThat(response.result).withFailMessage("Failed to create leader data").isEqualTo(Result.CREATED)
 
-            assertBusy {
+            assertBusy({
                 val getResponse = followerClient.get(GetRequest(followerIndexName, "1"), RequestOptions.DEFAULT)
                 assertThat(getResponse.isExists).isTrue()
                 assertThat(getResponse.sourceAsMap).isEqualTo(source)
-            }
+            }, 60L, TimeUnit.SECONDS)
 
             // Update document
             source = mapOf("name" to randomAlphaOfLength(20), "age" to randomInt().toString())
             response = leaderClient.index(IndexRequest(leaderIndexName).id("1").source(source), RequestOptions.DEFAULT)
             assertThat(response.result).withFailMessage("Failed to update leader data").isEqualTo(Result.UPDATED)
 
-            assertBusy {
+            assertBusy({
                 val getResponse = followerClient.get(GetRequest(followerIndexName, "1"), RequestOptions.DEFAULT)
                 assertThat(getResponse.isExists).isTrue()
                 assertThat(getResponse.sourceAsMap).isEqualTo(source)
-            }
+            },60L, TimeUnit.SECONDS)
 
             // Delete document
             val deleteResponse = leaderClient.delete(DeleteRequest(leaderIndexName).id("1"), RequestOptions.DEFAULT)
             assertThat(deleteResponse.result).withFailMessage("Failed to delete leader data").isEqualTo(Result.DELETED)
 
-            assertBusy {
+            assertBusy({
                 val getResponse = followerClient.get(GetRequest(followerIndexName, "1"), RequestOptions.DEFAULT)
                 assertThat(getResponse.isExists).isFalse()
-            }
+            }, 60L, TimeUnit.SECONDS)
         } finally {
             followerClient.stopReplication(followerIndexName)
         }
