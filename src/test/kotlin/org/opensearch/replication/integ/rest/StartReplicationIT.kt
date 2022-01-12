@@ -1009,7 +1009,8 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                 leaderClient.index(IndexRequest(leaderIndexName).id(i.toString()).source(sourceMap), RequestOptions.DEFAULT)
             }
 
-            assertBusy {
+            // Have to wait until the new operations are available to read at the leader cluster
+            assertBusy({
                 val stats = leaderClient.leaderStats()
                 assertThat(stats.size).isEqualTo(9)
                 assertThat(stats.getValue("num_replicated_indices").toString()).isEqualTo("1")
@@ -1017,7 +1018,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                 assertThat(stats.getValue("operations_read_lucene").toString()).isEqualTo("0")
                 assertThat(stats.getValue("operations_read_translog").toString()).isEqualTo(docCount.toString())
                 assertThat(stats.containsKey("index_stats"))
-            }
+            }, 60L, TimeUnit.SECONDS)
 
         } finally {
             followerClient.stopReplication(followerIndexName)
