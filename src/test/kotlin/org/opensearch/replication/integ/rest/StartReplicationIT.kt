@@ -352,7 +352,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
 
-        createConnectionBetweenClusters(FOLLOWER, LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER, "source")
 
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName).alias(Alias("leader_alias")), RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
@@ -363,7 +363,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         } catch (e: ResponseException) {
             assertThat(e.response.statusLine.statusCode).isEqualTo(404)
             assertThat(e.message).contains("index_not_found_exception")
-            assertThat(e.message).contains("no such index [leader_alias]")
+            assertThat(e.message).contains("no such index [source:leader_alias]")
         }
     }
 
