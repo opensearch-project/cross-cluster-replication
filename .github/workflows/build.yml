@@ -19,33 +19,12 @@ jobs:
         uses: actions/setup-java@v1
         with:
           java-version: 14
-      # dependencies: OpenSearch
-      - name: Checkout OpenSearch
-        uses: actions/checkout@v2
-        with:
-          repository: 'opensearch-project/OpenSearch'
-          path: OpenSearch
-          ref: '1.1'
-      - name: Build OpenSearch
-        working-directory: ./OpenSearch
-        run: |
-          ./gradlew publishToMavenLocal -Dbuild.snapshot=true
-      # dependencies: common-utils
-      - name: Checkout common-utils
-        uses: actions/checkout@v2
-        with:
-          ref: 'main'
-          repository: 'opensearch-project/common-utils'
-          path: common-utils
-      - name: Build common-utils
-        working-directory: ./common-utils
-        run: ./gradlew publishToMavenLocal -Dbuild.snapshot=true -Dopensearch.version=1.1.0-SNAPSHOT
       # This step uses the checkout Github action: https://github.com/actions/checkout
       - name: Checkout Branch
         uses: actions/checkout@v2
       - name: Build and run Replication tests
         run: |
-          ./gradlew clean release -Dbuild.snapshot=true -Dopensearch.version=1.1.0-SNAPSHOT
+          ./gradlew clean release -Dbuild.snapshot=true -Dopensearch.version=1.1.0
       - name: Upload failed logs
         uses: actions/upload-artifact@v2
         if: failure()
