@@ -171,7 +171,7 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
                         followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
                                 .mappings()[followerIndexName]
                 )
-            }, 5, TimeUnit.SECONDS)
+            }, 60L, TimeUnit.SECONDS)
 
         } finally {
             followerClient.stopReplication(followerIndexName)
