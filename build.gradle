@@ -483,6 +483,7 @@ clusters.each { name ->
         }
     }
 }
+
 List<Provider<RegularFile>> replPluginProvider = [
     provider(new Callable<RegularFile>(){
         @Override
@@ -496,9 +497,6 @@ List<Provider<RegularFile>> replPluginProvider = [
         }
     })
 ]
-if(securityEnabled) {
-    replPluginProvider.append(provider(securityPluginFile))
-}
 
 /*
     Sets up and runs sanity test on older version clusters. We maintain 2 set of tasks here with.
