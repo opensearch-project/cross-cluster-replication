@@ -117,9 +117,9 @@ class SecurityCustomRolesLeaderIT: SecurityBase() {
                     requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
 
             assertBusy ({
-                validateNotInProgressState(followerClient.replicationStatus(followerIndexName,
+                validateFailedState(followerClient.replicationStatus(followerIndexName,
                         requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password")))
-            }, 10, TimeUnit.SECONDS)
+            }, 60, TimeUnit.SECONDS)
         } catch (ex : Exception) {
             logger.info("Exception is", ex)
             Assert.assertNull(ex)
@@ -193,5 +193,9 @@ class SecurityCustomRolesLeaderIT: SecurityBase() {
         Assert.assertFalse(statusResp.containsKey("shard_replication_details"))
         Assert.assertFalse(statusResp.containsKey("local_checkpoint"))
         Assert.assertFalse(statusResp.containsKey("remote_checkpoint"))
+    }
+
+    private fun validateFailedState(statusResp: Map<String, Any>) {
+        Assert.assertEquals("FAILED", statusResp.getValue("status"))
     }
 }

@@ -14,6 +14,8 @@ import org.opensearch.client.indices.CreateIndexRequest
 import org.opensearch.client.indices.GetIndexRequest
 import org.opensearch.test.OpenSearchTestCase.assertBusy
 import org.junit.Assert
+import org.junit.Assume
+import org.junit.Before
 import java.util.concurrent.TimeUnit
 
 
@@ -25,6 +27,12 @@ import java.util.concurrent.TimeUnit
 class ClusterRerouteFollowerIT : MultiClusterRestTestCase() {
     private val leaderIndexName = "leader_index"
     private val followerIndexName = "follower_index"
+
+    @Before
+    fun beforeTest() {
+        Assume.assumeTrue(isMultiNodeClusterConfiguration)
+    }
+
     fun `test replication works after rerouting a shard from one node to another in follower cluster`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
