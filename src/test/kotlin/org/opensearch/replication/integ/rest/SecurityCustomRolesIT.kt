@@ -61,8 +61,8 @@ class SecurityCustomRolesIT: SecurityBase()  {
                     useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
 
             followerClient.startReplication(startReplicationRequest,
-                    requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
-            OpenSearchTestCase.assertBusy {
+                    requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"), waitForRestore = true)
+            assertBusy {
                 Assertions.assertThat(followerClient.indices().exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT)).isEqualTo(true)
             }
         } finally {
@@ -111,7 +111,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
     fun `test for FOLLOWER that PAUSE replication works for user with valid permissions`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
-        val followerIndexName = "follower-index1"
+        val followerIndexName = "follower-index1-pause-valid"
         createConnectionBetweenClusters(FOLLOWER, LEADER)
 
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
@@ -217,7 +217,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
     fun `test for FOLLOWER that UPDATE settings works for user with valid permissions`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
-        val followerIndexName = "follower-index1"
+        val followerIndexName = "follower-index1-settings-valid-perm"
 
         setMetadataSyncDelay()
 
@@ -253,14 +253,15 @@ class SecurityCustomRolesIT: SecurityBase()  {
             followerClient.updateReplication(followerIndexName, settings,
                     requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
 
-            assertBusy {
+            // Wait for the settings to get updated at follower cluster.
+            assertBusy ({
                 Assert.assertEquals(
                         "checksum",
                         followerClient.indices()
                                 .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
                                 .indexToSettings[followerIndexName]["index.shard.check_on_startup"]
                 )
-            }
+            }, 30L, TimeUnit.SECONDS)
         } finally {
             followerClient.stopReplication(followerIndexName)
         }
@@ -269,7 +270,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
     fun `test for FOLLOWER that UPDATE settings is forbidden for user with invalid permissions`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
-        val followerIndexName = "follower-index1"
+        val followerIndexName = "follower-index1-settings-invalid-perm"
 
         setMetadataSyncDelay()
 
@@ -284,7 +285,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
         try {
             followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName,
                     useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms")),
-                    requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
+                    requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"), waitForRestore = true)
             assertBusy {
                 Assertions.assertThat(followerClient.indices()
                         .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))

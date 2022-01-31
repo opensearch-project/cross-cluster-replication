@@ -43,7 +43,7 @@ class SecurityDlsFlsIT: SecurityBase() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
 
-        val followerIndexName = "follower-index1"
+        val followerIndexName = "follower-index1-dlsfls-enabled"
         createConnectionBetweenClusters(FOLLOWER, LEADER)
 
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
@@ -63,7 +63,7 @@ class SecurityDlsFlsIT: SecurityBase() {
         val followerClient = getClientForCluster(FOLLOWER)
 
         Assertions.assertThatThrownBy {
-            followerClient.stopReplication("follower-index1",
+            followerClient.stopReplication("follower-index1-stop-forbidden",
                     requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser3","password"))
         }.isInstanceOf(ResponseException::class.java)
         .hasMessageContaining(DLS_FLS_EXCEPTION_MESSAGE)
@@ -73,7 +73,7 @@ class SecurityDlsFlsIT: SecurityBase() {
     fun `test for FOLLOWER that PAUSE replication is forbidden for user with DLS or FLS enabled`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
-        val followerIndexName = "follower-index1"
+        val followerIndexName = "follower-index1-pause-forbidden"
         createConnectionBetweenClusters(FOLLOWER, LEADER)
 
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
@@ -99,7 +99,7 @@ class SecurityDlsFlsIT: SecurityBase() {
     fun `test for FOLLOWER that STATUS Api is forbidden for user with DLS or FLS enabled`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
-        val followerIndexName = "follower-index1"
+        val followerIndexName = "follower-index1-status-forbidden"
         createConnectionBetweenClusters(FOLLOWER, LEADER)
 
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
@@ -125,7 +125,7 @@ class SecurityDlsFlsIT: SecurityBase() {
     fun `test for FOLLOWER that UPDATE settings is forbidden for user with DLS or FLS enabled`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
-        val followerIndexName = "follower-index1"
+        val followerIndexName = "follower-index1-update-forbidden"
 
         setMetadataSyncDelay()
 
@@ -140,7 +140,7 @@ class SecurityDlsFlsIT: SecurityBase() {
         try {
             followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName,
                     useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms")),
-                    requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
+                    requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"), waitForRestore = true)
             assertBusy {
                 Assertions.assertThat(followerClient.indices()
                         .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
@@ -174,7 +174,7 @@ class SecurityDlsFlsIT: SecurityBase() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
 
-        val followerIndexName = "follower-index1"
+        val followerIndexName = "follower-index1-start-forbidden"
         createConnectionBetweenClusters(FOLLOWER, LEADER)
 
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
@@ -194,7 +194,7 @@ class SecurityDlsFlsIT: SecurityBase() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
 
-        val followerIndexName = "follower-index1"
+        val followerIndexName = "follower-index1-start-only-fls"
         createConnectionBetweenClusters(FOLLOWER, LEADER)
 
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
@@ -214,19 +214,35 @@ class SecurityDlsFlsIT: SecurityBase() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
 
-        val followerIndexName = "follower-index1"
+        val followerIndexName = "follower-index1-allow-start"
         createConnectionBetweenClusters(FOLLOWER, LEADER)
 
-        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
-        Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
+        try {
+            val createIndexResponse =
+                leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+            Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
 
-        var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
-                useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerFieldMaskRole2"))
-        followerClient.startReplication(startReplicationRequest,
-                requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser7","password"))
+            var startReplicationRequest = StartReplicationRequest(
+                "source", leaderIndexName, followerIndexName,
+                useRoles = UseRoles(
+                    leaderClusterRole = "leaderRoleValidPerms",
+                    followerClusterRole = "followerFieldMaskRole2"
+                )
+            )
+            followerClient.startReplication(
+                startReplicationRequest,
+                requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser7", "password"),
+                waitForRestore = true
+            )
 
-        OpenSearchTestCase.assertBusy {
-            Assertions.assertThat(followerClient.indices().exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT)).isEqualTo(true)
+            OpenSearchTestCase.assertBusy {
+                Assertions.assertThat(
+                    followerClient.indices().exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT)
+                ).isEqualTo(true)
+            }
+        }
+        finally {
+            followerClient.stopReplication(followerIndexName)
         }
     }
 }

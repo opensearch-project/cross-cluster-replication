@@ -25,6 +25,7 @@ import java.util.function.Predicate
 import java.util.concurrent.TimeUnit
 import java.util.stream.Collectors
 import org.opensearch.gradle.testclusters.OpenSearchCluster
+import org.opensearch.gradle.testclusters.OpenSearchNode
 import org.opensearch.gradle.test.RestIntegTestTask
 
 buildscript {
@@ -316,7 +317,6 @@ testClusters {
         plugin(project.tasks.bundlePlugin.archiveFile)
         if(securityEnabled) {
             plugin(provider(securityPluginFile))
-            cliSetup("opensearch-security/install_demo_configuration.sh", "-y")
         }
         int debugPort = 5005
         testDistribution = "INTEG_TEST"
@@ -330,7 +330,6 @@ testClusters {
         plugin(project.tasks.bundlePlugin.archiveFile)
         if(securityEnabled) {
             plugin(provider(securityPluginFile))
-            cliSetup("opensearch-security/install_demo_configuration.sh", "-y")
         }
         int debugPort = 5010
         if (_numNodes > 1) numberOfNodes = _numNodes
@@ -347,12 +346,12 @@ def configureCluster(OpenSearchCluster cluster, Boolean securityEnabled) {
     String unicastUris = cluster.nodes.stream().flatMap { node ->
         node.getAllTransportPortURI().stream()
     }.collect(Collectors.joining("\n"))
-    // Manually write the unicast hosts as we are not depending on the internal method
     cluster.nodes.forEach {node ->
         try {
+            // Manually write the unicast hosts as we are not depending on the internal method
             Files.write(node.getConfigDir().resolve("unicast_hosts.txt"), unicastUris.getBytes(StandardCharsets.UTF_8));
         } catch (IOException e) {
-            throw new java.io.UncheckedIOException("Failed to write unicast_hosts for " + this, e);
+            throw new java.io.UncheckedIOException("Failed to write configuation files for " + this, e);
         }
     }
 
@@ -391,11 +390,54 @@ integTest {
             systemProperty "tests.cluster.${cluster.name}.http_hosts", "${-> allHttpSocketURI}"
             systemProperty "tests.cluster.${cluster.name}.transport_hosts", "${-> alltransportSocketURI}"
             systemProperty "tests.cluster.${cluster.name}.security_enabled", "${-> securityEnabled.toString()}"
+            systemProperty "tests.cluster.${cluster.name}.total_nodes", "${-> _numNodes.toString()}"
             configureCluster(cluster, securityEnabled)
         }
     }
     systemProperty "build.dir", "${buildDir}"
     systemProperty "java.security.policy", "file://${projectDir}/src/test/resources/plugin-security.policy"
+}
+
+def addSecurityConfig(OpenSearchNode node, Boolean securityEnabled) {
+    if(securityEnabled) {
+        // Security plugin doesn't have the executable to write demo certs based on relative path
+        // writing config files manually till then
+        node.extraConfigFile("kirk.pem", fileTree("$projectDir/src/test/resources/security/plugin/kirk.pem").getSingleFile())
+        node.extraConfigFile("kirk-key.pem", fileTree("$projectDir/src/test/resources/security/plugin/kirk-key.pem").getSingleFile())
+        node.extraConfigFile("esnode.pem", fileTree("$projectDir/src/test/resources/security/plugin/esnode.pem").getSingleFile())
+        node.extraConfigFile("esnode-key.pem", fileTree("$projectDir/src/test/resources/security/plugin/esnode-key.pem").getSingleFile())
+        node.extraConfigFile("root-ca.pem", fileTree("$projectDir/src/test/resources/security/plugin/root-ca.pem").getSingleFile())
+        //node.setting("plugins.security.ssl_only", "false")
+        //node.setting("plugins.security.ssl.transport.server.pemcert_filepath", "esnode-key.pem")
+        //node.setting("plugins.security.ssl.transport.client.pemcert_filepath", "esnode.pem")
+        node.setting("plugins.security.ssl.transport.pemcert_filepath", "esnode.pem")
+        node.setting("plugins.security.ssl.transport.pemkey_filepath", "esnode-key.pem")
+        node.setting("plugins.security.ssl.transport.pemtrustedcas_filepath", "root-ca.pem")
+        node.setting("plugins.security.ssl.transport.enforce_hostname_verification", "false")
+        node.setting("plugins.security.ssl.http.enabled", "true")
+        node.setting("plugins.security.ssl.http.pemcert_filepath", "esnode.pem")
+        node.setting("plugins.security.ssl.http.pemkey_filepath", "esnode-key.pem")
+        node.setting("plugins.security.ssl.http.pemtrustedcas_filepath", "root-ca.pem")
+        node.setting("plugins.security.allow_unsafe_democertificates", "true")
+        node.setting("plugins.security.allow_default_init_securityindex", "true")
+        node.setting("plugins.security.authcz.admin_dn", "CN=kirk,OU=client,O=client,L=test,C=de")
+        node.setting("plugins.security.audit.type", "internal_opensearch")
+        node.setting("plugins.security.enable_snapshot_restore_privilege", "true")
+        node.setting("plugins.security.check_snapshot_restore_write_privileges", "true")
+        node.setting("plugins.security.restapi.roles_enabled", "[\"all_access\", \"security_rest_api_access\"]")
+        node.setting("plugins.security.system_indices.enabled", "true")
+        node.setting("plugins.security.system_indices.indices", "[\".replication-metadata-store\"]")
+    }
+}
+
+afterEvaluate {
+    testClusters.leaderCluster.nodes.each { node ->
+        addSecurityConfig(node, securityEnabled)
+    }
+
+    testClusters.followCluster.nodes.each { node ->
+        addSecurityConfig(node, securityEnabled)
+    }
 }
 
 run {
