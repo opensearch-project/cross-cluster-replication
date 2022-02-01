@@ -38,5 +38,3 @@ jobs:
         run: |
           mkdir -p cross-cluster-replication-artifacts
           cp ./build/distributions/*.zip cross-cluster-replication-artifacts
-      - name: Uploads coverage
-        uses: codecov/codecov-action@v1.2.1
