@@ -118,11 +118,11 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
 
         internal fun createTestCluster(configuration: ClusterConfiguration) : TestCluster {
             return createTestCluster(configuration.clusterName, configuration.preserveSnapshots, configuration.preserveIndices,
-                configuration.preserveClusterSettings)
+                configuration.preserveClusterSettings, configuration.forceInitSecurityConfiguration)
         }
 
         internal fun createTestCluster(cluster: String, preserveSnapshots: Boolean, preserveIndices: Boolean,
-                                       preserveClusterSettings: Boolean) : TestCluster {
+                                       preserveClusterSettings: Boolean, initSecurityConfiguration: Boolean) : TestCluster {
             val systemProperties = BootstrapInfo.getSystemProperties()
             val httpHostsProp = systemProperties.get("tests.cluster.${cluster}.http_hosts") as String?
             val transportHostsProp = systemProperties.get("tests.cluster.${cluster}.transport_hosts") as String?
@@ -143,7 +143,7 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
                 isMultiNodeClusterConfiguration = false
             }
 
-            forceInitSecurityConfiguration = isSecurityPropertyEnabled && forceInitSecurityConfiguration
+            forceInitSecurityConfiguration = isSecurityPropertyEnabled && initSecurityConfiguration
 
             val httpHosts = httpHostsProp.split(',').map { HttpHost.create("$protocol://$it") }
             val transportPorts = transportHostsProp.split(',')
