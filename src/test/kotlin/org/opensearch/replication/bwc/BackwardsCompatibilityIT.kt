@@ -53,8 +53,8 @@ class BackwardsCompatibilityIT : MultiClusterRestTestCase() {
             val leader = "${LEADER}$suffix"
             val follower = "${FOLLOWER}$suffix"
             val clusters = HashMap<String, TestCluster>()
-            clusters.put(leader, createTestCluster(leader, true, true, true))
-            clusters.put(follower, createTestCluster(follower, true, true, true))
+            clusters.put(leader, createTestCluster(leader, true, true, true, false))
+            clusters.put(follower, createTestCluster(follower, true, true, true, false))
             testClusters = clusters
         }
 
