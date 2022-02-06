@@ -3,7 +3,7 @@
 [![Integ Tests](https://github.com/opensearch-project/cross-cluster-replication/actions/workflows/build.yml/badge.svg)](https://github.com/opensearch-project/cross-cluster-replication/actions/workflows/build.yml)
 [![Integ Tests with Security plugin](https://github.com/opensearch-project/cross-cluster-replication/actions/workflows/security-tests.yml/badge.svg)](https://github.com/opensearch-project/cross-cluster-replication/actions/workflows/security-tests.yml)
 [![BWC Tests](https://github.com/opensearch-project/cross-cluster-replication/actions/workflows/bwc.yml/badge.svg)](https://github.com/opensearch-project/cross-cluster-replication/actions/workflows/bwc.yml)
-[![codecov](https://codecov.io/gh/opensearch-project/cross-cluster-replication/branch/main/graph/badge.svg?token=03S5XZ80UI)](https://codecov.io/gh/opensearch-project/cross-cluster-replication)
+[![codecov](https://codecov.io/gh/opensearch-project/cross-cluster-replication/branch/main/graph/badge.svg)](https://codecov.io/gh/opensearch-project/cross-cluster-replication)
 
 - [Cross Cluster Replication Plugin](#cross-cluster-replication-plugin)
     - [Build](#build)
