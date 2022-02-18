@@ -24,10 +24,13 @@ import org.opensearch.replication.startReplication
 import org.opensearch.replication.stopReplication
 import org.opensearch.replication.updateReplication
 import org.opensearch.replication.getShardReplicationTasks
+import org.opensearch.replication.`validate paused status response due to leader index deleted`
+import org.opensearch.replication.`validate status syncing response`
 import org.apache.http.util.EntityUtils
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.opensearch.action.admin.cluster.settings.ClusterUpdateSettingsRequest
+import org.opensearch.action.admin.indices.delete.DeleteIndexRequest
 import org.opensearch.client.Request
 import org.opensearch.client.RequestOptions
 import org.opensearch.client.ResponseException
@@ -223,6 +226,51 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
 
         } finally {
             followerClient.stopReplication(followerIndexName)
+        }
+    }
+
+    fun `test auto pause of index replication when leader index is unavailable`() {
+        val followerIndexName1 = "auto_pause_index"
+        val leaderIndexName1 = "leader1"
+        val followerIndexName2 = "no_auto_pause_index"
+        val leaderIndexName2 = "leader2"
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        try {
+            createConnectionBetweenClusters(FOLLOWER, LEADER)
+            var createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName1), RequestOptions.DEFAULT)
+            assertThat(createIndexResponse.isAcknowledged).isTrue()
+            createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName2), RequestOptions.DEFAULT)
+            assertThat(createIndexResponse.isAcknowledged).isTrue()
+
+            // For followerIndexName1
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName1,
+                followerIndexName1), waitForRestore = true)
+
+            // For followerIndexName2
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName2,
+                followerIndexName2), waitForRestore = true)
+
+            val deleteResponse = leaderClient.indices().delete(DeleteIndexRequest(leaderIndexName1), RequestOptions.DEFAULT)
+            assertThat(deleteResponse.isAcknowledged)
+
+            // followerIndexName1 -> autopause
+            assertBusy({
+                var statusResp = followerClient.replicationStatus(followerIndexName1)
+                assertThat(statusResp.containsKey("status"))
+                assertThat(statusResp.containsKey("reason"))
+                `validate paused status response due to leader index deleted`(statusResp)
+            }, 30, TimeUnit.SECONDS)
+
+            // followerIndexName2 -> Syncing state
+            assertBusy({
+                var statusResp = followerClient.replicationStatus(followerIndexName2)
+                `validate status syncing response`(statusResp)
+            }, 30, TimeUnit.SECONDS)
+
+        } finally {
+            followerClient.stopReplication(followerIndexName2)
+            followerClient.stopReplication(followerIndexName1)
         }
     }
 }
