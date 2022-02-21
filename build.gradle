@@ -200,7 +200,7 @@ def securityPluginFile = new Callable<RegularFile>() {
             return new RegularFile() {
                 @Override
                 File getAsFile() {
-                    return fileTree("$projectDir/src/test/resources/security/plugin/opensearch-security-${opensearch_build}.zip").getSingleFile()
+                    return fileTree("$projectDir/src/test/resources/security/plugin/opensearch-security.zip").getSingleFile()
                 }
             }
         }

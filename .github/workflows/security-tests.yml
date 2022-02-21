@@ -11,7 +11,7 @@ on:
 jobs:
   build:
     # Job name
-    name: Build Replication plugin
+    name: Build and Run Security tests
     runs-on: ubuntu-latest
     steps:
       # This step uses the setup-java Github action: https://github.com/actions/setup-java
@@ -32,8 +32,8 @@ jobs:
       - name: Build security
         working-directory: ./security
         run: |
-          mvn clean package -Padvanced -DskipTests
-          cp target/releases/opensearch-security-*-SNAPSHOT.zip ../src/test/resources/security/plugin/
+          ./gradlew clean build -Dbuild.snapshot=false -x test
+          cp build/distributions/opensearch-security-1.3.0.0.zip ../src/test/resources/security/plugin/opensearch-security.zip
       - name: Build and run Replication tests
         run: |
           ls -al src/test/resources/security/plugin
