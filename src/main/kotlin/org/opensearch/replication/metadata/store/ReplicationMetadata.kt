@@ -62,8 +62,10 @@ class ReplicationContext: ToXContent, Writeable {
         val REPLICATION_CONTEXT_PARSER = ObjectParser<ReplicationContext, Void>("ReplicationContextParser") { ReplicationContext() }
         init {
             REPLICATION_CONTEXT_PARSER.declareString(ReplicationContext::resource::set, ParseField("resource"))
-            REPLICATION_CONTEXT_PARSER.declareObjectOrDefault(BiConsumer{replicationContext: ReplicationContext, user: User -> replicationContext.user = user},
-                    BiFunction {parser: XContentParser, _ -> User.parse(parser)}, null, ParseField("user"))
+            REPLICATION_CONTEXT_PARSER.declareObjectOrDefault(
+                { replicationContext: ReplicationContext, user: User -> replicationContext.user = user},
+                {parser: XContentParser, _ -> User.parse(parser)},
+                null, ParseField("user"))
             //REPLICATION_CONTEXT_PARSER.declareField({ parser, _, _ -> User.parse(parser)}, ParseField("user"), ObjectParser.ValueType.OBJECT)
         }
     }
@@ -116,7 +118,8 @@ class ReplicationMetadata: ToXContent {
                     ReplicationContext.REPLICATION_CONTEXT_PARSER, ParseField("follower_context"))
             METADATA_PARSER.declareObject(BiConsumer { metadata: ReplicationMetadata, context: ReplicationContext -> metadata.leaderContext = context},
                     ReplicationContext.REPLICATION_CONTEXT_PARSER, ParseField("leader_context"))
-            METADATA_PARSER.declareObject({ metadata: ReplicationMetadata, settings: Settings -> metadata.settings = settings}, { p: XContentParser?, c: Void? -> Settings.fromXContent(p) },
+            METADATA_PARSER.declareObject({ metadata: ReplicationMetadata, settings: Settings -> metadata.settings = settings},
+                { p: XContentParser?, _: Void? -> Settings.fromXContent(p) },
                     ParseField(KEY_SETTINGS))
         }
 

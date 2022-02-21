@@ -104,10 +104,10 @@ class TransportUpdateMetadataAction @Inject constructor(
 
     private fun performOpenIndex(concreteIndices: Array<Index>, request: UpdateMetadataRequest,
                                  listener: ActionListener<AcknowledgedResponse>) {
-        val request = request.request as OpenIndexRequest
+        val openIndexRequest = request.request as OpenIndexRequest
         val updateRequest = OpenIndexClusterStateUpdateRequest()
-                .ackTimeout(request.timeout()).masterNodeTimeout(request.masterNodeTimeout())
-                .indices(concreteIndices).waitForActiveShards(request.waitForActiveShards())
+                .ackTimeout(openIndexRequest.timeout()).masterNodeTimeout(openIndexRequest.masterNodeTimeout())
+                .indices(concreteIndices).waitForActiveShards(openIndexRequest.waitForActiveShards())
 
         indexStateService.openIndex(updateRequest, object : ActionListener<OpenIndexClusterStateUpdateResponse> {
             override fun onResponse(response: OpenIndexClusterStateUpdateResponse) {
@@ -123,11 +123,11 @@ class TransportUpdateMetadataAction @Inject constructor(
 
     private fun performCloseIndex(task :Task , concreteIndices: Array<Index>, request: UpdateMetadataRequest,
                                  listener: ActionListener<AcknowledgedResponse>) {
-        val request = request.request as CloseIndexRequest
+        val openIndexRequest = request.request as CloseIndexRequest
         val closeRequest = CloseIndexClusterStateUpdateRequest(task.id)
-                .ackTimeout(request.timeout())
-                .masterNodeTimeout(request.masterNodeTimeout())
-                .waitForActiveShards(request.waitForActiveShards())
+                .ackTimeout(openIndexRequest.timeout())
+                .masterNodeTimeout(openIndexRequest.masterNodeTimeout())
+                .waitForActiveShards(openIndexRequest.waitForActiveShards())
                 .indices(concreteIndices)
 
         indexStateService.closeIndices(closeRequest, object : ActionListener<CloseIndexResponse> {

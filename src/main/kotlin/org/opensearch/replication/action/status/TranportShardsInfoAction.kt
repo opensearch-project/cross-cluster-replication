@@ -32,7 +32,6 @@ import java.util.*
 
 class TranportShardsInfoAction  @Inject constructor(clusterService: ClusterService,
                                                     transportService: TransportService,
-                                                    threadPool: ThreadPool,
                                                     actionFilters: ActionFilters,
                                                     indexNameExpressionResolver: IndexNameExpressionResolver?,
                                                     private val indicesService: IndicesService
@@ -66,8 +65,6 @@ class TranportShardsInfoAction  @Inject constructor(clusterService: ClusterServi
     ): ReplicationStatusResponse {
         return (ReplicationStatusResponse(totalShards, successfulShards, failedShards, shardFailures, shardInfoRespons))
     }
-
-
 
     @Throws(IOException::class)
     override fun readRequestFrom(si: StreamInput): ShardInfoRequest {

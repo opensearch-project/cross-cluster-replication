@@ -71,7 +71,9 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
             INDEX_REQ_PARSER.declareString(ReplicateIndexRequest::leaderIndex::set, ParseField("leader_index"))
             INDEX_REQ_PARSER.declareObjectOrDefault(BiConsumer {reqParser: ReplicateIndexRequest, roles: HashMap<String, String> -> reqParser.useRoles = roles},
                     FGAC_ROLES_PARSER, null, ParseField("use_roles"))
-            INDEX_REQ_PARSER.declareObjectOrDefault(BiConsumer{ request: ReplicateIndexRequest, settings: Settings -> request.settings = settings}, BiFunction{ p: XContentParser?, c: Void? -> Settings.fromXContent(p) },
+            INDEX_REQ_PARSER.declareObjectOrDefault(
+                { request: ReplicateIndexRequest, settings: Settings -> request.settings = settings},
+                { p: XContentParser?, _: Void? -> Settings.fromXContent(p) },
                     null, ParseField(KEY_SETTINGS))
         }
 
@@ -83,9 +85,6 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
                 followIndexRequest.useRoles = null
             }
 
-            if (followIndexRequest.settings == null) {
-                followIndexRequest.settings = Settings.EMPTY
-            }
             return followIndexRequest
         }
     }

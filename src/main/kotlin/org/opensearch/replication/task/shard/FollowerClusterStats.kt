@@ -57,6 +57,7 @@ class FollowerShardMetric  {
             return builder.endObject()
         }
 
+        @Suppress("UNUSED_PARAMETER")
         fun toXContentFragment(builder: XContentBuilder, params: ToXContent.Params?): XContentBuilder {
             builder.field("operations_written", opsWritten)
             builder.field("operations_read", opsRead)

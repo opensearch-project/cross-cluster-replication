@@ -70,7 +70,7 @@ class ShardInfoResponse : BroadcastShardResponse, ToXContentObject {
 
     @Throws(IOException::class)
     override fun toXContent(builder: XContentBuilder, params: ToXContent.Params?): XContentBuilder? {
-        builder!!.startObject()
+        builder.startObject()
         builder.field(SHARDID.preferredName, shardId)
         if (::replayDetails.isInitialized)
             builder.field(REPLAYDETAILS.preferredName, replayDetails)

@@ -12,7 +12,6 @@
 package org.opensearch.replication.metadata
 
 import org.opensearch.action.ActionRequestValidationException
-import org.opensearch.action.ValidateActions.addValidationError
 import org.opensearch.action.admin.indices.alias.IndicesAliasesRequest
 import org.opensearch.action.admin.indices.close.CloseIndexRequest
 import org.opensearch.action.admin.indices.mapping.put.PutMappingRequest
@@ -50,10 +49,7 @@ class UpdateMetadataRequest : AcknowledgedRequest<UpdateMetadataRequest> {
     }
 
     override fun validate(): ActionRequestValidationException? {
-        var validationException: ActionRequestValidationException? = request.validate()
-        if (indexName == null) validationException = addValidationError("index name is missing", validationException)
-        if (type == null) validationException = addValidationError("operation types is missing", validationException)
-        return validationException
+        return request.validate()
     }
 
     override fun writeTo(out: StreamOutput) {

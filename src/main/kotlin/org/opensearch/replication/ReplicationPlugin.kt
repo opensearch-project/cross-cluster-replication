@@ -258,10 +258,10 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
     }
 
     override fun getExecutorBuilders(settings: Settings): List<ExecutorBuilder<*>> {
-        return listOf(followerExecutorBuilder(settings), leaderExecutorBuilder(settings))
+        return listOf(followerExecutorBuilder(), leaderExecutorBuilder(settings))
     }
 
-    private fun followerExecutorBuilder(settings: Settings): ExecutorBuilder<*> {
+    private fun followerExecutorBuilder(): ExecutorBuilder<*> {
         return ScalingExecutorBuilder(REPLICATION_EXECUTOR_NAME_FOLLOWER, 1, 10, TimeValue.timeValueMinutes(1), REPLICATION_EXECUTOR_NAME_FOLLOWER)
     }
 

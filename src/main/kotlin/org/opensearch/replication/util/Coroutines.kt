@@ -211,23 +211,23 @@ class OpenSearchClientThreadContextElement(private val threadContext: ThreadCont
 
     companion object Key : CoroutineContext.Key<OpenSearchThreadContextElement>
 
-    private var context: ThreadContext.StoredContext = threadContext.newStoredContext(true)
+    private var storedContext: ThreadContext.StoredContext = threadContext.newStoredContext(true)
     private var init = false
 
     override val key: CoroutineContext.Key<*>
         get() = Key
 
-    override fun restoreThreadContext(cc: CoroutineContext, oldState: Unit) {
+    override fun restoreThreadContext(context: CoroutineContext, oldState: Unit) {
         // OpenSearch expects default context to be set after coroutine is suspended.
-        this.context = threadContext.stashContext()
+        this.storedContext = threadContext.stashContext()
         init = true
     }
 
-    override fun updateThreadContext(cc: CoroutineContext) {
-        this.context.close()
+    override fun updateThreadContext(context: CoroutineContext) {
+        this.storedContext.close()
         if(!init) {
             // To ensure, we initialize security related transients only once
-            this.context = if(injectSecurityContext || defaultContext)
+            this.storedContext = if(injectSecurityContext || defaultContext)
                 threadContext.stashContext()
             else
                 threadContext.newStoredContext(true)
