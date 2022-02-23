@@ -8,6 +8,7 @@
 - [Developer Certificate of Origin](#developer-certificate-of-origin)
 - [License Headers](#license-headers)
 - [Backports](#backports)
+- [Security tests](#security-tests)
 - [Review Process](#review-process)
 
 ## Contributing to OpenSearch
@@ -105,13 +106,6 @@ Test suite covers following 3 scenarios:
 
 New files in your code contributions should contain the following license header. If you are modifying existing files with license headers, or including new files that already have license headers, do not remove or modify them without guidance.
 
-## Backports
-
-The Github workflow in [`backport.yml`](.github/workflows/backport.yml) creates backport PRs automatically when the
-original PR with an appropriate label `backport <backport-branch-name>` is merged to main with the backport workflow
-run successfully on the PR. For example, if a PR on main needs to be backported to `1.x` branch, add a label
-`backport 1.x` to the PR and make sure the backport workflow runs on the PR along with other checks. Once this PR is
-merged to main, the workflow will create a backport PR to the `1.x` branch.
 
 ### Kotlin
 
@@ -135,6 +129,26 @@ merged to main, the workflow will create a backport PR to the `1.x` branch.
 ```
 # Copyright OpenSearch Contributors
 # SPDX-License-Identifier: Apache-2.0
+```
+
+## Backports
+
+The Github workflow in [`backport.yml`](.github/workflows/backport.yml) creates backport PRs automatically when the
+original PR with an appropriate label `backport <backport-branch-name>` is merged to main with the backport workflow
+run successfully on the PR. For example, if a PR on main needs to be backported to `1.x` branch, add a label
+`backport 1.x` to the PR and make sure the backport workflow runs on the PR along with other checks. Once this PR is
+merged to main, the workflow will create a backport PR to the `1.x` branch.
+
+## Security tests
+
+To run security tests locally, 
+```
+git clone https://github.com/opensearch-project/security.git
+cd security 
+./gradlew clean build -Dbuild.snapshot=false -x test
+# REPLICATION_DIR - root dir of cross-cluster-replication repo
+cp build/distributions/opensearch-security-1.3.0.0.zip $REPLICATION_DIR/src/test/resources/security/plugin/opensearch-security.zip
+./gradlew clean release -Psecurity=true
 ```
 
 ## Review Process
