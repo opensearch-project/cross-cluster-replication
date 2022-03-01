@@ -42,6 +42,7 @@ import org.opensearch.cluster.metadata.MetadataCreateIndexService
 import org.opensearch.replication.AutoFollowStats
 import org.opensearch.replication.ReplicationPlugin
 import org.opensearch.replication.updateReplicationStartBlockSetting
+import org.opensearch.replication.updateAutoFollowConcurrentStartReplicationJobSetting
 import org.opensearch.replication.waitForShardTaskStart
 import org.opensearch.test.OpenSearchTestCase.assertBusy
 import java.lang.Thread.sleep
@@ -366,6 +367,83 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
         } finally {
             followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
             followerClient.stopReplication(leaderIndexName)
+        }
+    }
+
+    fun `test autofollow task with concurrent job setting set to run parallel jobs`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
+
+        // create two leader indices and test autofollow to trigger to trigger jobs based on setting
+        val leaderIndexName1 = createRandomIndex(leaderClient)
+        val leaderIndexName2 = createRandomIndex(leaderClient)
+
+        followerClient.updateAutoFollowConcurrentStartReplicationJobSetting(2)
+        try {
+            followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern)
+
+            // Verify that existing index matching the pattern are replicated.
+            assertBusy {
+                Assertions.assertThat(followerClient.indices()
+                    .exists(GetIndexRequest(leaderIndexName1), RequestOptions.DEFAULT))
+                    .isEqualTo(true)
+            }
+
+            assertBusy {
+                Assertions.assertThat(followerClient.indices()
+                    .exists(GetIndexRequest(leaderIndexName2), RequestOptions.DEFAULT))
+                    .isEqualTo(true)
+            }
+
+            sleep(30000) // Default poll for auto follow in worst case
+
+            Assertions.assertThat(getAutoFollowTasks(FOLLOWER).size).isEqualTo(1)
+
+        } finally {
+            // Reset default autofollow setting
+            followerClient.updateAutoFollowConcurrentStartReplicationJobSetting(null)
+            followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
+            followerClient.stopReplication(leaderIndexName1)
+            followerClient.stopReplication(leaderIndexName2)
+        }
+    }
+
+    fun `test autofollow task with concurrent job setting set to run single job`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
+
+        // create two leader indices and test autofollow to trigger to trigger jobs based on setting
+        val leaderIndexName1 = createRandomIndex(leaderClient)
+        val leaderIndexName2 = createRandomIndex(leaderClient)
+
+        followerClient.updateAutoFollowConcurrentStartReplicationJobSetting(1)
+        try {
+            followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern)
+
+            // Verify that existing index matching the pattern are replicated.
+            assertBusy {
+                // check that the index replication task is created for only index
+                Assertions.assertThat(getIndexReplicationTasks(FOLLOWER).size).isEqualTo(1)
+            }
+
+            sleep(30000) // Default poll for auto follow in worst case
+
+            assertBusy {
+                // check that the index replication task is created for only index
+                Assertions.assertThat(getIndexReplicationTasks(FOLLOWER).size).isEqualTo(2)
+            }
+
+            sleep(30000) // Default poll for auto follow in worst case
+            Assertions.assertThat(getAutoFollowTasks(FOLLOWER).size).isEqualTo(1)
+
+        } finally {
+            // Reset default autofollow setting
+            followerClient.updateAutoFollowConcurrentStartReplicationJobSetting(null)
+            followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
+            followerClient.stopReplication(leaderIndexName1)
+            followerClient.stopReplication(leaderIndexName2)
         }
     }
 

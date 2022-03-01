@@ -546,13 +546,16 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             TimeUnit.SECONDS.sleep(SLEEP_TIME_BETWEEN_SYNC)
             getSettingsRequest.indices(followerIndexName)
             // Leader setting is copied
-            Assert.assertEquals(
+            assertBusy({
+                Assert.assertEquals(
                     "2",
                     followerClient.indices()
-                            .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                            .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
-            )
-            assertEqualAliases()
+                        .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
+                        .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+                )
+                assertEqualAliases()
+            }, 30L, TimeUnit.SECONDS)
+
 
             // Case 2 :  Blocklisted  setting are not copied
             Assert.assertNull(followerClient.indices()
@@ -580,28 +583,30 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             TimeUnit.SECONDS.sleep(SLEEP_TIME_BETWEEN_SYNC)
 
             // Case 3 : Updated Settings take higher priority.  Blocklisted  settins shouldn't matter for that
-            Assert.assertEquals(
+            assertBusy({
+                Assert.assertEquals(
                     "3",
                     followerClient.indices()
-                            .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                            .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
-            )
+                        .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
+                        .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+                )
 
-            Assert.assertEquals(
+                Assert.assertEquals(
                     "10s",
                     followerClient.indices()
-                            .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                            .indexToSettings[followerIndexName]["index.search.idle.after"]
-            )
+                        .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
+                        .indexToSettings[followerIndexName]["index.search.idle.after"]
+                )
 
-            Assert.assertEquals(
+                Assert.assertEquals(
                     "none",
                     followerClient.indices()
-                            .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                            .indexToSettings[followerIndexName]["index.routing.allocation.enable"]
-            )
+                        .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
+                        .indexToSettings[followerIndexName]["index.routing.allocation.enable"]
+                )
 
-            assertEqualAliases()
+                assertEqualAliases()
+            }, 30L, TimeUnit.SECONDS)
 
             //Clear the settings
             settings = Settings.builder()

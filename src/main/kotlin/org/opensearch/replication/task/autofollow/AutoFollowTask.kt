@@ -36,6 +36,9 @@ import org.opensearch.common.xcontent.ToXContent
 import org.opensearch.common.xcontent.XContentBuilder
 import org.opensearch.persistent.PersistentTaskState
 import org.opensearch.replication.ReplicationException
+import org.opensearch.replication.action.status.ReplicationStatusAction
+import org.opensearch.replication.action.status.ShardInfoRequest
+import org.opensearch.replication.action.status.ShardInfoResponse
 import org.opensearch.rest.RestStatus
 import org.opensearch.tasks.Task
 import org.opensearch.tasks.TaskId
@@ -61,6 +64,7 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
     override val log = Loggers.getLogger(javaClass, leaderAlias)
     private var trackingIndicesOnTheCluster = setOf<String>()
     private var failedIndices = ConcurrentSkipListSet<String>() // Failed indices for replication from this autofollow task
+    private var replicationJobsQueue = ConcurrentSkipListSet<String>() // To keep track of outstanding replication jobs for this autofollow task
     private var retryScheduler: Scheduler.ScheduledCancellable? = null
     lateinit var stat: AutoFollowStat
 
@@ -69,7 +73,7 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
         while (scope.isActive) {
             try {
                 addRetryScheduler()
-                autoFollow()
+                pollForIndices()
                 delay(replicationSettings.autofollowFetchPollDuration.millis)
             }
             catch(e: OpenSearchException) {
@@ -101,7 +105,7 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
         retryScheduler?.cancel()
     }
 
-    private suspend fun autoFollow() {
+    private suspend fun pollForIndices() {
         log.debug("Checking $leaderAlias under pattern name $patternName for new indices to auto follow")
         val entry = replicationMetadata.leaderContext.resource
 
@@ -133,13 +137,44 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
                 trackingIndicesOnTheCluster = currentIndices.toSet()
             }
         }
-        remoteIndices = remoteIndices.minus(currentIndices).minus(failedIndices)
+        remoteIndices = remoteIndices.minus(currentIndices).minus(failedIndices).minus(replicationJobsQueue)
 
         stat.failCounterForRun = 0
-        for (newRemoteIndex in remoteIndices) {
-            startReplication(newRemoteIndex)
-        }
+        startReplicationJobs(remoteIndices)
         stat.failCount = stat.failCounterForRun
+    }
+
+    private suspend fun startReplicationJobs(remoteIndices: Iterable<String>) {
+        val completedJobs = ConcurrentSkipListSet<String>()
+        for(index in replicationJobsQueue) {
+            val statusReq = ShardInfoRequest(index, false)
+            try {
+                val statusRes = client.suspendExecute(ReplicationStatusAction.INSTANCE, statusReq, injectSecurityContext = true)
+                if(statusRes.status != ShardInfoResponse.BOOTSTRAPPING) {
+                    completedJobs.add(index)
+                }
+            } catch (ex: Exception) {
+                log.error("Error while fetching the status for index $index", ex)
+            }
+        }
+
+        // Remove the indices in "syncing" state from the queue
+        replicationJobsQueue.removeAll(completedJobs)
+        val concurrentJobsAllowed = replicationSettings.autofollowConcurrentJobsTriggerSize
+        if(replicationJobsQueue.size >= concurrentJobsAllowed) {
+            log.debug("Max concurrent replication jobs already in the queue for autofollow task[${params.patternName}]")
+            return
+        }
+
+        var totalJobsToTrigger = concurrentJobsAllowed - replicationJobsQueue.size
+        for (newRemoteIndex in remoteIndices) {
+            if(totalJobsToTrigger <= 0) {
+                break
+            }
+            startReplication(newRemoteIndex)
+            replicationJobsQueue.add(newRemoteIndex)
+            totalJobsToTrigger--
+        }
     }
 
     private suspend fun startReplication(leaderIndex: String) {
