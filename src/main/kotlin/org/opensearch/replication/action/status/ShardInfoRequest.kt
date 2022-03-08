@@ -39,7 +39,11 @@ class ShardInfoRequest : BroadcastRequest<ShardInfoRequest> , ToXContentObject {
     }
 
     override fun validate(): ActionRequestValidationException? {
-        return null
+        var validationException = ActionRequestValidationException()
+        if(indexName.isEmpty()) {
+            validationException.addValidationError("Index name must be specified to obtain replication status")
+        }
+        return if(validationException.validationErrors().isEmpty()) return null else validationException
     }
 
     override fun indices(): Array<String> {

@@ -39,7 +39,7 @@ class ReplicationStatusHandler : BaseRestHandler() {
 
     @Throws(IOException::class)
     override fun prepareRequest(request: RestRequest, client: NodeClient): RestChannelConsumer {
-        val index = request.param("index")
+        val index = request.param("index", "")
         var isVerbose = (request.paramAsBoolean("verbose", false))
         val indexReplicationStatusRequest = ShardInfoRequest(index,isVerbose)
         return RestChannelConsumer {
