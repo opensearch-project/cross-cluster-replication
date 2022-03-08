@@ -624,14 +624,16 @@ class StartReplicationIT: MultiClusterRestTestCase() {
 
             TimeUnit.SECONDS.sleep(SLEEP_TIME_BETWEEN_SYNC)
 
-            Assert.assertEquals(
+            assertBusy({
+                Assert.assertEquals(
                     null,
                     followerClient.indices()
-                            .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                            .indexToSettings[followerIndexName]["index.search.idle.after"]
-            )
+                        .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
+                        .indexToSettings[followerIndexName]["index.search.idle.after"]
+                )
+                assertEqualAliases()
+            }, 30L, TimeUnit.SECONDS)
 
-            assertEqualAliases()
         } finally {
             followerClient.stopReplication(followerIndexName)
         }
