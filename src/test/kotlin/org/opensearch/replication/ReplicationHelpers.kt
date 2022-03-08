@@ -380,3 +380,19 @@ fun RestHighLevelClient.updateReplicationStartBlockSetting(enabled: Boolean) {
     val response = this.cluster().putSettings(updateSettingsRequest, RequestOptions.DEFAULT)
     assertThat(response.isAcknowledged).isTrue()
 }
+
+fun RestHighLevelClient.updateAutoFollowConcurrentStartReplicationJobSetting(concurrentJobs: Int?) {
+    val settings = if(concurrentJobs != null) {
+        Settings.builder()
+            .put("plugins.replication.autofollow.concurrent_replication_jobs_trigger_size", concurrentJobs)
+            .build()
+    } else {
+        Settings.builder()
+            .putNull("plugins.replication.autofollow.concurrent_replication_jobs_trigger_size")
+            .build()
+    }
+    val updateSettingsRequest = ClusterUpdateSettingsRequest()
+    updateSettingsRequest.persistentSettings(settings)
+    val response = this.cluster().putSettings(updateSettingsRequest, RequestOptions.DEFAULT)
+    assertThat(response.isAcknowledged).isTrue()
+}
