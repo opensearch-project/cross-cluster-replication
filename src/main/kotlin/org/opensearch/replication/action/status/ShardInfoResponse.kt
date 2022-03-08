@@ -11,7 +11,6 @@
 
 package org.opensearch.replication.action.status
 
-import org.apache.logging.log4j.LogManager
 import org.opensearch.action.support.broadcast.BroadcastResponse
 import org.opensearch.action.support.broadcast.BroadcastShardResponse
 import org.opensearch.common.ParseField
@@ -28,6 +27,11 @@ class ShardInfoResponse : BroadcastShardResponse, ToXContentObject {
     val status: String
     lateinit var replayDetails: ReplayDetails
     lateinit var restoreDetails: RestoreDetails
+
+    companion object {
+        const val BOOTSTRAPPING = "BOOTSTRAPPING"
+        const val SYNCING = "SYNCING"
+    }
 
     constructor(si: StreamInput) : super(si) {
         this.status = si.readString()

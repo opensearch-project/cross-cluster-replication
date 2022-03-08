@@ -428,118 +428,143 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                 .build()
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName).settings(settings), RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
-        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
-            waitForRestore = true)
-        assertBusy {
-            assertThat(followerClient.indices()
-                    .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
-                    .isEqualTo(true)
-        }
-        settings = Settings.builder()
-                .build()
-        followerClient.updateReplication( followerIndexName, settings)
-        val getSettingsRequest = GetSettingsRequest()
-        getSettingsRequest.indices(followerIndexName)
-        getSettingsRequest.includeDefaults(true)
-        Assert.assertEquals(
-                "0",
-                followerClient.indices()
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
+                waitForRestore = true)
+            assertBusy {
+                assertThat(followerClient.indices()
+                        .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
+                        .isEqualTo(true)
+            }
+
+            settings = Settings.builder()
+                    .build()
+
+            followerClient.updateReplication( followerIndexName, settings)
+
+            val getSettingsRequest = GetSettingsRequest()
+            getSettingsRequest.indices(followerIndexName)
+            getSettingsRequest.includeDefaults(true)
+            Assert.assertEquals(
+                    "0",
+                    followerClient.indices()
+                            .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
+                            .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+            )
+
+            settings = Settings.builder()
+                    .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 2)
+                    .put("routing.allocation.enable", "none")
+                    .build()
+
+            leaderClient.indices().putSettings(UpdateSettingsRequest(leaderIndexName).settings(settings), RequestOptions.DEFAULT)
+
+            var indicesAliasesRequest = IndicesAliasesRequest()
+            var aliasAction = IndicesAliasesRequest.AliasActions.add()
+                    .index(leaderIndexName)
+                    .alias("alias1")
+            indicesAliasesRequest.addAliasAction(aliasAction)
+            leaderClient.indices().updateAliases(indicesAliasesRequest, RequestOptions.DEFAULT)
+
+            TimeUnit.SECONDS.sleep(SLEEP_TIME_BETWEEN_SYNC)
+            getSettingsRequest.indices(followerIndexName)
+            // Leader setting is copied
+            assertBusy({
+                Assert.assertEquals(
+                    "2",
+                    followerClient.indices()
                         .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
                         .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
-        )
-        settings = Settings.builder()
-                .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 2)
-                .put("routing.allocation.enable", "none")
-                .build()
-        leaderClient.indices().putSettings(UpdateSettingsRequest(leaderIndexName).settings(settings), RequestOptions.DEFAULT)
-        var indicesAliasesRequest = IndicesAliasesRequest()
-        var aliasAction = IndicesAliasesRequest.AliasActions.add()
-                .index(leaderIndexName)
-                .alias("alias1").filter("{\"term\":{\"year\":2016}}").routing("1")
-        indicesAliasesRequest.addAliasAction(aliasAction)
-        leaderClient.indices().updateAliases(indicesAliasesRequest, RequestOptions.DEFAULT)
-        TimeUnit.SECONDS.sleep(SLEEP_TIME_BETWEEN_SYNC)
-        getSettingsRequest.indices(followerIndexName)
-        // Leader setting is copied
-        assertBusy({
-            Assert.assertEquals(
-                "2",
-                followerClient.indices()
+                )
+                assertEqualAliases()
+            }, 30L, TimeUnit.SECONDS)
+
+
+            // Case 2 :  Blocklisted  setting are not copied
+            Assert.assertNull(followerClient.indices()
                     .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                    .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+                    .indexToSettings[followerIndexName].get("index.routing.allocation.enable"))
+
+            //Alias test case 2: Update existing alias
+            aliasAction = IndicesAliasesRequest.AliasActions.add()
+                    .index(leaderIndexName)
+                    .routing("2")
+                    .alias("alias1")
+                    .writeIndex(true)
+                    .isHidden(false)
+            indicesAliasesRequest.addAliasAction(aliasAction)
+            leaderClient.indices().updateAliases(indicesAliasesRequest, RequestOptions.DEFAULT)
+
+            //Use Update API
+            settings = Settings.builder()
+                    .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 3)
+                    .put("index.routing.allocation.enable", "none")
+                    .put("index.search.idle.after", "10s")
+                    .build()
+
+            followerClient.updateReplication( followerIndexName, settings)
+            TimeUnit.SECONDS.sleep(SLEEP_TIME_BETWEEN_SYNC)
+
+            // Case 3 : Updated Settings take higher priority.  Blocklisted  settins shouldn't matter for that
+            assertBusy({
+                Assert.assertEquals(
+                    "3",
+                    followerClient.indices()
+                        .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
+                        .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+                )
+
+                Assert.assertEquals(
+                    "10s",
+                    followerClient.indices()
+                        .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
+                        .indexToSettings[followerIndexName]["index.search.idle.after"]
+                )
+
+                Assert.assertEquals(
+                    "none",
+                    followerClient.indices()
+                        .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
+                        .indexToSettings[followerIndexName]["index.routing.allocation.enable"]
+                )
+
+                assertEqualAliases()
+            }, 30L, TimeUnit.SECONDS)
+
+            //Clear the settings
+            settings = Settings.builder()
+                    .build()
+            followerClient.updateReplication( followerIndexName, settings)
+
+            //Alias test case 3: Delete one alias and add another alias
+            aliasAction = IndicesAliasesRequest.AliasActions.remove()
+                    .index(leaderIndexName)
+                    .alias("alias1")
+            indicesAliasesRequest.addAliasAction(aliasAction
             )
-            assertEqualAliases()
-        }, 30L, TimeUnit.SECONDS)
-        // Case 2 :  Blocklisted  setting are not copied
-        Assert.assertNull(followerClient.indices()
-                .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                .indexToSettings[followerIndexName].get("index.routing.allocation.enable"))
-        //Alias test case 2: Update existing alias
-        aliasAction = IndicesAliasesRequest.AliasActions.add()
-                .index(leaderIndexName)
-                .routing("2")
-                .alias("alias1")
-                .writeIndex(true)
-                .isHidden(false)
-        indicesAliasesRequest.addAliasAction(aliasAction)
-        leaderClient.indices().updateAliases(indicesAliasesRequest, RequestOptions.DEFAULT)
-        //Use Update API
-        settings = Settings.builder()
-                .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 3)
-                .put("index.routing.allocation.enable", "none")
-                .put("index.search.idle.after", "10s")
-                .build()
-        followerClient.updateReplication( followerIndexName, settings)
-        TimeUnit.SECONDS.sleep(SLEEP_TIME_BETWEEN_SYNC)
-        // Case 3 : Updated Settings take higher priority.  Blocklisted  settins shouldn't matter for that
-        assertBusy({
-            Assert.assertEquals(
-                "3",
-                followerClient.indices()
-                    .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                    .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
-            )
-            Assert.assertEquals(
-                "10s",
-                followerClient.indices()
-                    .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                    .indexToSettings[followerIndexName]["index.search.idle.after"]
-            )
-            Assert.assertEquals(
-                "none",
-                followerClient.indices()
-                    .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                    .indexToSettings[followerIndexName]["index.routing.allocation.enable"]
-            )
-            assertEqualAliases()
-        }, 30L, TimeUnit.SECONDS)
-        //Clear the settings
-        settings = Settings.builder()
-                .build()
-        followerClient.updateReplication( followerIndexName, settings)
-        //Alias test case 3: Delete one alias and add another alias
-        aliasAction = IndicesAliasesRequest.AliasActions.remove()
-                .index(leaderIndexName)
-                .alias("alias1")
-        indicesAliasesRequest.addAliasAction(aliasAction
-        )
-        leaderClient.indices().updateAliases(indicesAliasesRequest, RequestOptions.DEFAULT)
-        var aliasAction2 = IndicesAliasesRequest.AliasActions.add()
-                .index(leaderIndexName)
-                .routing("12")
-                .alias("alias2")
-                .indexRouting("indexRouting")
-        indicesAliasesRequest.addAliasAction(aliasAction2)
-        TimeUnit.SECONDS.sleep(SLEEP_TIME_BETWEEN_SYNC)
-        assertBusy({
-            Assert.assertEquals(
-                null,
-                followerClient.indices()
-                    .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                    .indexToSettings[followerIndexName]["index.search.idle.after"]
-            )
-            assertEqualAliases()
-        }, 30L, TimeUnit.SECONDS)
+            leaderClient.indices().updateAliases(indicesAliasesRequest, RequestOptions.DEFAULT)
+            var aliasAction2 = IndicesAliasesRequest.AliasActions.add()
+                    .index(leaderIndexName)
+                    .routing("12")
+                    .alias("alias2")
+                    .indexRouting("indexRouting")
+            indicesAliasesRequest.addAliasAction(aliasAction2)
+
+            TimeUnit.SECONDS.sleep(SLEEP_TIME_BETWEEN_SYNC)
+
+            assertBusy({
+                Assert.assertEquals(
+                    null,
+                    followerClient.indices()
+                        .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
+                        .indexToSettings[followerIndexName]["index.search.idle.after"]
+                )
+                assertEqualAliases()
+            }, 30L, TimeUnit.SECONDS)
+
+        } finally {
+            followerClient.stopReplication(followerIndexName)
+        }
     }
 
     fun `test that static index settings are getting replicated `() {
