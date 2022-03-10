@@ -68,7 +68,7 @@ class TransportReplicationStatusAction @Inject constructor(transportService: Tra
                     if (followerResponse.shardInfoResponse.size > 0) {
                         status =  followerResponse.shardInfoResponse.get(0).status 
                     }
-                    if (!status.equals("BOOTSTRAPPING")) {
+                    if (!status.equals(ShardInfoResponse.BOOTSTRAPPING)) {
                         var shardResponses = followerResponse.shardInfoResponse
                         leaderResponse.shardInfoResponse.listIterator().forEach {
                             val leaderShardName = it.shardId.toString()

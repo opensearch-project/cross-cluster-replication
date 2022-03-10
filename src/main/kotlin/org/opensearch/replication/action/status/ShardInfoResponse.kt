@@ -35,9 +35,9 @@ class ShardInfoResponse : BroadcastShardResponse, ToXContentObject {
 
     constructor(si: StreamInput) : super(si) {
         this.status = si.readString()
-        if (status.equals("SYNCING"))
+        if (status.equals(SYNCING))
             this.replayDetails = ReplayDetails(si)
-        if (status.equals("BOOTSTRAPPING"))
+        if (status.equals(BOOTSTRAPPING))
             this.restoreDetails = RestoreDetails(si)
     }
 
