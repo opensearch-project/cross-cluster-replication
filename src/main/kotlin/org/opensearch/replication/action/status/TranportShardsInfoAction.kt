@@ -79,13 +79,13 @@ class TranportShardsInfoAction  @Inject constructor(clusterService: ClusterServi
         var indexState = indexShard.recoveryState().index
         if (indexShard.recoveryState().recoverySource.type.equals(RecoverySource.Type.SNAPSHOT) and
                 (indexState.recoveredBytesPercent() <100)) {
-            return ShardInfoResponse(shardRouting.shardId(),"BOOTSTRAPPING",
+            return ShardInfoResponse(shardRouting.shardId(),ShardInfoResponse.BOOTSTRAPPING,
                     RestoreDetails(indexState.totalBytes(), indexState.recoveredBytes(),
                             indexState.recoveredBytesPercent(), indexState.totalFileCount(), indexState.recoveredFileCount(),
                             indexState.recoveredFilesPercent(), indexState.startTime(), indexState.time()))
         }
         var seqNo = indexShard.localCheckpoint + 1
-        return ShardInfoResponse(shardRouting.shardId(),"SYNCING", ReplayDetails(indexShard.lastKnownGlobalCheckpoint,
+        return ShardInfoResponse(shardRouting.shardId(),ShardInfoResponse.SYNCING, ReplayDetails(indexShard.lastKnownGlobalCheckpoint,
                 indexShard.lastSyncedGlobalCheckpoint, seqNo))
     }
 
