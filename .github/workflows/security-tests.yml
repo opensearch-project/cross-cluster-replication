@@ -28,7 +28,7 @@ jobs:
         with:
           repository: 'opensearch-project/security'
           path: security
-          ref: 'main'
+          ref: '1.3'
       - name: Build security
         working-directory: ./security
         run: |
