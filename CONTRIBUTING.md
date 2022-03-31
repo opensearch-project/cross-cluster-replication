@@ -9,6 +9,7 @@
 - [License Headers](#license-headers)
 - [Backports](#backports)
 - [Security tests](#security-tests)
+- [Performance tests](#performance-tests)
 - [Review Process](#review-process)
 
 ## Contributing to OpenSearch
@@ -150,6 +151,14 @@ cd security
 cp build/distributions/opensearch-security-1.3.0.0.zip $REPLICATION_DIR/src/test/resources/security/plugin/opensearch-security.zip
 ./gradlew clean release -Psecurity=true
 ```
+
+## Performance tests
+ 
+To run Performance tests locally,
+```
+bin/run_perf_test.sh --bundle-manifest path_to_OS_bundle_manifest --config config_path --without-security
+```
+Note: We want to allow everyone to run the performance tests. But currently, its only available internally.
 
 ## Review Process
 

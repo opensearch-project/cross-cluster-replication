@@ -6,3 +6,9 @@ build/
 
 # Ignore intellij files
 .idea/
+
+# Ignore Python virtualenv
+.venv/
+__pycache__/
+Pipfile
+Pipfile.lock
