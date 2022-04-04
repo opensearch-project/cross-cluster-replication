@@ -22,7 +22,6 @@ import org.opensearch.common.inject.Inject
 import org.opensearch.common.inject.Singleton
 import org.opensearch.common.lucene.store.InputStreamIndexInput
 import org.opensearch.core.internal.io.IOUtils
-import org.opensearch.index.engine.Engine
 import org.opensearch.index.seqno.RetentionLeaseActions
 import org.opensearch.index.store.Store
 import org.opensearch.indices.IndicesService
@@ -95,7 +94,7 @@ class RemoteClusterRestoreLeaderService @Inject constructor(private val indicesS
          * lucene index. With the retention lock set - safe commit should have all the history
          * upto the current retention leases.
          */
-        val retentionLock = leaderIndexShard.acquireHistoryRetentionLock(Engine.HistorySource.INDEX)
+        val retentionLock = leaderIndexShard.acquireHistoryRetentionLock()
         closableResources.add(retentionLock)
 
         /**

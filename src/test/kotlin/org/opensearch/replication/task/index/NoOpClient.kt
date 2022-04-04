@@ -129,7 +129,7 @@ open class NoOpClient(testName :String) : NoOpNodeClient(testName) {
 
             var bytesReference  = replicationMetadata.toXContent(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS)
             var by = BytesReference.bytes(bytesReference)
-            var result = GetResult(ReplicationMetadataStore.REPLICATION_CONFIG_SYSTEM_INDEX, "_doc", IndexReplicationTaskTests.followerIndex, 1, 1, 1, true, by, null, null)
+            var result = GetResult(ReplicationMetadataStore.REPLICATION_CONFIG_SYSTEM_INDEX, IndexReplicationTaskTests.followerIndex, 1, 1, 1, true, by, null, null)
             var getResponse = GetResponse(result)
             listener.onResponse(getResponse as Response)
         } else if (action == ClusterHealthAction.INSTANCE) {

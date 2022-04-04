@@ -99,7 +99,7 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
 
         val id = getId(addReq.replicationMetadata.metadataType, addReq.replicationMetadata.connectionName,
                 addReq.replicationMetadata.followerContext.resource)
-        val indexReqBuilder = client.prepareIndex(REPLICATION_CONFIG_SYSTEM_INDEX, MAPPING_TYPE, id)
+        val indexReqBuilder = client.prepareIndex(REPLICATION_CONFIG_SYSTEM_INDEX).setId(id)
                 .setSource(addReq.replicationMetadata.toXContent(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS))
         return client.suspending(indexReqBuilder::execute, defaultContext = true)("replication")
     }
@@ -114,7 +114,7 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
         }
 
         if(REPLICATION_STORE_MAPPING_VERSION > currentSchemaVersion) {
-            val putMappingReq = PutMappingRequest(REPLICATION_CONFIG_SYSTEM_INDEX).type(MAPPING_TYPE)
+            val putMappingReq = PutMappingRequest(REPLICATION_CONFIG_SYSTEM_INDEX)
                     .source(REPLICATION_CONFIG_SYSTEM_INDEX_MAPPING, XContentType.JSON)
             val putMappingRes = client.suspending(client.admin().indices()::putMapping, defaultContext = true)(putMappingReq)
             if(!putMappingRes.isAcknowledged) {
@@ -227,7 +227,7 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
         checkAndWaitForStoreHealth()
         checkAndUpdateMapping()
 
-        val indexReqBuilder = client.prepareIndex(REPLICATION_CONFIG_SYSTEM_INDEX, MAPPING_TYPE, id)
+        val indexReqBuilder = client.prepareIndex(REPLICATION_CONFIG_SYSTEM_INDEX).setId(id)
                 .setSource(updateMetadataReq.replicationMetadata.toXContent(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS))
                 .setIfSeqNo(updateMetadataReq.ifSeqno)
                 .setIfPrimaryTerm(updateMetadataReq.ifPrimaryTerm)

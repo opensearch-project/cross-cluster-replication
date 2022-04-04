@@ -175,7 +175,7 @@ class TransportReplayChangesAction @Inject constructor(settings: Settings, trans
         val options = IndicesOptions.strictSingleIndexNoExpandForbidClosed()
         val getMappingsRequest = GetMappingsRequest().indices(leaderIndex).indicesOptions(options)
         val getMappingsResponse = remoteClient.suspending(remoteClient.admin().indices()::getMappings, injectSecurityContext = true)(getMappingsRequest)
-        val mappingSource = getMappingsResponse?.mappings()?.get(leaderIndex)?.get(type)?.source()?.string()
+        val mappingSource = getMappingsResponse?.mappings()?.get(leaderIndex)?.source()?.string()
         if (null == mappingSource) {
             log.error("Mapping response: $getMappingsResponse")
             throw MappingNotAvailableException("Mapping for the index $leaderIndex is not available")
@@ -186,7 +186,7 @@ class TransportReplayChangesAction @Inject constructor(settings: Settings, trans
         // PutMappingRequest#setConcreteIndex has a bug where it throws an NPE.This is fixed upstream in
         // https://github.com/elastic/elasticsearch/pull/58419 and we should update to that when it is released.
         val putMappingRequest = PutMappingRequest().indices(followerIndex).indicesOptions(options)
-            .type(type).source(mappingSource, XContentType.JSON)
+            .source(mappingSource, XContentType.JSON)
             //TODO: call .masterNodeTimeout() with the setting indices.mapping.dynamic_timeout
         val updateMappingRequest = UpdateMetadataRequest(followerIndex, UpdateMetadataRequest.Type.MAPPING, putMappingRequest)
         client.suspendExecute(UpdateMetadataAction.INSTANCE, updateMappingRequest, injectSecurityContext = true)
