@@ -27,6 +27,7 @@ import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
+import kotlinx.coroutines.ObsoleteCoroutinesApi
 import org.apache.logging.log4j.Logger
 import org.opensearch.OpenSearchException
 import org.opensearch.action.ActionListener
@@ -178,6 +179,7 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
         client.suspending(::updatePersistentTaskState)(state)
     }
 
+    @ObsoleteCoroutinesApi
     protected abstract suspend fun execute(scope: CoroutineScope, initialState: PersistentTaskState?)
 
     protected open suspend fun cleanup() {}

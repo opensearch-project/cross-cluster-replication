@@ -992,25 +992,6 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         }
     }
 
-    fun `test that replication cannot be started when soft delete is disabled`() {
-        val followerClient = getClientForCluster(FOLLOWER)
-        val leaderClient = getClientForCluster(LEADER)
-
-        createConnectionBetweenClusters(FOLLOWER, LEADER)
-
-        val settings: Settings = Settings.builder()
-            .put(IndexSettings.INDEX_SOFT_DELETES_SETTING.key, false)
-            .build()
-
-        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName)
-            .settings(settings), RequestOptions.DEFAULT)
-        assertThat(createIndexResponse.isAcknowledged).isTrue()
-
-        assertThatThrownBy {
-            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
-        }.isInstanceOf(ResponseException::class.java).hasMessageContaining("Cannot Replicate an index where the setting index.soft_deletes.enabled is disabled")
-    }
-
     fun `test leader stats`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)

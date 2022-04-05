@@ -249,10 +249,9 @@ class TransportUpdateMetadataAction @Inject constructor(
                                      listener: ActionListener<AcknowledgedResponse>, metadataMappingService: MetadataMappingService
     ) {
         val mappingRequest = request.request as PutMappingRequest
-        val updateRequest = PutMappingClusterStateUpdateRequest()
+        val updateRequest = PutMappingClusterStateUpdateRequest(mappingRequest.source())
             .ackTimeout(mappingRequest.timeout()).masterNodeTimeout(mappingRequest.masterNodeTimeout())
-            .indices(concreteIndices).type(mappingRequest.type())
-            .source(mappingRequest.source())
+            .indices(concreteIndices)
 
         metadataMappingService.putMapping(updateRequest,
             object : ActionListener<ClusterStateUpdateResponse> {
