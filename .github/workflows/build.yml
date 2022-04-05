@@ -15,7 +15,6 @@ jobs:
         java: 
           - 8
           - 11
-          - 14
     # Job name
     name: Build Replication plugin
     runs-on: ubuntu-latest
