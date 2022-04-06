@@ -107,7 +107,7 @@ class RemoteClusterRestoreLeaderService @Inject constructor(private val indicesS
         val store = leaderIndexShard.store()
         var metadataSnapshot = Store.MetadataSnapshot.EMPTY
         store.performOp({
-            metadataSnapshot = store.getMetadata(indexCommitRef.indexCommit)
+            metadataSnapshot = store.getMetadata(indexCommitRef.get())
         })
 
         // Identifies the seq no to start the replication operations from
