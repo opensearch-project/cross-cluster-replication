@@ -9,7 +9,7 @@
  * GitHub history for details.
  */
 
-package org.opensearch.replication.action.index
+package org.opensearch.replication.action.autofollow
 
 import org.opensearch.commons.authuser.User
 import org.opensearch.action.ActionRequestValidationException
@@ -20,31 +20,29 @@ import org.opensearch.common.xcontent.ToXContent
 import org.opensearch.common.xcontent.ToXContentObject
 import org.opensearch.common.xcontent.XContentBuilder
 
-class ReplicateIndexMasterNodeRequest:
-        MasterNodeRequest<ReplicateIndexMasterNodeRequest>, ToXContentObject {
-
+class AutoFollowClusterManagerNodeRequest: MasterNodeRequest<AutoFollowClusterManagerNodeRequest>, ToXContentObject {
     var user: User? = null
-    var replicateIndexReq: ReplicateIndexRequest
+    var autofollowReq: UpdateAutoFollowPatternRequest
     var withSecurityContext: Boolean = false
+
+    constructor(user: User?, autofollowReq: UpdateAutoFollowPatternRequest): super() {
+        this.user = user
+        if(user != null) {
+            this.withSecurityContext = true
+        }
+        this.autofollowReq = autofollowReq
+    }
 
     override fun validate(): ActionRequestValidationException? {
         return null
     }
 
-    constructor(user: User?, replicateIndexReq: ReplicateIndexRequest): super() {
-        this.user = user
-        this.replicateIndexReq = replicateIndexReq
-        if (this.user != null) {
-            this.withSecurityContext = true
-        }
-    }
-
-    constructor(inp: StreamInput) : super(inp) {
+    constructor(inp: StreamInput): super(inp) {
         this.withSecurityContext = inp.readBoolean()
         if(withSecurityContext) {
-            user = User(inp)
+            this.user = User(inp)
         }
-        replicateIndexReq = ReplicateIndexRequest(inp)
+        autofollowReq = UpdateAutoFollowPatternRequest(inp)
     }
 
     override fun writeTo(out: StreamOutput) {
@@ -53,14 +51,16 @@ class ReplicateIndexMasterNodeRequest:
         if(this.withSecurityContext) {
             user?.writeTo(out)
         }
-        replicateIndexReq.writeTo(out)
+        autofollowReq.writeTo(out)
     }
 
     override fun toXContent(builder: XContentBuilder, params: ToXContent.Params): XContentBuilder {
-        val responseBuilder =  builder.startObject()
-                .field("user", user)
-                .field("replication_request")
-        replicateIndexReq.toXContent(responseBuilder, params).endObject()
-        return builder.field("with_security_context", withSecurityContext)
+        builder.startObject()
+        builder.field("user", user)
+        builder.field("auto_follow_req")
+        autofollowReq.toXContent(builder, params)
+        builder.field("with_security_context", withSecurityContext)
+        return builder.endObject()
     }
+
 }

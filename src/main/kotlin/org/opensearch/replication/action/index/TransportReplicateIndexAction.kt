@@ -105,8 +105,8 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
 
                 // Setup checks are successful and trigger replication for the index
                 // permissions evaluation to trigger replication is based on the current security context set
-                val internalReq = ReplicateIndexMasterNodeRequest(user, request)
-                client.suspendExecute(ReplicateIndexMasterNodeAction.INSTANCE, internalReq)
+                val internalReq = ReplicateIndexClusterManagerNodeRequest(user, request)
+                client.suspendExecute(ReplicateIndexClusterManagerNodeAction.INSTANCE, internalReq)
                 ReplicateIndexResponse(true)
             }
         }

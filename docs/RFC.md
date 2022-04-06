@@ -58,7 +58,7 @@ The replication machinery is implemented as an OpenSearch plugin that exposes AP
 
 ### Details
 
-The Start Replication API performs basic validations (such as existence checks on the remote cluster & index) and then spawns a persistent background task named `IndexReplicationTask` in the follower cluster to coordinate the replication process.  This task does not replicate any data directly, but rather is responsible for initiating subtasks and monitoring the overall replication process.  Hence, it can run on any node on the cluster (including master nodes) and we chose the node with the least number of tasks at the time.  Each step in the workflow is checkpointed so that it can be resumed safely if interrupted.
+The Start Replication API performs basic validations (such as existence checks on the remote cluster & index) and then spawns a persistent background task named `IndexReplicationTask` in the follower cluster to coordinate the replication process.  This task does not replicate any data directly, but rather is responsible for initiating subtasks and monitoring the overall replication process.  Hence, it can run on any node on the cluster (including Cluster manager nodes) and we chose the node with the least number of tasks at the time.  Each step in the workflow is checkpointed so that it can be resumed safely if interrupted.
 
 
 ![Details](/docs/images/rfc1.png?raw=true "Details")

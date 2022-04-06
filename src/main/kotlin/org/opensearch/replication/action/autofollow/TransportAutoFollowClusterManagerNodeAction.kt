@@ -45,26 +45,26 @@ import org.opensearch.replication.ReplicationException
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
 
-class TransportAutoFollowMasterNodeAction @Inject constructor(transportService: TransportService, clusterService: ClusterService, threadPool: ThreadPool,
+class TransportAutoFollowClusterManagerNodeAction @Inject constructor(transportService: TransportService, clusterService: ClusterService, threadPool: ThreadPool,
                                                               actionFilters: ActionFilters, indexNameExpressionResolver: IndexNameExpressionResolver,
                                                               private val client: NodeClient, private val metadataManager: ReplicationMetadataManager,
                                                               val indexScopedSettings: IndexScopedSettings) :
-        TransportMasterNodeAction<AutoFollowMasterNodeRequest, AcknowledgedResponse>(
-        AutoFollowMasterNodeAction.NAME, true, transportService, clusterService, threadPool, actionFilters,
-        ::AutoFollowMasterNodeRequest, indexNameExpressionResolver), CoroutineScope by GlobalScope {
+        TransportMasterNodeAction<AutoFollowClusterManagerNodeRequest, AcknowledgedResponse>(
+        AutoFollowClusterManagerNodeAction.NAME, true, transportService, clusterService, threadPool, actionFilters,
+        ::AutoFollowClusterManagerNodeRequest, indexNameExpressionResolver), CoroutineScope by GlobalScope {
 
     companion object {
-        private val log = LogManager.getLogger(TransportAutoFollowMasterNodeAction::class.java)
+        private val log = LogManager.getLogger(TransportAutoFollowClusterManagerNodeAction::class.java)
         const val AUTOFOLLOW_EXCEPTION_GENERIC_STRING = "Failed to update autofollow pattern"
     }
 
-    override fun checkBlock(request: AutoFollowMasterNodeRequest, state: ClusterState): ClusterBlockException? {
+    override fun checkBlock(request: AutoFollowClusterManagerNodeRequest, state: ClusterState): ClusterBlockException? {
         return state.blocks().globalBlockedException(ClusterBlockLevel.METADATA_WRITE)
     }
 
-    override fun masterOperation(masterNodeReq: AutoFollowMasterNodeRequest, state: ClusterState, listener: ActionListener<AcknowledgedResponse>) {
-        val request = masterNodeReq.autofollowReq
-        var user = masterNodeReq.user
+    override fun masterOperation(clusterManagerNodeReq: AutoFollowClusterManagerNodeRequest, state: ClusterState, listener: ActionListener<AcknowledgedResponse>) {
+        val request = clusterManagerNodeReq.autofollowReq
+        var user = clusterManagerNodeReq.user
         launch(threadPool.coroutineContext()) {
             listener.completeWith {
                 if (request.action == UpdateAutoFollowPatternRequest.Action.REMOVE) {

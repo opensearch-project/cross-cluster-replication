@@ -165,7 +165,7 @@ class TransportReplayChangesAction @Inject constructor(settings: Settings, trans
     }
 
     /**
-     * Fetches the index mapping from the leader cluster, applies it to the local cluster's master and then waits
+     * Fetches the index mapping from the leader cluster, applies it to the local cluster's clusterManager and then waits
      * for the mapping to become available on the current shard. Should only be called on the primary shard .
      */
     private suspend fun syncRemoteMapping(leaderAlias: String, leaderIndex: String,
