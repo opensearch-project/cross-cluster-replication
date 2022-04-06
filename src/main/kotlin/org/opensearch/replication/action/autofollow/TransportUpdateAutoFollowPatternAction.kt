@@ -63,8 +63,8 @@ class TransportUpdateAutoFollowPatternAction @Inject constructor(transportServic
                         throw org.opensearch.replication.ReplicationException("Setup checks failed while setting-up auto follow pattern")
                     }
                 }
-                val masterNodeReq = AutoFollowMasterNodeRequest(user, request)
-                client.suspendExecute(AutoFollowMasterNodeAction.INSTANCE, masterNodeReq)
+                val clusterManagerNodeReq = AutoFollowClusterManagerNodeRequest(user, request)
+                client.suspendExecute(AutoFollowClusterManagerNodeAction.INSTANCE, clusterManagerNodeReq)
             }
         }
     }

@@ -798,7 +798,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
             } else {
                 return FailedState(Collections.emptyMap(), """
                     Unable to find in progress restore for remote index: $leaderAlias:$leaderIndex.
-                    This can happen if there was a badly timed master node failure.""".trimIndent())
+                    This can happen if there was a badly timed cluster manager node failure.""".trimIndent())
             }
         } else if (restore.state() == RestoreInProgress.State.FAILURE) {
             val failureReason = restore.shards().values().find {

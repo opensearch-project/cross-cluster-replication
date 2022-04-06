@@ -52,22 +52,22 @@ import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
 import java.io.IOException
 
-class TransportReplicateIndexMasterNodeAction @Inject constructor(transportService: TransportService,
-                                                                  clusterService: ClusterService,
-                                                                  threadPool: ThreadPool,
-                                                                  actionFilters: ActionFilters,
-                                                                  indexNameExpressionResolver: IndexNameExpressionResolver,
-                                                                  val indexScopedSettings: IndexScopedSettings,
-                                                                  private val persistentTasksService: PersistentTasksService,
-                                                                  private val nodeClient : NodeClient,
-                                                                  private val repositoryService: RepositoriesService,
-                                                                  private val replicationMetadataManager: ReplicationMetadataManager) :
-        TransportMasterNodeAction<ReplicateIndexMasterNodeRequest, AcknowledgedResponse>(ReplicateIndexMasterNodeAction.NAME,
-                transportService, clusterService, threadPool, actionFilters, ::ReplicateIndexMasterNodeRequest, indexNameExpressionResolver),
+class TransportReplicateIndexClusterManagerNodeAction @Inject constructor(transportService: TransportService,
+                                                                          clusterService: ClusterService,
+                                                                          threadPool: ThreadPool,
+                                                                          actionFilters: ActionFilters,
+                                                                          indexNameExpressionResolver: IndexNameExpressionResolver,
+                                                                          val indexScopedSettings: IndexScopedSettings,
+                                                                          private val persistentTasksService: PersistentTasksService,
+                                                                          private val nodeClient : NodeClient,
+                                                                          private val repositoryService: RepositoriesService,
+                                                                          private val replicationMetadataManager: ReplicationMetadataManager) :
+        TransportMasterNodeAction<ReplicateIndexClusterManagerNodeRequest, AcknowledgedResponse>(ReplicateIndexClusterManagerNodeAction.NAME,
+                transportService, clusterService, threadPool, actionFilters, ::ReplicateIndexClusterManagerNodeRequest, indexNameExpressionResolver),
         CoroutineScope by GlobalScope {
 
     companion object {
-        private val log = LogManager.getLogger(TransportReplicateIndexMasterNodeAction::class.java)
+        private val log = LogManager.getLogger(TransportReplicateIndexClusterManagerNodeAction::class.java)
     }
 
     override fun executor(): String {
@@ -80,7 +80,7 @@ class TransportReplicateIndexMasterNodeAction @Inject constructor(transportServi
     }
 
     @Throws(Exception::class)
-    override fun masterOperation(request: ReplicateIndexMasterNodeRequest, state: ClusterState,
+    override fun masterOperation(request: ReplicateIndexClusterManagerNodeRequest, state: ClusterState,
                                  listener: ActionListener<AcknowledgedResponse>) {
         val replicateIndexReq = request.replicateIndexReq
         val user = request.user
@@ -151,7 +151,7 @@ class TransportReplicateIndexMasterNodeAction @Inject constructor(transportServi
         return remoteState.metadata.index(leaderIndex) ?: throw IndexNotFoundException("${leaderAlias}:${leaderIndex}")
     }
 
-    override fun checkBlock(request: ReplicateIndexMasterNodeRequest, state: ClusterState): ClusterBlockException? {
+    override fun checkBlock(request: ReplicateIndexClusterManagerNodeRequest, state: ClusterState): ClusterBlockException? {
         return state.blocks.globalBlockedException(ClusterBlockLevel.METADATA_WRITE)
     }
 }

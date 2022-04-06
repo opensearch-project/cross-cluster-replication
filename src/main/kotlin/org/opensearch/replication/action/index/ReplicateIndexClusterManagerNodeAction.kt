@@ -9,14 +9,14 @@
  * GitHub history for details.
  */
 
-package org.opensearch.replication.action.autofollow
+package org.opensearch.replication.action.index
 
 import org.opensearch.action.ActionType
 import org.opensearch.action.support.master.AcknowledgedResponse
 
-class AutoFollowMasterNodeAction: ActionType<AcknowledgedResponse>(NAME, ::AcknowledgedResponse) {
+class ReplicateIndexClusterManagerNodeAction private constructor(): ActionType<AcknowledgedResponse>(NAME, ::AcknowledgedResponse) {
     companion object {
-        const val NAME = "internal:cluster:admin/plugins/replication/autofollow/update"
-        val INSTANCE = AutoFollowMasterNodeAction()
+        const val NAME = "internal:indices/admin/plugins/replication/index/start"
+        val INSTANCE: ReplicateIndexClusterManagerNodeAction = ReplicateIndexClusterManagerNodeAction()
     }
 }

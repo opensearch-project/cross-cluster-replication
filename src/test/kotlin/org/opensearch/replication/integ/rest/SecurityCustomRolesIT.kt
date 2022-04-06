@@ -399,7 +399,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
                     requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
 
             insertDocToIndex(LEADER, "1", "dummy data 1",leaderIndexName)
-            //Querying ES cluster throws random exceptions like MasterNotDiscovered or ShardsFailed etc, so catching them and retrying
+            //Querying ES cluster throws random exceptions like ClusterManagerNotDiscovered or ShardsFailed etc, so catching them and retrying
             assertBusy ({
                 try {
                     Assertions.assertThat(docs(FOLLOWER, followerIndexName)).contains("dummy data 1")

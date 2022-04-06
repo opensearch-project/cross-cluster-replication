@@ -11,16 +11,12 @@
 
 package org.opensearch.replication
 
-import org.opensearch.replication.action.autofollow.AutoFollowMasterNodeAction
-import org.opensearch.replication.action.autofollow.TransportAutoFollowMasterNodeAction
-import org.opensearch.replication.action.autofollow.TransportUpdateAutoFollowPatternAction
-import org.opensearch.replication.action.autofollow.UpdateAutoFollowPatternAction
 import org.opensearch.replication.action.changes.GetChangesAction
 import org.opensearch.replication.action.changes.TransportGetChangesAction
 import org.opensearch.replication.action.index.ReplicateIndexAction
-import org.opensearch.replication.action.index.ReplicateIndexMasterNodeAction
+import org.opensearch.replication.action.index.ReplicateIndexClusterManagerNodeAction
 import org.opensearch.replication.action.index.TransportReplicateIndexAction
-import org.opensearch.replication.action.index.TransportReplicateIndexMasterNodeAction
+import org.opensearch.replication.action.index.TransportReplicateIndexClusterManagerNodeAction
 import org.opensearch.replication.action.index.block.TransportUpddateIndexBlockAction
 import org.opensearch.replication.action.index.block.UpdateIndexBlockAction
 import org.opensearch.replication.action.pause.PauseIndexReplicationAction
@@ -120,6 +116,7 @@ import org.opensearch.plugins.EnginePlugin
 import org.opensearch.plugins.PersistentTaskPlugin
 import org.opensearch.plugins.Plugin
 import org.opensearch.plugins.RepositoryPlugin
+import org.opensearch.replication.action.autofollow.*
 import org.opensearch.replication.action.stats.AutoFollowStatsAction
 import org.opensearch.replication.action.stats.FollowerStatsAction
 import org.opensearch.replication.action.stats.LeaderStatsAction
@@ -218,12 +215,12 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
     override fun getActions(): List<ActionHandler<out ActionRequest, out ActionResponse>> {
         return listOf(ActionHandler(GetChangesAction.INSTANCE, TransportGetChangesAction::class.java),
             ActionHandler(ReplicateIndexAction.INSTANCE, TransportReplicateIndexAction::class.java),
-            ActionHandler(ReplicateIndexMasterNodeAction.INSTANCE, TransportReplicateIndexMasterNodeAction::class.java),
+            ActionHandler(ReplicateIndexClusterManagerNodeAction.INSTANCE, TransportReplicateIndexClusterManagerNodeAction::class.java),
             ActionHandler(ReplayChangesAction.INSTANCE, TransportReplayChangesAction::class.java),
             ActionHandler(GetStoreMetadataAction.INSTANCE, TransportGetStoreMetadataAction::class.java),
             ActionHandler(GetFileChunkAction.INSTANCE, TransportGetFileChunkAction::class.java),
             ActionHandler(UpdateAutoFollowPatternAction.INSTANCE, TransportUpdateAutoFollowPatternAction::class.java),
-            ActionHandler(AutoFollowMasterNodeAction.INSTANCE, TransportAutoFollowMasterNodeAction::class.java),
+            ActionHandler(AutoFollowClusterManagerNodeAction.INSTANCE, TransportAutoFollowClusterManagerNodeAction::class.java),
             ActionHandler(StopIndexReplicationAction.INSTANCE, TransportStopIndexReplicationAction::class.java),
             ActionHandler(PauseIndexReplicationAction.INSTANCE, TransportPauseIndexReplicationAction::class.java),
             ActionHandler(ResumeIndexReplicationAction.INSTANCE, TransportResumeIndexReplicationAction::class.java),
