@@ -245,7 +245,7 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
 
     private suspend fun createIndex(): CreateIndexResponse {
         val createIndexReq = CreateIndexRequest(REPLICATION_CONFIG_SYSTEM_INDEX, configStoreSettings())
-                .mapping(MAPPING_TYPE, REPLICATION_CONFIG_SYSTEM_INDEX_MAPPING, XContentType.JSON)
+                .mapping(REPLICATION_CONFIG_SYSTEM_INDEX_MAPPING, XContentType.JSON)
         return client.suspending(client.admin().indices()::create, defaultContext = true)(createIndexReq)
     }
 

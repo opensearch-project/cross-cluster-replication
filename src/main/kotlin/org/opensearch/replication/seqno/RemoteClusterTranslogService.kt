@@ -38,7 +38,7 @@ class RemoteClusterTranslogService : AbstractLifecycleComponent(){
     public fun getHistoryOfOperations(indexShard: IndexShard, startSeqNo: Long, toSeqNo: Long): List<Translog.Operation> {
         log.trace("Fetching translog snapshot for $indexShard - from $startSeqNo to $toSeqNo")
         // TODO: Revisit the method after closing the issue: https://github.com/opensearch-project/OpenSearch/issues/2482
-        val snapshot = indexShard.getHistoryOperations(SOURCE_NAME, startSeqNo, toSeqNo)
+        val snapshot = indexShard.getHistoryOperations(SOURCE_NAME, startSeqNo, toSeqNo, true)
 
         // Total ops to be fetched (both toSeqNo and startSeqNo are inclusive)
         val opsSize = toSeqNo - startSeqNo + 1

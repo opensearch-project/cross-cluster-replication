@@ -11,20 +11,22 @@
 
 package org.opensearch.replication.repository
 
+import org.apache.lucene.index.IndexCommit
 import org.opensearch.replication.util.performOp
 import org.apache.lucene.store.IOContext
 import org.apache.lucene.store.IndexInput
 import org.opensearch.OpenSearchException
+import org.opensearch.common.concurrent.GatedCloseable
 import org.opensearch.index.engine.Engine
 import org.opensearch.index.shard.IndexShard
 import org.opensearch.index.store.Store
 import java.io.Closeable
 
 class RestoreContext(val restoreUUID: String,
-                          val shard: IndexShard,
-                          val indexCommitRef: Engine.IndexCommitRef,
-                          val metadataSnapshot: Store.MetadataSnapshot,
-                          val replayOperationsFrom: Long): Closeable {
+                     val shard: IndexShard,
+                     val indexCommitRef: GatedCloseable<IndexCommit>,
+                     val metadataSnapshot: Store.MetadataSnapshot,
+                     val replayOperationsFrom: Long): Closeable {
 
     companion object {
         private const val INITIAL_FILE_CACHE_CAPACITY = 20

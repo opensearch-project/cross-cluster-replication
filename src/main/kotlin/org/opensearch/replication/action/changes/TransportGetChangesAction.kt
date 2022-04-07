@@ -114,7 +114,7 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
                 if(!fetchFromTranslog) {
                     log.debug("Fetching changes from lucene for ${request.shardId} - from:${request.fromSeqNo}, to:$toSeqNo")
                     relativeStartNanos  = System.nanoTime()
-                    indexShard.newChangesSnapshot("odr", request.fromSeqNo, toSeqNo, true).use { snapshot ->
+                    indexShard.newChangesSnapshot("odr", request.fromSeqNo, toSeqNo, true, true).use { snapshot ->
                         ops = ArrayList(snapshot.totalOperations())
                         var op = snapshot.next()
                         while (op != null) {
