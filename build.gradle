@@ -10,8 +10,11 @@
  */
 
 
+import javax.management.ObjectName
+import javax.management.remote.JMXConnector
 import javax.management.remote.JMXConnectorFactory
 import javax.management.remote.JMXServiceURL
+import javax.management.MBeanServerInvocationHandler
 import javax.net.ssl.HostnameVerifier
 import javax.net.ssl.HttpsURLConnection
 import javax.net.ssl.SSLContext
@@ -381,6 +384,15 @@ def configureCluster(OpenSearchCluster cluster, Boolean securityEnabled) {
     cluster.waitForAllConditions()
 }
 
+interface IProxy {
+    byte[] getExecutionData(boolean reset);
+
+    void dump(boolean reset);
+
+    void reset();
+}
+
+
 int startJmxPort=7777
 int endJmxPort = startJmxPort
 integTest {
@@ -437,6 +449,22 @@ integTest {
             systemProperty "tests.cluster.${cluster.name}.security_enabled", "${-> securityEnabled.toString()}"
             systemProperty "tests.cluster.${cluster.name}.total_nodes", "${-> _numNodes.toString()}"
             configureCluster(cluster, securityEnabled)
+        }
+    }
+
+    doLast {
+        for (int port=startJmxPort; port<endJmxPort; port++) {
+            def serverUrl = "service:jmx:rmi:///jndi/rmi://127.0.0.1:" + port + "/jmxrmi"
+
+            try(def connector = JMXConnectorFactory.connect(new JMXServiceURL(serverUrl))) {
+                def proxy = MBeanServerInvocationHandler.newProxyInstance(
+                        connector.getMBeanServerConnection(), new ObjectName("org.jacoco:type=Runtime"), IProxy.class,
+                        false)
+                byte[] data = proxy.getExecutionData(false)
+                file(jacoco.destinationFile).append(data)
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to fetch coverage data " , e)
+            }
         }
     }
 
