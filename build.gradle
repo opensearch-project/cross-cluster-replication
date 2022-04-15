@@ -559,8 +559,46 @@ task release {
 
 //========================== BWC Test setup ======================================================
 
-// TODO: Get from repo after its available: https://github.com/opensearch-project/opensearch-build/issues/184
-String repl_old_zip = "src/test/resources/replication/opensearch-cross-cluster-replication-${plugin_previous_version}.zip"
+
+def tmp_dir = project.file('build/private/artifact_tmp').absoluteFile
+tmp_dir.mkdirs()
+
+// Task to pull ccr plugin from archive
+task pullBwcPlugin {
+    doFirst {
+        delete java.nio.file.Path.of(tmp_dir.absolutePath, "opensearch-*")
+    }
+
+    doLast {
+        ant.get(
+                src: "https://artifacts.opensearch.org/releases/bundle/opensearch/${opensearch_previous_version}/opensearch-${opensearch_previous_version}-linux-x64.tar.gz",
+                dest: tmp_dir.absolutePath,
+                httpusecaches: false
+        )
+        copy {
+            from tarTree(java.nio.file.Path.of(tmp_dir.absolutePath, "opensearch-${opensearch_previous_version}-linux-x64.tar.gz"))
+            into tmp_dir.absolutePath
+        }
+        copy {
+            from(java.nio.file.Path.of(tmp_dir.absolutePath, "opensearch-${opensearch_previous_version}", "plugins", "opensearch-cross-cluster-replication"))
+            into java.nio.file.Path.of(tmp_dir.absolutePath, "opensearch-cross-cluster-replication")
+        }
+        delete java.nio.file.Path.of(tmp_dir.absolutePath, "opensearch-${opensearch_previous_version}"), java.nio.file.Path.of(tmp_dir.absolutePath, "opensearch-${opensearch_previous_version}-linux-x64.tar.gz")
+    }
+}
+
+// Task to zip plugin from archive
+task zipBwcPlugin(type: Zip) {
+    dependsOn "pullBwcPlugin"
+    from(java.nio.file.Path.of(tmp_dir.absolutePath, "opensearch-cross-cluster-replication"))
+    destinationDirectory = tmp_dir
+    archiveFileName = "opensearch-cross-cluster-replication-${opensearch_previous_version}.zip"
+    doLast {
+        delete java.nio.file.Path.of(tmp_dir.absolutePath, "opensearch-cross-cluster-replication")
+    }
+}
+
+
 
 def securityPluginOld = new Callable<RegularFile>() {
     @Override
@@ -581,17 +619,7 @@ clusters.each { name ->
     testClusters {
         "$name" {
             versions = [opensearch_previous_version, opensearch_version]
-            plugin(provider(new Callable<RegularFile>() {
-                @Override
-                RegularFile call() throws Exception {
-                    return new RegularFile() {
-                        @Override
-                        File getAsFile() {
-                            return fileTree(repl_old_zip).getSingleFile()
-                        }
-                    }
-                }
-            }))
+            plugin(project.tasks.zipBwcPlugin.archiveFile)
 
             if (securityEnabled) {
                 plugin(provider(securityPluginOld))
