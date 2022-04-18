@@ -37,17 +37,34 @@ class RemoteClusterTranslogService : AbstractLifecycleComponent(){
     
     public fun getHistoryOfOperations(indexShard: IndexShard, startSeqNo: Long, toSeqNo: Long): List<Translog.Operation> {
         log.trace("Fetching translog snapshot for $indexShard - from $startSeqNo to $toSeqNo")
-        // TODO: Revisit the method after closing the issue: https://github.com/opensearch-project/OpenSearch/issues/2482
-        var ops: List<Translog.Operation> = listOf()
-        indexShard.newChangesSnapshot("odr", startSeqNo, toSeqNo, true, true).use { snapshot ->
-            ops = ArrayList(snapshot.totalOperations())
-            var op = snapshot.next()
-            while (op != null) {
-                (ops as ArrayList<Translog.Operation>).add(op)
+        // Ref issue: https://github.com/opensearch-project/OpenSearch/issues/2482
+        val snapshot = indexShard.getHistoryOperationsFromTranslogFile(SOURCE_NAME, startSeqNo, toSeqNo)
+
+        // Total ops to be fetched (both toSeqNo and startSeqNo are inclusive)
+        val opsSize = toSeqNo - startSeqNo + 1
+        val ops = ArrayList<Translog.Operation>(opsSize.toInt())
+
+        // Filter and sort specific ops from the obtained history
+        var filteredOpsFromTranslog = 0
+        snapshot.use {
+            var op  = snapshot.next()
+            while(op != null) {
+                if(op.seqNo() in startSeqNo..toSeqNo) {
+                    ops.add(op)
+                    filteredOpsFromTranslog++
+                }
                 op = snapshot.next()
             }
         }
+        assert(filteredOpsFromTranslog == opsSize.toInt()) {"Missing operations while fetching from translog"}
 
-        return ops
+        val sortedOps = ArrayList<Translog.Operation>(opsSize.toInt())
+        sortedOps.addAll(ops)
+        for(ele in ops) {
+            sortedOps[(ele.seqNo() - startSeqNo).toInt()] = ele
+        }
+
+        log.debug("Starting seqno after sorting ${sortedOps[0].seqNo()} and ending seqno ${sortedOps[ops.size-1].seqNo()}")
+        return sortedOps.subList(0, ops.size.coerceAtMost((opsSize).toInt()))
     }
 }
