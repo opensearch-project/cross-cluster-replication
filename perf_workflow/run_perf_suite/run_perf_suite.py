@@ -13,7 +13,7 @@ from multiprocessing import Pool
 import yaml
 from ccr_perf_test import CcrPerfTest
 from manifests.bundle_manifest import BundleManifest
-
+from perf_runner import PerfRunner
 
 def main():
     """
