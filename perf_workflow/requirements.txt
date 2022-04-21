@@ -1,0 +1,13 @@
+PyYAML
+validators
+yamlfix
+cerberus
+pipenv
+requests
+retry
+aws_cdk.core
+aws_cdk.aws_ec2
+aws_cdk.aws_iam
+aws_cdk.aws_logs
+aws_cdk.aws_autoscaling
+git+https://git@github.com/opensearch-project/opensearch-build@main
