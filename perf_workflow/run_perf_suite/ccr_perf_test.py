@@ -139,7 +139,7 @@ class CcrPerfTest:
                             logging.error(f"Test failed for {self.description}: {e}")
 
     def create_cluster(self, bundle_manifest, config, stack_name, cluster_config, current_workspace):
-        if cluster_config.is_single_node_cluster():
+        if cluster_config.is_single_node_cluster:
             return PerfSingleNodeCluster.create(bundle_manifest, config, stack_name, cluster_config, current_workspace)
         else:
             return PerfMultiNodeCluster.create(bundle_manifest, config, stack_name, cluster_config, current_workspace)
