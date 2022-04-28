@@ -31,6 +31,9 @@ class CcrPerfTest:
     MAX_ALLOWED_REPLICATION_LAG_SECONDS = 60
     # TODO: Make credentials configurable/randomized
     CREDS = HTTPBasicAuth("admin", "admin")
+    RETRIES = 3
+    DELAY = 15
+    BACKOFF = 2
 
     def __init__(
         self, test_config: dict, config, bundle_manifest, tests_result_dir, security
@@ -161,27 +164,27 @@ class CcrPerfTest:
         path = f"/{index_name}/_count?format=json"
 
         leader_url = "".join([leaderCluster.endpoint_with_port, path])
-        leader_resp = requests.get(url=leader_url, auth=self.CREDS, verify=False)
+        leader_resp = retry_call(requests.get, fkwargs={"url": leader_url, "auth": self.CREDS, "verify": False},
+                            tries=self.RETRIES, delay=self.DELAY, backoff=self.BACKOFF)
         leader_doc_count = leader_resp.json()['count']
 
         follower_url = "".join([followerCluster.endpoint_with_port, path])
-        follower_resp = requests.get(url=follower_url, auth=self.CREDS, verify=False)
+        follower_resp = retry_call(requests.get, fkwargs={"url": follower_url, "auth": self.CREDS, "verify": False},
+                            tries=self.RETRIES, delay=self.DELAY, backoff=self.BACKOFF)
         follower_doc_count = follower_resp.json()['count']
 
-        assert leader_doc_count == follower_doc_count, "Doc count on leader doesnt match with follower"
+        assert leader_doc_count == follower_doc_count, "Doc count on leader doesn't match with follower"
 
     def verify_checkpoints(self, followerCluster):
         index_name = self.test_config["Workload"]
         path = f"/_plugins/_replication/{index_name}/_status?pretty"
 
         url = "".join([followerCluster.endpoint_with_port, path])
-        follower_resp = requests.get(url=url, auth=self.CREDS, verify=False)
-        try:
-            assert follower_resp.json()['status'] == "SYNCING", "Replication status is not syncing"
-            leader_checkpoint = follower_resp.json()['syncing_details']['leader_checkpoint']
-            follower_checkpoint = follower_resp.json()['syncing_details']['follower_checkpoint']
-        except Exception as e:
-            logging.error(f"Unable to compare leader and follower checkpoint from {follower_resp.json()}: {e}")
+        follower_resp = retry_call(requests.get, fkwargs={"url": url, "auth": self.CREDS, "verify": False},
+               tries=3, delay=15, backoff=2)
+        assert follower_resp.json()['status'] == "SYNCING", "Replication status is not syncing"
+        leader_checkpoint = follower_resp.json()['syncing_details']['leader_checkpoint']
+        follower_checkpoint = follower_resp.json()['syncing_details']['follower_checkpoint']
 
         assert leader_checkpoint == follower_checkpoint, "Follower is not at same checkpoint as leader"
 
