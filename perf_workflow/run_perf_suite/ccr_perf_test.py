@@ -12,7 +12,6 @@ import os
 import random
 import shutil
 import string
-import sys
 
 import requests
 from git.git_repository import GitRepository
@@ -57,7 +56,6 @@ class CcrPerfTest:
             return "https://github.com/opensearch-project/opensearch-infra.git"
 
     def run(self):
-        self.setup_logging()
         if self.tests_result_dir is not None:
             tests_dir = self.tests_result_dir + "/" + str(self.test_num)
         else:
@@ -105,38 +103,33 @@ class CcrPerfTest:
                             "default": [leaderCluster.endpoint_with_port],
                             "follower": [followerCluster.endpoint_with_port],
                         }
-                        workload_options = self.workload_options(
-                            leaderCluster, followerCluster
-                        )
+                        workload_options = self.workload_options()
                         args = PerfSuiteArgs(
                             self.test_config["Workload"], workload_options, 1, 0
                         )
-                        try:
-                            logging.info(
-                                f"Starting test {self.description}, Leader: {leaderCluster.endpoint}, Follower: {followerCluster.endpoint}"
-                            )
-                            # Execute the suite.
-                            perf_test_suite = PerfTestSuite(
-                                self.bundle_manifest,
-                                target_hosts,
-                                self.security,
-                                current_workspace,
-                                tests_dir,
-                                args,
-                                self.TEST_OWNER,
-                                self.CCR_SCENARIO,
-                            )
-                            perf_test_suite.execute()
 
-                            # Get test results and validate the metrics.
-                            result_json_file_path = max(
-                                glob.glob(tests_dir + "/*.json"), key=os.path.getmtime
-                            )
-                            with open(result_json_file_path, "r") as file:
-                                self.verify_result(json.load(file), leaderCluster, followerCluster)
-                        except Exception as e:
-                            self.failure_reason = str(e)
-                            logging.error(f"Test failed for {self.description}: {e}")
+                        logging.info(
+                            f"Starting test {self.description}, Leader: {leaderCluster.endpoint}, Follower: {followerCluster.endpoint}"
+                        )
+                        # Execute the suite.
+                        perf_test_suite = PerfTestSuite(
+                            self.bundle_manifest,
+                            target_hosts,
+                            self.security,
+                            current_workspace,
+                            tests_dir,
+                            args,
+                            self.TEST_OWNER,
+                            self.CCR_SCENARIO,
+                        )
+                        perf_test_suite.execute()
+
+                        # Get test results and validate the metrics.
+                        result_json_file_path = max(
+                            glob.glob(tests_dir + "/*.json"), key=os.path.getmtime
+                        )
+                        with open(result_json_file_path, "r") as file:
+                            self.verify_result(json.load(file), leaderCluster, followerCluster)
 
     def create_cluster(self, bundle_manifest, config, stack_name, cluster_config, current_workspace):
         if cluster_config.is_single_node_cluster:
@@ -145,9 +138,9 @@ class CcrPerfTest:
             return PerfMultiNodeCluster.create(bundle_manifest, config, stack_name, cluster_config, current_workspace)
 
     def verify_result(self, result, leaderCluster, followerCluster):
+        self.execution_id = result["testExecutionId"]
         self.verify_checkpoints(followerCluster)
         self.verify_doc_count(leaderCluster, followerCluster)
-        self.execution_id = result["testExecutionId"]
         for telemetry_result in result["testResults"]["customTelemetryData"]["overall"]:
             if (
                 telemetry_result["telemetryDevice"] == "ccr-stats"
@@ -183,28 +176,33 @@ class CcrPerfTest:
 
         url = "".join([followerCluster.endpoint_with_port, path])
         follower_resp = requests.get(url=url, auth=self.CREDS, verify=False)
-        leader_checkpoint = follower_resp.json()['syncing_details']['leader_checkpoint']
-        follower_checkpoint = follower_resp.json()['syncing_details']['follower_checkpoint']
+        try:
+            assert follower_resp.json()['status'] == "SYNCING", "Replication status is not syncing"
+            leader_checkpoint = follower_resp.json()['syncing_details']['leader_checkpoint']
+            follower_checkpoint = follower_resp.json()['syncing_details']['follower_checkpoint']
+        except Exception as e:
+            logging.error(f"Unable to compare leader and follower checkpoint from {follower_resp.json()}: {e}")
 
         assert leader_checkpoint == follower_checkpoint, "Follower is not at same checkpoint as leader"
 
-    def setup_logging(self):
-        root = logging.getLogger()
-        root.setLevel(logging.INFO)
-        handler = logging.StreamHandler(sys.stdout)
-        handler.setLevel(logging.INFO)
-        root.addHandler(handler)
-
-    def workload_options(self, leaderCluster, followerCluster):
+    def workload_options(self):
+        workload_param = {
+            "ingest_percentage": 100,
+            "index_settings": {
+                "index": {
+                    "number_of_shards": self.test_config.get("Shards", 1),
+                    "number_of_replicas": self.test_config.get("Replica", 0),
+                    "codec": "default"
+                }
+            }
+        }
         telemetry_options = {
             "ccr-stats-sample-interval": 1,
             "ccr-stats-indices": {"follower": [self.test_config["Workload"]]},
         }
         workload_options = {
             "telemetry-params": json.dumps(telemetry_options),
-            "workload-params": "number_of_shards:{},number_of_replicas:{}".format(
-                self.test_config.get("Shards", 1), self.test_config.get("Replica", 0)
-            ),
+            "workload-params": json.dumps(workload_param)
         }
         if self.security:
             # TODO: Move to configurable auth username and pwd.
