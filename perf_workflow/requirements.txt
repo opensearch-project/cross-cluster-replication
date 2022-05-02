@@ -5,9 +5,12 @@ cerberus
 pipenv
 requests
 retry
-aws_cdk.core
-aws_cdk.aws_ec2
-aws_cdk.aws_iam
-aws_cdk.aws_logs
-aws_cdk.aws_autoscaling
+ndg-httpsclient
+pyopenssl
+pyasn1
+aws_cdk.core~=1.143.0
+aws_cdk.aws_ec2~=1.143.0
+aws_cdk.aws_iam~=1.143.0
+aws_cdk.aws_logs~=1.143.0
+aws_cdk.aws_autoscaling~=1.143.0
 git+https://git@github.com/opensearch-project/opensearch-build@main
