@@ -401,6 +401,7 @@ integTest {
     // We skip BWC test here as those get run as part of separate target `bwcTestSuite`.
     filter {
         excludeTestsMatching "org.opensearch.replication.bwc.*IT"
+        excludeTestsMatching "org.opensearch.replication.singleCluster.SingleClusterSanityIT"
     }
 
     /*
@@ -612,7 +613,7 @@ def securityPluginOld = new Callable<RegularFile>() {
 }
 
 // We maintain 2 set of clusters here. One for full cluster restart and one for rolling restart + mixed cluster.
-List<String> clusters = ["bwcLeader0", "bwcFollower0", "bwcLeader1", "bwcFollower1"]
+List<String> clusters = ["bwcLeader0", "bwcFollower0", "bwcLeader1", "bwcFollower1","singleCluster"]
 // TODO: Make BWC test work with security plugin
 clusters.each { name ->
     testClusters {
@@ -857,4 +858,28 @@ task "bwcTestSuite"(type: RestIntegTestTask) {
     dependsOn tasks.named("mixedClusterTask")
     dependsOn tasks.named("rollingUpgradeClusterTask")
     dependsOn tasks.named("fullRestartClusterTask")
+}
+
+task integTestSingleCluster(type: RestIntegTestTask) {
+    useCluster testClusters.singleCluster
+    doFirst {
+        getClusters().forEach { cluster ->
+            String alltransportSocketURI = cluster.nodes.stream().flatMap { node ->
+                node.getAllTransportPortURI().stream()
+            }.collect(Collectors.joining(","))
+            String allHttpSocketURI = cluster.nodes.stream().flatMap { node ->
+                node.getAllHttpSocketURI().stream()
+            }.collect(Collectors.joining(","))
+
+            systemProperty "tests.cluster.${cluster.name}.http_hosts", "${-> allHttpSocketURI}"
+            systemProperty "tests.cluster.${cluster.name}.transport_hosts", "${-> alltransportSocketURI}"
+            systemProperty "tests.cluster.${cluster.name}.security_enabled", "${-> securityEnabled.toString()}"
+            configureCluster(cluster, securityEnabled)
+        }
+    }
+
+    filter {
+        setIncludePatterns("org.opensearch.replication.singleCluster.SingleClusterSanityIT")
+    }
+    nonInputProperties.systemProperty('tests.sanitySingleCluster', "integTestSingleCluster")
 }
