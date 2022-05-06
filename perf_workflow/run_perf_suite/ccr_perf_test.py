@@ -182,22 +182,20 @@ class CcrPerfTest:
 
         url = "".join([followerCluster.endpoint_with_port, path])
         follower_resp = retry_call(requests.get, fkwargs={"url": url, "auth": self.CREDS, "verify": False},
-               tries=3, delay=15, backoff=2)
-        assert follower_resp.json()['status'] == "SYNCING", "Replication status is not syncing"
-        leader_checkpoint = follower_resp.json()['syncing_details']['leader_checkpoint']
-        follower_checkpoint = follower_resp.json()['syncing_details']['follower_checkpoint']
+               tries=3, delay=15, backoff=2).json()
+        assert follower_resp['status'] == "SYNCING", f"Replication status is not syncing. Response: {follower_resp}"
+        leader_checkpoint = follower_resp['syncing_details']['leader_checkpoint']
+        follower_checkpoint = follower_resp['syncing_details']['follower_checkpoint']
 
-        assert leader_checkpoint == follower_checkpoint, "Follower is not at same checkpoint as leader"
+        assert leader_checkpoint == follower_checkpoint, f"Follower is not at same checkpoint as leader. Response: {follower_resp}"
 
     def workload_options(self):
         workload_param = {
             "ingest_percentage": 100,
             "index_settings": {
-                "index": {
-                    "number_of_shards": self.test_config.get("Shards", 1),
-                    "number_of_replicas": self.test_config.get("Replica", 0),
-                    "codec": "default"
-                }
+                "number_of_shards": self.test_config.get("Shards", 1),
+                "number_of_replicas": self.test_config.get("Replica", 0),
+                "codec": "default"
             }
         }
         telemetry_options = {
