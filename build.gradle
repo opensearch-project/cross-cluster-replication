@@ -613,7 +613,7 @@ def securityPluginOld = new Callable<RegularFile>() {
 }
 
 // We maintain 2 set of clusters here. One for full cluster restart and one for rolling restart + mixed cluster.
-List<String> clusters = ["bwcLeader0", "bwcFollower0", "bwcLeader1", "bwcFollower1","singleCluster"]
+List<String> clusters = ["bwcLeader0", "bwcFollower0", "bwcLeader1", "bwcFollower1"]
 // TODO: Make BWC test work with security plugin
 clusters.each { name ->
     testClusters {
@@ -860,24 +860,12 @@ task "bwcTestSuite"(type: RestIntegTestTask) {
     dependsOn tasks.named("fullRestartClusterTask")
 }
 
-task integTestSingleCluster(type: RestIntegTestTask) {
-    useCluster testClusters.singleCluster
+task integTestRemote(type: RestIntegTestTask) {
     doFirst {
-        getClusters().forEach { cluster ->
-            String alltransportSocketURI = cluster.nodes.stream().flatMap { node ->
-                node.getAllTransportPortURI().stream()
-            }.collect(Collectors.joining(","))
-            String allHttpSocketURI = cluster.nodes.stream().flatMap { node ->
-                node.getAllHttpSocketURI().stream()
-            }.collect(Collectors.joining(","))
-
-            systemProperty "tests.cluster.${cluster.name}.http_hosts", "${-> allHttpSocketURI}"
-            systemProperty "tests.cluster.${cluster.name}.transport_hosts", "${-> alltransportSocketURI}"
-            systemProperty "tests.cluster.${cluster.name}.security_enabled", "${-> securityEnabled.toString()}"
-            configureCluster(cluster, securityEnabled)
-        }
+        systemProperty "tests.cluster.follower.http_hosts", System.getProperty("follower.http_host")
+        systemProperty "tests.cluster.follower.transport_hosts", System.getProperty("follower.transport_host")
+        systemProperty "tests.cluster.follower.security_enabled", System.getProperty("security_enabled")
     }
-
     filter {
         setIncludePatterns("org.opensearch.replication.singleCluster.SingleClusterSanityIT")
     }
