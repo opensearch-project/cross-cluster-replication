@@ -93,6 +93,7 @@ apply plugin: 'opensearch.testclusters'
 apply plugin: 'opensearch.rest-test'
 apply plugin: 'org.jetbrains.kotlin.jvm'
 apply plugin: 'org.jetbrains.kotlin.plugin.allopen'
+apply plugin: 'opensearch.pluginzip'
 
 forbiddenApisTest.ignoreFailures = true
 
@@ -870,4 +871,27 @@ task integTestRemote(type: RestIntegTestTask) {
         setIncludePatterns("org.opensearch.replication.singleCluster.SingleClusterSanityIT")
     }
     nonInputProperties.systemProperty('tests.sanitySingleCluster', "integTestSingleCluster")
+}
+
+publishing {
+    publications {
+        pluginZip(MavenPublication) { publication ->
+            pom {
+                name = opensearchplugin.name
+                description = opensearchplugin.description
+                licenses {
+                    license {
+                        name = "The Apache License, Version 2.0"
+                        url = "http://www.apache.org/licenses/LICENSE-2.0.txt"
+                    }
+                }
+                developers {
+                    developer {
+                        name = "OpenSearch"
+                        url = "https://github.com/opensearch-project/cross-cluster-replication"
+                    }
+                }
+            }
+        }
+    }
 }
