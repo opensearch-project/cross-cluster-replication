@@ -454,6 +454,10 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
         return OpenSearchRestTestCase.entityAsMap(client.performRequest(Request("GET", endpoint)))
     }
 
+    fun getAsList(client: RestClient, endpoint: String): List<Any> {
+        return OpenSearchRestTestCase.entityAsList(client.performRequest(Request("GET", endpoint)))
+    }
+
     protected fun createConnectionBetweenClusters(fromClusterName: String, toClusterName: String, connectionName: String="source") {
         val toCluster = getNamedCluster(toClusterName)
         val fromCluster = getNamedCluster(fromClusterName)

@@ -401,6 +401,7 @@ integTest {
     // We skip BWC test here as those get run as part of separate target `bwcTestSuite`.
     filter {
         excludeTestsMatching "org.opensearch.replication.bwc.*IT"
+        excludeTestsMatching "org.opensearch.replication.singleCluster.SingleClusterSanityIT"
     }
 
     /*
@@ -857,4 +858,16 @@ task "bwcTestSuite"(type: RestIntegTestTask) {
     dependsOn tasks.named("mixedClusterTask")
     dependsOn tasks.named("rollingUpgradeClusterTask")
     dependsOn tasks.named("fullRestartClusterTask")
+}
+
+task integTestRemote(type: RestIntegTestTask) {
+    doFirst {
+        systemProperty "tests.cluster.follower.http_hosts", System.getProperty("follower.http_host")
+        systemProperty "tests.cluster.follower.transport_hosts", System.getProperty("follower.transport_host")
+        systemProperty "tests.cluster.follower.security_enabled", System.getProperty("security_enabled")
+    }
+    filter {
+        setIncludePatterns("org.opensearch.replication.singleCluster.SingleClusterSanityIT")
+    }
+    nonInputProperties.systemProperty('tests.sanitySingleCluster', "integTestSingleCluster")
 }
