@@ -36,9 +36,9 @@ import org.opensearch.gradle.test.RestIntegTestTask
 buildscript {
     ext {
         isSnapshot = "true" == System.getProperty("build.snapshot", "true")
-        opensearch_version = System.getProperty("opensearch.version", "2.0.0-rc1-SNAPSHOT")
-        buildVersionQualifier = System.getProperty("build.version_qualifier", "rc1")
-        // 2.0.0-rc1-SNAPSHOT -> 2.0.0.0-rc1-SNAPSHOT
+        opensearch_version = System.getProperty("opensearch.version", "2.1.0-SNAPSHOT")
+        buildVersionQualifier = System.getProperty("build.version_qualifier", "")
+        // e.g. 2.0.0-rc1-SNAPSHOT -> 2.0.0.0-rc1-SNAPSHOT
         version_tokens = opensearch_version.tokenize('-')
         opensearch_build = version_tokens[0] + '.0'
         if (buildVersionQualifier) {
@@ -140,7 +140,7 @@ repositories {
     mavenCentral()
     maven { url "https://aws.oss.sonatype.org/content/repositories/snapshots" }
     maven { url "https://plugins.gradle.org/m2/" }
-    maven { url "https://aws.oss.sonatype.org/content/repositories/snapshots" }
+    maven { url "https://d1nvenhzbhpy0q.cloudfront.net/snapshots/lucene/" }
 }
 
 compileKotlin {
