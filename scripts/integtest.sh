@@ -18,6 +18,8 @@ function usage() {
     echo -e "-s SECURITY_ENABLED\t(true | false), defaults to true. Specify the OpenSearch/Dashboards have security enabled or not."
     echo -e "-c CREDENTIAL\t(usename:password), no defaults, effective when SECURITY_ENABLED=true."
     echo -e "-h\tPrint this message."
+    echo -e "-v OPENSEARCH_VERSION\t, no defaults"
+    echo -e "-n SNAPSHOT\t, defaults to false"
     echo "--------------------------------------------------------------------------"
 }
 
@@ -41,6 +43,12 @@ while getopts ":h:b:p:s:c:v:n:t:" arg; do
             ;;
         c)
             CREDENTIAL=$OPTARG
+            ;;
+        v)
+            # Do nothing as we're not consuming this param.
+            ;;
+        n)
+            # Do nothing as we're not consuming this param.
             ;;
         :)
             echo "-${OPTARG} requires an argument"
