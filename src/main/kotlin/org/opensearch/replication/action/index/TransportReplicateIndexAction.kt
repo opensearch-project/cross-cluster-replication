@@ -32,6 +32,7 @@ import org.opensearch.action.support.ActionFilters
 import org.opensearch.action.support.HandledTransportAction
 import org.opensearch.action.support.IndicesOptions
 import org.opensearch.client.Client
+import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.common.inject.Inject
 import org.opensearch.common.settings.Settings
@@ -82,8 +83,8 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
                 // Any checks on the settings is followed by setup checks to ensure all relevant changes are
                 // present across the plugins
                 // validate index metadata on the leader cluster
-                val leaderIndexMetadata = getLeaderIndexMetadata(request.leaderAlias, request.leaderIndex)
-                ValidationUtil.validateLeaderIndexMetadata(leaderIndexMetadata)
+                val leaderClusterState = getLeaderClusterState(request.leaderAlias, request.leaderIndex)
+                ValidationUtil.validateLeaderIndexState(request.leaderAlias, request.leaderIndex, leaderClusterState)
 
                 val leaderSettings = getLeaderIndexSettings(request.leaderAlias, request.leaderIndex)
 
@@ -112,17 +113,17 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
         }
     }
 
-    private suspend fun getLeaderIndexMetadata(leaderAlias: String, leaderIndex: String): IndexMetadata {
+    private suspend fun getLeaderClusterState(leaderAlias: String, leaderIndex: String): ClusterState {
         val remoteClusterClient = client.getRemoteClusterClient(leaderAlias)
         val clusterStateRequest = remoteClusterClient.admin().cluster().prepareState()
                 .clear()
                 .setIndices(leaderIndex)
+                .setRoutingTable(true)
                 .setMetadata(true)
                 .setIndicesOptions(IndicesOptions.strictSingleIndexNoExpandForbidClosed())
                 .request()
-        val remoteState = remoteClusterClient.suspending(remoteClusterClient.admin().cluster()::state,
+        return remoteClusterClient.suspending(remoteClusterClient.admin().cluster()::state,
                 injectSecurityContext = true, defaultContext = true)(clusterStateRequest).state
-        return remoteState.metadata.index(leaderIndex) ?: throw IndexNotFoundException("${leaderAlias}:${leaderIndex}")
     }
 
     private suspend fun getLeaderIndexSettings(leaderAlias: String, leaderIndex: String): Settings {

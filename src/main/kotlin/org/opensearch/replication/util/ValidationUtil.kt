@@ -14,12 +14,14 @@ package org.opensearch.replication.util
 import org.apache.logging.log4j.LogManager
 import org.opensearch.ResourceNotFoundException
 import org.opensearch.Version
+import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.cluster.metadata.MetadataCreateIndexService
 import org.opensearch.common.Strings
 import org.opensearch.common.ValidationException
 import org.opensearch.common.settings.Settings
 import org.opensearch.env.Environment
+import org.opensearch.index.IndexNotFoundException
 import java.io.UnsupportedEncodingException
 import java.nio.file.Files
 import java.nio.file.Path
@@ -85,7 +87,7 @@ object ValidationUtil {
      * This ensures that clusters upgrade in the above order for the existing cross cluster
      * connections
      */
-    fun validateLeaderIndexMetadata(leaderIndexMetadata: IndexMetadata) {
+    private fun validateLeaderIndexMetadata(leaderIndexMetadata: IndexMetadata) {
         if(Version.CURRENT.before(leaderIndexMetadata.creationVersion)) {
             val err = "Leader index[${leaderIndexMetadata.index.name}] is on " +
                     "higher version [${leaderIndexMetadata.creationVersion}] than follower [${Version.CURRENT}]"
@@ -97,6 +99,22 @@ object ValidationUtil {
                     "higher version [${leaderIndexMetadata.upgradedVersion}] than follower [${Version.CURRENT}]"
             log.error(err)
             throw IllegalArgumentException(err)
+        }
+    }
+
+    /**
+     * validate leader index state - version and shard routing, based on leader cluster state
+     */
+    fun validateLeaderIndexState(leaderAlias: String, leaderIndex: String, leaderClusterState: ClusterState) {
+        val leaderIndexMetadata = leaderClusterState.metadata.index(leaderIndex) ?: throw IndexNotFoundException("${leaderAlias}:${leaderIndex}")
+        // validate index metadata
+        validateLeaderIndexMetadata(leaderIndexMetadata)
+
+        // validate index shard state - All primary shards should be active
+        if(!leaderClusterState.routingTable.index(leaderIndex).allPrimaryShardsActive()) {
+            val validationException = ValidationException()
+            validationException.addValidationError("Primary shards in the Index[${leaderAlias}:${leaderIndex}] are not active")
+            throw validationException
         }
     }
 }
