@@ -47,6 +47,7 @@ import org.opensearch.common.settings.Settings
 import org.opensearch.common.xcontent.XContentType
 import org.opensearch.index.IndexingPressureService
 import org.opensearch.index.engine.Engine
+import org.opensearch.index.mapper.MapperParsingException
 import org.opensearch.index.shard.IndexShard
 import org.opensearch.index.translog.Translog
 import org.opensearch.indices.IndicesService
@@ -119,8 +120,9 @@ class TransportReplayChangesAction @Inject constructor(settings: Settings, trans
             if(primaryShard.maxSeqNoOfUpdatesOrDeletes < request.maxSeqNoOfUpdatesOrDeletes) {
                 primaryShard.advanceMaxSeqNoOfUpdatesOrDeletes(request.maxSeqNoOfUpdatesOrDeletes)
             }
+
             var result = primaryShard.applyTranslogOperation(op, Engine.Operation.Origin.PRIMARY)
-            if (result.resultType == Engine.Result.Type.MAPPING_UPDATE_REQUIRED) {
+            if (shouldSyncMappingAndRetry(result)) {
                 waitForMappingUpdate {
                     // fetch mappings from the leader cluster when applying on PRIMARY...
                     syncRemoteMapping(request.leaderAlias, request.leaderIndex, request.shardId()!!.indexName,
@@ -133,6 +135,15 @@ class TransportReplayChangesAction @Inject constructor(settings: Settings, trans
         }
         val response = ReplayChangesResponse() // TODO: Figure out what to add to response
         return WritePrimaryResult(request, response, location, null, primaryShard, log)
+    }
+    fun shouldSyncMappingAndRetry(result: Engine.Result): Boolean {
+        /*
+            1. Incase the doc index requires a mapping update, we get the result as MAPPING_UPDATE_REQUIRED.
+            2. If the dynamic mapping is set to strict, IndexShard will simply reject the applyTranslogOperation operation
+            as expected. This can happen if user has already updated the mapping on leader but its not present on the follower yet.
+            So in both case, we sync the mapping from leader index and retry the applyTranslogOperation.
+         */
+        return result.resultType == Engine.Result.Type.MAPPING_UPDATE_REQUIRED || result.failure is MapperParsingException
     }
 
     /**
