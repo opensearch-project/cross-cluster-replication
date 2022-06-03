@@ -108,6 +108,9 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
         val lowLevelClient = restClient.lowLevelClient!!
 
         var defaultSecuritySetupCompleted = false
+        companion object {
+            const val FS_SNAPSHOT_REPO = "repl_repo"
+        }
     }
 
     companion object {
@@ -242,7 +245,33 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
      */
     @Before
     fun setup() {
-        testClusters.values.forEach { if(it.securityEnabled && !it.defaultSecuritySetupCompleted) setupDefaultSecurityRoles(it) }
+        testClusters.values.forEach {
+            registerSnapshotRepository(it)
+            if(it.securityEnabled && !it.defaultSecuritySetupCompleted)
+                setupDefaultSecurityRoles(it)
+        }
+    }
+
+    /**
+     * Register snapshot repo - "fs" type on all the clusters
+     */
+    private fun registerSnapshotRepository(testCluster: TestCluster) {
+        val getResponse: Map<String, Any> = OpenSearchRestTestCase.entityAsMap(testCluster.lowLevelClient.performRequest(
+                Request("GET", "/_cluster/settings?include_defaults=true&flat_settings=true")))
+        val configuredRepositories = (getResponse["defaults"] as Map<*, *>)["path.repo"] as List<*>
+        if(configuredRepositories.isEmpty()) {
+            return
+        }
+        val repo = configuredRepositories[0] as String
+        val repoConfig = """
+            {
+              "type": "fs",
+              "settings": {
+                "location": "$repo"
+              }
+            }
+        """.trimIndent()
+        triggerRequest(testCluster.lowLevelClient, "PUT", "_snapshot/${TestCluster.FS_SNAPSHOT_REPO}", repoConfig)
     }
 
     /**
