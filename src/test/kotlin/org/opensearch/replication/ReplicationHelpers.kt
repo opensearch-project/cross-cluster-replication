@@ -96,7 +96,7 @@ fun RestHighLevelClient.startReplication(request: StartReplicationRequest,
         waitForNoInitializingShards()
 }
 fun getAckResponse(lowLevelResponse: Response): AcknowledgedResponse {
-    val xContentType = XContentType.fromMediaTypeOrFormat(lowLevelResponse.entity.contentType.value)
+    val xContentType = XContentType.fromMediaType(lowLevelResponse.entity.contentType.value)
     val xcp = xContentType.xContent().createParser(NamedXContentRegistry.EMPTY, DeprecationHandler.IGNORE_DEPRECATIONS,
             lowLevelResponse.entity.content)
     return AcknowledgedResponse.fromXContent(xcp)

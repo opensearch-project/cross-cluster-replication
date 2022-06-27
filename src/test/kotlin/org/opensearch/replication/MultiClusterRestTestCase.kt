@@ -515,16 +515,7 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
 
         var parser = XContentType.JSON.xContent().createParser(NamedXContentRegistry.EMPTY, DeprecationHandler.THROW_UNSUPPORTED_OPERATION, resp)
         var nodes = mutableListOf<String>()
-        parser.list().forEach{ item  ->
-            val entryValue = item.toString()
-
-            val map = entryValue.subSequence(1,entryValue.length-1).split(",").associate {
-                val (key, value) = it.trim().split("=")
-                key to value
-            }
-            nodes.add(map.get("name").orEmpty())
-        }
-
+        parser.list().forEach{ item  -> nodes.add((item as HashMap<String, String>)["name"].orEmpty())}
         return nodes
     }
 
