@@ -1055,8 +1055,6 @@ class StartReplicationIT: MultiClusterRestTestCase() {
 
             followerClient.pauseReplication(followerIndex2)
             followerClient.stopReplication(followerIndex3)
-
-
             val stats = followerClient.followerStats()
             assertThat(stats.getValue("num_syncing_indices").toString()).isEqualTo("1")
             assertThat(stats.getValue("num_paused_indices").toString()).isEqualTo("1")
@@ -1066,6 +1064,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             assertThat(stats.getValue("operations_read").toString()).isEqualTo("50")
             assertThat(stats.getValue("failed_read_requests").toString()).isEqualTo("0")
             assertThat(stats.getValue("failed_write_requests").toString()).isEqualTo("0")
+            assertThat(stats.getValue("follower_checkpoint").toString()).isEqualTo((docCount-1).toString())
             assertThat(stats.containsKey("index_stats"))
             assertThat(stats.size).isEqualTo(16)
         } finally {

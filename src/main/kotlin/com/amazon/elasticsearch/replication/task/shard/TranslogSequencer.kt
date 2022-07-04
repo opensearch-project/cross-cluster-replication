@@ -32,6 +32,7 @@ import org.elasticsearch.client.Client
 import org.elasticsearch.common.logging.Loggers
 import org.elasticsearch.index.shard.ShardId
 import org.elasticsearch.index.translog.Translog
+import com.amazon.elasticsearch.replication.util.indicesService
 import org.elasticsearch.tasks.TaskId
 import java.util.ArrayList
 import java.util.concurrent.ConcurrentHashMap
@@ -58,6 +59,9 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
     private val unAppliedChanges = ConcurrentHashMap<Long, GetChangesResponse>()
     private val log = Loggers.getLogger(javaClass, followerShardId)!!
     private val completed = CompletableDeferred<Unit>()
+
+    val followerIndexService = indicesService.indexServiceSafe(followerShardId.index)
+    val indexShard = followerIndexService.getShard(followerShardId.id)
 
     private val sequencer = scope.actor<Unit>(capacity = Channel.UNLIMITED) {
         // Exceptions thrown here will mark the channel as failed and the next attempt to send to the channel will
@@ -92,6 +96,7 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
                     val tookInNanos = System.nanoTime() - relativeStartNanos
                     followerClusterStats.stats[followerShardId]!!.totalWriteTime.addAndGet(TimeUnit.NANOSECONDS.toMillis(tookInNanos))
                     followerClusterStats.stats[followerShardId]!!.opsWritten.addAndGet(replayRequest.changes.size.toLong())
+                    followerClusterStats.stats[followerShardId]!!.followerCheckpoint = indexShard.localCheckpoint
                 }
                 highWatermark = next.changes.lastOrNull()?.seqNo() ?: highWatermark
             }

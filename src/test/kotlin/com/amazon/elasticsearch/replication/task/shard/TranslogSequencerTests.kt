@@ -23,9 +23,11 @@ import com.amazon.elasticsearch.replication.metadata.ReplicationOverallState
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationContext
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationMetadata
 import com.amazon.elasticsearch.replication.metadata.store.ReplicationStoreMetadataType
+import com.amazon.elasticsearch.replication.util.indicesService
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.ObsoleteCoroutinesApi
 import kotlinx.coroutines.test.runBlockingTest
+import org.mockito.Mockito
 import org.assertj.core.api.Assertions.assertThat
 import org.elasticsearch.action.ActionListener
 import org.elasticsearch.action.ActionRequest
@@ -33,13 +35,17 @@ import org.elasticsearch.action.ActionResponse
 import org.elasticsearch.action.ActionType
 import org.elasticsearch.action.support.replication.ReplicationResponse.ShardInfo
 import org.elasticsearch.common.settings.Settings
+import org.elasticsearch.index.IndexService
+import org.elasticsearch.index.shard.IndexShard
 import org.elasticsearch.index.shard.ShardId
 import org.elasticsearch.index.translog.Translog
+import org.elasticsearch.indices.IndicesService
 import org.elasticsearch.tasks.TaskId.EMPTY_TASK_ID
 import org.elasticsearch.test.ESTestCase
 import org.elasticsearch.test.ESTestCase.randomList
 import org.elasticsearch.test.client.NoOpClient
 import java.util.Locale
+
 
 @ObsoleteCoroutinesApi
 class TranslogSequencerTests : ESTestCase() {
@@ -87,6 +93,11 @@ class TranslogSequencerTests : ESTestCase() {
         val stats = FollowerClusterStats()
         stats.stats[followerShardId]  = FollowerShardMetric()
         val startSeqNo = randomNonNegativeLong()
+        indicesService = Mockito.mock(IndicesService::class.java)
+        val followerIndexService = Mockito.mock(IndexService::class.java)
+        val indexShard = Mockito.mock(IndexShard::class.java)
+        Mockito.`when`(indicesService.indexServiceSafe(followerShardId.index)).thenReturn(followerIndexService)
+        Mockito.`when`(followerIndexService.getShard(followerShardId.id)).thenReturn(indexShard)
         val sequencer = TranslogSequencer(this, replicationMetadata, followerShardId, leaderAlias, leaderIndex, EMPTY_TASK_ID,
                                           client, startSeqNo, stats)
 
