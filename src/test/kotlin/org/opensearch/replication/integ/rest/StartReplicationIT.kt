@@ -1075,6 +1075,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             assertThat(stats.getValue("operations_read").toString()).isEqualTo("50")
             assertThat(stats.getValue("failed_read_requests").toString()).isEqualTo("0")
             assertThat(stats.getValue("failed_write_requests").toString()).isEqualTo("0")
+            assertThat(stats.getValue("follower_checkpoint").toString()).isEqualTo((docCount-1).toString())
             assertThat(stats.containsKey("index_stats"))
             assertThat(stats.size).isEqualTo(16)
 
