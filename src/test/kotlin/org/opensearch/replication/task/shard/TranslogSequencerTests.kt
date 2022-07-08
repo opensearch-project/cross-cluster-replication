@@ -11,6 +11,22 @@
 
 package org.opensearch.replication.task.shard
 
+import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.ObsoleteCoroutinesApi
+import kotlinx.coroutines.test.runBlockingTest
+import org.assertj.core.api.Assertions.assertThat
+import org.mockito.Mockito
+import org.opensearch.action.ActionListener
+import org.opensearch.action.ActionRequest
+import org.opensearch.action.ActionResponse
+import org.opensearch.action.ActionType
+import org.opensearch.action.support.replication.ReplicationResponse.ShardInfo
+import org.opensearch.common.settings.Settings
+import org.opensearch.index.IndexService
+import org.opensearch.index.shard.IndexShard
+import org.opensearch.index.shard.ShardId
+import org.opensearch.index.translog.Translog
+import org.opensearch.indices.IndicesService
 import org.opensearch.replication.action.changes.GetChangesResponse
 import org.opensearch.replication.action.replay.ReplayChangesAction
 import org.opensearch.replication.action.replay.ReplayChangesRequest
@@ -19,23 +35,12 @@ import org.opensearch.replication.metadata.ReplicationOverallState
 import org.opensearch.replication.metadata.store.ReplicationContext
 import org.opensearch.replication.metadata.store.ReplicationMetadata
 import org.opensearch.replication.metadata.store.ReplicationStoreMetadataType
-import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.ObsoleteCoroutinesApi
-import kotlinx.coroutines.test.runBlockingTest
-import org.assertj.core.api.Assertions.assertThat
-import org.opensearch.action.ActionListener
-import org.opensearch.action.ActionRequest
-import org.opensearch.action.ActionResponse
-import org.opensearch.action.ActionType
-import org.opensearch.action.support.replication.ReplicationResponse.ShardInfo
-import org.opensearch.common.settings.Settings
-import org.opensearch.index.shard.ShardId
-import org.opensearch.index.translog.Translog
+import org.opensearch.replication.util.indicesService
 import org.opensearch.tasks.TaskId.EMPTY_TASK_ID
 import org.opensearch.test.OpenSearchTestCase
-import org.opensearch.test.OpenSearchTestCase.randomList
 import org.opensearch.test.client.NoOpClient
 import java.util.Locale
+
 
 @ObsoleteCoroutinesApi
 class TranslogSequencerTests : OpenSearchTestCase() {
@@ -83,6 +88,11 @@ class TranslogSequencerTests : OpenSearchTestCase() {
         val stats = FollowerClusterStats()
         stats.stats[followerShardId]  = FollowerShardMetric()
         val startSeqNo = randomNonNegativeLong()
+        indicesService = Mockito.mock(IndicesService::class.java)
+        val followerIndexService = Mockito.mock(IndexService::class.java)
+        val indexShard = Mockito.mock(IndexShard::class.java)
+        Mockito.`when`(indicesService.indexServiceSafe(followerShardId.index)).thenReturn(followerIndexService)
+        Mockito.`when`(followerIndexService.getShard(followerShardId.id)).thenReturn(indexShard)
         val sequencer = TranslogSequencer(this, replicationMetadata, followerShardId, leaderAlias, leaderIndex, EMPTY_TASK_ID,
                                           client, startSeqNo, stats)
 
