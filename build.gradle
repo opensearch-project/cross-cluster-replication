@@ -43,7 +43,7 @@ buildscript {
         plugin_previous_version = opensearch_previous_version.replaceAll(/(\.\d)([^\d]*)$/, '$1.0$2')
 
         common_utils_version = System.getProperty("common_utils.version", opensearch_build)
-        kotlin_version = System.getProperty("kotlin.version", "1.3.72")
+        kotlin_version = System.getProperty("kotlin.version", "1.6.0")
 
     }
 
@@ -59,7 +59,7 @@ buildscript {
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:${kotlin_version}"
         classpath "org.jetbrains.kotlin:kotlin-allopen:${kotlin_version}"
         classpath "io.gitlab.arturbosch.detekt:detekt-gradle-plugin:1.0.0-RC15"
-        classpath "org.jacoco:org.jacoco.agent:0.8.5"
+        classpath "org.jacoco:org.jacoco.agent:0.8.7"
     }
 }
 
@@ -75,6 +75,9 @@ allprojects {
     if (isSnapshot) {
         version += "-SNAPSHOT"
     }
+    // Have resolve the jacoco version here to work with kotlin
+    // Ref: https://github.com/jacoco/jacoco/issues/1187
+    jacoco.toolVersion = "0.8.7"
 }
 
 apply plugin: 'java'
