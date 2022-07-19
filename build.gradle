@@ -56,6 +56,14 @@ buildscript {
         common_utils_version = System.getProperty("common_utils.version", opensearch_build)
         kotlin_version = System.getProperty("kotlin.version", "1.6.0")
 
+        // For fetching security zip from Maven.
+        // https://ci.opensearch.org/ci/dbc/distribution-build-opensearch/2.1.0/latest/linux/x64/tar/builds/opensearch/plugins/opensearch-security-2.1.0.0.zip
+        opensearch_no_snapshot = opensearch_version.replace("-SNAPSHOT","")
+        security_no_snapshot = opensearch_build.replace("-SNAPSHOT","")
+        security_plugin_path = "build/dependencies/security"
+        security_plugin_download_url = 'https://ci.opensearch.org/ci/dbc/distribution-build-opensearch/' + opensearch_no_snapshot +
+                '/latest/linux/x64/tar/builds/opensearch/plugins/opensearch-security-' + security_no_snapshot + '.zip'
+
     }
 
     repositories {
@@ -63,6 +71,7 @@ buildscript {
         mavenCentral()
         maven { url "https://aws.oss.sonatype.org/content/repositories/snapshots" }
         maven { url "https://plugins.gradle.org/m2/" }
+        maven { url "https://d1nvenhzbhpy0q.cloudfront.net/snapshots/lucene/" }
     }
 
     dependencies {
@@ -209,7 +218,14 @@ def securityPluginFile = new Callable<RegularFile>() {
             return new RegularFile() {
                 @Override
                 File getAsFile() {
-                    return fileTree("$projectDir/src/test/resources/security/plugin/opensearch-security.zip").getSingleFile()
+                    if (new File("$project.rootDir/$security_plugin_path").exists()) {
+                        project.delete(files("$project.rootDir/$security_plugin_path"))
+                    }
+                    project.mkdir security_plugin_path
+                    ant.get(src: security_plugin_download_url,
+                            dest: security_plugin_path,
+                            httpusecaches: false)
+                    return fileTree(security_plugin_path).getSingleFile()
                 }
             }
         }
