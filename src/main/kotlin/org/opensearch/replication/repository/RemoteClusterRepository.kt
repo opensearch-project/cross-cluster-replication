@@ -100,8 +100,6 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         fun repoForCluster(leaderClusterName: String): String = REMOTE_REPOSITORY_PREFIX + leaderClusterName
     }
 
-
-
     override fun getRestoreThrottleTimeInNanos(): Long {
         return restoreRateLimitingTimeInNanos.count()
     }
@@ -238,9 +236,11 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         val builder = Settings.builder().put(indexMetadata.settings)
         val replicatedIndex = "${repositoryMetadata.leaderClusterName()}:${index.name}"
         builder.put(ReplicationPlugin.REPLICATED_INDEX_SETTING.key, replicatedIndex)
+        builder.put(IndexMetadata.INDEX_REMOTE_REPLICATION_TYPE_SETTING.key, "SEGMENT")
 
         // Remove translog pruning for the follower index
         builder.remove(REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING.key)
+
 
         val indexMdBuilder = IndexMetadata.builder(indexMetadata).settings(builder)
         indexMetadata.aliases.valuesIt().forEach {

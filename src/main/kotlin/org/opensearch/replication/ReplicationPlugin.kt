@@ -76,6 +76,7 @@ import org.opensearch.action.ActionRequest
 import org.opensearch.action.ActionResponse
 import org.opensearch.client.Client
 import org.opensearch.cluster.NamedDiff
+import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.cluster.metadata.IndexNameExpressionResolver
 import org.opensearch.cluster.metadata.Metadata
 import org.opensearch.cluster.metadata.RepositoryMetadata
@@ -104,6 +105,7 @@ import org.opensearch.env.NodeEnvironment
 import org.opensearch.index.IndexModule
 import org.opensearch.index.IndexSettings
 import org.opensearch.index.engine.EngineFactory
+import org.opensearch.index.engine.NRTReplicationEngine
 import org.opensearch.index.translog.ReplicationTranslogDeletionPolicy
 import org.opensearch.index.translog.TranslogDeletionPolicyFactory
 import org.opensearch.indices.recovery.RecoverySettings
@@ -359,7 +361,16 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
 
     override fun getEngineFactory(indexSettings: IndexSettings): Optional<EngineFactory> {
         return if (indexSettings.settings.get(REPLICATED_INDEX_SETTING.key) != null) {
-            Optional.of(EngineFactory { config -> ReplicationEngine(config) })
+            Optional.of(EngineFactory { config ->
+                // Do not override the Engine for replica shards
+                if (indexSettings.settings.get(IndexMetadata.INDEX_REPLICATION_TYPE_SETTING.key) != null
+                        && indexSettings.settings.get(IndexMetadata.INDEX_REPLICATION_TYPE_SETTING.key).equals("SEGMENT")
+                        && (config.isReadOnlyReplica || config.isReadOnlyPrimary)) {
+                    NRTReplicationEngine(config)
+                } else {
+                    ReplicationEngine(config)
+                }
+            })
         } else {
             Optional.empty()
         }

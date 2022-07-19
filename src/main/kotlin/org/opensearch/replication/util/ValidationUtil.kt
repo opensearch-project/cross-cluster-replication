@@ -35,7 +35,7 @@ object ValidationUtil {
         val analyserSettings = leaderSettings.filter { k: String? -> k!!.matches(Regex("index.analysis.*path")) }
         for (analyserSetting in analyserSettings.keySet()) {
             val settingValue = if (overriddenSettings.hasValue(analyserSetting)) overriddenSettings.get(analyserSetting) else analyserSettings.get(analyserSetting)
-            val path: Path = environment.configFile().resolve(settingValue)
+            val path: Path = environment.configDir().resolve(settingValue)
             if (!Files.exists(path)) {
                 val message = "IOException while reading ${analyserSetting}: ${path.toString()}"
                 log.error(message)

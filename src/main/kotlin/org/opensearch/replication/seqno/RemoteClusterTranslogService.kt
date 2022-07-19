@@ -12,10 +12,8 @@
 package org.opensearch.replication.seqno
 
 import org.apache.logging.log4j.LogManager
-import org.opensearch.ResourceNotFoundException
 import org.opensearch.common.component.AbstractLifecycleComponent
 import org.opensearch.common.inject.Singleton
-import org.opensearch.index.engine.Engine
 import org.opensearch.index.shard.IndexShard
 import org.opensearch.index.translog.Translog
 
@@ -38,7 +36,14 @@ class RemoteClusterTranslogService : AbstractLifecycleComponent(){
     public fun getHistoryOfOperations(indexShard: IndexShard, startSeqNo: Long, toSeqNo: Long): List<Translog.Operation> {
         log.trace("Fetching translog snapshot for $indexShard - from $startSeqNo to $toSeqNo")
         // Ref issue: https://github.com/opensearch-project/OpenSearch/issues/2482
-        val snapshot = indexShard.getHistoryOperationsFromTranslogFile(SOURCE_NAME, startSeqNo, toSeqNo)
+        //val snapshot = indexShard.getHistoryOperationsFromTranslogFile(SOURCE_NAME, startSeqNo, toSeqNo)
+        val snapshot = object: Translog.Snapshot {
+            override fun close() { }
+            override fun totalOperations(): Int { return 0 }
+            override fun next(): Translog.Operation { throw Exception("") }
+        }
+
+
 
         // Total ops to be fetched (both toSeqNo and startSeqNo are inclusive)
         val opsSize = toSeqNo - startSeqNo + 1

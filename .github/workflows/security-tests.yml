@@ -22,18 +22,6 @@ jobs:
       # This step uses the checkout Github action: https://github.com/actions/checkout
       - name: Checkout Branch
         uses: actions/checkout@v2
-      # Security plugin dependency
-      - name: Checkout security
-        uses: actions/checkout@v2
-        with:
-          repository: 'opensearch-project/security'
-          path: security
-          ref: 'main'
-      - name: Build security
-        working-directory: ./security
-        run: |
-          ./gradlew clean build -Dbuild.snapshot=false -x test
-          cp build/distributions/opensearch-security-*.zip ../src/test/resources/security/plugin/opensearch-security.zip
       - name: Build and run Replication tests
         run: |
           ls -al src/test/resources/security/plugin

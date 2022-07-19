@@ -11,6 +11,8 @@
 
 package org.opensearch.replication.task.shard
 
+import org.opensearch.action.support.replication.crosscluster.follower.SyncLeaderSegmentsRequest
+import org.opensearch.action.support.replication.crosscluster.follower.SyncLeaderSegmentsAction
 import org.opensearch.replication.ReplicationSettings
 import org.opensearch.replication.action.changes.GetChangesAction
 import org.opensearch.replication.action.changes.GetChangesRequest
@@ -50,6 +52,7 @@ import org.opensearch.index.seqno.RetentionLeaseNotFoundException
 import org.opensearch.index.shard.ShardId
 import org.opensearch.persistent.PersistentTaskState
 import org.opensearch.persistent.PersistentTasksNodeService
+import org.opensearch.replication.util.suspendExecute
 import org.opensearch.rest.RestStatus
 import org.opensearch.tasks.TaskId
 import org.opensearch.threadpool.ThreadPool
@@ -198,6 +201,15 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         val followerIndexService = indicesService.indexServiceSafe(followerShardId.index)
         val indexShard = followerIndexService.getShard(followerShardId.id)
 
+        addListenerToInterruptTask()
+        coroutineScope {
+            while (isActive) {
+                syncSegments()
+                delay(10000)
+            }
+        }
+
+        /*
         try {
             //Retention leases preserve the operations including and starting from the retainingSequenceNumber we specify when we take the lease .
             //hence renew retention lease with lastSyncedGlobalCheckpoint + 1
@@ -209,6 +221,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         }
 
         addListenerToInterruptTask()
+
         this.followerClusterStats.stats[followerShardId] = FollowerShardMetric()
 
         // Since this setting is not dynamic, setting update would only reflect after pause-resume or on a new replication job.
@@ -293,6 +306,15 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
             }
         }
         sequencer.close()
+         */
+    }
+    private suspend fun syncSegments(){
+        val remoteClient = client.getRemoteClusterClient(leaderAlias)
+        val request = SyncLeaderSegmentsRequest(leaderAlias, leaderShardId, followerShardId)
+        logInfo("ankikala: Fetching changes from leader")
+        var changesResp =  client.suspendExecute(replicationMetadata = replicationMetadata,
+            action = SyncLeaderSegmentsAction.INSTANCE, req = request)
+        logInfo("ankikala: Sync complete")
     }
 
     private suspend fun getChanges(fromSeqNo: Long, toSeqNo: Long): GetChangesResponse {

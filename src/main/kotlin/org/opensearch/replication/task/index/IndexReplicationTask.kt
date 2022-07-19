@@ -52,8 +52,12 @@ import org.opensearch.action.ActionListener
 import org.opensearch.action.admin.indices.alias.IndicesAliasesRequest
 import org.opensearch.action.admin.indices.alias.IndicesAliasesRequest.AliasActions
 import org.opensearch.action.admin.indices.alias.get.GetAliasesRequest
+import org.opensearch.action.admin.indices.create.CreateIndexRequestBuilder
 import org.opensearch.action.admin.indices.delete.DeleteIndexRequest
+import org.opensearch.action.admin.indices.mapping.get.GetMappingsRequest
+import org.opensearch.action.admin.indices.mapping.get.GetMappingsRequestBuilder
 import org.opensearch.action.admin.indices.settings.get.GetSettingsRequest
+import org.opensearch.action.admin.indices.settings.get.GetSettingsRequestBuilder
 import org.opensearch.action.admin.indices.settings.put.UpdateSettingsRequest
 import org.opensearch.client.Client
 import org.opensearch.client.Requests
@@ -93,7 +97,7 @@ import org.opensearch.rest.RestStatus
 import org.opensearch.tasks.TaskId
 import org.opensearch.tasks.TaskManager
 import org.opensearch.threadpool.ThreadPool
-import java.util.Collections
+import java.util.*
 import java.util.function.Predicate
 import java.util.stream.Collectors
 import kotlin.coroutines.resume
@@ -143,7 +147,10 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 IndexMetadata.INDEX_BLOCKS_READ_ONLY_ALLOW_DELETE_SETTING,
                 EnableAllocationDecider.INDEX_ROUTING_REBALANCE_ENABLE_SETTING,
                 EnableAllocationDecider.INDEX_ROUTING_ALLOCATION_ENABLE_SETTING,
-                IndexSettings.INDEX_SOFT_DELETES_RETENTION_LEASE_PERIOD_SETTING
+                IndexSettings.INDEX_SOFT_DELETES_RETENTION_LEASE_PERIOD_SETTING,
+                // TODO: Should also be removing other settings like index.creation_date, index.provided_name, index.uuid, index.version.created
+                IndexMetadata.INDEX_REMOTE_REPLICATION_TYPE_SETTING,
+                IndexMetadata.INDEX_REPLICATION_TYPE_SETTING
         )
 
         val blockListedSettings :Set<String> = blSettings.stream().map { k -> k.key }.collect(Collectors.toSet())
@@ -409,7 +416,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
     private suspend fun pollForMetadata(scope: CoroutineScope) {
         while (scope.isActive) {
             try {
-                log.debug("Polling for metadata for $followerIndexName")
+                log.info("Polling for metadata for $followerIndexName")
                 var staticUpdated = false
                 var gsr = GetSettingsRequest().includeDefaults(false).indices(this.leaderIndex.name)
                 var settingsResponse = remoteClient.suspending(remoteClient.admin().indices()::getSettings, injectSecurityContext = true)(gsr)
@@ -421,6 +428,9 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 leaderSettings = leaderSettings.filter { k: String? ->
                     !blockListedSettings.contains(k)
                 }
+                log.info("Filtered leaser settings are  $leaderSettings")
+
+                //leaderSettings.filter()
 
                 gsr = GetSettingsRequest().includeDefaults(false).indices(this.followerIndexName)
                 settingsResponse = client.suspending(client.admin().indices()::getSettings, injectSecurityContext = true)(gsr)
@@ -436,6 +446,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 val indexScopedSettings = settingsModule.indexScopedSettings
 
                 val settingsList = arrayOf(leaderSettings, overriddenSettings)
+                log.info("Final settings to be updated on follower are  $leaderSettings")
                 val desiredSettingsBuilder = Settings.builder()
                 // Desired settings are taking leader Settings and then overriding them with desired settings
                 for (settings in settingsList) {
@@ -445,10 +456,12 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                         }
                         val setting = indexScopedSettings[key]
                         if (!setting.isPrivateIndex) {
-                            desiredSettingsBuilder.copy(key, settings);
+                            desiredSettingsBuilder.copy(key, settings)
                         }
                     }
                 }
+                desiredSettingsBuilder.copy(IndexMetadata.SETTING_REMOTE_REPLICATION_TYPE,followerSettings)
+                desiredSettingsBuilder.copy(IndexMetadata.SETTING_REPLICATION_TYPE,followerSettings)
                 val desiredSettings = desiredSettingsBuilder.build()
 
                 val changedSettingsBuilder = Settings.builder()
@@ -744,6 +757,42 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
             log.error("Unable to update setting for translog pruning based on retention lease")
         }
 
+        /*
+        //Get leader settings
+        val getSettingRequest = GetSettingsRequest().includeDefaults(false).indices(leaderIndex.name)
+
+        val settingsResponse = remoteClient.suspending(remoteClient.admin().indices()::getSettings,
+            injectSecurityContext = true)(getSettingRequest)
+        val leaderSettings = settingsResponse.indexToSettings.get(leaderIndex.name)
+
+
+        //Update Follower settings
+        val followerSettingBuilder = Settings.builder()
+        followerSettingBuilder.put(leaderSettings)
+        val replicatedIndex = "${leaderAlias}:${leaderIndex}" //TODO: fix the replicated Index value
+        followerSettingBuilder.put(REPLICATED_INDEX_SETTING.key, replicatedIndex)
+        followerSettingBuilder.put(IndexMetadata.INDEX_REMOTE_REPLICATION_TYPE_SETTING.key, "SEGMENT")
+        // Remove translog pruning for the follower index
+        followerSettingBuilder.remove(REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING.key)
+        followerSettingBuilder.remove("index.creation_date")
+        followerSettingBuilder.remove("index.uuid")
+        followerSettingBuilder.remove("index.version.created")
+        followerSettingBuilder.remove("index.provided_name")
+
+
+        val getMappingsRequest = GetMappingsRequest().indices(leaderIndex.name)
+        val getMappingsResponse = remoteClient.suspending(remoteClient.admin().indices()::getMappings, injectSecurityContext = true)(getMappingsRequest)
+        val followerMappingSource = getMappingsResponse?.mappings()?.get(leaderIndex.name)?.source()?.string()
+
+
+        client.admin().indices().prepareCreate(followerIndexName)
+            .setSettings(followerSettingBuilder.build())
+            .setMapping(followerMappingSource)
+            .execute().get()
+
+        log.info("ankikala: Follower Index Created")
+        */
+
         val restoreRequest = client.admin().cluster()
             .prepareRestoreSnapshot(RemoteClusterRepository.repoForCluster(leaderAlias), REMOTE_SNAPSHOT_NAME)
             .setIndices(leaderIndex.name)
@@ -769,10 +818,12 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
             return FailedState(Collections.emptyMap(), err)
         }
         cso.waitForNextChange("remote restore start") { inProgressRestore(it) != null }
+
         return RestoreState
     }
 
     private suspend fun waitForRestore(): IndexReplicationState {
+
         var restore = inProgressRestore(clusterService.state())
 
         // Waiting for snapshot restore to reach a terminal stage.
