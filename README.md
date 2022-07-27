@@ -106,7 +106,7 @@ curl -XPOST "http://${LEADER}/leader-01/_doc/1" -H 'Content-Type: application/js
 ```bash
 curl -XPUT "http://${FOLLOWER}/_plugins/_replication/follower-01/_start?pretty" \
 -H 'Content-type: application/json' \
--d'{"leader_cluster":"leader-cluster", "leader_index": "leader-01"}'
+-d'{"leader_alias":"leader-cluster", "leader_index": "leader-01"}'
 ```
 
 ### Step 5: Make changes to data on leader index
