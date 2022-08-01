@@ -135,7 +135,7 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
 
     private suspend fun getLeaderIndexSettings(leaderAlias: String, leaderIndex: String): Settings {
         val remoteClient = client.getRemoteClusterClient(leaderAlias)
-        val getSettingsRequest = GetSettingsRequest().includeDefaults(false).indices(leaderIndex)
+        val getSettingsRequest = GetSettingsRequest().includeDefaults(true).indices(leaderIndex)
         val settingsResponse = remoteClient.suspending(remoteClient.admin().indices()::getSettings,
                 injectSecurityContext = true)(getSettingsRequest)
         return settingsResponse.indexToSettings.get(leaderIndex) ?: throw IndexNotFoundException("${leaderAlias}:${leaderIndex}")

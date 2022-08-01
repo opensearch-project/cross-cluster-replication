@@ -1181,11 +1181,12 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             .put("index.data_path", "/random-path/invalid-setting")
             .build()
 
-        assertThatThrownBy {
+        try {
             followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName, settings = settings))
-        }.isInstanceOf(ResponseException::class.java).hasMessageContaining(
-            "Validation Failed: 1: custom path [/random-path/invalid-setting] is not a sub-path of path.shared_data"
-        )
+        } catch (e: ResponseException) {
+            Assert.assertEquals(400, e.response.statusLine.statusCode)
+            Assert.assertTrue(e.message!!.contains("Validation Failed: 1: custom path [/random-path/invalid-setting] is not a sub-path of path.shared_data"))
+        }
     }
 
     fun `test that replication is not started when all primary shards are not in active state`() {
