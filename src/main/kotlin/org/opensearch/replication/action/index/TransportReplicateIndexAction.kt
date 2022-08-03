@@ -33,7 +33,7 @@ import org.opensearch.action.support.HandledTransportAction
 import org.opensearch.action.support.IndicesOptions
 import org.opensearch.client.Client
 import org.opensearch.cluster.ClusterState
-import org.opensearch.cluster.metadata.IndexMetadata
+import org.opensearch.cluster.metadata.MetadataCreateIndexService
 import org.opensearch.common.inject.Inject
 import org.opensearch.common.settings.Settings
 import org.opensearch.env.Environment
@@ -48,7 +48,8 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
                                                         val threadPool: ThreadPool,
                                                         actionFilters: ActionFilters,
                                                         private val client : Client,
-                                                        private val environment: Environment) :
+                                                        private val environment: Environment,
+                                                        private val metadataCreateIndexService: MetadataCreateIndexService) :
         HandledTransportAction<ReplicateIndexRequest, ReplicateIndexResponse>(ReplicateIndexAction.NAME,
                 transportService, actionFilters, ::ReplicateIndexRequest),
     CoroutineScope by GlobalScope {
@@ -102,7 +103,13 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
                     throw IllegalArgumentException("Cannot replicate k-NN index - ${request.leaderIndex}")
                 }
 
-                ValidationUtil.validateAnalyzerSettings(environment, leaderSettings, request.settings)
+                ValidationUtil.validateIndexSettings(
+                    environment,
+                    request.followerIndex,
+                    leaderSettings,
+                    request.settings,
+                    metadataCreateIndexService
+                )
 
                 // Setup checks are successful and trigger replication for the index
                 // permissions evaluation to trigger replication is based on the current security context set
@@ -128,7 +135,7 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
 
     private suspend fun getLeaderIndexSettings(leaderAlias: String, leaderIndex: String): Settings {
         val remoteClient = client.getRemoteClusterClient(leaderAlias)
-        val getSettingsRequest = GetSettingsRequest().includeDefaults(false).indices(leaderIndex)
+        val getSettingsRequest = GetSettingsRequest().includeDefaults(true).indices(leaderIndex)
         val settingsResponse = remoteClient.suspending(remoteClient.admin().indices()::getSettings,
                 injectSecurityContext = true)(getSettingsRequest)
         return settingsResponse.indexToSettings.get(leaderIndex) ?: throw IndexNotFoundException("${leaderAlias}:${leaderIndex}")

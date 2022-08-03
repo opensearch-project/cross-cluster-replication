@@ -1168,6 +1168,26 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         }
     }
 
+    fun `test start replication invalid settings`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        val settings = Settings.builder()
+            .put("index.data_path", "/random-path/invalid-setting")
+            .build()
+
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName, settings = settings))
+        } catch (e: ResponseException) {
+            Assert.assertEquals(400, e.response.statusLine.statusCode)
+            Assert.assertTrue(e.message!!.contains("Validation Failed: 1: custom path [/random-path/invalid-setting] is not a sub-path of path.shared_data"))
+        }
+    }
+
     fun `test that replication is not started when all primary shards are not in active state`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
