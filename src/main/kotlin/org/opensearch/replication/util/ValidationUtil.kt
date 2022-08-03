@@ -31,6 +31,27 @@ object ValidationUtil {
 
     private val log = LogManager.getLogger(ValidationUtil::class.java)
 
+    fun validateIndexSettings(
+        environment: Environment,
+        followerIndex: String,
+        leaderSettings: Settings,
+        overriddenSettings: Settings,
+        metadataCreateIndexService: MetadataCreateIndexService
+    ) {
+        val settingsList = arrayOf(leaderSettings, overriddenSettings)
+        val desiredSettingsBuilder = Settings.builder()
+        // Desired settings are taking leader Settings and then overriding them with desired settings
+        for (settings in settingsList) {
+            for (key in settings.keySet()) {
+                desiredSettingsBuilder.copy(key, settings);
+            }
+        }
+        val desiredSettings = desiredSettingsBuilder.build()
+
+        metadataCreateIndexService.validateIndexSettings(followerIndex,desiredSettings, false)
+        validateAnalyzerSettings(environment, leaderSettings, overriddenSettings)
+    }
+
     fun validateAnalyzerSettings(environment: Environment, leaderSettings: Settings, overriddenSettings: Settings) {
         val analyserSettings = leaderSettings.filter { k: String? -> k!!.matches(Regex("index.analysis.*path")) }
         for (analyserSetting in analyserSettings.keySet()) {
