@@ -29,8 +29,8 @@ import org.opensearch.action.admin.indices.settings.put.UpdateSettingsClusterSta
 import org.opensearch.action.admin.indices.settings.put.UpdateSettingsRequest
 import org.opensearch.action.support.ActionFilters
 import org.opensearch.action.support.IndicesOptions
+import org.opensearch.action.support.clustermanager.TransportClusterManagerNodeAction
 import org.opensearch.action.support.master.AcknowledgedResponse
-import org.opensearch.action.support.master.TransportMasterNodeAction
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.ack.ClusterStateUpdateResponse
 import org.opensearch.cluster.ack.OpenIndexClusterStateUpdateResponse
@@ -61,7 +61,7 @@ class TransportUpdateMetadataAction @Inject constructor(
     val updateSettingsService: MetadataUpdateSettingsService,
     val indexAliasService: MetadataIndexAliasesService,
     val indexStateService: MetadataIndexStateService
-) : TransportMasterNodeAction<UpdateMetadataRequest, AcknowledgedResponse>(UpdateMetadataAction.NAME,
+) : TransportClusterManagerNodeAction<UpdateMetadataRequest, AcknowledgedResponse>(UpdateMetadataAction.NAME,
     transportService, clusterService, threadPool, actionFilters, ::UpdateMetadataRequest, indexNameExpressionResolver) {
 
     companion object {
@@ -75,7 +75,7 @@ class TransportUpdateMetadataAction @Inject constructor(
         return state.blocks().globalBlockedException(ClusterBlockLevel.METADATA_WRITE)
     }
 
-    override fun masterOperation(
+    override fun clusterManagerOperation(
         task: Task,
         request: UpdateMetadataRequest,
         state: ClusterState,
@@ -286,7 +286,7 @@ class TransportUpdateMetadataAction @Inject constructor(
         }
     }
 
-    override fun masterOperation(request: UpdateMetadataRequest?, state: ClusterState?, listener: ActionListener<AcknowledgedResponse>?) {
+    override fun clusterManagerOperation(request: UpdateMetadataRequest?, state: ClusterState?, listener: ActionListener<AcknowledgedResponse>?) {
         throw UnsupportedOperationException("The task parameter is required")
     }
 
