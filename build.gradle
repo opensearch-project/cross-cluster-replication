@@ -62,7 +62,7 @@ buildscript {
         security_no_snapshot = opensearch_build.replace("-SNAPSHOT","")
         security_plugin_path = "build/dependencies/security"
         security_plugin_download_url = 'https://ci.opensearch.org/ci/dbc/distribution-build-opensearch/' + opensearch_no_snapshot +
-                '/5858/linux/x64/tar/builds/opensearch/plugins/opensearch-security-' + security_no_snapshot + '.zip'
+                '/latest/linux/x64/tar/builds/opensearch/plugins/opensearch-security-' + security_no_snapshot + '.zip'
 
     }
 
