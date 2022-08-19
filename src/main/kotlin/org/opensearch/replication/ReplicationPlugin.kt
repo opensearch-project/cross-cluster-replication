@@ -76,6 +76,7 @@ import org.opensearch.action.ActionRequest
 import org.opensearch.action.ActionResponse
 import org.opensearch.client.Client
 import org.opensearch.cluster.NamedDiff
+import org.opensearch.cluster.metadata.IndexMetadata.INDEX_REPLICATION_TYPE_SETTING
 import org.opensearch.cluster.metadata.IndexNameExpressionResolver
 import org.opensearch.cluster.metadata.Metadata
 import org.opensearch.cluster.metadata.RepositoryMetadata
@@ -142,6 +143,9 @@ import org.opensearch.threadpool.ThreadPool
 import org.opensearch.watcher.ResourceWatcherService
 import java.util.Optional
 import java.util.function.Supplier
+
+import org.opensearch.index.engine.NRTReplicationEngine
+
 
 @OpenForTesting
 internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin, RepositoryPlugin, EnginePlugin {
@@ -359,7 +363,13 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
 
     override fun getEngineFactory(indexSettings: IndexSettings): Optional<EngineFactory> {
         return if (indexSettings.settings.get(REPLICATED_INDEX_SETTING.key) != null) {
-            Optional.of(EngineFactory { config -> ReplicationEngine(config) })
+            Optional.of(EngineFactory { config ->
+                if (indexSettings.settings.get(INDEX_REPLICATION_TYPE_SETTING.key).equals("SEGMENT")) {
+                    if (config.isReadOnlyReplica) NRTReplicationEngine(config) else ReplicationEngine(config)
+                } else {
+                    ReplicationEngine(config)
+                }
+            })
         } else {
             Optional.empty()
         }
