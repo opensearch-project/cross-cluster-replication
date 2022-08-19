@@ -364,8 +364,9 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
     override fun getEngineFactory(indexSettings: IndexSettings): Optional<EngineFactory> {
         return if (indexSettings.settings.get(REPLICATED_INDEX_SETTING.key) != null) {
             Optional.of(EngineFactory { config ->
-                if (indexSettings.settings.get(INDEX_REPLICATION_TYPE_SETTING.key).equals("SEGMENT")) {
-                    if (config.isReadOnlyReplica) NRTReplicationEngine(config) else ReplicationEngine(config)
+                // Use NRTSegmentReplicationEngine for SEGMENT replication type indices replica shards
+                if (config.isReadOnlyReplica && indexSettings.settings.get(INDEX_REPLICATION_TYPE_SETTING.key) != null && indexSettings.settings.get(INDEX_REPLICATION_TYPE_SETTING.key).equals("SEGMENT")) {
+                    NRTReplicationEngine(config)
                 } else {
                     ReplicationEngine(config)
                 }
