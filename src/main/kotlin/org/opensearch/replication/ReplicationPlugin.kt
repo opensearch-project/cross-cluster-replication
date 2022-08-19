@@ -143,6 +143,9 @@ import org.opensearch.watcher.ResourceWatcherService
 import java.util.Optional
 import java.util.function.Supplier
 
+import org.opensearch.index.engine.NRTReplicationEngine
+
+
 @OpenForTesting
 internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin, RepositoryPlugin, EnginePlugin {
 
@@ -359,7 +362,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
 
     override fun getEngineFactory(indexSettings: IndexSettings): Optional<EngineFactory> {
         return if (indexSettings.settings.get(REPLICATED_INDEX_SETTING.key) != null) {
-            Optional.of(EngineFactory { config -> ReplicationEngine(config) })
+            Optional.of(EngineFactory { config -> if(config.isReadOnlyReplica()) NRTReplicationEngine(config) else ReplicationEngine(config) })
         } else {
             Optional.empty()
         }
