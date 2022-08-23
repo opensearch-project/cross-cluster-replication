@@ -757,7 +757,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
             log.error("Unable to update setting for translog pruning based on retention lease")
         }
 
-        /*
+
         //Get leader settings
         val getSettingRequest = GetSettingsRequest().includeDefaults(false).indices(leaderIndex.name)
 
@@ -791,7 +791,8 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
             .execute().get()
 
         log.info("ankikala: Follower Index Created")
-        */
+
+        /*
 
         val restoreRequest = client.admin().cluster()
             .prepareRestoreSnapshot(RemoteClusterRepository.repoForCluster(leaderAlias), REMOTE_SNAPSHOT_NAME)
@@ -818,12 +819,13 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
             return FailedState(Collections.emptyMap(), err)
         }
         cso.waitForNextChange("remote restore start") { inProgressRestore(it) != null }
-
+        */
         return RestoreState
     }
 
     private suspend fun waitForRestore(): IndexReplicationState {
-
+        return InitFollowState
+        /*
         var restore = inProgressRestore(clusterService.state())
 
         // Waiting for snapshot restore to reach a terminal stage.
@@ -860,6 +862,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         } else {
             return InitFollowState
         }
+         */
     }
 
     /**
