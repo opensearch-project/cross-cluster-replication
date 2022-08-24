@@ -12,27 +12,13 @@
 package org.opensearch.replication.integ.rest
 
 
-import org.opensearch.replication.IndexUtil
-import org.opensearch.replication.MultiClusterAnnotations
-import org.opensearch.replication.MultiClusterRestTestCase
-import org.opensearch.replication.StartReplicationRequest
-import org.opensearch.replication.`validate not paused status response`
-import org.opensearch.replication.`validate paused status on closed index`
-import org.opensearch.replication.pauseReplication
-import org.opensearch.replication.replicationStatus
-import org.opensearch.replication.resumeReplication
-import org.opensearch.replication.`validate paused status response due to leader index deleted`
-import org.opensearch.replication.`validate status syncing response`
-import org.opensearch.replication.startReplication
-import org.opensearch.replication.stopReplication
-import org.opensearch.replication.updateReplication
 import org.apache.http.HttpStatus
 import org.apache.http.entity.ContentType
 import org.apache.http.nio.entity.NStringEntity
 import org.apache.http.util.EntityUtils
-import org.assertj.core.api.Assertions
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.junit.Assert
 import org.opensearch.OpenSearchStatusException
 import org.opensearch.action.admin.cluster.repositories.put.PutRepositoryRequest
 import org.opensearch.action.admin.cluster.snapshots.create.CreateSnapshotRequest
@@ -63,14 +49,25 @@ import org.opensearch.common.unit.TimeValue
 import org.opensearch.common.xcontent.XContentType
 import org.opensearch.index.IndexSettings
 import org.opensearch.index.mapper.MapperService
-import org.opensearch.repositories.fs.FsRepository
-import org.opensearch.test.OpenSearchTestCase.assertBusy
-import org.junit.Assert
+import org.opensearch.replication.IndexUtil
+import org.opensearch.replication.MultiClusterAnnotations
+import org.opensearch.replication.MultiClusterRestTestCase
+import org.opensearch.replication.StartReplicationRequest
 import org.opensearch.replication.followerStats
 import org.opensearch.replication.leaderStats
-import org.opensearch.replication.task.index.IndexReplicationExecutor.Companion.log
-import java.lang.Thread.sleep
+import org.opensearch.replication.pauseReplication
+import org.opensearch.replication.replicationStatus
+import org.opensearch.replication.resumeReplication
+import org.opensearch.replication.startReplication
+import org.opensearch.replication.stopReplication
+import org.opensearch.replication.updateReplication
 import org.opensearch.replication.updateReplicationStartBlockSetting
+import org.opensearch.replication.`validate not paused status response`
+import org.opensearch.replication.`validate paused status on closed index`
+import org.opensearch.replication.`validate paused status response due to leader index deleted`
+import org.opensearch.replication.`validate status syncing response`
+import org.opensearch.repositories.fs.FsRepository
+import org.opensearch.test.OpenSearchTestCase.assertBusy
 import java.nio.file.Files
 import java.util.concurrent.TimeUnit
 
@@ -330,7 +327,9 @@ class StartReplicationIT: MultiClusterRestTestCase() {
 
         createConnectionBetweenClusters(FOLLOWER, LEADER)
 
-        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName).alias(Alias("leaderAlias")), RequestOptions.DEFAULT)
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName)
+            .alias(Alias("leaderAlias").filter("{\"term\":{\"year\":2016}}").routing("1"))
+            , RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
         try {
             followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
@@ -339,12 +338,15 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                         .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
                         .isEqualTo(true)
             }
-            Assert.assertEquals(
-                    leaderClient.indices().getAlias(GetAliasesRequest().indices(leaderIndexName),
-                            RequestOptions.DEFAULT).aliases[leaderIndexName],
-                    followerClient.indices().getAlias(GetAliasesRequest().indices(followerIndexName),
-                            RequestOptions.DEFAULT).aliases[followerIndexName]
-            )
+            assertBusy({
+                Assert.assertEquals(
+                        leaderClient.indices().getAlias(GetAliasesRequest().indices(leaderIndexName),
+                                RequestOptions.DEFAULT).aliases[leaderIndexName],
+                        followerClient.indices().getAlias(GetAliasesRequest().indices(followerIndexName),
+                                RequestOptions.DEFAULT).aliases[followerIndexName]
+                )
+
+            }, 30L, TimeUnit.SECONDS)
         } finally {
             followerClient.stopReplication(followerIndexName)
         }
@@ -521,7 +523,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             var indicesAliasesRequest = IndicesAliasesRequest()
             var aliasAction = IndicesAliasesRequest.AliasActions.add()
                     .index(leaderIndexName)
-                    .alias("alias1")
+                    .alias("alias1").filter("{\"term\":{\"year\":2016}}").routing("1")
             indicesAliasesRequest.addAliasAction(aliasAction)
             leaderClient.indices().updateAliases(indicesAliasesRequest, RequestOptions.DEFAULT)
 
