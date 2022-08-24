@@ -65,6 +65,7 @@ import org.opensearch.index.mapper.MapperService
 import org.opensearch.repositories.fs.FsRepository
 import org.opensearch.test.OpenSearchTestCase.assertBusy
 import org.junit.Assert
+import org.opensearch.cluster.metadata.AliasMetadata
 import org.opensearch.common.xcontent.DeprecationHandler
 import org.opensearch.common.xcontent.NamedXContentRegistry
 import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING
@@ -330,7 +331,9 @@ class StartReplicationIT: MultiClusterRestTestCase() {
 
         createConnectionBetweenClusters(FOLLOWER, LEADER)
 
-        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName).alias(Alias("leaderAlias")), RequestOptions.DEFAULT)
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName)
+            .alias(Alias("leaderAlias").filter("{\"term\":{\"year\":2016}}").routing("1"))
+            , RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
         try {
             followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
@@ -339,12 +342,15 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                         .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
                         .isEqualTo(true)
             }
-            Assert.assertEquals(
-                    leaderClient.indices().getAlias(GetAliasesRequest().indices(leaderIndexName),
-                            RequestOptions.DEFAULT).aliases[leaderIndexName],
-                    followerClient.indices().getAlias(GetAliasesRequest().indices(followerIndexName),
-                            RequestOptions.DEFAULT).aliases[followerIndexName]
-            )
+            assertBusy({
+                Assert.assertEquals(
+                        leaderClient.indices().getAlias(GetAliasesRequest().indices(leaderIndexName),
+                                RequestOptions.DEFAULT).aliases[leaderIndexName],
+                        followerClient.indices().getAlias(GetAliasesRequest().indices(followerIndexName),
+                                RequestOptions.DEFAULT).aliases[followerIndexName]
+                )
+
+            }, 30L, TimeUnit.SECONDS)
         } finally {
             followerClient.stopReplication(followerIndexName)
         }
@@ -521,7 +527,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             var indicesAliasesRequest = IndicesAliasesRequest()
             var aliasAction = IndicesAliasesRequest.AliasActions.add()
                     .index(leaderIndexName)
-                    .alias("alias1")
+                    .alias("alias1").filter("{\"term\":{\"year\":2016}}").routing("1")
             indicesAliasesRequest.addAliasAction(aliasAction)
             leaderClient.indices().updateAliases(indicesAliasesRequest, RequestOptions.DEFAULT)
 
