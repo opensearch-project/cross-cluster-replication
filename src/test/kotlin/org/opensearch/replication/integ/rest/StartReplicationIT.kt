@@ -65,6 +65,8 @@ import org.opensearch.index.mapper.MapperService
 import org.opensearch.repositories.fs.FsRepository
 import org.opensearch.test.OpenSearchTestCase.assertBusy
 import org.junit.Assert
+import org.opensearch.common.xcontent.DeprecationHandler
+import org.opensearch.common.xcontent.NamedXContentRegistry
 import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING
 import org.opensearch.replication.followerStats
 import org.opensearch.replication.leaderStats
@@ -1151,6 +1153,63 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         } finally {
             followerClient.stopReplication(followerIndexName)
         }
+    }
+
+    fun `test that replication is not started when all primary shards are not in active state`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+        // Exclude leader cluster nodes to stop assignment for the new shards
+        excludeAllClusterNodes(LEADER)
+        try{
+            leaderClient.indices().create(
+                    CreateIndexRequest(leaderIndexName),
+                    RequestOptions.DEFAULT
+            )
+        } catch(_: Exception) {
+            // Index creation
+        }
+        // Index should be present (although shards will not assigned).
+        assertBusy {
+            assertThat(leaderClient.indices().exists(GetIndexRequest(leaderIndexName), RequestOptions.DEFAULT)).isEqualTo(true)
+        }
+
+        // start repilcation should fail as the shards are not active on the leader cluster
+        assertThatThrownBy { followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
+                waitForRestore = true) }
+                .isInstanceOf(ResponseException::class.java)
+                .hasMessageContaining("Primary shards in the Index[source:${leaderIndexName}] are not active")
+
+    }
+
+    private fun excludeAllClusterNodes(clusterName: String) {
+        val transientSettingsRequest = Request("PUT", "_cluster/settings")
+        // Get IPs directly from the cluster to handle all cases - single node cluster, multi node cluster and remote test cluster.
+        val excludeIps = getClusterNodeIPs(clusterName)
+        val entityAsString = """
+                        {
+                          "transient": {
+                             "cluster.routing.allocation.exclude._ip": "${excludeIps.joinToString()}"
+                          }
+                        }""".trimMargin()
+        transientSettingsRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
+        val transientSettingsResponse = getNamedCluster(clusterName).lowLevelClient.performRequest(transientSettingsRequest)
+        assertEquals(HttpStatus.SC_OK.toLong(), transientSettingsResponse.statusLine.statusCode.toLong())
+    }
+
+    private fun getClusterNodeIPs(clusterName: String): List<String> {
+        val clusterClient = getNamedCluster(clusterName).lowLevelClient
+        val nodesRequest = Request("GET", "_cat/nodes?format=json")
+        val nodesResponse =  EntityUtils.toString(clusterClient.performRequest(nodesRequest).entity)
+        val nodeIPs = arrayListOf<String>()
+        val parser = XContentType.JSON.xContent().createParser(NamedXContentRegistry.EMPTY,
+                DeprecationHandler.THROW_UNSUPPORTED_OPERATION, nodesResponse)
+        parser.list().forEach {
+            it as Map<*, *>
+            nodeIPs.add(it["ip"] as String)
+        }
+        return nodeIPs
     }
 
     private fun assertValidationFailure(client: RestHighLevelClient, leader: String, follower: String, errrorMsg: String) {
