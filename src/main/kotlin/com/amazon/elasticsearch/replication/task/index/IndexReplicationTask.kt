@@ -514,13 +514,18 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
                     for (alias in toAdd) {
                         log.info("Adding alias ${alias.alias} from $followerIndexName")
                         // Copying writeIndex from leader doesn't cause any issue as writes will be blocked anyways
-                        request.addAliasAction(AliasActions.add().index(followerIndexName)
-                                .alias(alias.alias)
-                                .indexRouting(alias.indexRouting)
-                                .searchRouting(alias.searchRouting)
-                                .writeIndex(alias.writeIndex())
-                                .isHidden(alias.isHidden)
-                        )
+                        var aliasAction = AliasActions.add().index(followerIndexName)
+                            .alias(alias.alias)
+                            .indexRouting(alias.indexRouting)
+                            .searchRouting(alias.searchRouting)
+                            .writeIndex(alias.writeIndex())
+                            .isHidden(alias.isHidden)
+
+                        if (alias.filteringRequired())  {
+                            aliasAction = aliasAction.filter(alias.filter.string())
+                        }
+
+                        request.addAliasAction(aliasAction)
                     }
 
                     var toRemove = followerAliases - leaderAliases
