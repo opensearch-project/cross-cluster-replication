@@ -183,7 +183,8 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                     ReplicationState.INIT_FOLLOW -> {
                         log.info("Starting shard tasks")
                         addIndexBlockForReplication()
-                        startShardFollowTasks(emptyMap())
+                        FollowingState(startNewOrMissingShardTasks())
+
                     }
                     ReplicationState.FOLLOWING -> {
                         if (currentTaskState is FollowingState) {
@@ -206,8 +207,8 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                             // Tasks need to be started
                             state
                         } else {
-                            state = pollShardTaskStatus((followingTaskState as FollowingState).shardReplicationTasks)
-                            followingTaskState = startMissingShardTasks((followingTaskState as FollowingState).shardReplicationTasks)
+                            state = pollShardTaskStatus()
+                            followingTaskState = FollowingState(startNewOrMissingShardTasks())
                             when (state) {
                                 is MonitoringState -> {
                                     updateMetadata()
@@ -284,24 +285,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         clusterService.addListener(this)
     }
 
-    private suspend fun startMissingShardTasks(shardTasks: Map<ShardId, PersistentTask<ShardReplicationParams>>): IndexReplicationState {
-        val persistentTasks = clusterService.state().metadata.custom<PersistentTasksCustomMetadata>(PersistentTasksCustomMetadata.TYPE)
-
-        val runningShardTasks = persistentTasks.findTasks(ShardReplicationExecutor.TASK_NAME, Predicate { true }).stream()
-                .map { task -> task.params as ShardReplicationParams }
-                .collect(Collectors.toList())
-
-        val runningTasksForCurrentIndex = shardTasks.filter { entry -> runningShardTasks.find { task -> task.followerShardId == entry.key } != null}
-
-        val numMissingTasks = shardTasks.size - runningTasksForCurrentIndex.size
-        if (numMissingTasks > 0) {
-            log.info("Starting $numMissingTasks missing shard task(s)")
-            return startShardFollowTasks(runningTasksForCurrentIndex)
-        }
-        return FollowingState(shardTasks)
-    }
-
-    private suspend fun pollShardTaskStatus(shardTasks: Map<ShardId, PersistentTask<ShardReplicationParams>>): IndexReplicationState {
+    private suspend fun pollShardTaskStatus(): IndexReplicationState {
         val failedShardTasks = findAllReplicationFailedShardTasks(followerIndexName, clusterService.state())
         if (failedShardTasks.isNotEmpty()) {
             log.info("Failed shard tasks - ", failedShardTasks)
@@ -342,11 +326,16 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         registerCloseListeners()
         val clusterState = clusterService.state()
         val persistentTasks = clusterState.metadata.custom<PersistentTasksCustomMetadata>(PersistentTasksCustomMetadata.TYPE)
-        val runningShardTasks = persistentTasks.findTasks(ShardReplicationExecutor.TASK_NAME, Predicate { true }).stream()
+
+        val followerShardIds = clusterService.state().routingTable.indicesRouting().get(followerIndexName).shards()
+            .map {  shard -> shard.value.shardId }
+            .stream().collect(Collectors.toSet())
+        val runningShardTasksForIndex = persistentTasks.findTasks(ShardReplicationExecutor.TASK_NAME, Predicate { true }).stream()
                 .map { task -> task.params as ShardReplicationParams }
+                .filter {taskParam -> followerShardIds.contains(taskParam.followerShardId) }
                 .collect(Collectors.toList())
 
-        if (runningShardTasks.size == 0) {
+        if (runningShardTasksForIndex.size != followerShardIds.size) {
             return InitFollowState
         }
 
@@ -695,19 +684,27 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         }
     }
 
-    private suspend fun
-            startShardFollowTasks(tasks: Map<ShardId, PersistentTask<ShardReplicationParams>>): FollowingState {
+    suspend fun startNewOrMissingShardTasks():  Map<ShardId, PersistentTask<ShardReplicationParams>> {
         assert(clusterService.state().routingTable.hasIndex(followerIndexName)) { "Can't find index $followerIndexName" }
         val shards = clusterService.state().routingTable.indicesRouting().get(followerIndexName).shards()
-        val newTasks = shards.map {
+        val persistentTasks = clusterService.state().metadata.custom<PersistentTasksCustomMetadata>(PersistentTasksCustomMetadata.TYPE)
+        val runningShardTasks = persistentTasks.findTasks(ShardReplicationExecutor.TASK_NAME, Predicate { true }).stream()
+            .map { task -> task as PersistentTask<ShardReplicationParams> }
+            .filter { task -> task.params!!.followerShardId.indexName  == followerIndexName}
+            .collect(Collectors.toMap(
+                {t: PersistentTask<ShardReplicationParams> -> t.params!!.followerShardId},
+                {t: PersistentTask<ShardReplicationParams> -> t}))
+
+        val tasks = shards.map {
             it.value.shardId
         }.associate { shardId ->
-            val task = tasks.getOrElse(shardId) {
+            val task = runningShardTasks.getOrElse(shardId) {
                 startReplicationTask(ShardReplicationParams(leaderAlias, ShardId(leaderIndex, shardId.id), shardId))
             }
             return@associate shardId to task
         }
-        return FollowingState(newTasks)
+
+        return tasks
     }
 
     private suspend fun cancelRestore() {
