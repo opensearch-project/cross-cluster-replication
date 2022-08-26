@@ -222,6 +222,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                                           TaskId(clusterService.nodeName, id), client, indexShard.localCheckpoint, followerClusterStats)
 
         val changeTracker = ShardReplicationChangesTracker(indexShard, replicationSettings)
+        followerClusterStats.stats[followerShardId]!!.followerCheckpoint = indexShard.localCheckpoint
         coroutineScope {
             while (isActive) {
                 rateLimiter.acquire()
@@ -278,7 +279,6 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                 //hence renew retention lease with lastSyncedGlobalCheckpoint + 1 so that any shard that picks up shard replication task has data until then.
                 try {
                     retentionLeaseHelper.renewRetentionLease(leaderShardId, indexShard.lastSyncedGlobalCheckpoint + 1, followerShardId)
-                    followerClusterStats.stats[followerShardId]!!.followerCheckpoint = indexShard.lastSyncedGlobalCheckpoint
                     lastLeaseRenewalMillis = System.currentTimeMillis()
                 } catch (ex: Exception) {
                     when (ex) {
