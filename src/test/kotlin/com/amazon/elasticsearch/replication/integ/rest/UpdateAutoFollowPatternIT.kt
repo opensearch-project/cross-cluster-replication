@@ -93,6 +93,7 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
                         .isEqualTo(true)
                 followerClient.waitForShardTaskStart(leaderIndexNameNew, waitForShardTask)
                 followerClient.waitForShardTaskStart(leaderIndexName, waitForShardTask)
+
                 var stats = followerClient.AutoFollowStats()
                 var af_stats = stats.get("autofollow_stats")!! as ArrayList<HashMap<String, Any>>
                 for (key in af_stats) {
@@ -120,8 +121,13 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
                 TimeValue.timeValueSeconds(30))
             val clusterUpdateSetttingsReq = ClusterUpdateSettingsRequest().persistentSettings(settings)
             val clusterUpdateResponse = followerClient.cluster().putSettings(clusterUpdateSetttingsReq, RequestOptions.DEFAULT)
+
+            var lastExecutionTime = 0L
+            var stats = followerClient.AutoFollowStats()
+
             Assert.assertTrue(clusterUpdateResponse.isAcknowledged)
             followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern)
+
             leaderIndexNameNew = createRandomIndex(leaderClient)
             // Verify that newly created index on leader which match the pattern are also replicated.
             assertBusy({
@@ -129,7 +135,24 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
                         .exists(GetIndexRequest(leaderIndexNameNew), RequestOptions.DEFAULT))
                         .isEqualTo(true)
                 followerClient.waitForShardTaskStart(leaderIndexNameNew, waitForShardTask)
+                var af_stats = stats.get("autofollow_stats")!! as ArrayList<HashMap<String, Any>>
+                for (key in af_stats) {
+                    if(key["name"] == indexPatternName) {
+                        Assertions.assertThat(key["last_execution_time"]!! as Long).isNotEqualTo(0L)
+                        lastExecutionTime = key["last_execution_time"]!! as Long
+                    }
+                }
+
             }, 30, TimeUnit.SECONDS)
+
+            assertBusy({
+            var af_stats = stats.get("autofollow_stats")!! as ArrayList<HashMap<String, Any>>
+            for (key in af_stats) {
+                if(key["name"] == indexPatternName) {
+                    Assertions.assertThat(key["last_execution_time"]!! as Long).isNotEqualTo(lastExecutionTime)
+                }
+            }
+            }, 40, TimeUnit.SECONDS)
 
 
         } finally {
