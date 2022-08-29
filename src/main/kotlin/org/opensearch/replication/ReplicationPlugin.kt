@@ -76,7 +76,6 @@ import org.opensearch.action.ActionRequest
 import org.opensearch.action.ActionResponse
 import org.opensearch.client.Client
 import org.opensearch.cluster.NamedDiff
-import org.opensearch.cluster.metadata.IndexMetadata.INDEX_REPLICATION_TYPE_SETTING
 import org.opensearch.cluster.metadata.IndexNameExpressionResolver
 import org.opensearch.cluster.metadata.Metadata
 import org.opensearch.cluster.metadata.RepositoryMetadata
@@ -365,7 +364,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
         return if (indexSettings.settings.get(REPLICATED_INDEX_SETTING.key) != null) {
             Optional.of(EngineFactory { config ->
                 // Use NRTSegmentReplicationEngine for SEGMENT replication type indices replica shards
-                if (config.isReadOnlyReplica && indexSettings.settings.get(INDEX_REPLICATION_TYPE_SETTING.key) != null && indexSettings.settings.get(INDEX_REPLICATION_TYPE_SETTING.key).equals("SEGMENT")) {
+                if (config.isReadOnlyReplica) {
                     NRTReplicationEngine(config)
                 } else {
                     ReplicationEngine(config)
