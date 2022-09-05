@@ -877,9 +877,6 @@ task "bwcTestSuite"(type: RestIntegTestTask) {
     dependsOn tasks.named("fullRestartClusterTask")
 }
 
-//monu
-
-
 task integTestRemote (type: RestIntegTestTask) {
     doFirst {
 
