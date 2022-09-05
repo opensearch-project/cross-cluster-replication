@@ -895,6 +895,8 @@ task integTestRemote (type: RestIntegTestTask) {
         nonInputProperties.systemProperty('tests.integTestRemote', "true")
 
         systemProperty "build.dir", "${buildDir}"
+
+    }
         filter {
             setIncludePatterns("org.opensearch.replication.singleCluster.SingleClusterSanityIT")
 
