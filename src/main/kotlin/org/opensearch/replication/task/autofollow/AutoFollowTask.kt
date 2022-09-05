@@ -74,6 +74,7 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
             try {
                 addRetryScheduler()
                 pollForIndices()
+                stat.lastExecutionTime = System.currentTimeMillis()
                 delay(replicationSettings.autofollowFetchPollDuration.millis)
             }
             catch(e: OpenSearchException) {
@@ -252,6 +253,7 @@ class AutoFollowStat: Task.Status {
     var failCounterForRun :Long=0
     var successCount: Long=0
     var failedLeaderCall :Long=0
+    var lastExecutionTime : Long=0
 
 
     constructor(name: String, pattern: String) {
@@ -266,6 +268,7 @@ class AutoFollowStat: Task.Status {
         failedIndices = inp.readSet(StreamInput::readString)
         successCount = inp.readLong()
         failedLeaderCall = inp.readLong()
+        lastExecutionTime = inp.readLong()
     }
 
     override fun writeTo(out: StreamOutput) {
@@ -275,6 +278,7 @@ class AutoFollowStat: Task.Status {
        out.writeCollection(failedIndices, StreamOutput::writeString)
        out.writeLong(successCount)
        out.writeLong(failedLeaderCall)
+       out.writeLong(lastExecutionTime)
     }
 
     override fun getWriteableName(): String {
@@ -289,6 +293,8 @@ class AutoFollowStat: Task.Status {
         builder.field("num_failed_start_replication", failCount)
         builder.field("num_failed_leader_calls", failedLeaderCall)
         builder.field("failed_indices", failedIndices)
+        builder.field("last_execution_time", lastExecutionTime)
         return builder.endObject()
     }
+
 }

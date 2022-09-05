@@ -22,10 +22,7 @@ import org.opensearch.replication.metadata.UpdateMetadataAction
 import org.opensearch.replication.metadata.UpdateMetadataRequest
 import org.opensearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
 import org.opensearch.replication.metadata.state.getReplicationStateParamsForIndex
-import org.opensearch.replication.metadata.store.ReplicationMetadata
 import org.opensearch.replication.seqno.RemoteClusterRetentionLeaseHelper
-import org.opensearch.replication.task.index.IndexReplicationParams
-import org.opensearch.replication.util.completeWith
 import org.opensearch.replication.util.coroutineContext
 import org.opensearch.replication.util.suspendExecute
 import org.opensearch.replication.util.suspending
@@ -39,7 +36,6 @@ import org.opensearch.OpenSearchException
 import org.opensearch.action.ActionListener
 import org.opensearch.action.admin.indices.open.OpenIndexRequest
 import org.opensearch.action.support.ActionFilters
-import org.opensearch.action.support.IndicesOptions
 import org.opensearch.action.support.master.AcknowledgedResponse
 import org.opensearch.action.support.master.TransportMasterNodeAction
 import org.opensearch.client.Client
@@ -57,8 +53,6 @@ import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Inject
 import org.opensearch.common.io.stream.StreamInput
 import org.opensearch.common.settings.Settings
-import org.opensearch.index.IndexNotFoundException
-import org.opensearch.index.shard.ShardId
 import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
@@ -99,7 +93,7 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                     throw OpenSearchException("Failed to remove index block on ${request.indexName}")
                 }
 
-                validateStopReplicationRequest(request)
+                validateReplicationStateOfIndex(request)
 
                 // Index will be deleted if replication is stopped while it is restoring.  So no need to close/reopen
                 val restoring = clusterService.state().custom<RestoreInProgress>(RestoreInProgress.TYPE, RestoreInProgress.EMPTY).any { entry ->
@@ -117,8 +111,9 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                         throw OpenSearchException("Unable to close index: ${request.indexName}")
                     }
                 }
-                val replMetadata = replicationMetadataManager.getIndexReplicationMetadata(request.indexName)
+
                 try {
+                    val replMetadata = replicationMetadataManager.getIndexReplicationMetadata(request.indexName)
                     val remoteClient = client.getRemoteClusterClient(replMetadata.connectionName)
                     val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
                     retentionLeaseHelper.attemptRemoveRetentionLease(clusterService, replMetadata, request.indexName)
@@ -127,12 +122,12 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                 }
 
                 val clusterStateUpdateResponse : AcknowledgedResponse =
-                    clusterService.waitForClusterStateUpdate("stop_replication") { l -> StopReplicationTask(request, l)}
+                        clusterService.waitForClusterStateUpdate("stop_replication") { l -> StopReplicationTask(request, l)}
                 if (!clusterStateUpdateResponse.isAcknowledged) {
                     throw OpenSearchException("Failed to update cluster state")
                 }
 
-                // Index will be deleted if stop is called while it is restoring.  So no need to reopen
+                // Index will be deleted if stop is called while it is restoring. So no need to reopen
                 if (!restoring &&
                         state.routingTable.hasIndex(request.indexName)) {
                     val reopenResponse = client.suspending(client.admin().indices()::open, injectSecurityContext = true)(OpenIndexRequest(request.indexName))
@@ -149,7 +144,15 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
         }
     }
 
-    private fun validateStopReplicationRequest(request: StopIndexReplicationRequest) {
+    private fun validateReplicationStateOfIndex(request: StopIndexReplicationRequest) {
+        // If replication blocks/settings are present, Stop action should proceed with the clean-up
+        // This can happen during settings of follower index are carried over in the snapshot and the restore is
+        // performed using this snapshot.
+        if (clusterService.state().blocks.hasIndexBlock(request.indexName, INDEX_REPLICATION_BLOCK)
+                || clusterService.state().metadata.index(request.indexName)?.settings?.get(REPLICATED_INDEX_SETTING.key) != null) {
+            return
+        }
+
         val replicationStateParams = getReplicationStateParamsForIndex(clusterService, request.indexName)
                 ?:
             throw IllegalArgumentException("No replication in progress for index:${request.indexName}")
@@ -187,13 +190,15 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
             val mdBuilder = Metadata.builder(currentState.metadata)
             // remove replicated index setting
             val currentIndexMetadata = currentState.metadata.index(request.indexName)
-            if (currentIndexMetadata != null) {
+            if (currentIndexMetadata != null &&
+                    currentIndexMetadata.settings[REPLICATED_INDEX_SETTING.key] != null) {
                 val newIndexMetadata = IndexMetadata.builder(currentIndexMetadata)
                         .settings(Settings.builder().put(currentIndexMetadata.settings).putNull(REPLICATED_INDEX_SETTING.key))
                         .settingsVersion(1 + currentIndexMetadata.settingsVersion)
                 mdBuilder.put(newIndexMetadata)
             }
             newState.metadata(mdBuilder)
+
             return newState.build()
         }
 
