@@ -74,6 +74,7 @@ import org.opensearch.replication.leaderStats
 import org.opensearch.replication.updateReplicationStartBlockSetting
 import java.nio.file.Files
 import java.util.concurrent.TimeUnit
+import org.opensearch.bootstrap.BootstrapInfo
 
 
 @MultiClusterAnnotations.ClusterConfigurations(
@@ -700,6 +701,14 @@ class StartReplicationIT: MultiClusterRestTestCase() {
     }
 
     fun `test that replication fails to start when custom analyser is not present in follower`() {
+
+        //check if integTest remote = true
+        val systemProperties = BootstrapInfo.getSystemProperties()
+        val integTestRemote = systemProperties.get("tests.integTestRemote") as String?
+        if(integTestRemote.equals("true")){
+            return;
+        }
+
         val synonyms = javaClass.getResourceAsStream("/analyzers/synonyms.txt")
         val config = PathUtils.get(buildDir, leaderClusterPath, "config")
         val synonymPath = config.resolve("synonyms.txt")
@@ -733,6 +742,14 @@ class StartReplicationIT: MultiClusterRestTestCase() {
     }
 
     fun `test that replication starts successfully when custom analyser is present in follower`() {
+
+        //check if integTest remote = true
+        val systemProperties = BootstrapInfo.getSystemProperties()
+        val integTestRemote = systemProperties.get("tests.integTestRemote") as String?
+        if(integTestRemote.equals("true")){
+            return;
+        }
+
         val synonyms = javaClass.getResourceAsStream("/analyzers/synonyms.txt")
         val leaderConfig = PathUtils.get(buildDir, leaderClusterPath, "config")
         val leaderSynonymPath = leaderConfig.resolve("synonyms.txt")
@@ -778,6 +795,14 @@ class StartReplicationIT: MultiClusterRestTestCase() {
     }
 
     fun `test that replication starts successfully when custom analyser is overridden and present in follower`() {
+
+        //check if integTest remote = true
+        val systemProperties = BootstrapInfo.getSystemProperties()
+        val integTestRemote = systemProperties.get("tests.integTestRemote") as String?
+        if(integTestRemote.equals("true")){
+            return;
+        }
+
         val synonyms = javaClass.getResourceAsStream("/analyzers/synonyms.txt")
         val leaderConfig = PathUtils.get(buildDir, leaderClusterPath, "config")
         val leaderSynonymPath = leaderConfig.resolve("synonyms.txt")
@@ -942,6 +967,14 @@ class StartReplicationIT: MultiClusterRestTestCase() {
     }
 
     fun `test that snapshot on leader does not affect replication during bootstrap`() {
+
+        //check if integTest remote = true
+        val systemProperties = BootstrapInfo.getSystemProperties()
+        val integTestRemote = systemProperties.get("tests.integTestRemote") as String?
+        if(integTestRemote.equals("true")){
+            return;
+        }
+
         val settings = Settings.builder()
             .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 20)
             .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0)
