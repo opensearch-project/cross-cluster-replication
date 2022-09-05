@@ -877,14 +877,28 @@ task "bwcTestSuite"(type: RestIntegTestTask) {
     dependsOn tasks.named("fullRestartClusterTask")
 }
 
-task integTestRemote(type: RestIntegTestTask) {
+//monu
+
+
+task integTestRemote (type: RestIntegTestTask) {
     doFirst {
-        systemProperty "tests.cluster.follower.http_hosts", System.getProperty("follower.http_host")
-        systemProperty "tests.cluster.follower.transport_hosts", System.getProperty("follower.transport_host")
-        systemProperty "tests.cluster.follower.security_enabled", System.getProperty("security_enabled")
+
+
+        systemProperty "tests.cluster.leaderCluster.http_hosts", System.getProperty("leader.http_host")
+        systemProperty "tests.cluster.leaderCluster.transport_hosts", System.getProperty("leader.transport_host")
+        systemProperty "tests.cluster.leaderCluster.security_enabled", System.getProperty("leader.security_enabled")
+
+        systemProperty "tests.cluster.followCluster.http_hosts", System.getProperty("follower.http_host")
+        systemProperty "tests.cluster.followCluster.transport_hosts", System.getProperty("follower.transport_host")
+        systemProperty "tests.cluster.followCluster.security_enabled", System.getProperty("follower.security_enabled")
+
+        nonInputProperties.systemProperty('tests.integTestRemote', "true")
+
+        systemProperty "build.dir", "${buildDir}"
     }
     filter {
-        setIncludePatterns("org.opensearch.replication.singleCluster.SingleClusterSanityIT")
+
+       setExcludePatterns("org.opensearch.replication.bwc.BackwardsCompatibilityIT")
     }
     nonInputProperties.systemProperty('tests.sanitySingleCluster', "integTestSingleCluster")
 }
@@ -922,3 +936,4 @@ task updateVersion {
         ant.replaceregexp(file:'build.gradle', match: '"opensearch.version", "\\d.*"', replace: '"opensearch.version", "' + newVersion.tokenize('-')[0] + '-SNAPSHOT"', flags:'g', byline:true)
     }
 }
+
