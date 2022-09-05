@@ -203,6 +203,7 @@ fun `validate paused status response due to leader index deleted`(statusResp: Ma
     Assert.assertTrue(statusResp.getValue("reason").toString().contains(STATUS_REASON_INDEX_NOT_FOUND))
 }
 
+
 fun RestHighLevelClient.stopReplication(index: String, shouldWait: Boolean = true, requestOptions: RequestOptions = RequestOptions.DEFAULT) {
     val lowLevelStopRequest = Request("POST", REST_REPLICATION_STOP.replace("{index}", index,true))
     lowLevelStopRequest.setJsonEntity("{}")

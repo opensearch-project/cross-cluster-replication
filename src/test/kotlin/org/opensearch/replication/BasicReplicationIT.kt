@@ -36,6 +36,7 @@ const val FOLL = "followCluster"
     ClusterConfiguration(clusterName = LEADER),
     ClusterConfiguration(clusterName = FOLL)
 )
+
 class BasicReplicationIT : MultiClusterRestTestCase() {
     private val leaderIndexName = "leader_index"
     private val followerIndexName = "follower_index"
