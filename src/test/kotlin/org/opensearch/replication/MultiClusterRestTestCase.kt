@@ -131,7 +131,6 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
             val transportHostsProp = systemProperties.get("tests.cluster.${cluster}.transport_hosts") as String?
             val securityEnabled = systemProperties.get("tests.cluster.${cluster}.security_enabled") as String?
             val totalNodes = systemProperties.get("tests.cluster.${cluster}.total_nodes") as String?
-
             requireNotNull(httpHostsProp) { "Missing http hosts property for cluster: $cluster."}
             requireNotNull(transportHostsProp) { "Missing transport hosts property for cluster: $cluster."}
             requireNotNull(securityEnabled) { "Missing security enabled property for cluster: $cluster."}
@@ -168,6 +167,7 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
                 emptyList()
             }
         }
+
 
         @BeforeClass @JvmStatic
         fun setupTestClustersForSuite() {
