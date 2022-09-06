@@ -141,4 +141,5 @@ fi
 USERNAME=`echo $CREDENTIAL | awk -F ':' '{print $1}'`
 PASSWORD=`echo $CREDENTIAL | awk -F ':' '{print $2}'`
 
+
 eval "./gradlew integTestRemote -Dleader.http_host=\"$LBIND_ADDRESS:$LBIND_PORT\" -Dleader.transport_host=\"$LBIND_ADDRESS:$LTRANSPORT_PORT\" -Dfollower.http_host=\"$FBIND_ADDRESS:$FBIND_PORT\" -Dfollower.transport_host=\"$FBIND_ADDRESS:$FTRANSPORT_PORT\" -Dsecurity_enabled=\"$SECURITY_ENABLED\" -Duser=\"$USERNAME\" -Dpassword=\"$PASSWORD\" --console=plain "
