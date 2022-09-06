@@ -898,7 +898,6 @@ task integTestRemote (type: RestIntegTestTask) {
 
     }
         filter {
-            setIncludePatterns("org.opensearch.replication.singleCluster.SingleClusterSanityIT")
 
             setExcludePatterns("org.opensearch.replication.bwc.BackwardsCompatibilityIT")
         }
