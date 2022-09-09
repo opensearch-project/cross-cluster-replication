@@ -884,20 +884,30 @@ task integTestRemote (type: RestIntegTestTask) {
         systemProperty "tests.cluster.followCluster.transport_hosts", System.getProperty("follower.transport_host")
         systemProperty "tests.cluster.followCluster.security_enabled", System.getProperty("follower.security_enabled")
 
-        if (System.getProperty("leader.transport_host") != null) {
-            systemProperty "tests.cluster.leaderCluster.http_hosts", System.getProperty("leader.http_host")
-            systemProperty "tests.cluster.leaderCluster.transport_hosts", System.getProperty("leader.transport_host")
-            systemProperty "tests.cluster.leaderCluster.security_enabled", System.getProperty("leader.security_enabled")
-            nonInputProperties.systemProperty('tests.integTestRemote', "true")
-            systemProperty "build.dir", "${buildDir}"
-        }
+        systemProperty "tests.cluster.leaderCluster.http_hosts", System.getProperty("leader.http_host")
+        systemProperty "tests.cluster.leaderCluster.transport_hosts", System.getProperty("leader.transport_host")
+        systemProperty "tests.cluster.leaderCluster.security_enabled", System.getProperty("leader.security_enabled")
+
+        nonInputProperties.systemProperty('tests.integTestRemote', "true")
+        systemProperty "build.dir", "${buildDir}"
+
     }
     filter {
-        if (System.getProperty("leader.transport_host") != null) {
             setExcludePatterns("org.opensearch.replication.bwc.BackwardsCompatibilityIT")
-        }else{
+    }
+    nonInputProperties.systemProperty('tests.sanitySingleCluster', "integTestSingleCluster")
+}
+
+
+task singleClusterSanity (type: RestIntegTestTask) {
+    doFirst {
+
+        systemProperty "tests.cluster.followCluster.http_hosts", System.getProperty("follower.http_host")
+        systemProperty "tests.cluster.followCluster.transport_hosts", System.getProperty("follower.transport_host")
+        systemProperty "tests.cluster.followCluster.security_enabled", System.getProperty("follower.security_enabled")
+    }
+    filter {
             setIncludePatterns("org.opensearch.replication.singleCluster.SingleClusterSanityIT")
-        }
     }
     nonInputProperties.systemProperty('tests.sanitySingleCluster', "integTestSingleCluster")
 }
