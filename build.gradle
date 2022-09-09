@@ -879,7 +879,6 @@ task "bwcTestSuite"(type: RestIntegTestTask) {
 
 task integTestRemote (type: RestIntegTestTask) {
     doFirst {
-
         systemProperty "tests.cluster.followCluster.http_hosts", System.getProperty("follower.http_host")
         systemProperty "tests.cluster.followCluster.transport_hosts", System.getProperty("follower.transport_host")
         systemProperty "tests.cluster.followCluster.security_enabled", System.getProperty("follower.security_enabled")
@@ -898,10 +897,8 @@ task integTestRemote (type: RestIntegTestTask) {
     nonInputProperties.systemProperty('tests.sanitySingleCluster', "integTestSingleCluster")
 }
 
-
 task singleClusterSanity (type: RestIntegTestTask) {
     doFirst {
-
         systemProperty "tests.cluster.followCluster.http_hosts", System.getProperty("follower.http_host")
         systemProperty "tests.cluster.followCluster.transport_hosts", System.getProperty("follower.transport_host")
         systemProperty "tests.cluster.followCluster.security_enabled", System.getProperty("follower.security_enabled")
