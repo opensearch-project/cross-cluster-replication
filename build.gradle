@@ -56,14 +56,7 @@ buildscript {
         common_utils_version = System.getProperty("common_utils.version", opensearch_build)
         kotlin_version = System.getProperty("kotlin.version", "1.6.0")
 
-        // For fetching security zip from Maven.
-        // https://ci.opensearch.org/ci/dbc/distribution-build-opensearch/2.1.0/latest/linux/x64/tar/builds/opensearch/plugins/opensearch-security-2.1.0.0.zip
-        opensearch_no_snapshot = opensearch_version.replace("-SNAPSHOT","")
-        security_no_snapshot = opensearch_build.replace("-SNAPSHOT","")
-        security_plugin_path = "build/dependencies/security"
-        security_plugin_download_url = 'https://ci.opensearch.org/ci/dbc/distribution-build-opensearch/' + opensearch_no_snapshot +
-                '/latest/linux/x64/tar/builds/opensearch/plugins/opensearch-security-' + security_no_snapshot + '.zip'
-
+        security_plugin_version = opensearch_build.replace("-SNAPSHOT","")
     }
 
     repositories {
@@ -126,6 +119,10 @@ configurations.all {
     }
 }
 
+configurations {
+    opensearchPlugin
+}
+
 dependencies {
     runtimeOnly "org.opensearch:opensearch:${opensearch_version}"
     implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
@@ -143,6 +140,8 @@ dependencies {
     testImplementation "org.jetbrains.kotlinx:kotlinx-coroutines-test:${kotlin_version}"
     testImplementation "org.jetbrains.kotlin:kotlin-test:${kotlin_version}"
     testImplementation "com.nhaarman.mockitokotlin2:mockito-kotlin:2.2.0"
+
+    opensearchPlugin "org.opensearch.plugin:opensearch-security:${security_plugin_version}@zip"
 }
 
 repositories {
@@ -218,14 +217,9 @@ def securityPluginFile = new Callable<RegularFile>() {
             return new RegularFile() {
                 @Override
                 File getAsFile() {
-                    if (new File("$project.rootDir/$security_plugin_path").exists()) {
-                        project.delete(files("$project.rootDir/$security_plugin_path"))
-                    }
-                    project.mkdir security_plugin_path
-                    ant.get(src: security_plugin_download_url,
-                            dest: security_plugin_path,
-                            httpusecaches: false)
-                    return fileTree(security_plugin_path).getSingleFile()
+                    return configurations.opensearchPlugin.resolvedConfiguration.resolvedArtifacts
+                        .find { ResolvedArtifact f -> f.name.contains('opensearch-security') }
+                        .file
                 }
             }
         }
