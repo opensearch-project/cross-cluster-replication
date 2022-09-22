@@ -157,6 +157,12 @@ For more details on design and architecture, please refer to [RFC](docs/RFC.md) 
 
 See [CONTRIBUTING](CONTRIBUTING.md) for more information.
 
+## Getting Help
+
+If you find a bug, or have a feature request, please don't hesitate to open an issue in this repository.
+
+For more information, see the [project website](https://opensearch.org/) and [technical documentation](https://opensearch.org/docs/latest/replication-plugin/index/). If you need help and are unsure where to open an issue, try the OpenSearch [Forum](https://forum.opensearch.org/c/plugins/cross-cluster-replication/53).
+
 ## License
 
 This project is licensed under the Apache-2.0 License.
