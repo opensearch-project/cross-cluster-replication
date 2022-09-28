@@ -894,7 +894,6 @@ task integTestRemote (type: RestIntegTestTask) {
     filter {
             setExcludePatterns("org.opensearch.replication.bwc.BackwardsCompatibilityIT")
     }
-    nonInputProperties.systemProperty('tests.sanitySingleCluster', "integTestSingleCluster")
 }
 
 task singleClusterSanityTest (type: RestIntegTestTask) {

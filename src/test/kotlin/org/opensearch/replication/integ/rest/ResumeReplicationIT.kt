@@ -211,10 +211,7 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
 
     fun `test that replication fails to resume when custom analyser is not present in follower`() {
 
-        //check if integTest remote = true
-        val systemProperties = BootstrapInfo.getSystemProperties()
-        val integTestRemote = systemProperties.get("tests.integTestRemote") as String?
-        if(integTestRemote.equals("true")){
+        if(checkifIntegTestRemote()){
             return;
         }
 
@@ -260,10 +257,7 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
 
     fun `test that replication resumes when custom analyser is present in follower`() {
 
-        //check if integTest remote = true
-        val systemProperties = BootstrapInfo.getSystemProperties()
-        val integTestRemote = systemProperties.get("tests.integTestRemote") as String?
-        if(integTestRemote.equals("true")){
+        if(checkifIntegTestRemote()){
             return;
         }
 
@@ -317,10 +311,7 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
 
     fun `test that replication resumes when custom analyser is overridden and present in follower`() {
 
-        //check if integTest remote = true
-        val systemProperties = BootstrapInfo.getSystemProperties()
-        val integTestRemote = systemProperties.get("tests.integTestRemote") as String?
-        if(integTestRemote.equals("true")){
+        if(checkifIntegTestRemote()){
             return;
         }
 

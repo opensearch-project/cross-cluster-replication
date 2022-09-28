@@ -702,10 +702,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
 
     fun `test that replication fails to start when custom analyser is not present in follower`() {
 
-        //check if integTest remote = true
-        val systemProperties = BootstrapInfo.getSystemProperties()
-        val integTestRemote = systemProperties.get("tests.integTestRemote") as String?
-        if(integTestRemote.equals("true")){
+        if(checkifIntegTestRemote()){
             return;
         }
 
@@ -743,10 +740,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
 
     fun `test that replication starts successfully when custom analyser is present in follower`() {
 
-        //check if integTest remote = true
-        val systemProperties = BootstrapInfo.getSystemProperties()
-        val integTestRemote = systemProperties.get("tests.integTestRemote") as String?
-        if(integTestRemote.equals("true")){
+        if(checkifIntegTestRemote()){
             return;
         }
 
@@ -796,10 +790,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
 
     fun `test that replication starts successfully when custom analyser is overridden and present in follower`() {
 
-        //check if integTest remote = true
-        val systemProperties = BootstrapInfo.getSystemProperties()
-        val integTestRemote = systemProperties.get("tests.integTestRemote") as String?
-        if(integTestRemote.equals("true")){
+        if(checkifIntegTestRemote()){
             return;
         }
 
@@ -968,10 +959,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
 
     fun `test that snapshot on leader does not affect replication during bootstrap`() {
 
-        //check if integTest remote = true
-        val systemProperties = BootstrapInfo.getSystemProperties()
-        val integTestRemote = systemProperties.get("tests.integTestRemote") as String?
-        if(integTestRemote.equals("true")){
+        if(checkifIntegTestRemote()){
             return;
         }
 
