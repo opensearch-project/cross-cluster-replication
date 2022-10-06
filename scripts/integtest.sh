@@ -90,7 +90,7 @@ then
   fi
 
   leader=$(echo  $ENDPOINT_LIST | cut -d ',' -f1 | cut -d ':' -f1,2 )
-  follower=$(echo $ENDPOINT_LIST  |  cut -d ',' -f1 | cut -d ':' -f1,2 )
+  follower=$(echo $ENDPOINT_LIST  |  cut -d ',' -f2 | cut -d ':' -f1,2 )
 
   FTRANSPORT_PORT=$(echo  $ENDPOINT_LIST | cut -d ',' -f1 | cut -d ':' -f3  )
   LTRANSPORT_PORT=$(echo  $ENDPOINT_LIST | cut -d ',' -f2 | cut -d ':' -f3  )
