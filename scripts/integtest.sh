@@ -21,11 +21,11 @@ function usage() {
     echo -e "-t TRANSPORT_PORT\t, defaults to 9300, can be changed to any port for the cluster location."
     echo "--------------------------------------------------------------------------"
     echo "Multi cluster test:"
-    echo -e "-e Comma seperated endpoint:port, ex: localhost:9200,localhost:9201... ."
+    echo -e "-e Comma seperated endpoint:port, ex: localhost:9200:9300,localhost:9201:9301... ."
     echo "--------------------------------------------------------------------------"
 }
 
-while getopts ":h:b:p:t:e:s:c:" arg; do
+while getopts ":h:b:p:t:e:s:c:v:" arg; do
     case $arg in
         h)
             usage
@@ -48,6 +48,9 @@ while getopts ":h:b:p:t:e:s:c:" arg; do
             ;;
         c)
             CREDENTIAL=$OPTARG
+            ;;
+        v)
+            # Do nothing as we're not consuming this param.
             ;;
         :)
             echo "-${OPTARG} requires an argument"
@@ -89,15 +92,15 @@ then
     exit 1
   fi
 
-  leader=$(echo  $ENDPOINT_LIST | cut -d ',' -f1 | cut -d ':' -f1,2 )
-  follower=$(echo $ENDPOINT_LIST  |  cut -d ',' -f2 | cut -d ':' -f1,2 )
+  data=$(python3 -c "import json; cluster=$ENDPOINT_LIST ; data_nodes=cluster; print(data_nodes[0][\"data_nodes\"][0][\"endpoint\"],':',data_nodes[0][\"data_nodes\"][0][\"port\"],':',data_nodes[0][\"data_nodes\"][0][\"transport\"],',',data_nodes[1][\"data_nodes\"][0][\"endpoint\"],':',data_nodes[1][\"data_nodes\"][0][\"port\"],':',data_nodes[1][\"data_nodes\"][0][\"transport\"])" | tr -d "[:blank:]")
 
-  FTRANSPORT_PORT=$(echo  $ENDPOINT_LIST | cut -d ',' -f1 | cut -d ':' -f3  )
-  LTRANSPORT_PORT=$(echo  $ENDPOINT_LIST | cut -d ',' -f2 | cut -d ':' -f3  )
-  echo "./gradlew integTestRemote -Dleader.http_host=\"$leader\" -Dfollower.http_host=\"$follower\" -Dfollower.transport_host=\"$FTRANSPORT_PORT\"  -Dleader.transport_host=\"$LTRANSPORT_PORT\"  -Dsecurity_enabled=\"$SECURITY_ENABLED\" -Duser=\"$USERNAME\" -Dpassword=\"$PASSWORD\" --console=plain "
+
+  leader=$(echo  $data | cut -d ',' -f1 | cut -d ':' -f1,2 )
+  follower=$(echo $data  |  cut -d ',' -f2 | cut -d ':' -f1,2 )
+
+  FTRANSPORT_PORT=$(echo  $data | cut -d ',' -f1 | cut -d ':' -f3  )
+  LTRANSPORT_PORT=$(echo  $data | cut -d ',' -f2 | cut -d ':' -f3  )
   eval "./gradlew integTestRemote -Dleader.http_host=\"$leader\" -Dfollower.http_host=\"$follower\" -Dfollower.transport_host=\"$FTRANSPORT_PORT\"  -Dleader.transport_host=\"$LTRANSPORT_PORT\"  -Dsecurity_enabled=\"$SECURITY_ENABLED\" -Duser=\"$USERNAME\" -Dpassword=\"$PASSWORD\" --console=plain "
-
-
 
 else
   # Single cluster
