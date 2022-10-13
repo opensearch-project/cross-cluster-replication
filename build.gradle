@@ -908,6 +908,7 @@ publishing {
             pom {
                 name = opensearchplugin.name
                 description = opensearchplugin.description
+                group = "org.opensearch.plugin"
                 licenses {
                     license {
                         name = "The Apache License, Version 2.0"
