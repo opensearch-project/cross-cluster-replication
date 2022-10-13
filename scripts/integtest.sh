@@ -97,9 +97,9 @@ then
 
   leader=$(echo  $data | cut -d ',' -f1 | cut -d ':' -f1,2 )
   follower=$(echo $data  |  cut -d ',' -f2 | cut -d ':' -f1,2 )
-
-  FTRANSPORT_PORT=$(echo  $data | cut -d ',' -f1 | cut -d ':' -f3  )
-  LTRANSPORT_PORT=$(echo  $data | cut -d ',' -f2 | cut -d ':' -f3  )
+  
+  FTRANSPORT_PORT=$(echo  $data | cut -d ',' -f1 | cut -d ':' -f1,3 )
+  LTRANSPORT_PORT=$(echo $data  |  cut -d ',' -f2 | cut -d ':' -f1,3 )
   eval "./gradlew integTestRemote -Dleader.http_host=\"$leader\" -Dfollower.http_host=\"$follower\" -Dfollower.transport_host=\"$FTRANSPORT_PORT\"  -Dleader.transport_host=\"$LTRANSPORT_PORT\"  -Dsecurity_enabled=\"$SECURITY_ENABLED\" -Duser=\"$USERNAME\" -Dpassword=\"$PASSWORD\" --console=plain "
 
 else
