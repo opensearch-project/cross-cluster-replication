@@ -1,4 +1,4 @@
-name: Test and Build Workflow
+name: Build Replication plugin
 # This workflow is triggered on pull requests to main branch
 on:
   pull_request:
@@ -8,16 +8,21 @@ on:
     branches:
       - '*'
 
+# We build for other platforms except linux which is already covered in build-and-test.
+# Also, We're not running tests here as those are already covered with linux build.
 jobs:
   build:
+    continue-on-error: true
     strategy:
       matrix:
         java:
-          - 11
           - 17
+        os:
+          - windows-latest
+          - macos-latest
     # Job name
-    name: Build Replication plugin
-    runs-on: ubuntu-latest
+    name: Java ${{ matrix.java }} On ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
     steps:
       # This step uses the setup-java Github action: https://github.com/actions/setup-java
       - name: Set Up JDK ${{ matrix.java }}
@@ -29,21 +34,4 @@ jobs:
         uses: actions/checkout@v2
       - name: Build and run Replication tests
         run: |
-          ./gradlew clean release -Dbuild.snapshot=true
-      - name: Upload failed logs
-        uses: actions/upload-artifact@v2
-        if: failure()
-        with:
-          name: logs
-          path: |
-            build/testclusters/integTest-*/logs/*
-            build/testclusters/leaderCluster-*/logs/*
-            build/testclusters/followCluster-*/logs/*
-      - name: Create Artifact Path
-        run: |
-          mkdir -p cross-cluster-replication-artifacts
-          cp ./build/distributions/*.zip cross-cluster-replication-artifacts
-      - name: Uploads coverage
-        with:
-          fetch-depth: 2
-        uses: codecov/codecov-action@v1.2.1
+          ./gradlew clean release -D"build.snapshot=true" -x test -x IntegTest
