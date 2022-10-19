@@ -52,8 +52,7 @@ class CcrPerfTest:
         self.execution_id = None
         self.test_succeeded = False
         self.failure_reason = None
-        self.use_50_percent_heap = test_config["use_50_percent_heap"]
-
+        self.use_50_percent_heap = "enable"
     def get_infra_repo_url(self):
         if "GITHUB_TOKEN" in os.environ:
             return "https://${GITHUB_TOKEN}@github.com/opensearch-project/opensearch-infra.git"
