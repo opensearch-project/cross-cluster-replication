@@ -4,18 +4,21 @@
   Workload: eventdata
   DataNodes: 1
   MasterNodes: 0
+  use_50_percent_heap: "enable"
 - Number: 2
   Description: "single_node_multiple_shard"
   Shards: 10
   Workload: so
   DataNodes: 1
   MasterNodes: 0
+  use_50_percent_heap: "enable"
 - Number: 3
   Description: "multi_node_without_replica"
   Shards: 4
   Workload: nyc_taxis
   DataNodes: 4
   MasterNodes: 3
+  use_50_percent_heap: "enable"
 - Number: 4
   Description: "multi_node_with_replica"
   Shards: 4
@@ -23,3 +26,4 @@
   Workload: nyc_taxis
   DataNodes: 4
   MasterNodes: 3
+  use_50_percent_heap: "enable"
