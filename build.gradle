@@ -79,7 +79,7 @@ buildscript {
         classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:${kotlin_version}"
         classpath "org.jetbrains.kotlin:kotlin-allopen:${kotlin_version}"
         classpath "io.gitlab.arturbosch.detekt:detekt-gradle-plugin:1.0.0-RC15"
-        classpath "org.jacoco:org.jacoco.agent:0.8.5"
+        classpath "org.jacoco:org.jacoco.agent:0.8.7"
     }
 }
 
@@ -92,6 +92,9 @@ plugins {
 allprojects {
     group = "org.opensearch"
     version = "${opensearch_build}"
+    // Have resolve the jacoco version here to work with kotlin
+    // Ref: https://github.com/jacoco/jacoco/issues/1187
+    jacoco.toolVersion = "0.8.7"
 }
 
 apply plugin: 'java'
@@ -120,7 +123,7 @@ configurations.all {
         force 'org.apache.httpcomponents:httpclient-osgi:4.5.13'
         force 'org.apache.httpcomponents.client5:httpclient5:5.0.3'
         force 'org.apache.httpcomponents.client5:httpclient5-osgi:5.0.3'
-        force 'com.fasterxml.jackson.core:jackson-databind:2.13.4'
+        force 'com.fasterxml.jackson.core:jackson-databind:2.13.4.2'
         force 'org.yaml:snakeyaml:1.32'
         force 'org.codehaus.plexus:plexus-utils:3.0.24'
     }
