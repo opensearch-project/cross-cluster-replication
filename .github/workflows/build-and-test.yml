@@ -1,0 +1,51 @@
+name: CCR Test Workflow
+# This workflow is triggered on pull requests to main branch
+on:
+  pull_request:
+    branches:
+      - '*'
+  push:
+    branches:
+      - '*'
+
+# We build for all combinations but run tests only on one combination (linux & latest java)
+jobs:
+  build:
+    continue-on-error: true
+    strategy:
+      matrix:
+        java:
+          - 11
+          - 17
+    # Job name
+    name: Run integration tests on linux with Java ${{ matrix.java }}
+    runs-on: ubuntu-latest
+    steps:
+      # This step uses the setup-java Github action: https://github.com/actions/setup-java
+      - name: Set Up JDK ${{ matrix.java }}
+        uses: actions/setup-java@v1
+        with:
+          java-version: ${{ matrix.java }}
+      # This step uses the checkout Github action: https://github.com/actions/checkout
+      - name: Checkout Branch
+        uses: actions/checkout@v2
+      - name: Build and run Replication tests
+        run: |
+          ./gradlew clean release -D"build.snapshot=true"
+      - name: Upload failed logs
+        uses: actions/upload-artifact@v2
+        if: failure()
+        with:
+          name: logs
+          path: |
+            build/testclusters/integTest-*/logs/*
+            build/testclusters/leaderCluster-*/logs/*
+            build/testclusters/followCluster-*/logs/*
+      - name: Create Artifact Path
+        run: |
+          mkdir -p cross-cluster-replication-artifacts
+          cp ./build/distributions/*.zip cross-cluster-replication-artifacts
+      - name: Uploads coverage
+        with:
+          fetch-depth: 2
+        uses: codecov/codecov-action@v1.2.1
