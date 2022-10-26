@@ -75,6 +75,8 @@ allprojects {
     if (isSnapshot) {
         version += "-SNAPSHOT"
     }
+    // Have resolve the jacoco version here to work with kotlin
+    // Ref: https://github.com/jacoco/jacoco/issues/1187
     jacoco.toolVersion = "0.8.7"
 }
 
