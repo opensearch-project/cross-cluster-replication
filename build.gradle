@@ -116,6 +116,7 @@ configurations.all {
         force 'com.fasterxml.jackson.core:jackson-databind:2.13.4'
         force 'org.yaml:snakeyaml:1.32'
         force 'org.codehaus.plexus:plexus-utils:3.0.24'
+        force 'net.java.dev.jna:jna:5.12.1'
     }
 }
 
