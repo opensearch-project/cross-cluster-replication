@@ -244,6 +244,11 @@ class StopReplicationIT: MultiClusterRestTestCase() {
     }
 
     fun `test stop replication with stale replication settings at leader cluster`() {
+
+        if(checkifIntegTestRemote()){
+            return;
+        }
+        
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
         createConnectionBetweenClusters(FOLLOWER, LEADER, "source")
