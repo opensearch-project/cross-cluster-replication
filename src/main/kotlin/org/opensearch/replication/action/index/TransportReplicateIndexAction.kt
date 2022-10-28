@@ -92,7 +92,9 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
                         !leaderSettings.get(ReplicationPlugin.REPLICATED_INDEX_SETTING.key).isNullOrBlank()) {
                     throw IllegalArgumentException("Cannot Replicate a Replicated Index ${request.leaderIndex}")
                 }
-                if (!leaderSettings.getAsBoolean(IndexSettings.INDEX_SOFT_DELETES_SETTING.key, true)) {
+
+                // Soft deletes should be enabled for replication to work.
+                if (!leaderSettings.getAsBoolean(IndexSettings.INDEX_SOFT_DELETES_SETTING.key, false)) {
                     throw IllegalArgumentException("Cannot Replicate an index where the setting ${IndexSettings.INDEX_SOFT_DELETES_SETTING.key} is disabled")
                 }
 
@@ -128,9 +130,19 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
 
     private suspend fun getLeaderIndexSettings(leaderAlias: String, leaderIndex: String): Settings {
         val remoteClient = client.getRemoteClusterClient(leaderAlias)
-        val getSettingsRequest = GetSettingsRequest().includeDefaults(false).indices(leaderIndex)
-        val settingsResponse = remoteClient.suspending(remoteClient.admin().indices()::getSettings,
-                injectSecurityContext = true)(getSettingsRequest)
-        return settingsResponse.indexToSettings.get(leaderIndex) ?: throw IndexNotFoundException("${leaderAlias}:${leaderIndex}")
+        val getSettingsRequest = GetSettingsRequest().includeDefaults(true).indices(leaderIndex)
+        val settingsResponse = remoteClient.suspending(
+            remoteClient.admin().indices()::getSettings,
+            injectSecurityContext = true
+        )(getSettingsRequest)
+
+        val leaderSettings = settingsResponse.indexToSettings.get(leaderIndex)
+            ?: throw IndexNotFoundException("${leaderAlias}:${leaderIndex}")
+        val leaderDefaultSettings = settingsResponse.indexToDefaultSettings.get(leaderIndex)
+            ?: throw IndexNotFoundException("${leaderAlias}:${leaderIndex}")
+
+        // Since we want user configured as well as default settings, we combine both by putting default settings
+        // and then the explicitly set ones to override the default settings.
+        return Settings.builder().put(leaderDefaultSettings).put(leaderSettings).build()
     }
 }
