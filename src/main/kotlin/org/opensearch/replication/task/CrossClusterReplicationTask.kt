@@ -21,6 +21,7 @@ import org.opensearch.replication.util.suspending
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.ObsoleteCoroutinesApi
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -177,7 +178,7 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
     protected suspend fun updateTaskState(state: PersistentTaskState) {
         client.suspending(::updatePersistentTaskState)(state)
     }
-
+    @ObsoleteCoroutinesApi
     protected abstract suspend fun execute(scope: CoroutineScope, initialState: PersistentTaskState?)
 
     protected open suspend fun cleanup() {}
