@@ -12,13 +12,11 @@
 package org.opensearch.replication.integ.rest
 
 import org.opensearch.replication.MultiClusterRestTestCase
-import org.apache.http.HttpStatus
-import org.apache.http.entity.ContentType
-import org.apache.http.nio.entity.NStringEntity
+import org.apache.hc.core5.http.HttpStatus
+import org.apache.hc.core5.http.ContentType
+import org.apache.hc.core5.http.io.entity.StringEntity
 import org.opensearch.client.Request
-import org.junit.AfterClass
 import org.junit.BeforeClass
-import javax.swing.text.StyledEditorKit
 
 abstract class SecurityBase : MultiClusterRestTestCase()   {
     companion object {
@@ -82,7 +80,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
                 ]
             }
             """.trimMargin()
-            persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
+            persistentConnectionRequest.entity = StringEntity(entityAsString, ContentType.APPLICATION_JSON)
             val persistentConnectionResponse = leaderClient!!.lowLevelClient.performRequest(persistentConnectionRequest)
             assertTrue(HttpStatus.SC_CREATED.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong() ||
                     HttpStatus.SC_OK.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong())
@@ -127,7 +125,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
                 ]
             }
             """.trimMargin()
-            persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
+            persistentConnectionRequest.entity = StringEntity(entityAsString, ContentType.APPLICATION_JSON)
             val persistentConnectionResponse = leaderClient!!.lowLevelClient.performRequest(persistentConnectionRequest)
             assertTrue(HttpStatus.SC_CREATED.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong() ||
                     HttpStatus.SC_OK.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong())
@@ -159,7 +157,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
                 ]
             }
             """.trimMargin()
-            persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
+            persistentConnectionRequest.entity = StringEntity(entityAsString, ContentType.APPLICATION_JSON)
             val persistentConnectionResponse = leaderClient!!.lowLevelClient.performRequest(persistentConnectionRequest)
             assertTrue(HttpStatus.SC_CREATED.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong() ||
                     HttpStatus.SC_OK.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong())
@@ -191,7 +189,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
                 ]
             }
             """.trimMargin()
-            persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
+            persistentConnectionRequest.entity = StringEntity(entityAsString, ContentType.APPLICATION_JSON)
             val persistentConnectionResponse = leaderClient!!.lowLevelClient.performRequest(persistentConnectionRequest)
             assertTrue(HttpStatus.SC_CREATED.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong() ||
                     HttpStatus.SC_OK.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong())
@@ -211,7 +209,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
                 ]
             }
             """.trimMargin()
-            persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
+            persistentConnectionRequest.entity = StringEntity(entityAsString, ContentType.APPLICATION_JSON)
             val persistentConnectionResponse = leaderClient!!.lowLevelClient.performRequest(persistentConnectionRequest)
             assertTrue(HttpStatus.SC_CREATED.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong() ||
                     HttpStatus.SC_OK.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong())
@@ -234,7 +232,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
                 ]
             }
             """.trimMargin()
-            persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
+            persistentConnectionRequest.entity = StringEntity(entityAsString, ContentType.APPLICATION_JSON)
             val persistentConnectionResponse = leaderClient!!.lowLevelClient.performRequest(persistentConnectionRequest)
             assertTrue(HttpStatus.SC_CREATED.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong() ||
                     HttpStatus.SC_OK.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong())
@@ -266,7 +264,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
                 ]
             }
             """.trimMargin()
-            persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
+            persistentConnectionRequest.entity = StringEntity(entityAsString, ContentType.APPLICATION_JSON)
             val persistentConnectionResponse = followerClient!!.lowLevelClient.performRequest(persistentConnectionRequest)
             assertTrue(HttpStatus.SC_CREATED.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong() ||
                     HttpStatus.SC_OK.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong())
@@ -279,7 +277,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
                 {"users": ["$user"]}
             """.trimMargin()
 
-            persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
+            persistentConnectionRequest.entity = StringEntity(entityAsString, ContentType.APPLICATION_JSON)
             val persistentConnectionResponse = followerClient!!.lowLevelClient.performRequest(persistentConnectionRequest)
             assertTrue(HttpStatus.SC_CREATED.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong() ||
                     HttpStatus.SC_OK.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong())
@@ -308,7 +306,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
             }
             """.trimMargin()
 
-            persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
+            persistentConnectionRequest.entity = StringEntity(entityAsString, ContentType.APPLICATION_JSON)
             val persistentConnectionResponse = followerClient!!.lowLevelClient.performRequest(persistentConnectionRequest)
             assertTrue(HttpStatus.SC_CREATED.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong() ||
                     HttpStatus.SC_OK.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong())

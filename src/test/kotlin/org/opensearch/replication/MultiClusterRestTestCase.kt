@@ -15,17 +15,19 @@ import org.opensearch.replication.MultiClusterAnnotations.ClusterConfiguration
 import org.opensearch.replication.MultiClusterAnnotations.ClusterConfigurations
 import org.opensearch.replication.MultiClusterAnnotations.getAnnotationsFromClass
 import org.opensearch.replication.integ.rest.FOLLOWER
-import org.apache.http.Header
-import org.apache.http.HttpHost
-import org.apache.http.HttpStatus
-import org.apache.http.client.config.RequestConfig
-import org.apache.http.entity.ContentType
-import org.apache.http.impl.nio.client.HttpAsyncClientBuilder
-import org.apache.http.message.BasicHeader
-import org.apache.http.nio.conn.ssl.SSLIOSessionStrategy
-import org.apache.http.nio.entity.NStringEntity
-import org.apache.http.ssl.SSLContexts
-import org.apache.http.util.EntityUtils
+import org.apache.hc.core5.http.Header
+import org.apache.hc.core5.http.HttpHost
+import org.apache.hc.core5.http.HttpStatus
+import org.apache.hc.client5.http.config.RequestConfig
+import org.apache.hc.core5.http.ContentType
+import org.apache.hc.client5.http.impl.async.HttpAsyncClientBuilder
+import org.apache.hc.client5.http.impl.nio.PoolingAsyncClientConnectionManagerBuilder
+import org.apache.hc.client5.http.ssl.ClientTlsStrategyBuilder
+import org.apache.hc.core5.http.message.BasicHeader
+import org.apache.hc.core5.http.io.entity.StringEntity
+import org.apache.hc.core5.ssl.SSLContexts
+import org.apache.hc.core5.http.io.entity.EntityUtils
+import org.apache.hc.core5.util.Timeout
 import org.apache.lucene.util.SetOnce
 import org.opensearch.action.admin.cluster.node.tasks.list.ListTasksRequest
 import org.opensearch.action.admin.cluster.settings.ClusterUpdateSettingsRequest
@@ -49,7 +51,6 @@ import org.opensearch.common.xcontent.json.JsonXContent
 import org.opensearch.snapshots.SnapshotState
 import org.opensearch.tasks.TaskInfo
 import org.opensearch.test.OpenSearchTestCase
-import org.opensearch.test.OpenSearchTestCase.assertBusy
 import org.opensearch.test.rest.OpenSearchRestTestCase
 import org.hamcrest.Matchers
 import org.junit.After
@@ -68,7 +69,6 @@ import java.util.Collections
 import javax.net.ssl.SSLContext
 import javax.net.ssl.TrustManager
 import javax.net.ssl.X509TrustManager
-import javax.security.cert.X509Certificate
 
 /**
  * This class provides basic support of managing life-cyle of
@@ -96,10 +96,13 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
             })
             val sslContext = SSLContext.getInstance("SSL")
             sslContext.init(null, trustCerts, java.security.SecureRandom())
+            val tlsStrategy = ClientTlsStrategyBuilder.create().setSslContext(sslContext)
+                .setHostnameVerifier { _, _ -> true } // Disable hostname verification for local cluster
+                .build()
+            val connManager = PoolingAsyncClientConnectionManagerBuilder.create().setTlsStrategy(tlsStrategy).build()
 
             val builder = RestClient.builder(*httpHosts.toTypedArray()).setHttpClientConfigCallback { httpAsyncClientBuilder ->
-                httpAsyncClientBuilder.setSSLHostnameVerifier { _, _ -> true } // Disable hostname verification for local cluster
-                httpAsyncClientBuilder.setSSLContext(sslContext)
+                httpAsyncClientBuilder.setConnectionManager(connManager)
             }
             configureClient(builder, getClusterSettings(clusterName), securityEnabled)
             builder.setStrictDeprecationMode(false)
@@ -208,9 +211,11 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
                     val keyStore = KeyStore.getInstance(keyStoreType)
                     Files.newInputStream(path).use { `is` -> keyStore.load(`is`, keystorePass.toCharArray()) }
                     val sslcontext = SSLContexts.custom().loadTrustMaterial(keyStore, null).build()
-                    val sessionStrategy = SSLIOSessionStrategy(sslcontext)
-                    builder.setHttpClientConfigCallback { httpClientBuilder: HttpAsyncClientBuilder ->
-                        httpClientBuilder.setSSLStrategy(sessionStrategy)
+                    val tlsStrategy = ClientTlsStrategyBuilder.create().setSslContext(sslcontext).build()
+                    val connManager = PoolingAsyncClientConnectionManagerBuilder.create().setTlsStrategy(tlsStrategy).build()
+
+                    builder.setHttpClientConfigCallback { httpAsyncClientBuilder: HttpAsyncClientBuilder ->
+                        httpAsyncClientBuilder.setConnectionManager(connManager)
                     }
                 } catch (e: KeyStoreException) {
                     throw RuntimeException("Error setting up ssl", e)
@@ -242,8 +247,7 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
             val socketTimeout = TimeValue.parseTimeValue(socketTimeoutString ?: "60s",
                                                          OpenSearchRestTestCase.CLIENT_SOCKET_TIMEOUT)
             builder.setRequestConfigCallback { conf: RequestConfig.Builder ->
-                conf.setSocketTimeout(
-                    Math.toIntExact(socketTimeout.millis))
+                conf.setResponseTimeout(Timeout.ofMilliseconds(socketTimeout.millis))
             }
             if (settings.hasValue(OpenSearchRestTestCase.CLIENT_PATH_PREFIX)) {
                 builder.setPathPrefix(settings[OpenSearchRestTestCase.CLIENT_PATH_PREFIX])
@@ -356,7 +360,7 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
 
     private fun triggerRequest(client: RestClient, method: String, endpoint: String, reqBody: String) {
         val req = Request(method, endpoint)
-        req.entity = NStringEntity(reqBody, ContentType.APPLICATION_JSON)
+        req.entity = StringEntity(reqBody, ContentType.APPLICATION_JSON)
         val res = client.performRequest(req)
 
         assertTrue(HttpStatus.SC_CREATED.toLong() == res.statusLine.statusCode.toLong() ||
@@ -505,7 +509,7 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
                           }
                         }""".trimMargin()
 
-        persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
+        persistentConnectionRequest.entity = StringEntity(entityAsString, ContentType.APPLICATION_JSON)
         val persistentConnectionResponse = fromCluster.lowLevelClient.performRequest(persistentConnectionRequest)
         assertEquals(HttpStatus.SC_OK.toLong(), persistentConnectionResponse.statusLine.statusCode.toLong())
     }
@@ -561,7 +565,7 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
                           }]
                         }""".trimMargin()
 
-        persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
+        persistentConnectionRequest.entity = StringEntity(entityAsString, ContentType.APPLICATION_JSON)
         val persistentConnectionResponse = cluster.lowLevelClient.performRequest(persistentConnectionRequest)
         assertEquals(HttpStatus.SC_OK.toLong(), persistentConnectionResponse.statusLine.statusCode.toLong())
     }
@@ -579,7 +583,7 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
         val entityAsString = """
                         {"value" : "$docValue"}""".trimMargin()
 
-        persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
+        persistentConnectionRequest.entity = StringEntity(entityAsString, ContentType.APPLICATION_JSON)
         val persistentConnectionResponse = cluster.lowLevelClient.performRequest(persistentConnectionRequest)
         assertEquals(HttpStatus.SC_CREATED.toLong(), persistentConnectionResponse.statusLine.statusCode.toLong())
     }
@@ -599,7 +603,7 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
         val entityAsString = """
                         {"template": "*", "settings": {"number_of_shards": 1, "number_of_replicas": 0}}""".trimMargin()
 
-        persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
+        persistentConnectionRequest.entity = StringEntity(entityAsString, ContentType.APPLICATION_JSON)
         cluster.lowLevelClient.performRequest(persistentConnectionRequest)
     }
 

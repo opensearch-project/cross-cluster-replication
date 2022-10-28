@@ -20,9 +20,9 @@ import org.opensearch.replication.stopReplication
 import org.opensearch.replication.updateAutoFollowPattern
 import org.opensearch.replication.task.autofollow.AutoFollowExecutor
 import org.opensearch.replication.task.index.IndexReplicationExecutor
-import org.apache.http.HttpStatus
-import org.apache.http.entity.ContentType
-import org.apache.http.nio.entity.NStringEntity
+import org.apache.hc.core5.http.HttpStatus
+import org.apache.hc.core5.http.ContentType
+import org.apache.hc.core5.http.io.entity.StringEntity
 import org.assertj.core.api.Assertions
 import org.opensearch.action.admin.cluster.settings.ClusterUpdateSettingsRequest
 import org.opensearch.action.admin.indices.settings.get.GetSettingsRequest
@@ -44,7 +44,6 @@ import org.opensearch.replication.ReplicationPlugin
 import org.opensearch.replication.updateReplicationStartBlockSetting
 import org.opensearch.replication.updateAutoFollowConcurrentStartReplicationJobSetting
 import org.opensearch.replication.waitForShardTaskStart
-import org.opensearch.test.OpenSearchTestCase.assertBusy
 import java.lang.Thread.sleep
 import java.util.HashMap
 import java.util.concurrent.TimeUnit
@@ -506,7 +505,7 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
                           }
                         }""".trimMargin()
 
-        persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
+        persistentConnectionRequest.entity = StringEntity(entityAsString, ContentType.APPLICATION_JSON)
         val persistentConnectionResponse = fromCluster.lowLevelClient.performRequest(persistentConnectionRequest)
         assertEquals(HttpStatus.SC_OK.toLong(), persistentConnectionResponse.statusLine.statusCode.toLong())
     }
