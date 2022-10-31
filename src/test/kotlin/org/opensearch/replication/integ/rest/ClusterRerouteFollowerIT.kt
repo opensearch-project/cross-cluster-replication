@@ -5,14 +5,9 @@ import org.opensearch.replication.MultiClusterAnnotations
 import org.opensearch.replication.StartReplicationRequest
 import org.opensearch.replication.startReplication
 import org.opensearch.replication.stopReplication
-import org.apache.http.entity.ContentType
-import org.apache.http.nio.entity.NStringEntity
 import org.assertj.core.api.Assertions
-import org.opensearch.client.Request
 import org.opensearch.client.RequestOptions
 import org.opensearch.client.indices.CreateIndexRequest
-import org.opensearch.client.indices.GetIndexRequest
-import org.opensearch.test.OpenSearchTestCase.assertBusy
 import org.junit.Assert
 import org.junit.Assume
 import org.junit.Before

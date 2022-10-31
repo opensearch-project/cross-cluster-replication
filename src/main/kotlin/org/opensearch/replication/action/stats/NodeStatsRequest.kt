@@ -11,16 +11,16 @@
 
 package org.opensearch.replication.action.stats
 
-import org.opensearch.action.support.nodes.BaseNodeRequest
 import org.opensearch.common.io.stream.StreamInput
 import org.opensearch.common.io.stream.StreamOutput
+import org.opensearch.transport.TransportRequest
 import java.io.IOException
 
-class NodeStatsRequest : BaseNodeRequest {
+class NodeStatsRequest : TransportRequest {
 
     constructor(inp :StreamInput) : super(inp)
 
-    constructor()
+    constructor() : super()
 
     @Throws(IOException::class)
     override fun writeTo(out: StreamOutput) {

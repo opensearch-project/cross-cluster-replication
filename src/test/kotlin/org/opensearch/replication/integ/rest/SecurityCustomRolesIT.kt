@@ -13,9 +13,9 @@ package org.opensearch.replication.integ.rest
 
 import org.opensearch.replication.*
 import org.opensearch.replication.util.addBasicAuthHeader
-import org.apache.http.HttpStatus
-import org.apache.http.entity.ContentType
-import org.apache.http.nio.entity.NStringEntity
+import org.apache.hc.core5.http.HttpStatus
+import org.apache.hc.core5.http.ContentType
+import org.apache.hc.core5.http.io.entity.StringEntity
 import org.assertj.core.api.Assertions
 import org.opensearch.action.admin.indices.settings.get.GetSettingsRequest
 import org.opensearch.client.Request
@@ -26,7 +26,6 @@ import org.opensearch.client.indices.CreateIndexRequest
 import org.opensearch.client.indices.GetIndexRequest
 import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.common.settings.Settings
-import org.opensearch.test.OpenSearchTestCase
 import org.junit.Assert
 import org.junit.Assume
 import java.util.*
@@ -462,7 +461,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
                 ]
             }
             """.trimMargin()
-        persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
+        persistentConnectionRequest.entity = StringEntity(entityAsString, ContentType.APPLICATION_JSON)
         val persistentConnectionResponse = followerClient!!.lowLevelClient.performRequest(persistentConnectionRequest)
         assertEquals(HttpStatus.SC_OK.toLong(), persistentConnectionResponse.statusLine.statusCode.toLong())
     }

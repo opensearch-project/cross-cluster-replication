@@ -118,10 +118,6 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         throw UnsupportedOperationException("Operation not permitted")
     }
 
-    override fun initializeSnapshot(snapshotId: SnapshotId, indices: MutableList<IndexId>, metadata: Metadata) {
-        throw UnsupportedOperationException("Operation not permitted")
-    }
-
     override fun startVerification(): String {
         throw UnsupportedOperationException("Operation not permitted")
     }

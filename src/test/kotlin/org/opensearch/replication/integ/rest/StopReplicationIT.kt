@@ -20,7 +20,7 @@ import org.opensearch.replication.stopReplication
 import org.opensearch.replication.replicationStatus
 import org.opensearch.replication.getShardReplicationTasks
 import org.opensearch.replication.`validate status syncing response`
-import org.apache.http.util.EntityUtils
+import org.apache.hc.core5.http.io.entity.EntityUtils
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.Assert

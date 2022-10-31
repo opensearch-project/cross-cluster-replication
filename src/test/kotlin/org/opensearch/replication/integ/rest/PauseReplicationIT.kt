@@ -26,7 +26,7 @@ import org.opensearch.replication.updateReplication
 import org.opensearch.replication.getShardReplicationTasks
 import org.opensearch.replication.`validate paused status response due to leader index deleted`
 import org.opensearch.replication.`validate status syncing response`
-import org.apache.http.util.EntityUtils
+import org.apache.hc.core5.http.io.entity.EntityUtils
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.opensearch.action.admin.cluster.settings.ClusterUpdateSettingsRequest
@@ -40,7 +40,6 @@ import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.unit.TimeValue
 import org.opensearch.index.mapper.MapperService
-import org.opensearch.test.OpenSearchTestCase.assertBusy
 import java.util.concurrent.TimeUnit
 
 

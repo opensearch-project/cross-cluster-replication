@@ -26,10 +26,10 @@ import org.opensearch.replication.`validate status syncing response`
 import org.opensearch.replication.startReplication
 import org.opensearch.replication.stopReplication
 import org.opensearch.replication.updateReplication
-import org.apache.http.HttpStatus
-import org.apache.http.entity.ContentType
-import org.apache.http.nio.entity.NStringEntity
-import org.apache.http.util.EntityUtils
+import org.apache.hc.core5.http.HttpStatus
+import org.apache.hc.core5.http.ContentType
+import org.apache.hc.core5.http.io.entity.StringEntity
+import org.apache.hc.core5.http.io.entity.EntityUtils
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.opensearch.OpenSearchStatusException
@@ -492,7 +492,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                           }
                         }""".trimMargin()
 
-        persistentConnectionRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
+        persistentConnectionRequest.entity = StringEntity(entityAsString, ContentType.APPLICATION_JSON)
         val persistentConnectionResponse = cluster.lowLevelClient.performRequest(persistentConnectionRequest)
         assertEquals(HttpStatus.SC_OK.toLong(), persistentConnectionResponse.statusLine.statusCode.toLong())
     }
@@ -1231,7 +1231,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                              "cluster.routing.allocation.exclude._ip": "${excludeIps.joinToString()}"
                           }
                         }""".trimMargin()
-        transientSettingsRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
+        transientSettingsRequest.entity = StringEntity(entityAsString, ContentType.APPLICATION_JSON)
         val transientSettingsResponse = getNamedCluster(clusterName).lowLevelClient.performRequest(transientSettingsRequest)
         assertEquals(HttpStatus.SC_OK.toLong(), transientSettingsResponse.statusLine.statusCode.toLong())
     }
