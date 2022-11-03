@@ -42,7 +42,7 @@ import org.opensearch.common.settings.Settings
 import org.junit.Assert
 import java.nio.file.Files
 import java.util.concurrent.TimeUnit
-
+import org.opensearch.bootstrap.BootstrapInfo
 
 @MultiClusterAnnotations.ClusterConfigurations(
         MultiClusterAnnotations.ClusterConfiguration(clusterName = LEADER),
@@ -210,6 +210,11 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
     }
 
     fun `test that replication fails to resume when custom analyser is not present in follower`() {
+
+        if(checkifIntegTestRemote()){
+            return;
+        }
+
         val synonyms = javaClass.getResourceAsStream("/analyzers/synonyms.txt")
         val config = PathUtils.get(buildDir, leaderClusterPath, "config")
         val synonymPath = config.resolve("synonyms.txt")
@@ -251,6 +256,11 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
     }
 
     fun `test that replication resumes when custom analyser is present in follower`() {
+
+        if(checkifIntegTestRemote()){
+            return;
+        }
+
         val synonyms = javaClass.getResourceAsStream("/analyzers/synonyms.txt")
         val config = PathUtils.get(buildDir, leaderClusterPath, "config")
         val synonymFilename = "synonyms.txt"
@@ -300,6 +310,11 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
     }
 
     fun `test that replication resumes when custom analyser is overridden and present in follower`() {
+
+        if(checkifIntegTestRemote()){
+            return;
+        }
+
         val synonyms = javaClass.getResourceAsStream("/analyzers/synonyms.txt")
         val config = PathUtils.get(buildDir, leaderClusterPath, "config")
         val synonymPath = config.resolve("synonyms.txt")
