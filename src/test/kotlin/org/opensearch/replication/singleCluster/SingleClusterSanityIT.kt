@@ -20,7 +20,7 @@ class SingleClusterSanityIT : MultiClusterRestTestCase() {
 
     companion object {
         private val log = LogManager.getLogger(SingleClusterSanityIT::class.java)
-        private const val followerClusterName = "follower"
+        private const val followerClusterName = "followCluster"
         private const val REPLICATION_PLUGIN_NAME = "opensearch-cross-cluster-replication"
         private const val SAMPLE_INDEX = "sample_test_index"
 
