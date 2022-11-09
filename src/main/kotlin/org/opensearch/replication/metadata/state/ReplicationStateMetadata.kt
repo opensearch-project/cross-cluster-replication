@@ -108,7 +108,7 @@ data class ReplicationStateMetadata(val replicationDetails: Map<FollowIndexName,
 
     override fun getWriteableName(): String = NAME
 
-    override fun getMinimalSupportedVersion(): Version = Version.V_1_1_0
+    override fun getMinimalSupportedVersion(): Version = Version.V_2_0_0
 
     override fun toXContent(builder: XContentBuilder, params: ToXContent.Params): XContentBuilder {
         builder.startObject(REPLICATION_DETAILS_KEY)
