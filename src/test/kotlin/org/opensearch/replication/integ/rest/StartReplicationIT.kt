@@ -1221,6 +1221,119 @@ class StartReplicationIT: MultiClusterRestTestCase() {
 
     }
 
+    fun `test that wait_for_active_shards setting is set on leader and not on follower`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+
+        val settings = Settings.builder()
+                .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 1)
+                .put(IndexMetadata.SETTING_WAIT_FOR_ACTIVE_SHARDS.getKey(), Integer.toString(2))
+                .build()
+
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName).settings(settings), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
+            assertBusy {
+                assertThat(followerClient.indices()
+                        .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
+                        .isEqualTo(true)
+            }
+            TimeUnit.SECONDS.sleep(SLEEP_TIME_BETWEEN_SYNC)
+
+            val getSettingsRequest = GetSettingsRequest()
+            getSettingsRequest.indices(followerIndexName)
+            getSettingsRequest.includeDefaults(true)
+
+            Assert.assertNull(followerClient.indices()
+                            .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
+                            .indexToSettings[followerIndexName].get("index.write.wait_for_active_shards")
+            )
+        } finally {
+            followerClient.stopReplication(followerIndexName)
+        }
+    }
+
+    fun `test that wait_for_active_shards setting is updated on leader and not on follower`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
+            assertBusy {
+                assertThat(followerClient.indices()
+                        .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
+                        .isEqualTo(true)
+            }
+            TimeUnit.SECONDS.sleep(SLEEP_TIME_BETWEEN_SYNC)
+
+            //Use Update API
+            val settings = Settings.builder()
+                    .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 1)
+                    .put(IndexMetadata.SETTING_WAIT_FOR_ACTIVE_SHARDS.getKey(), Integer.toString(2))
+                    .build()
+
+            followerClient.updateReplication( followerIndexName, settings)
+            TimeUnit.SECONDS.sleep(SLEEP_TIME_BETWEEN_SYNC)
+
+            val getSettingsRequest = GetSettingsRequest()
+            getSettingsRequest.indices(followerIndexName)
+            getSettingsRequest.includeDefaults(true)
+
+            Assert.assertNull(followerClient.indices()
+                            .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
+                            .indexToSettings[followerIndexName].get("index.write.wait_for_active_shards")
+            )
+        } finally {
+            followerClient.stopReplication(followerIndexName)
+        }
+    }
+
+    fun `test that wait_for_active_shards setting is updated on follower through start replication api`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+
+        val settings = Settings.builder()
+                .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 1)
+                .put(IndexMetadata.SETTING_WAIT_FOR_ACTIVE_SHARDS.getKey(), Integer.toString(2))
+                .build()
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName, settings = settings))
+            assertBusy {
+                assertThat(followerClient.indices()
+                        .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
+                        .isEqualTo(true)
+            }
+            TimeUnit.SECONDS.sleep(SLEEP_TIME_BETWEEN_SYNC)
+
+            val getSettingsRequest = GetSettingsRequest()
+            getSettingsRequest.indices(followerIndexName)
+            getSettingsRequest.includeDefaults(true)
+            assertBusy ({
+                Assert.assertEquals(
+                        "2",
+                        followerClient.indices()
+                                .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
+                                .indexToSettings[followerIndexName].get("index.write.wait_for_active_shards")
+                )
+            }, 15, TimeUnit.SECONDS)
+        } finally {
+            followerClient.stopReplication(followerIndexName)
+        }
+    }
+
+
     private fun excludeAllClusterNodes(clusterName: String) {
         val transientSettingsRequest = Request("PUT", "_cluster/settings")
         // Get IPs directly from the cluster to handle all cases - single node cluster, multi node cluster and remote test cluster.
