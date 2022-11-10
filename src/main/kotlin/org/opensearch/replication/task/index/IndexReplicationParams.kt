@@ -75,9 +75,7 @@ class IndexReplicationParams : PersistentTaskParams {
         out.writeString(followerIndexName)
     }
 
-    override fun getMinimalSupportedVersion(): Version {
-        return Version.V_1_1_0
-    }
+    override fun getMinimalSupportedVersion(): Version = Version.V_2_0_0
 
     override fun toString(): String {
         return Strings.toString(this)

@@ -59,7 +59,7 @@ class AutoFollowParams : PersistentTaskParams {
 
     override fun getWriteableName() = NAME
 
-    override fun getMinimalSupportedVersion() = Version.V_1_1_0
+    override fun getMinimalSupportedVersion(): Version = Version.V_2_0_0
 
     override fun toXContent(builder: XContentBuilder, params: ToXContent.Params): XContentBuilder {
         return builder.startObject()
