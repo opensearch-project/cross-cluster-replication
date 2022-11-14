@@ -613,4 +613,11 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
         updateSettingsRequest.transientSettings(Collections.singletonMap<String, String?>(ReplicationPlugin.REPLICATION_METADATA_SYNC_INTERVAL.key, "5s"))
         followerClient.cluster().putSettings(updateSettingsRequest, RequestOptions.DEFAULT)
     }
+
+//    TODO Find a way to skip tests when tests are run for remote clusters
+    protected  fun checkifIntegTestRemote(): Boolean {
+        val systemProperties = BootstrapInfo.getSystemProperties()
+        val integTestRemote = systemProperties.get("tests.integTestRemote") as String?
+        return integTestRemote.equals("true")
+    }
 }

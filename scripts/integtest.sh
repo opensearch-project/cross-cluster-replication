@@ -8,35 +8,40 @@ function usage() {
     echo "--------------------------------------------------------------------------"
     echo "Usage: $0 [args]"
     echo ""
-    echo "Required arguments:"
-    echo "None"
-    echo ""
     echo "Optional arguments:"
-    echo -e "-b BIND_ADDRESS\t, defaults to localhost | 127.0.0.1, can be changed to any IP or domain name for the cluster location."
-    echo -e "-p BIND_PORT\t, defaults to 9200, can be changed to any port for the cluster location."
-    echo -e "-t TRANSPORT_PORT\t, defaults to 9300, can be changed to any port for the cluster location."
     echo -e "-s SECURITY_ENABLED\t(true | false), defaults to true. Specify the OpenSearch/Dashboards have security enabled or not."
     echo -e "-c CREDENTIAL\t(usename:password), no defaults, effective when SECURITY_ENABLED=true."
-    echo -e "-h\tPrint this message."
+    echo -e "-h Print this message."
     echo -e "-v OPENSEARCH_VERSION\t, no defaults"
-    echo -e "-n SNAPSHOT\t, defaults to false"
+    echo -e "-n SNAPSHOT\t\t, defaults to false"
+    echo "Required arguments:"
+    echo "Single cluster test:"
+    echo -e "-b BIND_ADDRESS\t\t, IP or domain name for the cluster location."
+    echo -e "-p BIND_PORT\t\t, port for the cluster location."
+    echo -e "-t TRANSPORT_PORT\t, defaults to 9300, can be changed to any port for the cluster location."
+    echo "--------------------------------------------------------------------------"
+    echo "Multi cluster test:"
+    echo -e "-e Comma seperated endpoint:port, ex: localhost:9200:9300,localhost:9201:9301... ."
     echo "--------------------------------------------------------------------------"
 }
 
-while getopts ":h:b:p:s:c:v:n:t:" arg; do
+while getopts ":h:b:p:t:e:s:c:v:" arg; do
     case $arg in
         h)
             usage
             exit 1
             ;;
-        b)
+         b)
             BIND_ADDRESS=$OPTARG
             ;;
-        p)
+         p)
             BIND_PORT=$OPTARG
             ;;
-        t)
+         t)
             TRANSPORT_PORT=$OPTARG
+            ;;
+        e)
+            ENDPOINT_LIST=$OPTARG
             ;;
         s)
             SECURITY_ENABLED=$OPTARG
@@ -45,9 +50,6 @@ while getopts ":h:b:p:s:c:v:n:t:" arg; do
             CREDENTIAL=$OPTARG
             ;;
         v)
-            # Do nothing as we're not consuming this param.
-            ;;
-        n)
             # Do nothing as we're not consuming this param.
             ;;
         :)
@@ -62,22 +64,7 @@ while getopts ":h:b:p:s:c:v:n:t:" arg; do
     esac
 done
 
-
-if [ -z "$BIND_ADDRESS" ]
-then
-  BIND_ADDRESS="localhost"
-fi
-
-if [ -z "$BIND_PORT" ]
-then
-  BIND_PORT="9200"
-fi
-
-if [ -z "$TRANSPORT_PORT" ]
-then
-  TRANSPORT_PORT="9300"
-fi
-
+# Common starts
 if [ -z "$SECURITY_ENABLED" ]
 then
   SECURITY_ENABLED="true"
@@ -90,5 +77,36 @@ fi
 
 USERNAME=`echo $CREDENTIAL | awk -F ':' '{print $1}'`
 PASSWORD=`echo $CREDENTIAL | awk -F ':' '{print $2}'`
+# Common ends
 
-./gradlew integTestRemote -Dfollower.http_host="$BIND_ADDRESS:$BIND_PORT" -Dfollower.transport_host="$BIND_ADDRESS:$TRANSPORT_PORT" -Dsecurity_enabled=$SECURITY_ENABLED -Duser=$USERNAME -Dpassword=$PASSWORD --console=plain
+
+# Check if test is run on multiple cluster
+
+if [ -z "$BIND_ADDRESS" ] || [ -z "$BIND_PORT" ]
+then
+  #Proceeding with multi cluster test
+  if [ -z "$ENDPOINT_LIST" ]
+  then
+    echo "requires an argument -e <endpoint:port>"
+    usage
+    exit 1
+  fi
+
+  data=$(python3 -c "import json; cluster=$ENDPOINT_LIST ; data_nodes=cluster; print(data_nodes[0][\"data_nodes\"][0][\"endpoint\"],':',data_nodes[0][\"data_nodes\"][0][\"port\"],':',data_nodes[0][\"data_nodes\"][0][\"transport\"],',',data_nodes[1][\"data_nodes\"][0][\"endpoint\"],':',data_nodes[1][\"data_nodes\"][0][\"port\"],':',data_nodes[1][\"data_nodes\"][0][\"transport\"])" | tr -d "[:blank:]")
+
+
+  leader=$(echo  $data | cut -d ',' -f1 | cut -d ':' -f1,2 )
+  follower=$(echo $data  |  cut -d ',' -f2 | cut -d ':' -f1,2 )
+  
+  LTRANSPORT_PORT=$(echo  $data | cut -d ',' -f1 | cut -d ':' -f1,3 )
+  FTRANSPORT_PORT=$(echo $data  |  cut -d ',' -f2 | cut -d ':' -f1,3 )
+  eval "./gradlew integTestRemote -Dleader.http_host=\"$leader\" -Dfollower.http_host=\"$follower\" -Dfollower.transport_host=\"$FTRANSPORT_PORT\"  -Dleader.transport_host=\"$LTRANSPORT_PORT\"  -Dsecurity_enabled=\"$SECURITY_ENABLED\" -Duser=\"$USERNAME\" -Dpassword=\"$PASSWORD\" --console=plain "
+
+else
+  # Single cluster
+  if [ -z "$TRANSPORT_PORT" ]
+  then
+    TRANSPORT_PORT="9300"
+  fi
+  ./gradlew singleClusterSanityTest -Dfollower.http_host="$BIND_ADDRESS:$BIND_PORT" -Dfollower.transport_host="$BIND_ADDRESS:$TRANSPORT_PORT" -Dsecurity_enabled=$SECURITY_ENABLED -Duser=$USERNAME -Dpassword=$PASSWORD --console=plain
+fi
