@@ -70,7 +70,7 @@ Following steps will help you install the replication plugin on a test cluster.
 
 # Set variables for readability (in different terminal window/tab where you will run rest of the steps)
 export LEADER=localhost:9200
-export FOLLOWER=localhost:9201
+export FOLLOWER=localhost:9203
 export LEADER_TRANSPORT=localhost:9300
 ```
 
