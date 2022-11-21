@@ -38,15 +38,11 @@ class ReplicationStatusIT: MultiClusterRestTestCase() {
         createConnectionBetweenClusters(FOLLOWER, LEADER)
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(indexName), RequestOptions.DEFAULT)
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
-        try {
-            followerClient.startReplication(StartReplicationRequest("source", indexName, indexName), waitForRestore = true)
-            assertBusy({
-                var statusResp = followerClient.replicationStatus(indexName)
-                `validate status syncing response`(statusResp)
-            }, 30, TimeUnit.SECONDS)
-        } finally {
-            followerClient.stopReplication(indexName)
-        }
+        followerClient.startReplication(StartReplicationRequest("source", indexName, indexName), waitForRestore = true)
+        assertBusy({
+            var statusResp = followerClient.replicationStatus(indexName)
+            `validate status syncing response`(statusResp)
+        }, 30, TimeUnit.SECONDS)
     }
 
     fun `test replication status without valid params`() {
