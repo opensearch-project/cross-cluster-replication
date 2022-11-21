@@ -11,6 +11,7 @@
 
 package org.opensearch.replication
 
+import com.nhaarman.mockitokotlin2.stub
 import org.opensearch.replication.MultiClusterAnnotations.ClusterConfiguration
 import org.opensearch.replication.MultiClusterAnnotations.ClusterConfigurations
 import org.opensearch.replication.MultiClusterAnnotations.getAnnotationsFromClass
@@ -421,6 +422,29 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
     }
 
     protected fun wipeIndicesFromCluster(testCluster: TestCluster) {
+
+        val indicesResponse = testCluster.lowLevelClient.performRequest((Request("GET","/_cat/indices/*,-.*?format=json&pretty")))
+        val indicesResponseEntity = EntityUtils.toString(indicesResponse.entity)
+        var parser = XContentType.JSON.xContent().createParser(NamedXContentRegistry.EMPTY, DeprecationHandler.THROW_UNSUPPORTED_OPERATION, indicesResponseEntity)
+        parser.list().forEach{ item->
+            val str = item.toString()
+            val map = str.subSequence(1,str.length-1).split(",").associate {
+                val (key, value) = it.trim().split("=")
+                key to value
+            }
+            val ind = map.get("index")
+           try {
+                val stopRequest = Request("POST","/_plugins/_replication/" + ind.toString() + "/_stop")
+                stopRequest.setJsonEntity("{}")
+                stopRequest.setOptions(RequestOptions.DEFAULT)
+                val response=testCluster.lowLevelClient.performRequest(stopRequest)
+           }
+            catch (e:ResponseException){
+                if(e.response.statusLine.statusCode!=400) {
+                    throw e
+                }
+            }
+        }
         try {
             val deleteRequest = Request("DELETE", "*,-.*") // All except system indices
             val response = testCluster.lowLevelClient.performRequest(deleteRequest)
