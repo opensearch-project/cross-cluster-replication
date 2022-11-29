@@ -243,7 +243,6 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
         private fun createRoleWithPermissions(indexPattern: String, role: String) {
             val followerClient = testClusters.get(FOLLOWER)
             val persistentConnectionRequest = Request("PUT", "_plugins/_security/api/roles/"+role)
-
             val entityAsString = """
             {
                 "cluster_permissions": [

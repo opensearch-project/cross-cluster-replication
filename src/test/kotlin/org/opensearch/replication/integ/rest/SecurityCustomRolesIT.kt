@@ -56,17 +56,14 @@ class SecurityCustomRolesIT: SecurityBase()  {
 
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
-        try {
-            var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
-                    useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
 
-            followerClient.startReplication(startReplicationRequest,
-                    requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
-            OpenSearchTestCase.assertBusy {
-                Assertions.assertThat(followerClient.indices().exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT)).isEqualTo(true)
-            }
-        } finally {
-            followerClient.stopReplication(followerIndexName)
+        var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
+                useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
+
+        followerClient.startReplication(startReplicationRequest,
+                requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"), waitForRestore = true)
+        assertBusy {
+            Assertions.assertThat(followerClient.indices().exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT)).isEqualTo(true)
         }
     }
 
@@ -116,26 +113,23 @@ class SecurityCustomRolesIT: SecurityBase()  {
 
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
-        try {
-            var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
-                    useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
-            var requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password")
-            followerClient.startReplication(startReplicationRequest, waitForRestore = true,
-                    requestOptions = requestOptions)
 
-            /* At this point, the follower cluster should be in FOLLOWING state. Next, we pause replication
-            and verify the same
-             */
-            followerClient.pauseReplication(followerIndexName,
-                    requestOptions = requestOptions)
+        var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
+                useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
+        var requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password")
+        followerClient.startReplication(startReplicationRequest, waitForRestore = true,
+                requestOptions = requestOptions)
 
-            // Validate paused replication using Status Api
-            assertBusy {
-                `validate aggregated paused status response`(followerClient.replicationStatus(followerIndexName,
-                        requestOptions = requestOptions))
-            }
-        } finally {
-            followerClient.stopReplication(followerIndexName)
+        /* At this point, the follower cluster should be in FOLLOWING state. Next, we pause replication
+        and verify the same
+         */
+        followerClient.pauseReplication(followerIndexName,
+                requestOptions = requestOptions)
+
+        // Validate paused replication using Status Api
+        assertBusy {
+            `validate aggregated paused status response`(followerClient.replicationStatus(followerIndexName,
+                    requestOptions = requestOptions))
         }
     }
 
@@ -147,22 +141,18 @@ class SecurityCustomRolesIT: SecurityBase()  {
 
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
-        try {
-            var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
-                    useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
 
-            followerClient.startReplication(startReplicationRequest, waitForRestore = true,
-                    requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
+        var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
+                useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
 
-            Assertions.assertThatThrownBy {
-                followerClient.pauseReplication(followerIndexName,
-                        requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser2","password"))
-            }.isInstanceOf(ResponseException::class.java)
-            .hasMessageContaining("403 Forbidden")
+        followerClient.startReplication(startReplicationRequest, waitForRestore = true,
+                requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
 
-        } finally {
-            followerClient.stopReplication(followerIndexName)
-        }
+        Assertions.assertThatThrownBy {
+            followerClient.pauseReplication(followerIndexName,
+                    requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser2","password"))
+        }.isInstanceOf(ResponseException::class.java)
+        .hasMessageContaining("403 Forbidden")
     }
 
     fun `test for FOLLOWER that STATUS Api works for user with valid permissions`() {
@@ -173,19 +163,16 @@ class SecurityCustomRolesIT: SecurityBase()  {
 
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
-        try {
-            var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
-                    useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
 
-            followerClient.startReplication(startReplicationRequest,  waitForRestore = true,
-                    requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
+        var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
+                useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
 
-            assertBusy {
-                `validate status syncing response`(followerClient.replicationStatus(followerIndexName,
-                        requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password")))
-            }
-        } finally {
-            followerClient.stopReplication(followerIndexName)
+        followerClient.startReplication(startReplicationRequest,  waitForRestore = true,
+                requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
+
+        assertBusy {
+            `validate status syncing response`(followerClient.replicationStatus(followerIndexName,
+                    requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password")))
         }
     }
 
@@ -197,21 +184,18 @@ class SecurityCustomRolesIT: SecurityBase()  {
 
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
-        try {
-            var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
-                    useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
 
-            followerClient.startReplication(startReplicationRequest, waitForRestore = true,
-                    requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
+        var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
+                useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
 
-            Assertions.assertThatThrownBy {
-                followerClient.replicationStatus(followerIndexName,
-                        requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser2","password"))
-            }.isInstanceOf(ResponseException::class.java)
-            .hasMessageContaining("403 Forbidden")
-        } finally {
-            followerClient.stopReplication(followerIndexName)
-        }
+        followerClient.startReplication(startReplicationRequest, waitForRestore = true,
+                requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
+
+        Assertions.assertThatThrownBy {
+            followerClient.replicationStatus(followerIndexName,
+                    requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser2","password"))
+        }.isInstanceOf(ResponseException::class.java)
+        .hasMessageContaining("403 Forbidden")
     }
 
     fun `test for FOLLOWER that UPDATE settings works for user with valid permissions`() {
@@ -229,41 +213,39 @@ class SecurityCustomRolesIT: SecurityBase()  {
 
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName).settings(settings), RequestOptions.DEFAULT)
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
-        try {
-            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName,
-                useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms")),
+
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName,
+            useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms")),
+            requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
+        assertBusy {
+            Assertions.assertThat(followerClient.indices()
+                    .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
+                    .isEqualTo(true)
+        }
+        val getSettingsRequest = GetSettingsRequest()
+        getSettingsRequest.indices(followerIndexName)
+        Assert.assertEquals(
+                "1",
+                followerClient.indices()
+                        .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
+                        .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+        )
+
+        settings = Settings.builder()
+                .put("index.shard.check_on_startup", "checksum")
+                .build()
+        followerClient.updateReplication(followerIndexName, settings,
                 requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
-            assertBusy {
-                Assertions.assertThat(followerClient.indices()
-                        .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
-                        .isEqualTo(true)
-            }
-            val getSettingsRequest = GetSettingsRequest()
-            getSettingsRequest.indices(followerIndexName)
+
+        // Wait for the settings to get updated at follower cluster.
+        assertBusy ({
             Assert.assertEquals(
-                    "1",
+                    "checksum",
                     followerClient.indices()
                             .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                            .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+                            .indexToSettings[followerIndexName]["index.shard.check_on_startup"]
             )
-
-            settings = Settings.builder()
-                    .put("index.shard.check_on_startup", "checksum")
-                    .build()
-            followerClient.updateReplication(followerIndexName, settings,
-                    requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
-
-            assertBusy {
-                Assert.assertEquals(
-                        "checksum",
-                        followerClient.indices()
-                                .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                                .indexToSettings[followerIndexName]["index.shard.check_on_startup"]
-                )
-            }
-        } finally {
-            followerClient.stopReplication(followerIndexName)
-        }
+        }, 30L, TimeUnit.SECONDS)
     }
 
     fun `test for FOLLOWER that UPDATE settings is forbidden for user with invalid permissions`() {
@@ -272,45 +254,36 @@ class SecurityCustomRolesIT: SecurityBase()  {
         val followerIndexName = "follower-index1"
 
         setMetadataSyncDelay()
-
         createConnectionBetweenClusters(FOLLOWER, LEADER)
-
         var settings = Settings.builder()
                 .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 1)
                 .build()
-
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName).settings(settings), RequestOptions.DEFAULT)
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
-        try {
-            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName,
-                    useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms")),
-                    requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
-            assertBusy {
-                Assertions.assertThat(followerClient.indices()
-                        .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
-                        .isEqualTo(true)
-            }
-            val getSettingsRequest = GetSettingsRequest()
-            getSettingsRequest.indices(followerIndexName)
-            Assert.assertEquals(
-                    "1",
-                    followerClient.indices()
-                            .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                            .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
-            )
-
-            settings = Settings.builder()
-                    .put("index.shard.check_on_startup", "checksum")
-                    .build()
-
-            Assertions.assertThatThrownBy {
-                followerClient.updateReplication(followerIndexName, settings,
-                        requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser2","password"))
-            }.isInstanceOf(ResponseException::class.java)
-            .hasMessageContaining("403 Forbidden")
-        } finally {
-            followerClient.stopReplication(followerIndexName)
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName,
+                useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms")),
+                requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"), waitForRestore = true)
+        assertBusy {
+            Assertions.assertThat(followerClient.indices()
+                    .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
+                    .isEqualTo(true)
         }
+        val getSettingsRequest = GetSettingsRequest()
+        getSettingsRequest.indices(followerIndexName)
+        Assert.assertEquals(
+                "1",
+                followerClient.indices()
+                        .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
+                        .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+        )
+        settings = Settings.builder()
+                .put("index.shard.check_on_startup", "checksum")
+                .build()
+        Assertions.assertThatThrownBy {
+            followerClient.updateReplication(followerIndexName, settings,
+                    requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser2","password"))
+        }.isInstanceOf(ResponseException::class.java)
+        .hasMessageContaining("403 Forbidden")
     }
 
     fun `test for FOLLOWER that AutoFollow works for user with valid permissions`() {
@@ -323,12 +296,10 @@ class SecurityCustomRolesIT: SecurityBase()  {
         val leaderIndexName = createRandomIndex(indexPrefix, leaderClient)
         var leaderIndexNameNew = ""
         createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
-
         try {
             followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern,
                     useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"),
                     requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
-
             // Verify that existing index matching the pattern are replicated.
             assertBusy ({
                 Assertions.assertThat(followerClient.indices()
@@ -336,7 +307,6 @@ class SecurityCustomRolesIT: SecurityBase()  {
                         .isEqualTo(true)
             }, 30, TimeUnit.SECONDS)
             Assertions.assertThat(getAutoFollowTasks(FOLLOWER).size).isEqualTo(1)
-
             leaderIndexNameNew = createRandomIndex(indexPrefix, leaderClient)
             // Verify that newly created index on leader which match the pattern are also replicated.
             assertBusy ({
@@ -346,8 +316,6 @@ class SecurityCustomRolesIT: SecurityBase()  {
             }, 60, TimeUnit.SECONDS)
         } finally {
             followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
-            followerClient.stopReplication(leaderIndexName, false)
-            followerClient.stopReplication(leaderIndexNameNew)
         }
     }
 
@@ -357,7 +325,6 @@ class SecurityCustomRolesIT: SecurityBase()  {
         val indexPattern = "follower-index1*"
         val indexPatternName = "test_pattern"
         createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
-
         Assertions.assertThatThrownBy {
             followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern,
                     useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleNoPerms"),
@@ -387,16 +354,13 @@ class SecurityCustomRolesIT: SecurityBase()  {
         val leaderClient = getClientForCluster(LEADER)
         val followerIndexName = "follower-index1"
         createConnectionBetweenClusters(FOLLOWER, LEADER)
-
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
         try {
             var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
                     useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
-
             followerClient.startReplication(startReplicationRequest, waitForRestore = true,
                     requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
-
             insertDocToIndex(LEADER, "1", "dummy data 1",leaderIndexName)
             //Querying ES cluster throws random exceptions like MasterNotDiscovered or ShardsFailed etc, so catching them and retrying
             assertBusy ({
@@ -406,7 +370,6 @@ class SecurityCustomRolesIT: SecurityBase()  {
                     Assert.fail("Exception while querying follower cluster. Failing to retry again")
                 }
             }, 1, TimeUnit.MINUTES)
-
             assertBusy {
                 `validate status syncing response`(followerClient.replicationStatus(followerIndexName,
                         requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password")))
@@ -421,7 +384,6 @@ class SecurityCustomRolesIT: SecurityBase()  {
             }, 100, TimeUnit.SECONDS)
         } finally {
             updateRole(followerIndexName,"followerRoleValidPerms", true)
-            followerClient.stopReplication(followerIndexName)
         }
     }
 
