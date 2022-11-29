@@ -57,6 +57,7 @@ import org.junit.After
 import org.junit.AfterClass
 import org.junit.Before
 import org.junit.BeforeClass
+import org.opensearch.index.mapper.ObjectMapper
 import java.nio.file.Files
 import java.security.KeyManagementException
 import java.security.KeyStore
@@ -420,9 +421,7 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
             testCluster.lowLevelClient.performRequest(request)
         }
     }
-
-    protected fun wipeIndicesFromCluster(testCluster: TestCluster) {
-
+    private fun stopAllReplicationJobs(testCluster: TestCluster) {
         val indicesResponse = testCluster.lowLevelClient.performRequest((Request("GET","/_cat/indices/*,-.*?format=json&pretty")))
         val indicesResponseEntity = EntityUtils.toString(indicesResponse.entity)
         var parser = XContentType.JSON.xContent().createParser(NamedXContentRegistry.EMPTY, DeprecationHandler.THROW_UNSUPPORTED_OPERATION, indicesResponseEntity)
@@ -433,18 +432,21 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
                 key to value
             }
             val ind = map.get("index")
-           try {
+            try {
                 val stopRequest = Request("POST","/_plugins/_replication/" + ind.toString() + "/_stop")
                 stopRequest.setJsonEntity("{}")
                 stopRequest.setOptions(RequestOptions.DEFAULT)
                 val response=testCluster.lowLevelClient.performRequest(stopRequest)
-           }
+            }
             catch (e:ResponseException){
                 if(e.response.statusLine.statusCode!=400) {
                     throw e
                 }
             }
         }
+    }
+    protected fun wipeIndicesFromCluster(testCluster: TestCluster) {
+        stopAllReplicationJobs(testCluster)
         try {
             val deleteRequest = Request("DELETE", "*,-.*") // All except system indices
             val response = testCluster.lowLevelClient.performRequest(deleteRequest)
