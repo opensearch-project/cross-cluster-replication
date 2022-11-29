@@ -221,7 +221,6 @@ class StopReplicationIT: MultiClusterRestTestCase() {
                     .withFailMessage("Cant find replication block after starting replication")
                     .isTrue()
         }, 10, TimeUnit.SECONDS)
-
         // Remove leader cluster from settings
         val settings: Settings = Settings.builder()
                 .putNull("cluster.remote.source.seeds")
@@ -229,7 +228,6 @@ class StopReplicationIT: MultiClusterRestTestCase() {
         val updateSettingsRequest = ClusterUpdateSettingsRequest()
         updateSettingsRequest.persistentSettings(settings)
         followerClient.cluster().putSettings(updateSettingsRequest, RequestOptions.DEFAULT)
-
         followerClient.stopReplication(followerIndexName)
         val sourceMap = mapOf("name" to randomAlphaOfLength(5))
         followerClient.index(IndexRequest(followerIndexName).id("2").source(sourceMap), RequestOptions.DEFAULT)
