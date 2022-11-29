@@ -241,7 +241,6 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
         private fun createRoleWithPermissions(indexPattern: String, role: String) {
             val followerClient = testClusters.get(FOLLOWER)
             val persistentConnectionRequest = Request("PUT", "_plugins/_security/api/roles/"+role)
-
             val entityAsString = """
             {
                 "cluster_permissions": [
@@ -276,7 +275,6 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
             val entityAsString = """
                 {"users": ["$user"]}
             """.trimMargin()
-
             persistentConnectionRequest.entity = StringEntity(entityAsString, ContentType.APPLICATION_JSON)
             val persistentConnectionResponse = followerClient!!.lowLevelClient.performRequest(persistentConnectionRequest)
             assertTrue(HttpStatus.SC_CREATED.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong() ||
@@ -305,7 +303,6 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
                 "password":"$password"
             }
             """.trimMargin()
-
             persistentConnectionRequest.entity = StringEntity(entityAsString, ContentType.APPLICATION_JSON)
             val persistentConnectionResponse = followerClient!!.lowLevelClient.performRequest(persistentConnectionRequest)
             assertTrue(HttpStatus.SC_CREATED.toLong() == persistentConnectionResponse.statusLine.statusCode.toLong() ||
