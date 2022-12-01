@@ -452,7 +452,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         var indicesAliasesRequest = IndicesAliasesRequest()
         var aliasAction = IndicesAliasesRequest.AliasActions.add()
                 .index(leaderIndexName)
-                .alias("alias1").filter("{\"term\":{\"year\":2016}}").routing("1")
+                .alias("alias1")
         indicesAliasesRequest.addAliasAction(aliasAction)
         leaderClient.indices().updateAliases(indicesAliasesRequest, RequestOptions.DEFAULT)
         TimeUnit.SECONDS.sleep(SLEEP_TIME_BETWEEN_SYNC)
@@ -982,7 +982,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
                     waitForRestore = true)
     }
-    
+
     private fun assertValidationFailure(client: RestHighLevelClient, leader: String, follower: String, errrorMsg: String) {
         assertThatThrownBy {
             client.startReplication(StartReplicationRequest("source", leader, follower))
