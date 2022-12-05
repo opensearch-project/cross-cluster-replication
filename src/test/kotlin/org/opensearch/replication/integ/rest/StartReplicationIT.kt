@@ -951,8 +951,8 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         val leaderClient = getClientForCluster(LEADER)
         createConnectionBetweenClusters(FOLLOWER, LEADER)
 
-        val repoPath = PathUtils.get(buildDir, repoPath)
-
+        val repoPath = PathUtils.get(buildDir, repoPath).toString()
+        repoPath.replace("""\""", """\\""").replace("""/""", """\/""")
         val putRepositoryRequest = PutRepositoryRequest("my-repo")
             .type(FsRepository.TYPE)
             .settings("{\"location\": \"$repoPath\"}", XContentType.JSON)

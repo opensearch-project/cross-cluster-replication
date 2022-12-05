@@ -274,6 +274,7 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
             return
         }
         val repo = configuredRepositories[0] as String
+        repo.replace("""\""", """\\""").replace("""/""", """\/""")
         val repoConfig = """
             {
               "type": "fs",
