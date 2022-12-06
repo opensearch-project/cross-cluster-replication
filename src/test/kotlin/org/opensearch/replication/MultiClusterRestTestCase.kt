@@ -263,10 +263,17 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
         }
     }
 
+    fun isWindowsPlatform(): Boolean {
+        return System.getProperty("os.name").contains("windows", true)
+    }
+
     /**
      * Register snapshot repo - "fs" type on all the clusters
      */
     private fun registerSnapshotRepository(testCluster: TestCluster) {
+        // TODO: Skipping FS based snapshot registration for windows. We'll revisit & fix this later.
+        if (isWindowsPlatform()) return
+
         val getResponse: Map<String, Any> = OpenSearchRestTestCase.entityAsMap(testCluster.lowLevelClient.performRequest(
                 Request("GET", "/_cluster/settings?include_defaults=true&flat_settings=true")))
         val configuredRepositories = (getResponse["defaults"] as Map<*, *>)["path.repo"] as List<*>
@@ -274,7 +281,6 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
             return
         }
         val repo = configuredRepositories[0] as String
-        repo.replace("""\""", """\\""").replace("""/""", """\/""")
         val repoConfig = """
             {
               "type": "fs",
