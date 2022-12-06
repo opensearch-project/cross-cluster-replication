@@ -8,19 +8,21 @@ on:
     branches:
       - '*'
 
-# We build for all combinations but run tests only on one combination (linux & latest java)
+# We build for all combinations but run tests only on all platforms on  latest java)
 jobs:
   build:
     continue-on-error: true
     strategy:
       matrix:
         java:
-          - 8
-          - 11
           - 14
+        os:
+          - ubuntu-latest
+          - windows-latest
+          - macos-latest
     # Job name
-    name: Run integration tests on linux with Java ${{ matrix.java }}
-    runs-on: ubuntu-latest
+    name: Run integration tests on ${{ matrix.os }} with Java ${{ matrix.java }}
+    runs-on: ${{ matrix.os }}
     steps:
       # This step uses the setup-java Github action: https://github.com/actions/setup-java
       - name: Set Up JDK ${{ matrix.java }}

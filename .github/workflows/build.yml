@@ -17,6 +17,10 @@ jobs:
       matrix:
         java: 
           - 14
+          - 8
+          - 11
+        os:
+          - ubuntu-latest
     # Job name
     name: Java ${{ matrix.java }} On ${{ matrix.os }}
     runs-on: ${{ matrix.os }}

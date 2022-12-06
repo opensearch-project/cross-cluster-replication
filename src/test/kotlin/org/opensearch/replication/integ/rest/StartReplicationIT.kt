@@ -936,6 +936,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
     }
 
     fun `test that snapshot on leader does not affect replication during bootstrap`() {
+        if(isWindowsPlatform()) return
         val settings = Settings.builder()
             .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 20)
             .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0)
@@ -946,7 +947,6 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         createConnectionBetweenClusters(FOLLOWER, LEADER)
 
         val repoPath = PathUtils.get(buildDir, repoPath)
-
         val putRepositoryRequest = PutRepositoryRequest("my-repo")
             .type(FsRepository.TYPE)
             .settings("{\"location\": \"$repoPath\"}", XContentType.JSON)

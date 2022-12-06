@@ -256,6 +256,10 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
         testClusters.values.forEach { if(it.securityEnabled && !it.defaultSecuritySetupCompleted) setupDefaultSecurityRoles(it) }
     }
 
+    fun isWindowsPlatform(): Boolean {
+        return System.getProperty("os.name").contains("windows", true)
+    }
+
     /**
      * Setup for default security roles is performed once.
      */
