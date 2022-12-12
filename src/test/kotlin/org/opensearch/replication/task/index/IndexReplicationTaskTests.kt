@@ -26,6 +26,8 @@ import org.opensearch.cluster.ClusterStateObserver
 import org.opensearch.cluster.RestoreInProgress
 import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.cluster.metadata.Metadata
+import org.opensearch.cluster.node.DiscoveryNode
+import org.opensearch.cluster.node.DiscoveryNodes
 import org.opensearch.cluster.routing.RoutingTable
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.settings.SettingsModule
@@ -207,6 +209,61 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
         // Try starting shard tasks
         val shardTasks = replicationTask.startNewOrMissingShardTasks()
         assertThat(shardTasks.size == 2).isTrue
+    }
+
+    fun testIsTrackingTaskForIndex() = runBlocking {
+        val replicationTask: IndexReplicationTask = spy(createIndexReplicationTask())
+        var taskManager = Mockito.mock(TaskManager::class.java)
+        replicationTask.setPersistent(taskManager)
+        var rc = ReplicationContext(followerIndex)
+        var rm = ReplicationMetadata(connectionName, ReplicationStoreMetadataType.INDEX.name, ReplicationOverallState.RUNNING.name, "reason", rc, rc, Settings.EMPTY)
+        replicationTask.setReplicationMetadata(rm)
+
+        // when index replication task is valid
+        var tasks = PersistentTasksCustomMetadata.builder()
+        var leaderIndex = Index(followerIndex, "_na_")
+        tasks.addTask<PersistentTaskParams>( "replication:0", IndexReplicationExecutor.TASK_NAME, IndexReplicationParams("remoteCluster", leaderIndex,  followerIndex),
+                PersistentTasksCustomMetadata.Assignment("same_node", "test assignment on other node"))
+
+        var metadata = Metadata.builder()
+                .put(IndexMetadata.builder(REPLICATION_CONFIG_SYSTEM_INDEX).settings(settings(Version.CURRENT)).numberOfShards(1).numberOfReplicas(0))
+                .put(IndexMetadata.builder(followerIndex).settings(settings(Version.CURRENT)).numberOfShards(2).numberOfReplicas(0))
+                .putCustom(PersistentTasksCustomMetadata.TYPE, tasks.build())
+                .build()
+        var routingTableBuilder = RoutingTable.builder()
+                .addAsNew(metadata.index(REPLICATION_CONFIG_SYSTEM_INDEX))
+                .addAsNew(metadata.index(followerIndex))
+        var discoveryNodesBuilder = DiscoveryNodes.Builder()
+                .localNodeId("same_node")
+        var newClusterState = ClusterState.builder(clusterService.state())
+                .metadata(metadata)
+                .routingTable(routingTableBuilder.build())
+                .nodes(discoveryNodesBuilder.build()).build()
+        setState(clusterService, newClusterState)
+        assertThat(replicationTask.isTrackingTaskForIndex()).isTrue
+
+        // when index replication task is not valid
+        tasks = PersistentTasksCustomMetadata.builder()
+        leaderIndex = Index(followerIndex, "_na_")
+        tasks.addTask<PersistentTaskParams>( "replication:0", IndexReplicationExecutor.TASK_NAME, IndexReplicationParams("remoteCluster", leaderIndex,  followerIndex),
+                PersistentTasksCustomMetadata.Assignment("other_node", "test assignment on other node"))
+
+        metadata = Metadata.builder()
+                .put(IndexMetadata.builder(REPLICATION_CONFIG_SYSTEM_INDEX).settings(settings(Version.CURRENT)).numberOfShards(1).numberOfReplicas(0))
+                .put(IndexMetadata.builder(followerIndex).settings(settings(Version.CURRENT)).numberOfShards(2).numberOfReplicas(0))
+                .putCustom(PersistentTasksCustomMetadata.TYPE, tasks.build())
+                .build()
+        routingTableBuilder = RoutingTable.builder()
+                .addAsNew(metadata.index(REPLICATION_CONFIG_SYSTEM_INDEX))
+                .addAsNew(metadata.index(followerIndex))
+        discoveryNodesBuilder = DiscoveryNodes.Builder()
+                .localNodeId("same_node")
+        newClusterState = ClusterState.builder(clusterService.state())
+                .metadata(metadata)
+                .routingTable(routingTableBuilder.build())
+                .nodes(discoveryNodesBuilder.build()).build()
+        setState(clusterService, newClusterState)
+        assertThat(replicationTask.isTrackingTaskForIndex()).isFalse
     }
 
     private fun createIndexReplicationTask() : IndexReplicationTask {
