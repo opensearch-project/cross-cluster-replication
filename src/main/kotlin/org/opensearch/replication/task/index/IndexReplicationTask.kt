@@ -266,6 +266,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
     private suspend fun failReplication(failedState: FailedState) {
         withContext(NonCancellable) {
             val reason = failedState.errorMsg
+            log.error("Moving replication[IndexReplicationTask:$id][reason=${reason}] to failed state")
             try {
                 replicationMetadataManager.updateIndexReplicationState(
                     followerIndexName,
@@ -614,7 +615,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
 
     private suspend fun pauseReplication(state: FailedState): IndexReplicationState {
         try {
-            log.info("Going to initiate auto-pause of $followerIndexName due to shard failures - $state")
+            log.error("Going to initiate auto-pause of $followerIndexName due to shard failures - $state")
             val pauseReplicationResponse = client.suspendExecute(
                 replicationMetadata,
                 PauseIndexReplicationAction.INSTANCE, PauseIndexReplicationRequest(followerIndexName, "AutoPaused: ${state.errorMsg}"),
