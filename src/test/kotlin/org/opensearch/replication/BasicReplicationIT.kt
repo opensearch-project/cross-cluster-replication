@@ -49,7 +49,6 @@ class BasicReplicationIT : MultiClusterRestTestCase() {
         // Create an empty index on the leader and trigger replication on it
         val createIndexResponse = leader.indices().create(CreateIndexRequest(leaderIndex), RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
-
         follower.startReplication(StartReplicationRequest("source", leaderIndex, followerIndex), waitForRestore=true)
         val source = mapOf("name" to randomAlphaOfLength(20), "age" to randomInt().toString())
         var response = leader.index(IndexRequest(leaderIndex).id("1").source(source), RequestOptions.DEFAULT)
