@@ -99,6 +99,7 @@ import java.util.stream.Collectors
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
+import kotlin.streams.toList
 
 open class IndexReplicationTask(id: Long, type: String, action: String, description: String,
                            parentTask: TaskId,
