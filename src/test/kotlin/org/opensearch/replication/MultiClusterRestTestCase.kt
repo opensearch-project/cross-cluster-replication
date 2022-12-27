@@ -11,6 +11,7 @@
 
 package org.opensearch.replication
 
+import com.nhaarman.mockitokotlin2.stub
 import org.opensearch.replication.MultiClusterAnnotations.ClusterConfiguration
 import org.opensearch.replication.MultiClusterAnnotations.ClusterConfigurations
 import org.opensearch.replication.MultiClusterAnnotations.getAnnotationsFromClass
@@ -56,6 +57,7 @@ import org.junit.After
 import org.junit.AfterClass
 import org.junit.Before
 import org.junit.BeforeClass
+import org.opensearch.index.mapper.ObjectMapper
 import java.nio.file.Files
 import java.security.KeyManagementException
 import java.security.KeyStore
@@ -394,8 +396,32 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
             testCluster.lowLevelClient.performRequest(request)
         }
     }
-
+    private fun stopAllReplicationJobs(testCluster: TestCluster) {
+        val indicesResponse = testCluster.lowLevelClient.performRequest((Request("GET","/_cat/indices/*,-.*?format=json&pretty")))
+        val indicesResponseEntity = EntityUtils.toString(indicesResponse.entity)
+        var parser = XContentType.JSON.xContent().createParser(NamedXContentRegistry.EMPTY, DeprecationHandler.THROW_UNSUPPORTED_OPERATION, indicesResponseEntity)
+        parser.list().forEach{ item->
+            val str = item.toString()
+            val map = str.subSequence(1,str.length-1).split(",").associate {
+                val (key, value) = it.trim().split("=")
+                key to value
+            }
+            val ind = map.get("index")
+            try {
+                val stopRequest = Request("POST","/_plugins/_replication/" + ind.toString() + "/_stop")
+                stopRequest.setJsonEntity("{}")
+                stopRequest.setOptions(RequestOptions.DEFAULT)
+                val response=testCluster.lowLevelClient.performRequest(stopRequest)
+            }
+            catch (e:ResponseException){
+                if(e.response.statusLine.statusCode!=400) {
+                    throw e
+                }
+            }
+        }
+    }
     protected fun wipeIndicesFromCluster(testCluster: TestCluster) {
+        stopAllReplicationJobs(testCluster)
         try {
             val deleteRequest = Request("DELETE", "*,-.*") // All except system indices
             val response = testCluster.lowLevelClient.performRequest(deleteRequest)
