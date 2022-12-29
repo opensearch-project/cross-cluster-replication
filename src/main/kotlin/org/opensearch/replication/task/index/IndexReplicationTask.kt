@@ -55,6 +55,9 @@ import org.opensearch.action.admin.indices.alias.get.GetAliasesRequest
 import org.opensearch.action.admin.indices.delete.DeleteIndexRequest
 import org.opensearch.action.admin.indices.settings.get.GetSettingsRequest
 import org.opensearch.action.admin.indices.settings.put.UpdateSettingsRequest
+import org.opensearch.action.admin.indices.mapping.get.GetMappingsRequest
+import org.opensearch.action.admin.indices.mapping.put.PutMappingRequest
+import org.opensearch.action.support.IndicesOptions
 import org.opensearch.client.Client
 import org.opensearch.client.Requests
 import org.opensearch.cluster.ClusterChangedEvent
@@ -75,6 +78,7 @@ import org.opensearch.common.unit.ByteSizeValue
 import org.opensearch.common.xcontent.ToXContent
 import org.opensearch.common.xcontent.ToXContentObject
 import org.opensearch.common.xcontent.XContentBuilder
+import org.opensearch.common.xcontent.XContentType
 import org.opensearch.index.Index
 import org.opensearch.index.IndexService
 import org.opensearch.index.IndexSettings
@@ -88,6 +92,7 @@ import org.opensearch.persistent.PersistentTasksCustomMetadata.PersistentTask
 import org.opensearch.persistent.PersistentTasksNodeService
 import org.opensearch.persistent.PersistentTasksService
 import org.opensearch.replication.ReplicationException
+import org.opensearch.replication.MappingNotAvailableException
 import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING
 import org.opensearch.rest.RestStatus
 import org.opensearch.tasks.TaskId
@@ -100,6 +105,7 @@ import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
 import kotlin.streams.toList
+import org.opensearch.cluster.DiffableUtils
 
 open class IndexReplicationTask(id: Long, type: String, action: String, description: String,
                            parentTask: TaskId,
@@ -407,6 +413,25 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         }
     }
 
+    private suspend fun syncRemoteMapping(leaderAlias: String, leaderIndex: String,
+                                          followerIndex: String) {
+        log.debug("Syncing mappings from ${leaderAlias}:${leaderIndex} -> $followerIndex...")
+        val remoteClient = client.getRemoteClusterClient(leaderAlias)
+        val options = IndicesOptions.strictSingleIndexNoExpandForbidClosed()
+        val getMappingsRequest = GetMappingsRequest().indices(leaderIndex).indicesOptions(options)
+        val getMappingsResponse = remoteClient.suspending(remoteClient.admin().indices()::getMappings, injectSecurityContext = true)(getMappingsRequest)
+        val mappingSource = getMappingsResponse?.mappings()?.get(leaderIndex)?.source()?.string()
+        if (null == mappingSource) {
+            log.error("Mapping response: $getMappingsResponse")
+            throw MappingNotAvailableException("Mapping for the index $leaderIndex is not available")
+        }
+        val putMappingRequest = PutMappingRequest().indices(followerIndex).indicesOptions(options)
+            .source(mappingSource, XContentType.JSON)
+        val updateMappingRequest = UpdateMetadataRequest(followerIndex, UpdateMetadataRequest.Type.MAPPING, putMappingRequest)
+        client.suspendExecute(UpdateMetadataAction.INSTANCE, updateMappingRequest, injectSecurityContext = true)
+        log.debug("Mappings synced for $followerIndex")
+    }
+
     private suspend fun pollForMetadata(scope: CoroutineScope) {
         while (scope.isActive) {
             try {
@@ -546,6 +571,22 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                     metadataUpdate = MetadataUpdate(updateSettingsRequest, request, staticUpdated)
                 } else {
                     metadataUpdate = null
+                }
+                val options = IndicesOptions.strictSingleIndexNoExpandForbidClosed()
+                var gmr = GetMappingsRequest().indices(this.leaderIndex.name).indicesOptions(options)
+                var mappingResponse = remoteClient.suspending(remoteClient.admin().indices()::getMappings, injectSecurityContext = true)(gmr)
+                val leaderMappings = mappingResponse.mappings().get(this.leaderIndex.name).sourceAsMap().toMap()
+                val leadProperties = leaderMappings.get("properties") as Map<String,Any>
+                gmr = GetMappingsRequest().indices(this.followerIndexName).indicesOptions(options)
+                mappingResponse = client.suspending(client.admin().indices()::getMappings, injectSecurityContext = true)(gmr)
+                val followerMappings = mappingResponse.mappings().get(this.followerIndexName).sourceAsMap().toMap()
+                val followerProperties = followerMappings.get("properties") as Map<String,Any>
+                for(iter in followerProperties) {
+                    if(leadProperties.containsKey(iter.key) && leadProperties.getValue(iter.key).toString()!=(iter.value).toString()){
+                        log.info("Updating Multi-field Mapping at Follower")
+                        syncRemoteMapping(this.leaderAlias,this.leaderIndex.name, this.followerIndexName)
+                        break;
+                    }
                 }
 
             } catch (e: Exception) {
