@@ -12,6 +12,7 @@
 package org.opensearch.replication.integ.rest
 
 
+import kotlinx.coroutines.delay
 import org.opensearch.replication.IndexUtil
 import org.opensearch.replication.MultiClusterAnnotations
 import org.opensearch.replication.MultiClusterRestTestCase
@@ -1211,13 +1212,12 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         leaderClient.indices().putMapping(putMappingRequest, RequestOptions.DEFAULT)
         val leaderMappings = leaderClient.indices().getMapping(GetMappingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
             .mappings()[leaderIndexName]
-        assertBusy({
-            Assert.assertEquals(
-                leaderMappings,
-                followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
-                    .mappings()[followerIndexName]
-            )
-        }, 30L, TimeUnit.SECONDS)
+        TimeUnit.MINUTES.sleep(2)
+        Assert.assertEquals(
+            leaderMappings,
+            followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
+                .mappings()[followerIndexName]
+        )
     }
 
     fun `test that follower index mapping does not update when only new fields are added but not respective docs in leader index`() {
@@ -1249,13 +1249,12 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         leaderClient.indices().putMapping(putMappingRequest, RequestOptions.DEFAULT)
         val leaderMappings = leaderClient.indices().getMapping(GetMappingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
             .mappings()[leaderIndexName]
-        assertBusy({
-            Assert.assertNotEquals(
-                leaderMappings,
-                followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
-                    .mappings()[followerIndexName]
-            )
-        }, 60L, TimeUnit.SECONDS)
+        TimeUnit.MINUTES.sleep(2)
+        Assert.assertNotEquals(
+            leaderMappings,
+            followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
+                .mappings()[followerIndexName]
+        )
     }
 
 
