@@ -11,6 +11,7 @@
 
 package org.opensearch.replication.task.shard
 
+import kotlinx.coroutines.*
 import org.opensearch.replication.MappingNotAvailableException
 import org.opensearch.replication.ReplicationException
 import org.opensearch.replication.action.changes.GetChangesResponse
@@ -18,17 +19,21 @@ import org.opensearch.replication.action.replay.ReplayChangesAction
 import org.opensearch.replication.action.replay.ReplayChangesRequest
 import org.opensearch.replication.metadata.store.ReplicationMetadata
 import org.opensearch.replication.util.suspendExecuteWithRetries
-import kotlinx.coroutines.CompletableDeferred
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.ObsoleteCoroutinesApi
 import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.actor
-import kotlinx.coroutines.launch
+import kotlinx.coroutines.sync.Semaphore
+import org.opensearch.OpenSearchException
+import org.opensearch.action.ActionResponse
 import org.opensearch.client.Client
 import org.opensearch.common.logging.Loggers
 import org.opensearch.index.shard.ShardId
 import org.opensearch.index.translog.Translog
+import org.opensearch.index.translog.TruncatedTranslogException
+import org.opensearch.replication.ReplicationSettings
+import org.opensearch.replication.action.replay.ReplayChangesResponse
 import org.opensearch.replication.util.indicesService
+import org.opensearch.replication.util.stackTraceToString
+import org.opensearch.rest.RestStatus
 import org.opensearch.tasks.TaskId
 import java.util.ArrayList
 import java.util.concurrent.ConcurrentHashMap
@@ -55,7 +60,14 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
     private val unAppliedChanges = ConcurrentHashMap<Long, GetChangesResponse>()
     private val log = Loggers.getLogger(javaClass, followerShardId)!!
     private val completed = CompletableDeferred<Unit>()
-
+    //Start backOff for exceptions with a second
+    private val initialBackoffMillis = 1000L
+    //Start backOff for exceptions with a second
+    private var backOffForRetry = initialBackoffMillis
+    //Max timeout for backoff
+    private val maxTimeOut = 60000L
+    //Backoff factor after every retry
+    private val factor = 2.0
     val followerIndexService = indicesService.indexServiceSafe(followerShardId.index)
     val indexShard = followerIndexService.getShard(followerShardId.id)
 
@@ -66,35 +78,61 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
         for (m in channel) {
             while (unAppliedChanges.containsKey(highWatermark + 1)) {
                 val next = unAppliedChanges.remove(highWatermark + 1)!!
-                val replayRequest = ReplayChangesRequest(followerShardId, next.changes, next.maxSeqNoOfUpdatesOrDeletes,
-                                                         leaderAlias, leaderIndexName)
+                val replayRequest = ReplayChangesRequest(followerShardId, next.changes, next.maxSeqNoOfUpdatesOrDeletes, leaderAlias, leaderIndexName)
                 replayRequest.parentTask = parentTaskId
-                launch {
-                    var relativeStartNanos  = System.nanoTime()
-                    val retryOnExceptions = ArrayList<Class<*>>()
-                    retryOnExceptions.add(MappingNotAvailableException::class.java)
+                var replayResponse: ReplayChangesResponse
+//                 var exceptionAcknowledgement = true
+                    launch {
+                        var relativeStartNanos = System.nanoTime()
+                        val retryOnExceptions = ArrayList<Class<*>>()
+                        retryOnExceptions.add(MappingNotAvailableException::class.java)
+                        try {
+                            // exceptionAcknowledgement = false
+                            replayResponse = client.suspendExecuteWithRetries(
+                                replicationMetadata,
+                                ReplayChangesAction.INSTANCE,
+                                replayRequest,
+                                log = log,
+                                retryOn = retryOnExceptions
+                            )
+                            if (replayResponse.shardInfo.failed > 0) {
+                                replayResponse.shardInfo.failures.forEachIndexed { i, failure ->
+                                    log.error("Failed replaying changes. Failure:$i:$failure}")
+                                }
+                                followerClusterStats.stats[followerShardId]!!.opsWriteFailures.addAndGet(
+                                    replayResponse.shardInfo.failed.toLong()
+                                )
+                                throw ReplicationException(
+                                    "failed to replay changes",
+                                    replayResponse.shardInfo.failures
+                                )
+                            }
 
-                    val replayResponse = client.suspendExecuteWithRetries(
-                        replicationMetadata,
-                        ReplayChangesAction.INSTANCE,
-                        replayRequest,
-                        log = log,
-                        retryOn = retryOnExceptions
-                    )
-                    if (replayResponse.shardInfo.failed > 0) {
-                        replayResponse.shardInfo.failures.forEachIndexed { i, failure ->
-                            log.error("Failed replaying changes. Failure:$i:$failure}")
+                            val tookInNanos = System.nanoTime() - relativeStartNanos
+                            followerClusterStats.stats[followerShardId]!!.totalWriteTime.addAndGet(
+                                TimeUnit.NANOSECONDS.toMillis(tookInNanos)
+                            )
+                            followerClusterStats.stats[followerShardId]!!.opsWritten.addAndGet(
+                                replayRequest.changes.size.toLong()
+                            )
+                            followerClusterStats.stats[followerShardId]!!.followerCheckpoint =
+                                indexShard.localCheckpoint
+                        } catch (e: Exception) {
+                            val range4xx = 400.rangeTo(499)
+                            if (e is OpenSearchException && range4xx.contains(e.status().status)) {
+
+                                if (e.status().status != RestStatus.TOO_MANY_REQUESTS.status) {
+                                    throw e
+                                } else {
+                                   // exceptionAcknowledgement = true
+                                    delay(backOffForRetry)
+                                    backOffForRetry = (backOffForRetry * factor).toLong().coerceAtMost(maxTimeOut)
+                                }
+                            }
+
                         }
-                        followerClusterStats.stats[followerShardId]!!.opsWriteFailures.addAndGet(replayResponse.shardInfo.failed.toLong())
-                        throw ReplicationException("failed to replay changes", replayResponse.shardInfo.failures)
                     }
-
-                    val tookInNanos = System.nanoTime() - relativeStartNanos
-                    followerClusterStats.stats[followerShardId]!!.totalWriteTime.addAndGet(TimeUnit.NANOSECONDS.toMillis(tookInNanos))
-                    followerClusterStats.stats[followerShardId]!!.opsWritten.addAndGet(replayRequest.changes.size.toLong())
-                    followerClusterStats.stats[followerShardId]!!.followerCheckpoint = indexShard.localCheckpoint
-                }
-                highWatermark = next.changes.lastOrNull()?.seqNo() ?: highWatermark
+                    highWatermark = next.changes.lastOrNull()?.seqNo() ?: highWatermark
             }
         }
         completed.complete(Unit)

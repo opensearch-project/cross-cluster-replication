@@ -226,7 +226,6 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                     val batchToFetch = changeTracker.requestBatchToFetch()
                     val fromSeqNo = batchToFetch.first
                     val toSeqNo = batchToFetch.second
-
                     try {
                         logDebug("Getting changes $fromSeqNo-$toSeqNo")
                         val changesResponse = getChanges(fromSeqNo, toSeqNo)
@@ -251,11 +250,9 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                         followerClusterStats.stats[followerShardId]!!.opsReadFailures.addAndGet(1)
                         logInfo("Unable to get changes from seqNo: $fromSeqNo. ${e.stackTraceToString()}")
                         changeTracker.updateBatchFetched(false, fromSeqNo, toSeqNo, fromSeqNo - 1,-1)
-
                         // Propagate 4xx exceptions up the chain and halt replication as they are irrecoverable
                         val range4xx = 400.rangeTo(499)
-                        if (e is OpenSearchException &&
-                                range4xx.contains(e.status().status) ) {
+                        if (e is OpenSearchException && range4xx.contains(e.status().status) ) {
                             if (e.status().status == RestStatus.TOO_MANY_REQUESTS.status) {
                                 followerClusterStats.stats[followerShardId]!!.opsReadThrottles.addAndGet(1)
                             } else {

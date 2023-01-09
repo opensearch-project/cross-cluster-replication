@@ -18,6 +18,8 @@ import org.opensearch.commons.authuser.User
 import kotlinx.coroutines.delay
 import org.apache.logging.log4j.Logger
 import org.opensearch.OpenSearchException
+import org.opensearch.common.util.concurrent.OpenSearchRejectedExecutionException
+import org.opensearch.replication.action.replay.ReplayChangesAction
 import org.opensearch.OpenSearchSecurityException
 import org.opensearch.ResourceNotFoundException
 import org.opensearch.action.ActionListener
@@ -110,24 +112,42 @@ suspend fun <Req: ActionRequest, Resp: ActionResponse> Client.suspendExecuteWith
         defaultContext: Boolean = false): Resp {
     var currentBackoff = backoff
     retryOn.addAll(defaultRetryableExceptions())
-    repeat(numberOfRetries - 1) {
+    repeat(numberOfRetries - 1) { index ->
         try {
+//            if(action == ReplayChangesAction.INSTANCE) {
+//                throw OpenSearchRejectedExecutionException("Testing throwing OpenSearchRejectExecutionException")
+//            }
             return suspendExecute(replicationMetadata, action, req,
                     injectSecurityContext = injectSecurityContext, defaultContext = defaultContext)
         } catch (e: OpenSearchException) {
             // Not retrying for IndexNotFoundException as it is not a transient failure
             // TODO Remove this check for IndexNotFoundException: https://github.com/opensearch-project/cross-cluster-replication/issues/78
+
             if (e !is IndexNotFoundException && (retryOn.contains(e.javaClass)
-                            || TransportActions.isShardNotAvailableException(e)
-                            // This waits for the dependencies to load and retry. Helps during boot-up
-                            || e.status().status >= 500
-                            || e.status() == RestStatus.TOO_MANY_REQUESTS)) {
-                log.warn("Encountered a failure while executing in $req. Retrying in ${currentBackoff/1000} seconds" +
-                        ".", e)
+                        || TransportActions.isShardNotAvailableException(e)
+                        // This waits for the dependencies to load and retry. Helps during boot-up
+                        || e.status().status >= 500
+                        || e.status() == RestStatus.TOO_MANY_REQUESTS)
+            ) {
+                log.warn(
+                    "Encountered a failure while executing in $req. Retrying in ${currentBackoff / 1000} seconds" +
+                            ".", e
+                )
                 delay(currentBackoff)
                 currentBackoff = (currentBackoff * factor).toLong().coerceAtMost(maxTimeOut)
             } else {
                 throw e
+            }
+        }
+        catch (e: OpenSearchRejectedExecutionException) {
+            if(index < numberOfRetries-2) {
+                log.warn("Encountered a failure while executing in $req. Retrying in ${currentBackoff/1000} seconds" + ".", e)
+                delay(currentBackoff)
+                currentBackoff = (currentBackoff * factor).toLong().coerceAtMost(maxTimeOut)
+            }
+            else {
+                var throwingExceptionFromElse = ReplicationException("OpensearchRejectExecutionException being thrown as ReplicationException", RestStatus.TOO_MANY_REQUESTS,e as Throwable)
+               throw throwingExceptionFromElse
             }
         }
     }
