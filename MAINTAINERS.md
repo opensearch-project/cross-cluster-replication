@@ -6,16 +6,11 @@ This document contains a list of maintainers in this repo. See [opensearch-proje
 
 | Maintainer       | GitHub ID                                                 | Affiliation |
 | ---------------- | --------------------------------------------------------- | ----------- |
+| Rushi Agrawal    | [rushiagr](https://github.com/rushiagr)                   | Amazon      |
 | Gopala Krishna A | [krishna-ggk](https://github.com/krishna-ggk)             | Amazon      |
-| Ankit Kala       | [ankitkala](https://github.com/ankitkala)                 | Amazon      |
-| Saikumar Karanam | [saikaranam-amazon](https://github.com/saikaranam-amazon) | Amazon      |
+| Ankit            | [ankitkala](https://github.com/ankitkala)                 | Amazon      |
+| Naveen           | [naveenpajjuri](https://github.com/naveenpajjuri)         | Amazon      |
+| Sai              | [saikaranam-amazon](https://github.com/saikaranam-amazon) | Amazon      |
+| Bhanu Tadepalli  | [tbhanu-amzn](https://github.com/tbhanu-amzn)             | Amazon      |
 | Sooraj Sinha     | [soosinha](https://github.com/soosinha)                   | Amazon      |
-| Suraj Kumar      | [suranjay](https://github.com/suranjay)                   | Amazon      |
 | Gaurav Bafna     | [gbbafna](https://github.com/gbbafna)                     | Amazon      |
-| Monu Singh       | [monu-aws](https://github.com/monu-aws)                   | Amazon      |
-| Priyanka Sharma  | [priyatsh](https://github.com/priyatsh)                   | Amazon      |
-| Mohit Kumar      | [mohitamg](https://github.com/mohitamg)                   | Amazon      |
-| Nishant Goel     | [nisgoel-amazon](https://github.com/nisgoel-amazon)       | Amazon      |
-| Ishank Katiyar   | [ishankka](https://github.com/ishankka)                   | Amazon      |
-| Shreyansh Ray    | [rayshrey](https://github.com/rayshrey)                   | Amazon      |
-| Ranganathan S    | [ranga011](https://github.com/ranga011)                   | Amazon      |
