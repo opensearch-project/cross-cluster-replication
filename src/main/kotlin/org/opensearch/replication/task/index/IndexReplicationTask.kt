@@ -413,17 +413,11 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         }
     }
 
-    private suspend fun syncRemoteMapping(leaderAlias: String, leaderIndex: String,
-                                          followerIndex: String) {
-        log.debug("Syncing mappings from ${leaderAlias}:${leaderIndex} -> $followerIndex...")
-        val remoteClient = client.getRemoteClusterClient(leaderAlias)
+    private suspend fun UpdateFollowereMapping(followerIndex: String,mappingSource: String) {
+
         val options = IndicesOptions.strictSingleIndexNoExpandForbidClosed()
-        val getMappingsRequest = GetMappingsRequest().indices(leaderIndex).indicesOptions(options)
-        val getMappingsResponse = remoteClient.suspending(remoteClient.admin().indices()::getMappings, injectSecurityContext = true)(getMappingsRequest)
-        val mappingSource = getMappingsResponse?.mappings()?.get(leaderIndex)?.source()?.string()
         if (null == mappingSource) {
-            log.error("Mapping response: $getMappingsResponse")
-            throw MappingNotAvailableException("Mapping for the index $leaderIndex is not available")
+            throw MappingNotAvailableException("MappingSource is not available")
         }
         val putMappingRequest = PutMappingRequest().indices(followerIndex).indicesOptions(options)
             .source(mappingSource, XContentType.JSON)
@@ -575,6 +569,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 val options = IndicesOptions.strictSingleIndexNoExpandForbidClosed()
                 var gmr = GetMappingsRequest().indices(this.leaderIndex.name).indicesOptions(options)
                 var mappingResponse = remoteClient.suspending(remoteClient.admin().indices()::getMappings, injectSecurityContext = true)(gmr)
+                var leaderMappingSource = mappingResponse.mappings.get(this.leaderIndex.name).source().toString()
                 val leaderProperties = mappingResponse.mappings().get(this.leaderIndex.name).sourceAsMap().toMap().get("properties") as Map<String,Any>
                 gmr = GetMappingsRequest().indices(this.followerIndexName).indicesOptions(options)
                 mappingResponse = client.suspending(client.admin().indices()::getMappings, injectSecurityContext = true)(gmr)
@@ -582,7 +577,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 for(iter in followerProperties) {
                     if(leaderProperties.containsKey(iter.key) && leaderProperties.getValue(iter.key).toString()!=(iter.value).toString()){
                         log.info("Updating Multi-field Mapping at Follower")
-                        syncRemoteMapping(this.leaderAlias,this.leaderIndex.name, this.followerIndexName)
+                        UpdateFollowereMapping(this.followerIndexName,leaderMappingSource)
                         break;
                     }
                 }
