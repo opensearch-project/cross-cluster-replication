@@ -298,7 +298,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName)
             .alias(Alias("leaderAlias").filter("{\"term\":{\"year\":2016}}").routing("1"))
             , RequestOptions.DEFAULT)
-        assertThat(createIndexResponse.isAcknowledged).isTrue
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
         followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
             waitForRestore = true)
         assertBusy {
