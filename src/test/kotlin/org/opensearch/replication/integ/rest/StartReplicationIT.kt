@@ -984,10 +984,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         followerClient.updateReplicationStartBlockSetting(false)
             followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
                     waitForRestore = true)
-        } finally {
-            followerClient.stopReplication(followerIndexName)
         }
-    }
 
     fun `test that replication is not started when all primary shards are not in active state`() {
         val followerClient = getClientForCluster(FOLLOWER)
