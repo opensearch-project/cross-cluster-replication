@@ -292,7 +292,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName)
             .alias(Alias("leaderAlias").filter("{\"term\":{\"year\":2016}}").routing("1"))
             , RequestOptions.DEFAULT)
-        assertThat(createIndexResponse.isAcknowledged).isTrue
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
         followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
             waitForRestore = true)
         assertBusy {
@@ -342,13 +342,13 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             assertThat(followerClient.indices()
                     .getSettings(GetSettingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
                     .getSetting(followerIndexName,
-                            REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING.key)
+                             IndexSettings.INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key)
                     .isNullOrEmpty())
         }
         assertThat(leaderClient.indices()
                 .getSettings(GetSettingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
                 .getSetting(leaderIndexName,
-                        REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING.key) == "true")
+                         IndexSettings.INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key) == "true")
     }
 
     fun `test that translog settings are set on leader`() {
@@ -362,7 +362,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         val leaderSettings = leaderClient.indices()
                 .getSettings(GetSettingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
         assertThat(leaderSettings.getSetting(leaderIndexName,
-                        REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING.key) == "true")
+                         IndexSettings.INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key) == "true")
         assertThat(leaderSettings.getSetting(leaderIndexName,
                         IndexSettings.INDEX_TRANSLOG_GENERATION_THRESHOLD_SIZE_SETTING.key) == "32mb")
     }
@@ -382,7 +382,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         }
         // Turn-off the settings and index doc
         val settingsBuilder = Settings.builder()
-                .put(REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING.key, false)
+                .put( IndexSettings.INDEX_PLUGINS_REPLICATION_TRANSLOG_RETENTION_LEASE_PRUNING_ENABLED_SETTING.key, false)
         val settingsUpdateResponse = leaderClient.indices().putSettings(UpdateSettingsRequest(leaderIndexName)
                 .settings(settingsBuilder.build()), RequestOptions.DEFAULT)
         Assert.assertEquals(settingsUpdateResponse.isAcknowledged, true)
