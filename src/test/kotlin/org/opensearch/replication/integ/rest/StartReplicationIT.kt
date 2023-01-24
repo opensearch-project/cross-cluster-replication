@@ -879,51 +879,50 @@ class StartReplicationIT: MultiClusterRestTestCase() {
     fun `test follower stats`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
-        val leaderIndexName2 = randomAlphaOfLength(10).toLowerCase(Locale.ROOT)+"leader"
-        val followerIndexName2 = randomAlphaOfLength(10).toLowerCase(Locale.ROOT)+"follower"
-        val leaderIndexName3 = randomAlphaOfLength(10).toLowerCase(Locale.ROOT)+"leader"
-        val followerIndexName3 = randomAlphaOfLength(10).toLowerCase(Locale.ROOT)+"follower"
-//        val followerIndex2 = "follower_index_2"
-//        val followerIndex3 = "follower_index_3"
+        val followerIndex2 = "follower_index_2"
+        val followerIndex3 = "follower_index_3"
         createConnectionBetweenClusters(FOLLOWER, LEADER)
         val createIndexResponse = leaderClient.indices().create(
                 CreateIndexRequest(leaderIndexName),
                 RequestOptions.DEFAULT
         )
         assertThat(createIndexResponse.isAcknowledged).isTrue()
-        followerClient.startReplication(
-                StartReplicationRequest("source", leaderIndexName, followerIndexName),
-                TimeValue.timeValueSeconds(10),
-                true
-        )
-        followerClient.startReplication(
-                StartReplicationRequest("source", leaderIndexName2, followerIndexName2),
-                TimeValue.timeValueSeconds(10),
-                true
-        )
-        followerClient.startReplication(
-                StartReplicationRequest("source", leaderIndexName3, followerIndexName3),
-                TimeValue.timeValueSeconds(10),
-                true
-        )
-        val docCount = 50
-        for (i in 1..docCount) {
-            val sourceMap = mapOf("name" to randomAlphaOfLength(5))
-            leaderClient.index(IndexRequest(leaderIndexName).id(i.toString()).source(sourceMap), RequestOptions.DEFAULT)
-        }
-        followerClient.pauseReplication(followerIndexName2)
-        val stats = followerClient.followerStats()
-        assertThat(stats.getValue("num_syncing_indices").toString()).isEqualTo("1")
-        assertThat(stats.getValue("num_paused_indices").toString()).isEqualTo("1")
-        assertThat(stats.getValue("num_failed_indices").toString()).isEqualTo("0")
-        assertThat(stats.getValue("num_shard_tasks").toString()).isEqualTo("1")
-        assertThat(stats.getValue("operations_written").toString()).isEqualTo("50")
-        assertThat(stats.getValue("operations_read").toString()).isEqualTo("50")
-        assertThat(stats.getValue("failed_read_requests").toString()).isEqualTo("0")
-        assertThat(stats.getValue("failed_write_requests").toString()).isEqualTo("0")
-        assertThat(stats.getValue("follower_checkpoint").toString()).isEqualTo((docCount-1).toString())
-        assertThat(stats.containsKey("index_stats"))
-        assertThat(stats.size).isEqualTo(16)
+            followerClient.startReplication(
+                    StartReplicationRequest("source", leaderIndexName, followerIndexName),
+                    TimeValue.timeValueSeconds(10),
+                    true
+            )
+            followerClient.startReplication(
+                    StartReplicationRequest("source", leaderIndexName, followerIndex2),
+                    TimeValue.timeValueSeconds(10),
+                    true
+            )
+            followerClient.startReplication(
+                    StartReplicationRequest("source", leaderIndexName, followerIndex3),
+                    TimeValue.timeValueSeconds(10),
+                    true
+            )
+            val docCount = 50
+            for (i in 1..docCount) {
+                val sourceMap = mapOf("name" to randomAlphaOfLength(5))
+                leaderClient.index(IndexRequest(leaderIndexName).id(i.toString()).source(sourceMap), RequestOptions.DEFAULT)
+            }
+            followerClient.pauseReplication(followerIndex2)
+            followerClient.stopReplication(followerIndex3)
+            assertBusy({
+                val stats = followerClient.followerStats()
+                assertThat(stats.getValue("num_syncing_indices").toString()).isEqualTo("1")
+                assertThat(stats.getValue("num_paused_indices").toString()).isEqualTo("1")
+                assertThat(stats.getValue("num_failed_indices").toString()).isEqualTo("0")
+                assertThat(stats.getValue("num_shard_tasks").toString()).isEqualTo("1")
+                assertThat(stats.getValue("operations_written").toString()).isEqualTo("50")
+                assertThat(stats.getValue("operations_read").toString()).isEqualTo("50")
+                assertThat(stats.getValue("failed_read_requests").toString()).isEqualTo("0")
+                assertThat(stats.getValue("failed_write_requests").toString()).isEqualTo("0")
+                assertThat(stats.getValue("follower_checkpoint").toString()).isEqualTo((docCount-1).toString())
+                assertThat(stats.containsKey("index_stats"))
+                assertThat(stats.size).isEqualTo(16)
+            }, 60L, TimeUnit.SECONDS)
     }
 
     fun `test that replication cannot be started on invalid indexName`() {
