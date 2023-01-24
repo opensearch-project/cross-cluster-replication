@@ -28,44 +28,35 @@ class ClusterRerouteFollowerIT : MultiClusterRestTestCase() {
     fun `test replication works after rerouting a shard from one node to another in follower cluster`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
-        try {
-            changeTemplate(LEADER)
-            createConnectionBetweenClusters(FOLLOWER, LEADER)
-            val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
-            Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
-            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
-            insertDocToIndex(LEADER, "1", "dummy data 1",leaderIndexName)
-
-            //Querying ES cluster throws random exceptions like MasterNotDiscovered or ShardsFailed etc, so catching them and retrying
-            assertBusy ({
-                try {
-                    Assertions.assertThat(docs(FOLLOWER, followerIndexName)).contains("dummy data 1")
-                } catch (ex: Exception) {
-                    Assert.fail("Exception while querying follower cluster. Failing to retry again")
-                }
-            }, 1, TimeUnit.MINUTES)
-
-            val nodes = getNodesInCluster(FOLLOWER)
-
-            val primaryNode = getPrimaryNodeForShard(FOLLOWER,followerIndexName, "0")
-            val unassignedNode = nodes.filter{!it.equals(primaryNode)}.stream().findFirst().get()
-            rerouteShard(FOLLOWER, "0", followerIndexName, primaryNode, unassignedNode)
-
-            assertBusy ({
-                Assertions.assertThat(getPrimaryNodeForShard(FOLLOWER,followerIndexName, "0")).isEqualTo(unassignedNode)
-            }, 1, TimeUnit.MINUTES)
-            logger.info("rereouted shard is " + getPrimaryNodeForShard(FOLLOWER,followerIndexName, "0"))
-            insertDocToIndex(LEADER, "2", "dummy data 2",leaderIndexName)
-
-            assertBusy ({
-                try {
-                    Assertions.assertThat(docs(FOLLOWER, followerIndexName)).contains("dummy data 2")
-                } catch (ex: Exception) {
-                    Assert.fail("Exception while querying follower cluster. Failing to retry again")
-                }
-            }, 1, TimeUnit.MINUTES)
-        } finally {
-            followerClient.stopReplication(followerIndexName)
-        }
+        changeTemplate(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
+        insertDocToIndex(LEADER, "1", "dummy data 1",leaderIndexName)
+        //Querying ES cluster throws random exceptions like ClusterManagerNotDiscovered or ShardsFailed etc, so catching them and retrying
+        assertBusy ({
+            try {
+                Assertions.assertThat(docs(FOLLOWER, followerIndexName)).contains("dummy data 1")
+            } catch (ex: Exception) {
+                Assert.fail("Exception while querying follower cluster. Failing to retry again")
+            }
+        }, 1, TimeUnit.MINUTES)
+        val nodes = getNodesInCluster(FOLLOWER)
+        val primaryNode = getPrimaryNodeForShard(FOLLOWER,followerIndexName, "0")
+        val unassignedNode = nodes.filter{!it.equals(primaryNode)}.stream().findFirst().get()
+        rerouteShard(FOLLOWER, "0", followerIndexName, primaryNode, unassignedNode)
+        assertBusy ({
+            Assertions.assertThat(getPrimaryNodeForShard(FOLLOWER,followerIndexName, "0")).isEqualTo(unassignedNode)
+        }, 1, TimeUnit.MINUTES)
+        logger.info("rereouted shard is " + getPrimaryNodeForShard(FOLLOWER,followerIndexName, "0"))
+        insertDocToIndex(LEADER, "2", "dummy data 2",leaderIndexName)
+        assertBusy ({
+            try {
+                Assertions.assertThat(docs(FOLLOWER, followerIndexName)).contains("dummy data 2")
+            } catch (ex: Exception) {
+                Assert.fail("Exception while querying follower cluster. Failing to retry again")
+            }
+        }, 1, TimeUnit.MINUTES)
     }
 }
