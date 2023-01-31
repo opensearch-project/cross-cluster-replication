@@ -53,38 +53,28 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
         val leaderClient = getClientForCluster(LEADER)
         val followerIndexName = "pause_index_follow_state"
         createConnectionBetweenClusters(FOLLOWER, LEADER)
-
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
-        try {
-            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
-
-            val myReason = "I want to pause!"
-
-            /* At this point, the follower cluster should be in FOLLOWING state. Next, we pause replication
-            and verify the same
-             */
-            followerClient.pauseReplication(followerIndexName, myReason)
-            // Since, we were still in FOLLOWING phase when pause was called, the index
-            // in follower index should not have been deleted in follower cluster
-            assertBusy {
-                assertThat(followerClient.indices()
-                        .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
-                        .isEqualTo(true)
-            }
-
-            val statusResp = followerClient.replicationStatus(followerIndexName)
-            `validate paused status response`(statusResp, myReason)
-
-            var settings = Settings.builder()
-                    .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0)
-                    .build()
-
-            followerClient.updateReplication( followerIndexName, settings)
-            followerClient.resumeReplication(followerIndexName)
-        } finally {
-            followerClient.stopReplication(followerIndexName)
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
+        val myReason = "I want to pause!"
+        /* At this point, the follower cluster should be in FOLLOWING state. Next, we pause replication
+        and verify the same
+         */
+        followerClient.pauseReplication(followerIndexName, myReason)
+        // Since, we were still in FOLLOWING phase when pause was called, the index
+        // in follower index should not have been deleted in follower cluster
+        assertBusy {
+            assertThat(followerClient.indices()
+                    .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
+                    .isEqualTo(true)
         }
+        val statusResp = followerClient.replicationStatus(followerIndexName)
+        `validate paused status response`(statusResp, myReason)
+        var settings = Settings.builder()
+                .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0)
+                .build()
+        followerClient.updateReplication( followerIndexName, settings)
+        followerClient.resumeReplication(followerIndexName)
     }
 
     fun `test pause replication in restoring state with multiple shards`() {
@@ -110,7 +100,6 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
         val leaderClient = getClientForCluster(LEADER)
         val followerIndexName = "pause_index_restore_state"
         createConnectionBetweenClusters(FOLLOWER, LEADER)
-
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName).settings(settings),
                 RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
@@ -120,24 +109,20 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
             assertThat(leaderClient.indices()
                     .exists(GetIndexRequest(leaderIndexName), RequestOptions.DEFAULT))
         }
-        try {
-            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
-                    TimeValue.timeValueSeconds(10),
-                    false)
-            //Given the size of index, the replication should be in RESTORING phase at this point
-            assertThatThrownBy {
-                followerClient.pauseReplication(followerIndexName)
-            }.isInstanceOf(ResponseException::class.java)
-                    .hasMessageContaining("Index is in restore phase currently for index: ${followerIndexName}")
-            // wait for the shard tasks to be up as the replication block is added before adding shard replication tasks
-            // During intermittent test failures, stop replication under finally block executes before this without removing
-            // replication block (even though next call to _stop replication API can succeed in removing this block).
-            assertBusy({
-                assertTrue(followerClient.getShardReplicationTasks(followerIndexName).isNotEmpty())
-            }, 30L, TimeUnit.SECONDS)
-        } finally {
-            followerClient.stopReplication(followerIndexName)
-        }
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
+                TimeValue.timeValueSeconds(10),
+                false)
+        //Given the size of index, the replication should be in RESTORING phase at this point
+        assertThatThrownBy {
+            followerClient.pauseReplication(followerIndexName)
+        }.isInstanceOf(ResponseException::class.java)
+                .hasMessageContaining("Index is in restore phase currently for index: ${followerIndexName}")
+        // wait for the shard tasks to be up as the replication block is added before adding shard replication tasks
+        // During intermittent test failures, stop replication under finally block executes before this without removing
+        // replication block (even though next call to _stop replication API can succeed in removing this block).
+        assertBusy({
+            assertTrue(followerClient.getShardReplicationTasks(followerIndexName).isNotEmpty())
+        }, 30L, TimeUnit.SECONDS)
     }
 
     fun `test pause without replication in progress`() {
@@ -163,12 +148,10 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
         val leaderClient = getClientForCluster(LEADER)
         val followerIndexName = "pause_index_with_stop"
         createConnectionBetweenClusters(FOLLOWER, LEADER)
-
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
         try {
             followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
-
             /* At this point, the follower cluster should be in FOLLOWING state. Next, we pause replication
             and verify the same
              */
@@ -192,37 +175,30 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
     fun `test pause replication when leader cluster is unavailable`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val followerIndexName = "pause_index_leader_down"
-        try {
-            val leaderClient = getClientForCluster(LEADER)
-            createConnectionBetweenClusters(FOLLOWER, LEADER)
-            val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
-            assertThat(createIndexResponse.isAcknowledged).isTrue()
-            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
-                    waitForRestore = true)
-            // Need to wait till index blocks appear into state
-            assertBusy({
-                val clusterBlocksResponse = followerClient.lowLevelClient.performRequest(Request("GET", "/_cluster/state/blocks"))
-                val clusterResponseString = EntityUtils.toString(clusterBlocksResponse.entity)
-                assertThat(clusterResponseString.contains("cross-cluster-replication"))
-                        .withFailMessage("Cant find replication block after starting replication")
-                        .isTrue()
-            }, 10, TimeUnit.SECONDS)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
+                waitForRestore = true)
+        // Need to wait till index blocks appear into state
+        assertBusy({
+            val clusterBlocksResponse = followerClient.lowLevelClient.performRequest(Request("GET", "/_cluster/state/blocks"))
+            val clusterResponseString = EntityUtils.toString(clusterBlocksResponse.entity)
+            assertThat(clusterResponseString.contains("cross-cluster-replication"))
+                    .withFailMessage("Cant find replication block after starting replication")
+                    .isTrue()
+        }, 10, TimeUnit.SECONDS)
 
-            // setting an invalid seed so that leader cluster is unavailable
-            val settings: Settings = Settings.builder()
-                    .putList("cluster.remote.source.seeds", "127.0.0.1:9305")
-                    .build()
-            val updateSettingsRequest = ClusterUpdateSettingsRequest()
-            updateSettingsRequest.persistentSettings(settings)
-            followerClient.cluster().putSettings(updateSettingsRequest, RequestOptions.DEFAULT)
-
-            followerClient.pauseReplication(followerIndexName)
-
-            val statusResp = followerClient.replicationStatus(followerIndexName)
-            `validate paused status response`(statusResp)
-
-        } finally {
-            followerClient.stopReplication(followerIndexName)
-        }
+        // setting an invalid seed so that leader cluster is unavailable
+        val settings: Settings = Settings.builder()
+                .putList("cluster.remote.source.seeds", "127.0.0.1:9305")
+                .build()
+        val updateSettingsRequest = ClusterUpdateSettingsRequest()
+        updateSettingsRequest.persistentSettings(settings)
+        followerClient.cluster().putSettings(updateSettingsRequest, RequestOptions.DEFAULT)
+        followerClient.pauseReplication(followerIndexName)
+        val statusResp = followerClient.replicationStatus(followerIndexName)
+        `validate paused status response`(statusResp)
     }
 }
