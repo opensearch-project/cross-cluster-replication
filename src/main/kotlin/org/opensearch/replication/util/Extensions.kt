@@ -19,6 +19,8 @@ import kotlinx.coroutines.delay
 import org.apache.logging.log4j.Logger
 import org.opensearch.OpenSearchException
 import org.opensearch.OpenSearchSecurityException
+import org.opensearch.common.util.concurrent.OpenSearchRejectedExecutionException
+import org.opensearch.replication.action.replay.ReplayChangesAction
 import org.opensearch.ResourceNotFoundException
 import org.opensearch.action.ActionListener
 import org.opensearch.action.ActionRequest
@@ -110,7 +112,7 @@ suspend fun <Req: ActionRequest, Resp: ActionResponse> Client.suspendExecuteWith
         defaultContext: Boolean = false): Resp {
     var currentBackoff = backoff
     retryOn.addAll(defaultRetryableExceptions())
-    repeat(numberOfRetries - 1) {
+    repeat(numberOfRetries - 1) { index ->
         try {
             return suspendExecute(replicationMetadata, action, req,
                     injectSecurityContext = injectSecurityContext, defaultContext = defaultContext)
@@ -128,6 +130,16 @@ suspend fun <Req: ActionRequest, Resp: ActionResponse> Client.suspendExecuteWith
                 currentBackoff = (currentBackoff * factor).toLong().coerceAtMost(maxTimeOut)
             } else {
                 throw e
+            }
+        }
+        catch (e: OpenSearchRejectedExecutionException) {
+            if(index < numberOfRetries-2) {
+                log.warn("Encountered a failure while executing in $req. Retrying in ${currentBackoff/1000} seconds" + ".", e)
+                delay(currentBackoff)
+                currentBackoff = (currentBackoff * factor).toLong().coerceAtMost(maxTimeOut)
+            }
+            else {
+                throw ReplicationException("OpensearchRejectExecutionException being thrown as ReplicationException", RestStatus.TOO_MANY_REQUESTS,e as Throwable)
             }
         }
     }
