@@ -15,12 +15,12 @@ import org.opensearch.action.ActionRequestValidationException
 import org.opensearch.action.IndicesRequest
 import org.opensearch.action.support.IndicesOptions
 import org.opensearch.action.support.master.AcknowledgedRequest
-import org.opensearch.common.ParseField
+import org.opensearch.core.ParseField
 import org.opensearch.common.io.stream.StreamInput
 import org.opensearch.common.io.stream.StreamOutput
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.settings.Settings.readSettingsFromStream
-import org.opensearch.common.xcontent.*
+import org.opensearch.core.xcontent.*
 import java.io.IOException
 import java.util.*
 

@@ -67,8 +67,8 @@ import org.opensearch.repositories.fs.FsRepository
 import org.opensearch.test.OpenSearchTestCase.assertBusy
 import org.junit.Assert
 import org.opensearch.cluster.metadata.AliasMetadata
-import org.opensearch.common.xcontent.DeprecationHandler
-import org.opensearch.common.xcontent.NamedXContentRegistry
+import org.opensearch.core.xcontent.DeprecationHandler
+import org.opensearch.core.xcontent.NamedXContentRegistry
 import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING
 import org.opensearch.replication.followerStats
 import org.opensearch.replication.leaderStats

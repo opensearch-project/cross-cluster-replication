@@ -23,8 +23,8 @@ import org.opensearch.client.Response
 import org.opensearch.client.RestHighLevelClient
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.unit.TimeValue
-import org.opensearch.common.xcontent.DeprecationHandler
-import org.opensearch.common.xcontent.NamedXContentRegistry
+import org.opensearch.core.xcontent.DeprecationHandler
+import org.opensearch.core.xcontent.NamedXContentRegistry
 import org.opensearch.common.xcontent.XContentType
 import org.opensearch.test.OpenSearchTestCase.assertBusy
 import org.opensearch.test.rest.OpenSearchRestTestCase
