@@ -10,23 +10,16 @@ on:
     ]
 
 jobs:
-  build-and-publish-snapshots:
-    strategy:
-      fail-fast: false
-      matrix:
-        jdk: [11, 17]
-        platform: ["ubuntu-latest", "windows-latest", "macos-latest"]
-    runs-on: ${{ matrix.platform }}
-
+  build-and-publish-snapshots:\
+    runs-on: ubuntu-latest
     permissions:
       id-token: write
       contents: write
-
     steps:
       - uses: actions/setup-java@v3
         with:
           distribution: temurin # Temurin is a distribution of adoptium
-          java-version: ${{ matrix.jdk }}
+          java-version: 17
       - uses: actions/checkout@v3
       - uses: aws-actions/configure-aws-credentials@v1
         with:
