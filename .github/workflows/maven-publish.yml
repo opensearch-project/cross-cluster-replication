@@ -10,7 +10,7 @@ on:
     ]
 
 jobs:
-  build-and-publish-snapshots:\
+  build-and-publish-snapshots:
     runs-on: ubuntu-latest
     permissions:
       id-token: write
