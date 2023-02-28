@@ -20,7 +20,6 @@ import org.opensearch.common.xcontent.ObjectParser
 import org.opensearch.common.xcontent.ToXContent
 import org.opensearch.common.xcontent.XContentBuilder
 import org.opensearch.common.xcontent.XContentParser
-import org.opensearch.common.xcontent.XContentType
 import org.opensearch.index.shard.ShardId
 import org.opensearch.persistent.PersistentTaskParams
 import java.io.IOException
@@ -85,7 +84,7 @@ class ShardReplicationParams : PersistentTaskParams {
     }
 
     override fun toString(): String {
-        return Strings.toString(XContentType.JSON, this)
+        return Strings.toString(this)
     }
 
     class Builder {
