@@ -33,7 +33,13 @@ import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.component.AbstractLifecycleComponent
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.util.concurrent.ThreadContext
-import org.opensearch.common.xcontent.*
+import org.opensearch.common.xcontent.XContentType
+import org.opensearch.common.xcontent.XContentFactory
+import org.opensearch.common.xcontent.XContentHelper
+import org.opensearch.common.xcontent.LoggingDeprecationHandler
+import org.opensearch.core.xcontent.NamedXContentRegistry
+import org.opensearch.core.xcontent.ToXContent
+import org.opensearch.core.xcontent.XContentParser
 import org.opensearch.replication.util.suspendExecuteWithRetries
 
 class ReplicationMetadataStore constructor(val client: Client, val clusterService: ClusterService,

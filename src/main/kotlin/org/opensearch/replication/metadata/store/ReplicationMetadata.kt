@@ -12,15 +12,15 @@
 package org.opensearch.replication.metadata.store
 
 import org.opensearch.commons.authuser.User
-import org.opensearch.common.ParseField
+import org.opensearch.core.ParseField
 import org.opensearch.common.io.stream.StreamInput
 import org.opensearch.common.io.stream.StreamOutput
 import org.opensearch.common.io.stream.Writeable
 import org.opensearch.common.settings.Settings
-import org.opensearch.common.xcontent.ObjectParser
-import org.opensearch.common.xcontent.ToXContent
-import org.opensearch.common.xcontent.XContentBuilder
-import org.opensearch.common.xcontent.XContentParser
+import org.opensearch.core.xcontent.ObjectParser
+import org.opensearch.core.xcontent.ToXContent
+import org.opensearch.core.xcontent.XContentBuilder
+import org.opensearch.core.xcontent.XContentParser
 import java.io.IOException
 import java.util.*
 import java.util.function.BiConsumer
