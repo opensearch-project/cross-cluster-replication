@@ -19,10 +19,10 @@ import org.opensearch.cluster.ClusterName
 import org.opensearch.common.Strings
 import org.opensearch.common.io.stream.StreamInput
 import org.opensearch.common.io.stream.StreamOutput
-import org.opensearch.common.xcontent.ToXContent.EMPTY_PARAMS
-import org.opensearch.common.xcontent.ToXContent.Params
-import org.opensearch.common.xcontent.ToXContentObject
-import org.opensearch.common.xcontent.XContentBuilder
+import org.opensearch.core.xcontent.ToXContent.EMPTY_PARAMS
+import org.opensearch.core.xcontent.ToXContent.Params
+import org.opensearch.core.xcontent.ToXContentObject
+import org.opensearch.core.xcontent.XContentBuilder
 import org.opensearch.common.xcontent.XContentFactory
 import org.opensearch.replication.seqno.RemoteShardMetric
 import org.opensearch.replication.seqno.RemoteShardMetric.RemoteStats
