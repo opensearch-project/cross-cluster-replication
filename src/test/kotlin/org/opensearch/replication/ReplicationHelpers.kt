@@ -381,6 +381,16 @@ fun RestHighLevelClient.updateReplicationStartBlockSetting(enabled: Boolean) {
     assertThat(response.isAcknowledged).isTrue()
 }
 
+fun RestHighLevelClient.updateAutofollowRetrySetting(duration: String) {
+    var settings: Settings = Settings.builder()
+            .put("plugins.replication.autofollow.retry_poll_interval", duration)
+            .build()
+    var updateSettingsRequest = ClusterUpdateSettingsRequest()
+    updateSettingsRequest.persistentSettings(settings)
+    val response = this.cluster().putSettings(updateSettingsRequest, RequestOptions.DEFAULT)
+    assertThat(response.isAcknowledged).isTrue()
+}
+
 fun RestHighLevelClient.updateAutoFollowConcurrentStartReplicationJobSetting(concurrentJobs: Int?) {
     val settings = if(concurrentJobs != null) {
         Settings.builder()
