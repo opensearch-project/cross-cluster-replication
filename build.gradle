@@ -55,7 +55,10 @@ buildscript {
         common_utils_version = System.getProperty("common_utils.version", opensearch_build)
         kotlin_version = System.getProperty("kotlin.version", "1.6.0")
 
-        security_plugin_version = opensearch_build.replace("-SNAPSHOT","")
+        security_plugin_version = opensearch_build
+        if (!isSnapshot) {
+            security_plugin_version = opensearch_build.replace("-SNAPSHOT","")
+        }
     }
 
     repositories {
