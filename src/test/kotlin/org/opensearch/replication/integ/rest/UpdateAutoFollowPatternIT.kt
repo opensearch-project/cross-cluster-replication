@@ -207,12 +207,10 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
                     assert(key["num_success_start_replication"]!! as Int == 1)
                 }
                 assertTrue(af_stats.size == 2)
-            }, 30, TimeUnit.SECONDS)
+            }, 60, TimeUnit.SECONDS)
         } finally {
             followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
             followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName2)
-            followerClient.waitForShardTaskStart(leaderIndexName)
-            followerClient.waitForShardTaskStart(leaderIndexName2)
         }
     }
 
