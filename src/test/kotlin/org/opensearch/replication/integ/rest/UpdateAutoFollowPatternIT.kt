@@ -196,8 +196,6 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
             }, 30, TimeUnit.SECONDS)
             // Verify that existing index matching the pattern are replicated.
             assertBusy ({
-                followerClient.waitForShardTaskStart(leaderIndexName)
-                followerClient.waitForShardTaskStart(leaderIndexName2)
                 Assertions.assertThat(followerClient.indices()
                         .exists(GetIndexRequest(leaderIndexName2), RequestOptions.DEFAULT))
                         .isEqualTo(true)
