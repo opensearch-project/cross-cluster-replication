@@ -271,6 +271,34 @@ curl -k -u testuser:testuser -XDELETE \
 -d'{"leader_alias":"leader-cluster", "name":"my-replication"}'
 ```
 
+## Check AutoFollow stats
+Stats for all AutoFollow tasks running on the follower cluster can be checked using `autofollow_stats`.
+
+```bash
+curl -k -u admin:admin -XGET "https://${FOLLOWER}/_plugins/_replication/autofollow_stats" 
+{
+"num_success_start_replication" : 16,
+  "num_failed_start_replication" : 0,
+  "num_failed_leader_calls" : 0,
+  "failed_indices" : [
+    "leader-08"
+  ],
+  "autofollow_stats" : [
+    {
+      "name" : "first_rule",
+      "pattern" : "leader-*",
+      "num_success_start_replication" : 16,
+      "num_failed_start_replication" : 0,
+      "num_failed_leader_calls" : 0,
+      "failed_indices" : [
+        "leader-08"
+      ],
+      "last_execution_time" : 1679640596573
+    }
+  ]
+}
+```
+
 ## Check ongoing replication tasks
 
 Until a status API is added, you can check ongoing replication via the tasks API.
