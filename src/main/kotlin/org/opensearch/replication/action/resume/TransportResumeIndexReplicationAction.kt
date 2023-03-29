@@ -53,7 +53,6 @@ import org.opensearch.common.io.stream.StreamInput
 import org.opensearch.env.Environment
 import org.opensearch.index.IndexNotFoundException
 import org.opensearch.index.shard.ShardId
-import org.opensearch.replication.ReplicationPlugin.Companion.KNN_INDEX_SETTING
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
 import java.io.IOException
@@ -101,12 +100,6 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
                 )(getSettingsRequest)
 
                 val leaderSettings = settingsResponse.indexToSettings.get(params.leaderIndex.name) ?: throw IndexNotFoundException(params.leaderIndex.name)
-
-                // k-NN Setting is a static setting. In case the setting is changed at the leader index before resume,
-                // block the resume.
-                if(leaderSettings.getAsBoolean(KNN_INDEX_SETTING, false)) {
-                    throw IllegalStateException("Cannot resume replication for k-NN enabled index ${params.leaderIndex.name}.")
-                }
 
                 ValidationUtil.validateAnalyzerSettings(environment, leaderSettings, replMetdata.settings)
 

@@ -645,4 +645,12 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
         val integTestRemote = systemProperties.get("tests.integTestRemote") as String?
         return integTestRemote.equals("true")
     }
+
+    protected  fun checkIfKnnInstalled(): Boolean {
+        val systemProperties = BootstrapInfo.getSystemProperties()
+        val knn_plugin_installed = systemProperties.get("tests.knn_plugin_enabled") as String?
+        return knn_plugin_installed.equals("true")
+    }
+
+
 }

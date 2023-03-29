@@ -59,6 +59,13 @@ buildscript {
         if (!isSnapshot) {
             security_plugin_version = opensearch_build.replace("-SNAPSHOT","")
         }
+
+        opensearch_no_snapshot = opensearch_version.replace("-SNAPSHOT","")
+        knn_no_snapshot = opensearch_build.replace("-SNAPSHOT","")
+
+        knn_plugin_path = "build/dependencies/knn"
+        knn_plugin_download_url = 'https://ci.opensearch.org/ci/dbc/distribution-build-opensearch/' + opensearch_no_snapshot +
+                '/latest/linux/x64/tar/builds/opensearch/plugins/opensearch-knn-' + knn_no_snapshot + '.zip'
     }
 
     repositories {
@@ -234,6 +241,28 @@ def securityPluginFile = new Callable<RegularFile>() {
         }
     }
 
+
+
+def knnPluginFile = new Callable<RegularFile>() {
+    @Override
+    RegularFile call() throws Exception {
+        return new RegularFile() {
+            @Override
+            File getAsFile() {
+                if (new File("$project.rootDir/$knn_plugin_path").exists()) {
+                    project.delete(files("$project.rootDir/$knn_plugin_path"))
+                }
+                project.mkdir knn_plugin_path
+                ant.get(src: knn_plugin_download_url,
+                        dest: knn_plugin_path,
+                        httpusecaches: false)
+                return fileTree(knn_plugin_path).getSingleFile()
+            }
+        }
+    }
+}
+
+
 // Clone of WaitForHttpResource with updated code to support Cross cluster usecase
 class CrossClusterWaitForHttpResource {
 
@@ -342,6 +371,9 @@ class CrossClusterWaitForHttpResource {
 */
 def securityEnabled = findProperty("security") == "true"
 
+def knnEnabled = findProperty("knn") == "true"
+
+
 File repo = file("$buildDir/testclusters/repo")
 def _numNodes = findProperty('numNodes') as Integer ?: 2
 testClusters {
@@ -350,8 +382,13 @@ testClusters {
         if(securityEnabled) {
             plugin(provider(securityPluginFile))
         }
-        int debugPort = 5005
         testDistribution = "INTEG_TEST"
+        if(knnEnabled) {
+            plugin(provider(knnPluginFile))
+            testDistribution = "ARCHIVE"
+        }
+        int debugPort = 5005
+
         if (_numNodes > 1) numberOfNodes = _numNodes
         //numberOfNodes = 3
         setting 'path.repo', repo.absolutePath
@@ -362,6 +399,10 @@ testClusters {
         plugin(project.tasks.bundlePlugin.archiveFile)
         if(securityEnabled) {
             plugin(provider(securityPluginFile))
+        }
+        if(knnEnabled) {
+            plugin(provider(knnPluginFile))
+            testDistribution = "ARCHIVE"
         }
         int debugPort = 5010
         if (_numNodes > 1) numberOfNodes = _numNodes
@@ -417,6 +458,10 @@ int endJmxPort = startJmxPort
 integTest {
     useCluster testClusters.leaderCluster
     useCluster testClusters.followCluster
+
+    if(knnEnabled){
+        nonInputProperties.systemProperty('tests.knn_plugin_enabled', "true")
+    }
 
     // We skip BWC test here as those get run as part of separate target `bwcTestSuite`.
     filter {
