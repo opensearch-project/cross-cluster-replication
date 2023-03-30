@@ -12,14 +12,14 @@
 package org.opensearch.replication.task.shard
 
 import org.opensearch.Version
-import org.opensearch.common.ParseField
+import org.opensearch.core.ParseField
 import org.opensearch.common.Strings
 import org.opensearch.common.io.stream.StreamInput
 import org.opensearch.common.io.stream.StreamOutput
-import org.opensearch.common.xcontent.ObjectParser
-import org.opensearch.common.xcontent.ToXContent
-import org.opensearch.common.xcontent.XContentBuilder
-import org.opensearch.common.xcontent.XContentParser
+import org.opensearch.core.xcontent.ObjectParser
+import org.opensearch.core.xcontent.ToXContent
+import org.opensearch.core.xcontent.XContentBuilder
+import org.opensearch.core.xcontent.XContentParser
 import org.opensearch.common.xcontent.XContentType
 import org.opensearch.index.shard.ShardId
 import org.opensearch.persistent.PersistentTaskParams

@@ -36,9 +36,9 @@ import org.opensearch.client.Client
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.io.stream.StreamOutput
 import org.opensearch.common.settings.Settings
-import org.opensearch.common.xcontent.ToXContent
-import org.opensearch.common.xcontent.ToXContentObject
-import org.opensearch.common.xcontent.XContentBuilder
+import org.opensearch.core.xcontent.ToXContent
+import org.opensearch.core.xcontent.ToXContentObject
+import org.opensearch.core.xcontent.XContentBuilder
 import org.opensearch.index.IndexService
 import org.opensearch.index.shard.IndexShard
 import org.opensearch.index.shard.ShardId

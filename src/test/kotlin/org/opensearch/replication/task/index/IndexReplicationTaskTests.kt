@@ -30,7 +30,7 @@ import org.opensearch.cluster.routing.RoutingTable
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.settings.SettingsModule
 import org.opensearch.common.unit.TimeValue
-import org.opensearch.common.xcontent.NamedXContentRegistry
+import org.opensearch.core.xcontent.NamedXContentRegistry
 import org.opensearch.index.Index
 import org.opensearch.index.shard.ShardId
 import org.opensearch.persistent.PersistentTaskParams

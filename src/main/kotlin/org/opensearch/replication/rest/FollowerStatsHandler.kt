@@ -2,8 +2,8 @@ package org.opensearch.replication.rest
 
 import org.apache.logging.log4j.LogManager
 import org.opensearch.client.node.NodeClient
-import org.opensearch.common.xcontent.ToXContent
-import org.opensearch.common.xcontent.XContentBuilder
+import org.opensearch.core.xcontent.ToXContent
+import org.opensearch.core.xcontent.XContentBuilder
 import org.opensearch.common.xcontent.XContentFactory
 import org.opensearch.replication.action.stats.FollowerStatsAction
 import org.opensearch.replication.action.stats.FollowerStatsRequest
