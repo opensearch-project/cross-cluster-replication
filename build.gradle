@@ -59,13 +59,8 @@ buildscript {
         if (!isSnapshot) {
             security_plugin_version = opensearch_build.replace("-SNAPSHOT","")
         }
+        knn_plugin_version = security_plugin_version
 
-        opensearch_no_snapshot = opensearch_version.replace("-SNAPSHOT","")
-        knn_no_snapshot = opensearch_build.replace("-SNAPSHOT","")
-
-        knn_plugin_path = "build/dependencies/knn"
-        knn_plugin_download_url = 'https://ci.opensearch.org/ci/dbc/distribution-build-opensearch/' + opensearch_no_snapshot +
-                '/latest/linux/x64/tar/builds/opensearch/plugins/opensearch-knn-' + knn_no_snapshot + '.zip'
     }
 
     repositories {
@@ -241,7 +236,13 @@ def securityPluginFile = new Callable<RegularFile>() {
         }
     }
 
+def knnEnabled = findProperty("knn") == "true"
 
+if(knnEnabled == true ){
+    dependencies{
+        opensearchPlugin "org.opensearch.plugin:opensearch-knn:${knn_plugin_version}@zip"
+    }
+}
 
 def knnPluginFile = new Callable<RegularFile>() {
     @Override
@@ -249,14 +250,9 @@ def knnPluginFile = new Callable<RegularFile>() {
         return new RegularFile() {
             @Override
             File getAsFile() {
-                if (new File("$project.rootDir/$knn_plugin_path").exists()) {
-                    project.delete(files("$project.rootDir/$knn_plugin_path"))
-                }
-                project.mkdir knn_plugin_path
-                ant.get(src: knn_plugin_download_url,
-                        dest: knn_plugin_path,
-                        httpusecaches: false)
-                return fileTree(knn_plugin_path).getSingleFile()
+                    return configurations.opensearchPlugin.resolvedConfiguration.resolvedArtifacts
+                            .find { ResolvedArtifact f -> f.name.contains('opensearch-knn') }
+                            .file
             }
         }
     }
@@ -370,9 +366,6 @@ class CrossClusterWaitForHttpResource {
 * To run security tests
 */
 def securityEnabled = findProperty("security") == "true"
-
-def knnEnabled = findProperty("knn") == "true"
-
 
 File repo = file("$buildDir/testclusters/repo")
 def _numNodes = findProperty('numNodes') as Integer ?: 2

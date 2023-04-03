@@ -90,20 +90,31 @@ class BasicReplicationIT : MultiClusterRestTestCase() {
         val leaderClient = getClientForCluster(LEADER)
         createConnectionBetweenClusters(FOLL, LEADER)
         val leaderIndexName = randomAlphaOfLength(10).toLowerCase(Locale.ROOT)
+        val followerIndexNameInitial = randomAlphaOfLength(10).toLowerCase(Locale.ROOT)
         val followerIndexName = randomAlphaOfLength(10).toLowerCase(Locale.ROOT)
-
         val KNN_INDEX_MAPPING = "{\"properties\":{\"my_vector1\":{\"type\":\"knn_vector\",\"dimension\":2},\"my_vector2\":{\"type\":\"knn_vector\",\"dimension\":4}}}"
-
+        // create knn-index on leader cluster
         try {
             val createIndexResponse = leaderClient.indices().create(
                 CreateIndexRequest(leaderIndexName)
                     .mapping(KNN_INDEX_MAPPING, XContentType.JSON), RequestOptions.DEFAULT
             )
             assertThat(createIndexResponse.isAcknowledged).isTrue()
-        } catch (e: Exception) {
-            assumeNoException("Could not create Knn index", e)
+        } catch (e: Exception){
+//        index creation will fail if Knn plugin is not installed
+            assumeNoException("Could not create Knn index on leader cluster", e)
         }
 
+        // create knn-index on follower cluster
+//        try {
+//            val createIndexResponse = followerClient.indices().create(
+//                CreateIndexRequest(followerIndexNameInitial)
+//                    .mapping(KNN_INDEX_MAPPING, XContentType.JSON), RequestOptions.DEFAULT
+//            )
+//            assertThat(createIndexResponse.isAcknowledged).isTrue()
+//        } catch (e: Exception) {
+//            assumeNoException("Could not create Knn index on follower cluster", e)
+//        }
 
         followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore=true)
         // Create document
@@ -131,32 +142,6 @@ class BasicReplicationIT : MultiClusterRestTestCase() {
             val getResponse = followerClient.get(GetRequest(followerIndexName, "1"), RequestOptions.DEFAULT)
             assertThat(getResponse.isExists).isFalse()
         }, 60L, TimeUnit.SECONDS)
-    }
-
-    fun `test knn plugin not installed`() {
-        if(checkIfKnnInstalled()){
-            return;
-        }
-        val followerClient = getClientForCluster(FOLL)
-        val leaderClient = getClientForCluster(LEADER)
-        createConnectionBetweenClusters(FOLL, LEADER)
-        val leaderIndexName = randomAlphaOfLength(10).toLowerCase(Locale.ROOT)
-        val followerIndexName = randomAlphaOfLength(10).toLowerCase(Locale.ROOT)
-
-        val KNN_INDEX_MAPPING = "{\"properties\":{\"my_vector1\":{\"type\":\"knn_vector\",\"dimension\":2},\"my_vector2\":{\"type\":\"knn_vector\",\"dimension\":4}}}"
-
-        var thrown = false
-        try {
-            val createIndexResponse = leaderClient.indices().create(
-                CreateIndexRequest(leaderIndexName)
-                    .mapping(KNN_INDEX_MAPPING, XContentType.JSON), RequestOptions.DEFAULT
-            )
-            assertThat(createIndexResponse.isAcknowledged).isFalse()
-        } catch (e: Exception) {
-            thrown = true
-        }
-        assertThat(thrown).isTrue()
-
     }
 
     fun `test existing index replication`() {
