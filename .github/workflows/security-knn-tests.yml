@@ -27,7 +27,7 @@ jobs:
           opensearch_version=$opensearch_version".0-SNAPSHOT"
           # we publish build artifacts to the below url 
           sec_plugin_url="https://aws.oss.sonatype.org/content/repositories/snapshots/org/opensearch/plugin/opensearch-security/"$opensearch_version"/"
-          sec_st=$(curl -s -o /dev/null -w "%{http_code}" $plugin_url)
+          sec_st=$(curl -s -o /dev/null -w "%{http_code}" $sec_plugin_url)
           if [ "$sec_st" = "200" ]; then
             echo "isSecurityPluginAvailable=True" >> $GITHUB_OUTPUT
             cat $GITHUB_OUTPUT
