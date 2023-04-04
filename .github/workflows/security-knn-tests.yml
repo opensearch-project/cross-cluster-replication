@@ -11,54 +11,39 @@ on:
 jobs:
   req:
     # Job name
-    name: Security plugin check
+    name: plugin check
     runs-on: ubuntu-latest
     outputs:
-      isSecurityPluginAvailable: ${{ steps.security-plugin-availability-check.outputs.isSecurityPluginAvailable }}
+      isSecurityPluginAvailable: ${{ steps.plugin-availability-check.outputs.isSecurityPluginAvailable }}
+      isKnnPluginAvailable: ${{ steps.plugin-availability-check.outputs.isKnnPluginAvailable }}
     steps:
       # This step uses the checkout Github action: https://github.com/actions/checkout
       - name: Checkout Branch
         uses: actions/checkout@v2
-      - id: security-plugin-availability-check
-        name: "Security plugin check"
+      - id: plugin-availability-check
+        name: "plugin check"
         run: |
           opensearch_version=$(grep "System.getProperty(\"opensearch.version\", \"" build.gradle | grep '\([0-9]\|[.]\)\{5\}' -o)
           opensearch_version=$opensearch_version".0-SNAPSHOT"
           # we publish build artifacts to the below url 
-          plugin_url="https://aws.oss.sonatype.org/content/repositories/snapshots/org/opensearch/plugin/opensearch-security/"$opensearch_version"/"
-          st=$(curl -s -o /dev/null -w "%{http_code}" $plugin_url)
-          if [ "$st" = "200" ]; then
+          sec_plugin_url="https://aws.oss.sonatype.org/content/repositories/snapshots/org/opensearch/plugin/opensearch-security/"$opensearch_version"/"
+          sec_st=$(curl -s -o /dev/null -w "%{http_code}" $plugin_url)
+          if [ "$sec_st" = "200" ]; then
             echo "isSecurityPluginAvailable=True" >> $GITHUB_OUTPUT
             cat $GITHUB_OUTPUT
           else
             echo "isSecurityPluginAvailable=False" >> $GITHUB_OUTPUT
             cat $GITHUB_OUTPUT
           fi
-  knn-req:
-    # Job name
-    name: Knn plugin check
-    runs-on: ubuntu-latest
-    outputs:
-      isKnnPluginAvailable: ${{ steps.knn-plugin-availability-check.outputs.isKnnPluginAvailable }}
-    steps:
-      # This step uses the checkout Github action: https://github.com/actions/checkout
-      - name: Checkout Branch
-        uses: actions/checkout@v2
-      - id: knn-plugin-availability-check
-        name: "Knn plugin check"
-        run: |
-          opensearch_version=$(grep "System.getProperty(\"opensearch.version\", \"" build.gradle | grep '\([0-9]\|[.]\)\{5\}' -o)
-          opensearch_version=$opensearch_version".0-SNAPSHOT"
-          # we publish build artifacts to the below url 
-          plugin_url="https://aws.oss.sonatype.org/content/repositories/snapshots/org/opensearch/plugin/opensearch-knn/"$opensearch_version"/"
-          st=$(curl -s -o /dev/null -w "%{http_code}" $plugin_url)
-          if [ "$st" = "200" ]; then
+          knn_plugin_url="https://aws.oss.sonatype.org/content/repositories/snapshots/org/opensearch/plugin/opensearch-knn/"$opensearch_version"/"
+          knn_st=$(curl -s -o /dev/null -w "%{http_code}" $knn_plugin_url)
+          if [ "$knn_st" = "200" ]; then
             echo "isKnnPluginAvailable=True" >> $GITHUB_OUTPUT
             cat $GITHUB_OUTPUT
           else
             echo "isKnnPluginAvailable=False" >> $GITHUB_OUTPUT
             cat $GITHUB_OUTPUT
-          fi          
+          fi  
 
   build:
     needs: req
@@ -98,8 +83,8 @@ jobs:
         uses: codecov/codecov-action@v1.2.1
 
   knn-build:
-    needs: knn-req
-    if: ${{ 'True' == needs.knn-req.outputs.isKnnPluginAvailable }}
+    needs: req
+    if: ${{ 'True' == needs.req.outputs.isKnnPluginAvailable }}
     # Job name
     name: Build and Run Knn tests
     runs-on: ubuntu-latest
