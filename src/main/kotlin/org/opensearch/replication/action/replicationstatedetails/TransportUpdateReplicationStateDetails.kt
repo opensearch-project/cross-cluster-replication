@@ -18,6 +18,7 @@ import org.opensearch.replication.util.submitClusterStateUpdateTask
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
+import org.opensearch.cluster.coordination.Coordinator;
 import org.opensearch.action.ActionListener
 import org.opensearch.action.support.ActionFilters
 import org.opensearch.action.support.master.AcknowledgedRequest
@@ -43,19 +44,24 @@ class TransportUpdateReplicationStateDetails @Inject constructor(transportServic
                 transportService, clusterService, threadPool, actionFilters, ::UpdateReplicationStateDetailsRequest, indexNameExpressionResolver),
         CoroutineScope by GlobalScope {
 
+    companion object {
+        const val DEFAULT_TIMEOUT = 60000L // Twice the default cluster publish timeout
+        const val DEFAULT_TIMEOUT_FACTOR = 3L // Thrice the current updated settings
+    }
     override fun checkBlock(request: UpdateReplicationStateDetailsRequest, state: ClusterState): ClusterBlockException? {
         return state.blocks.globalBlockedException(ClusterBlockLevel.METADATA_WRITE)
     }
 
     override fun masterOperation(request: UpdateReplicationStateDetailsRequest, state: ClusterState,
                                  listener: ActionListener<AcknowledgedResponse>) {
+        val clusterPublishTimeout = state.metadata.settings().getAsLong(Coordinator.PUBLISH_TIMEOUT_SETTING.key, DEFAULT_TIMEOUT)
 
         launch(threadPool.coroutineContext(ThreadPool.Names.MANAGEMENT)) {
             listener.completeWith {
                 submitClusterStateUpdateTask(request, UpdateReplicationStateDetailsTaskExecutor.INSTANCE
                         as ClusterStateTaskExecutor<AcknowledgedRequest<UpdateReplicationStateDetailsRequest>>,
                         clusterService,
-                        "update-replication-state-params")
+                        "update-replication-state-params", DEFAULT_TIMEOUT_FACTOR * clusterPublishTimeout)
                 AcknowledgedResponse(true)
             }
         }

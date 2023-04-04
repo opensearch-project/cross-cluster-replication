@@ -254,22 +254,23 @@ fun ThreadPool.coroutineContext(executorName: String) : CoroutineContext =
 suspend fun <T : MasterNodeRequest<T>> submitClusterStateUpdateTask(request: AcknowledgedRequest<T>,
                                                                     taskExecutor: ClusterStateTaskExecutor<AcknowledgedRequest<T>>,
                                                                     clusterService: ClusterService,
-                                                                    source: String): ClusterState {
-    return suspendCoroutine { continuation ->
-        clusterService.submitStateUpdateTask(
-                source,
-                request,
-                ClusterStateTaskConfig.build(Priority.NORMAL),
-                taskExecutor,
-                object : ClusterStateTaskListener {
-                    override fun onFailure(source: String, e: java.lang.Exception) {
-                        continuation.resumeWithException(e)
-                    }
+                                                                    source: String, timeout: Long): ClusterState {
+    return withTimeout(timeout) {
+        suspendCancellableCoroutine { continuation ->
+            clusterService.submitStateUpdateTask(
+                    source,
+                    request,
+                    ClusterStateTaskConfig.build(Priority.NORMAL),
+                    taskExecutor,
+                    object : ClusterStateTaskListener {
+                        override fun onFailure(source: String, e: java.lang.Exception) {
+                            continuation.resumeWithException(e)
+                        }
 
-                    override fun clusterStateProcessed(source: String?, oldState: ClusterState?, newState: ClusterState) {
-                        continuation.resume(newState)
-                    }
-                })
+                        override fun clusterStateProcessed(source: String?, oldState: ClusterState?, newState: ClusterState) {
+                            continuation.resume(newState)
+                        }
+                    })
+        }
     }
-
 }
