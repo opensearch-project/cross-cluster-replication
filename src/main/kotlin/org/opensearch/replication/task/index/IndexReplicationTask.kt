@@ -401,13 +401,10 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         }
     }
 
-    private suspend fun updateFollowerMapping(followerIndex: String,mappingSource: String?) {
+    private suspend fun updateFollowerMapping(followerIndex: String,mappingSource: String?,typeKey: String?) {
 
         val options = IndicesOptions.strictSingleIndexNoExpandForbidClosed()
-        if (null == mappingSource) {
-            throw MappingNotAvailableException("MappingSource is not available")
-        }
-        val putMappingRequest = PutMappingRequest().indices(followerIndex).indicesOptions(options).type("_doc")
+        val putMappingRequest = PutMappingRequest().indices(followerIndex).indicesOptions(options).type(typeKey)
             .source(mappingSource, XContentType.JSON)
         val updateMappingRequest = UpdateMetadataRequest(followerIndex, UpdateMetadataRequest.Type.MAPPING, putMappingRequest)
         client.suspendExecute(UpdateMetadataAction.INSTANCE, updateMappingRequest, injectSecurityContext = true)
@@ -557,18 +554,19 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 val options = IndicesOptions.strictSingleIndexNoExpandForbidClosed()
                 var gmr = GetMappingsRequest().indices(this.leaderIndex.name).indicesOptions(options)
                 var mappingResponse = remoteClient.suspending(remoteClient.admin().indices()::getMappings, injectSecurityContext = true)(gmr)
-                var leaderMappingSource = mappingResponse?.mappings()?.get(this.leaderIndex.name)?.get("_doc")?.source()?.toString()
+                val typeKey=  mappingResponse?.mappings()?.get(this.leaderIndex.name)?.firstOrNull()?.key
+                var leaderMappingSource = mappingResponse?.mappings()?.get(this.leaderIndex.name)?.get(typeKey)?.source()?.toString()
                 @Suppress("UNCHECKED_CAST")
-                val leaderProperties = mappingResponse?.mappings()?.get(this.leaderIndex.name)?.get("_doc")?.sourceAsMap()?.toMap()?.get("properties") as? Map<String,Any>?
+                val leaderProperties = mappingResponse?.mappings()?.get(this.leaderIndex.name)?.get(typeKey)?.sourceAsMap()?.toMap()?.get("properties") as? Map<String,Any>?
                 gmr = GetMappingsRequest().indices(this.followerIndexName).indicesOptions(options)
                 mappingResponse = client.suspending(client.admin().indices()::getMappings, injectSecurityContext = true)(gmr)
                 @Suppress("UNCHECKED_CAST")
-                val followerProperties = mappingResponse?.mappings()?.get(this.followerIndexName)?.get("_doc")?.sourceAsMap()?.toMap()?.get("properties") as? Map<String,Any>?
+                val followerProperties = mappingResponse?.mappings()?.get(this.followerIndexName)?.get(typeKey)?.sourceAsMap()?.toMap()?.get("properties") as? Map<String,Any>?
                 run updateMappingLoop@ {
                     followerProperties?.forEach { iter ->
-                        if (leaderProperties?.containsKey(iter.key) == true && leaderProperties.getValue(iter.key).toString() != (iter.value).toString()) {
+                        if (leaderProperties?.getValue(iter.key).toString() != (iter.value).toString()) {
                             log.debug("Updating Multi-field Mapping at Follower")
-                            updateFollowerMapping(this.followerIndexName, leaderMappingSource)
+                            updateFollowerMapping(this.followerIndexName, leaderMappingSource, typeKey)
                             return@updateMappingLoop
                         }
                     }
