@@ -49,29 +49,34 @@ class UpdateReplicationStateDetailsTaskExecutor private constructor()
 
     override fun execute(currentState: ClusterState, tasks: List<UpdateReplicationStateDetailsRequest>)
             : ClusterStateTaskExecutor.ClusterTasksResult<UpdateReplicationStateDetailsRequest> {
-        return getClusterStateUpdateTaskResult(tasks[0], currentState)
+        log.debug("Executing replication state update for $tasks")
+        return getClusterStateUpdateTaskResult(tasks, currentState)
     }
 
-    private fun getClusterStateUpdateTaskResult(request: UpdateReplicationStateDetailsRequest,
+    private fun getClusterStateUpdateTaskResult(requests: List<UpdateReplicationStateDetailsRequest>,
                                                 currentState: ClusterState)
             : ClusterStateTaskExecutor.ClusterTasksResult<UpdateReplicationStateDetailsRequest> {
         val currentMetadata = currentState.metadata().custom(ReplicationStateMetadata.NAME) ?: ReplicationStateMetadata.EMPTY
-        val newMetadata = getUpdatedReplicationMetadata(request, currentMetadata)
-        if (currentMetadata == newMetadata) {
-            return getStateUpdateTaskResultForClusterState(request, currentState) // no change
+        var updatedMetadata = currentMetadata
+        // compute metadata update for the batched requests
+        for(request in requests) {
+            updatedMetadata = getUpdatedReplicationMetadata(request, updatedMetadata)
+        }
+        if (currentMetadata == updatedMetadata) {
+            return getStateUpdateTaskResultForClusterState(requests, currentState) // no change
         } else {
             val mdBuilder = Metadata.builder(currentState.metadata)
-                    .putCustom(ReplicationStateMetadata.NAME, newMetadata)
+                    .putCustom(ReplicationStateMetadata.NAME, updatedMetadata)
             val newClusterState = ClusterState.Builder(currentState).metadata(mdBuilder).build()
-            return getStateUpdateTaskResultForClusterState(request, newClusterState)
+            return getStateUpdateTaskResultForClusterState(requests, newClusterState)
         }
     }
 
-    private fun getStateUpdateTaskResultForClusterState(request: UpdateReplicationStateDetailsRequest,
+    private fun getStateUpdateTaskResultForClusterState(requests: List<UpdateReplicationStateDetailsRequest>,
                                                         clusterState: ClusterState)
             : ClusterStateTaskExecutor.ClusterTasksResult<UpdateReplicationStateDetailsRequest> {
         return ClusterStateTaskExecutor.ClusterTasksResult.builder<UpdateReplicationStateDetailsRequest>()
-                .success(request).build(clusterState)
+                .successes(requests).build(clusterState)
     }
 
     private fun getUpdatedReplicationMetadata(request: UpdateReplicationStateDetailsRequest,
