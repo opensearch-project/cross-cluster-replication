@@ -573,16 +573,13 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 mappingResponse = client.suspending(client.admin().indices()::getMappings, injectSecurityContext = true)(gmr)
                 @Suppress("UNCHECKED_CAST")
                 val followerProperties = mappingResponse?.mappings()?.get(this.followerIndexName)?.sourceAsMap()?.toMap()?.get("properties") as? Map<String,Any>?
-                run updateMappingLoop@ {
-                    followerProperties?.forEach { iter ->
-                        if (leaderProperties?.getValue(iter.key).toString() != (iter.value).toString()) {
-                            log.debug("Updating Multi-field Mapping at Follower")
-                            updateFollowerMapping(this.followerIndexName, leaderMappingSource)
-                            return@updateMappingLoop
-                        }
+                for((key,value) in followerProperties?: emptyMap()) {
+                    if (leaderProperties?.getValue(key).toString() != (value).toString()) {
+                        log.debug("Updating Multi-field Mapping at Follower")
+                        updateFollowerMapping(this.followerIndexName, leaderMappingSource)
+                        break
                     }
                 }
-
             } catch (e: Exception) {
                 log.error("Error in getting the required metadata ${e.stackTraceToString()}")
             } finally {
