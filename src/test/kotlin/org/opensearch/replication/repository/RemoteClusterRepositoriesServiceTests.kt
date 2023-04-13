@@ -1,5 +1,6 @@
 package org.opensearch.replication.repository
 
+import com.carrotsearch.randomizedtesting.annotations.ThreadLeakScope
 import com.nhaarman.mockitokotlin2.times
 import org.mockito.Mockito
 import org.opensearch.Version
@@ -13,6 +14,7 @@ import org.opensearch.test.OpenSearchTestCase
 import org.opensearch.threadpool.TestThreadPool
 import java.util.function.Supplier
 
+@ThreadLeakScope(ThreadLeakScope.Scope.NONE)
 class RemoteClusterRepositoriesServiceTests : OpenSearchTestCase() {
     var threadPool = TestThreadPool("ReplicationPluginTest")
 
