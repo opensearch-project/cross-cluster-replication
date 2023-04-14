@@ -62,6 +62,9 @@ import org.elasticsearch.action.admin.indices.alias.get.GetAliasesRequest
 import org.elasticsearch.action.admin.indices.delete.DeleteIndexRequest
 import org.elasticsearch.action.admin.indices.settings.get.GetSettingsRequest
 import org.elasticsearch.action.admin.indices.settings.put.UpdateSettingsRequest
+import org.elasticsearch.action.admin.indices.mapping.get.GetMappingsRequest
+import org.elasticsearch.action.admin.indices.mapping.put.PutMappingRequest
+import org.elasticsearch.action.support.IndicesOptions
 import org.elasticsearch.client.Client
 import org.elasticsearch.client.Requests
 import org.elasticsearch.cluster.ClusterChangedEvent
@@ -82,6 +85,7 @@ import org.elasticsearch.common.unit.ByteSizeValue
 import org.elasticsearch.common.xcontent.ToXContent
 import org.elasticsearch.common.xcontent.ToXContentObject
 import org.elasticsearch.common.xcontent.XContentBuilder
+import org.elasticsearch.common.xcontent.XContentType
 import org.elasticsearch.index.Index
 import org.elasticsearch.index.IndexService
 import org.elasticsearch.index.IndexSettings
@@ -393,6 +397,17 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
         }
     }
 
+
+    private suspend fun updateFollowerMapping(followerIndex: String,mappingSource: String?, typeKey: String?) {
+
+        val options = IndicesOptions.strictSingleIndexNoExpandForbidClosed()
+        val putMappingRequest = PutMappingRequest().indices(followerIndex).indicesOptions(options).type(typeKey)
+            .source(mappingSource, XContentType.JSON)
+        val updateMappingRequest = UpdateMetadataRequest(followerIndex, UpdateMetadataRequest.Type.MAPPING, putMappingRequest)
+        client.suspendExecute(UpdateMetadataAction.INSTANCE, updateMappingRequest, injectSecurityContext = true)
+        log.debug("Mappings synced for $followerIndex")
+    }
+
     private suspend fun pollForMetadata(scope: CoroutineScope) {
         while (scope.isActive) {
             try {
@@ -532,6 +547,23 @@ class IndexReplicationTask(id: Long, type: String, action: String, description: 
                     metadataUpdate = MetadataUpdate(updateSettingsRequest, request, staticUpdated)
                 } else {
                     metadataUpdate = null
+                }
+                val options = IndicesOptions.strictSingleIndexNoExpandForbidClosed()
+                var gmr = GetMappingsRequest().indices(this.leaderIndex.name).indicesOptions(options)
+                var mappingResponse = remoteClient.suspending(remoteClient.admin().indices()::getMappings, injectSecurityContext = true)(gmr)
+                val typeKey=  mappingResponse?.mappings()?.get(this.leaderIndex.name)?.firstOrNull()?.key
+                var leaderMappingSource = mappingResponse?.mappings()?.get(this.leaderIndex.name)?.get(typeKey)?.source()?.toString()
+                @Suppress("UNCHECKED_CAST")
+                val leaderProperties = mappingResponse?.mappings()?.get(this.leaderIndex.name)?.get(typeKey)?.sourceAsMap()?.toMap()?.get("properties") as? Map<String,Any>?
+                gmr = GetMappingsRequest().indices(this.followerIndexName).indicesOptions(options)
+                mappingResponse = client.suspending(client.admin().indices()::getMappings, injectSecurityContext = true)(gmr)
+                @Suppress("UNCHECKED_CAST")
+                val followerProperties = mappingResponse?.mappings()?.get(this.followerIndexName)?.get(typeKey)?.sourceAsMap()?.toMap()?.get("properties") as? Map<String,Any>?
+                for((key,value) in followerProperties?: emptyMap()) {
+                    if (leaderProperties?.getValue(key).toString() != (value).toString()) {
+                        log.debug("Updating Multi-field Mapping at Follower")
+                        updateFollowerMapping(this.followerIndexName, leaderMappingSource, typeKey)
+                    }
                 }
 
             } catch (e: Exception) {
