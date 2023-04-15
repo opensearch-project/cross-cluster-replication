@@ -25,7 +25,7 @@ jobs:
       - name: Build and run Replication tests
         run: |
           echo "Running backwards compatibility tests ..."
-          ./gradlew clean release -Dbuild.snapshot=true -Dopensearch.version=1.3.9-SNAPSHOT -x test -x IntegTest
+          ./gradlew clean release -Dbuild.snapshot=true -Dopensearch.version=1.3.10-SNAPSHOT -x test -x IntegTest
           ./gradlew mixedClusterTask --stacktrace
           ./gradlew fullRestartClusterTask --stacktrace
       - name: Upload failed logs
