@@ -26,6 +26,7 @@ import org.opensearch.client.indices.CreateIndexRequest
 import org.opensearch.common.xcontent.XContentType
 import org.opensearch.common.CheckedRunnable
 import org.opensearch.test.OpenSearchTestCase.assertBusy
+import org.opensearch.client.indices.PutMappingRequest
 import org.junit.Assert
 import java.util.Locale
 import java.util.concurrent.TimeUnit
@@ -86,6 +87,7 @@ class BasicReplicationIT : MultiClusterRestTestCase() {
 
     fun `test knn index replication`() {
 
+
         val followerClient = getClientForCluster(FOLL)
         val leaderClient = getClientForCluster(LEADER)
         createConnectionBetweenClusters(FOLL, LEADER)
@@ -101,21 +103,9 @@ class BasicReplicationIT : MultiClusterRestTestCase() {
             )
             assertThat(createIndexResponse.isAcknowledged).isTrue()
         } catch (e: Exception){
-//        index creation will fail if Knn plugin is not installed
+            //index creation will fail if Knn plugin is not installed
             assumeNoException("Could not create Knn index on leader cluster", e)
         }
-
-        // create knn-index on follower cluster
-//        try {
-//            val createIndexResponse = followerClient.indices().create(
-//                CreateIndexRequest(followerIndexNameInitial)
-//                    .mapping(KNN_INDEX_MAPPING, XContentType.JSON), RequestOptions.DEFAULT
-//            )
-//            assertThat(createIndexResponse.isAcknowledged).isTrue()
-//        } catch (e: Exception) {
-//            assumeNoException("Could not create Knn index on follower cluster", e)
-//        }
-
         followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore=true)
         // Create document
         var source = mapOf("my_vector1" to listOf(2.5,3.5) , "price" to 7.1)
@@ -126,6 +116,7 @@ class BasicReplicationIT : MultiClusterRestTestCase() {
             assertThat(getResponse.isExists).isTrue()
             assertThat(getResponse.sourceAsMap).isEqualTo(source)
         }, 60L, TimeUnit.SECONDS)
+
         // Update document
         source = mapOf("my_vector1" to listOf(3.5,4.5) , "price" to 12.9)
         response = leaderClient.index(IndexRequest(leaderIndexName).id("1").source(source), RequestOptions.DEFAULT)
@@ -135,6 +126,19 @@ class BasicReplicationIT : MultiClusterRestTestCase() {
             assertThat(getResponse.isExists).isTrue()
             assertThat(getResponse.sourceAsMap).isEqualTo(source)
         },60L, TimeUnit.SECONDS)
+        val KNN_INDEX_MAPPING1 = "{\"properties\":{\"my_vector1\":{\"type\":\"knn_vector\",\"dimension\":2},\"my_vector2\":{\"type\":\"knn_vector\",\"dimension\":4},\"my_vector3\":{\"type\":\"knn_vector\",\"dimension\":4}}}"
+        val updateIndexResponse = leaderClient.indices().putMapping(
+            PutMappingRequest(leaderIndexName).source(KNN_INDEX_MAPPING1, XContentType.JSON) , RequestOptions.DEFAULT
+        )
+        source = mapOf("my_vector3" to listOf(3.1,4.5,5.7,8.9) , "price" to 17.9)
+        response = leaderClient.index(IndexRequest(leaderIndexName).id("2").source(source), RequestOptions.DEFAULT)
+        assertThat(response.result).withFailMessage("Failed to update leader data").isEqualTo(Result.CREATED)
+        assertBusy({
+            val getResponse = followerClient.get(GetRequest(followerIndexName, "2"), RequestOptions.DEFAULT)
+            assertThat(getResponse.isExists).isTrue()
+            assertThat(getResponse.sourceAsMap).isEqualTo(source)
+        },60L, TimeUnit.SECONDS)
+        assertThat(updateIndexResponse.isAcknowledged).isTrue()
         // Delete document
         val deleteResponse = leaderClient.delete(DeleteRequest(leaderIndexName).id("1"), RequestOptions.DEFAULT)
         assertThat(deleteResponse.result).withFailMessage("Failed to delete leader data").isEqualTo(Result.DELETED)
