@@ -45,6 +45,9 @@ import org.opensearch.common.settings.IndexScopedSettings
 import org.opensearch.index.IndexNotFoundException
 import org.opensearch.persistent.PersistentTasksService
 import org.opensearch.replication.ReplicationPlugin
+import org.opensearch.action.admin.indices.settings.get.GetSettingsRequest
+import org.opensearch.replication.ReplicationPlugin.Companion.KNN_INDEX_SETTING
+import org.opensearch.replication.ReplicationPlugin.Companion.KNN_PLUGIN_PRESENT_SETTING
 import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.repositories.RepositoriesService
 import org.opensearch.rest.RestStatus
@@ -95,6 +98,23 @@ class TransportReplicateIndexClusterManagerNodeAction @Inject constructor(transp
                     log.debug("Replication cannot be started as " +
                             "start block(${ReplicationPlugin.REPLICATION_FOLLOWER_BLOCK_START}) is set")
                     throw OpenSearchStatusException("[FORBIDDEN] Replication START block is set", RestStatus.FORBIDDEN)
+                }
+
+
+                val remoteClient = nodeClient.getRemoteClusterClient(replicateIndexReq.leaderAlias)
+                val getSettingsRequest = GetSettingsRequest().includeDefaults(false).indices(replicateIndexReq.leaderIndex)
+                val settingsResponse = remoteClient.suspending(
+                    remoteClient.admin().indices()::getSettings,
+                    injectSecurityContext = true
+                )(getSettingsRequest)
+
+                val leaderSettings = settingsResponse.indexToSettings.get(replicateIndexReq.leaderIndex) ?: throw IndexNotFoundException(replicateIndexReq.leaderIndex)
+
+                // Not starting replication if leader index is knn and knn plugin is not installed on follower.
+                if(leaderSettings.getAsBoolean(KNN_INDEX_SETTING, false)) {
+                    if(clusterService.clusterSettings.get(KNN_PLUGIN_PRESENT_SETTING) == null){
+                        throw IllegalStateException("Cannot start replication for k-NN enabled index ${replicateIndexReq.leaderIndex} as knn plugin is not installed.")
+                     }
                 }
 
                 val remoteMetadata = getRemoteIndexMetadata(replicateIndexReq.leaderAlias, replicateIndexReq.leaderIndex)
