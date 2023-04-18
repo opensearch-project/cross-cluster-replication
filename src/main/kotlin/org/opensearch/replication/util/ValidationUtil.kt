@@ -148,7 +148,7 @@ object ValidationUtil {
     fun checkKNNEligibility(leaderSettings: Settings, clusterService: ClusterService, leaderIndex: String) {
         if(leaderSettings.getAsBoolean(KNN_INDEX_SETTING, false)) {
             if(clusterService.clusterSettings.get(KNN_PLUGIN_PRESENT_SETTING) == null){
-                throw IllegalStateException("Cannot resume replication for k-NN enabled index ${leaderIndex} as knn plugin is not installed.")
+                throw IllegalStateException("Cannot proceed with replication for k-NN enabled index ${leaderIndex} as knn plugin is not installed.")
             }
         }
 
