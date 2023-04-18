@@ -49,7 +49,7 @@ buildscript {
 
 
         // for bwc tests
-        opensearch_previous_version = System.getProperty("bwc_older_version", "2.1.0")
+        opensearch_previous_version = System.getProperty("bwc_older_version", "2.6.0")
         plugin_previous_version = opensearch_previous_version.replaceAll(/(\.\d)([^\d]*)$/, '$1.0$2')
 
         common_utils_version = System.getProperty("common_utils.version", opensearch_build)
@@ -851,8 +851,9 @@ task "fullRestartClusterTask"(type: RestIntegTestTask) {
     - full cluster restart:  oldVersionClusterTask1 --> fullRestartClusterTask
  */
 task "bwcTestSuite"(type: RestIntegTestTask) {
-    useCluster testClusters.bwcLeader0
-    useCluster testClusters.bwcFollower0
+    // Disabling the bwcLeader0 & bwcFollower0 as rolling upgrade has been disabled.
+    //useCluster testClusters.bwcLeader0
+    //useCluster testClusters.bwcFollower0
     useCluster testClusters.bwcLeader1
     useCluster testClusters.bwcFollower1
     doFirst {
@@ -875,8 +876,9 @@ task "bwcTestSuite"(type: RestIntegTestTask) {
     }
     nonInputProperties.systemProperty('tests.cluster_suffix', "1")
     nonInputProperties.systemProperty('tests.bwcTask', "bwcTestSuite")
-    dependsOn tasks.named("mixedClusterTask")
-    dependsOn tasks.named("rollingUpgradeClusterTask")
+    // Disabling the rolling upgrade bwc tests as 2.x -> 3.0 is not supported yet.
+    //dependsOn tasks.named("mixedClusterTask")
+    //dependsOn tasks.named("rollingUpgradeClusterTask")
     dependsOn tasks.named("fullRestartClusterTask")
 }
 
