@@ -36,6 +36,7 @@ import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.metadata.MetadataCreateIndexService
 import org.opensearch.common.inject.Inject
 import org.opensearch.common.settings.Settings
+import org.opensearch.cluster.service.ClusterService
 import org.opensearch.env.Environment
 import org.opensearch.index.IndexNotFoundException
 import org.opensearch.index.IndexSettings
@@ -44,6 +45,7 @@ import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
 
 class TransportReplicateIndexAction @Inject constructor(transportService: TransportService,
+                                                        clusterService: ClusterService,
                                                         val threadPool: ThreadPool,
                                                         actionFilters: ActionFilters,
                                                         private val client : Client,
@@ -53,6 +55,7 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
                 transportService, actionFilters, ::ReplicateIndexRequest),
     CoroutineScope by GlobalScope {
 
+    private  val clusterServiceObject = clusterService
     companion object {
         private val log = LogManager.getLogger(TransportReplicateIndexAction::class.java)
     }
@@ -97,6 +100,8 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
                 if (!leaderSettings.getAsBoolean(IndexSettings.INDEX_SOFT_DELETES_SETTING.key, false)) {
                     throw IllegalArgumentException("Cannot Replicate an index where the setting ${IndexSettings.INDEX_SOFT_DELETES_SETTING.key} is disabled")
                 }
+                //Not starting replication if leader index is knn as knn plugin is not installed on follower.
+                ValidationUtil.checkKNNEligibility(leaderSettings, clusterServiceObject, request.leaderIndex)
 
                 ValidationUtil.validateIndexSettings(
                     environment,

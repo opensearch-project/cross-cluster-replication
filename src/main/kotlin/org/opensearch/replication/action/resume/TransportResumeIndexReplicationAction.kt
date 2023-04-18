@@ -103,12 +103,9 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
 
                 val leaderSettings = settingsResponse.indexToSettings.get(params.leaderIndex.name) ?: throw IndexNotFoundException(params.leaderIndex.name)
 
-                /// Not starting replication if leader index is knn and knn plugin is not installed on follower.
-                if(leaderSettings.getAsBoolean(KNN_INDEX_SETTING, false)) {
-                    if(clusterService.clusterSettings.get(KNN_PLUGIN_PRESENT_SETTING) == null){
-                        throw IllegalStateException("Cannot resume replication for k-NN enabled index ${params.leaderIndex.name} as knn plugin is not installed.")
-                    }
-                }
+                /// Not starting replication if leader index is knn as knn plugin is not installed on follower.
+                ValidationUtil.checkKNNEligibility(leaderSettings, clusterService, params.leaderIndex.name)
+
                 ValidationUtil.validateAnalyzerSettings(environment, leaderSettings, replMetdata.settings)
 
                 replicationMetadataManager.updateIndexReplicationState(request.indexName, ReplicationOverallState.RUNNING)
