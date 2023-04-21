@@ -413,12 +413,9 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         }
     }
 
-    private suspend fun UpdateFollowereMapping(followerIndex: String,mappingSource: String) {
+    private suspend fun updateFollowerMapping(followerIndex: String,mappingSource: String?) {
 
         val options = IndicesOptions.strictSingleIndexNoExpandForbidClosed()
-        if (null == mappingSource) {
-            throw MappingNotAvailableException("MappingSource is not available")
-        }
         val putMappingRequest = PutMappingRequest().indices(followerIndex).indicesOptions(options)
             .source(mappingSource, XContentType.JSON)
         val updateMappingRequest = UpdateMetadataRequest(followerIndex, UpdateMetadataRequest.Type.MAPPING, putMappingRequest)
@@ -581,7 +578,6 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                         break;
                     }
                 }
-
             } catch (e: Exception) {
                 log.error("Error in getting the required metadata ${e.stackTraceToString()}")
             } finally {
