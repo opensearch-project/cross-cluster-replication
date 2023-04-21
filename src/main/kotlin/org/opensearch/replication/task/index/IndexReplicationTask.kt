@@ -569,11 +569,11 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 val options = IndicesOptions.strictSingleIndexNoExpandForbidClosed()
                 var gmr = GetMappingsRequest().indices(this.leaderIndex.name).indicesOptions(options)
                 var mappingResponse = remoteClient.suspending(remoteClient.admin().indices()::getMappings, injectSecurityContext = true)(gmr)
-                var leaderMappingSource = mappingResponse.mappings.get(this.leaderIndex.name).source().toString()
-                val leaderProperties = mappingResponse.mappings().get(this.leaderIndex.name).sourceAsMap().toMap().get("properties") as Map<String,Any>
+                var leaderMappingSource = mappingResponse.mappings.get(this.leaderIndex.name)?.source().toString()
+                val leaderProperties = mappingResponse.mappings().get(this.leaderIndex.name)?.sourceAsMap()?.toMap()?.get("properties") as Map<String,Any>
                 gmr = GetMappingsRequest().indices(this.followerIndexName).indicesOptions(options)
                 mappingResponse = client.suspending(client.admin().indices()::getMappings, injectSecurityContext = true)(gmr)
-                val followerProperties = mappingResponse.mappings().get(this.followerIndexName).sourceAsMap().toMap().get("properties") as Map<String,Any>
+                val followerProperties = mappingResponse.mappings().get(this.followerIndexName)?.sourceAsMap()?.toMap()?.get("properties") as Map<String,Any>
                 for(iter in followerProperties) {
                     if(leaderProperties.containsKey(iter.key) && leaderProperties.getValue(iter.key).toString()!=(iter.value).toString()){
                         log.info("Updating Multi-field Mapping at Follower")
