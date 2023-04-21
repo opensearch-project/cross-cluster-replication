@@ -189,7 +189,6 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         val clusterState = getLeaderClusterState(false, false)
         val shardGenerations = ShardGenerations.builder()
         clusterState.metadata.indices.values.toList()
-            .map { it }
             .forEach { indexMetadata ->
                 val indexId = IndexId(indexMetadata.index.name, indexMetadata.indexUUID)
                 for (i in 0 until indexMetadata.numberOfShards) {
