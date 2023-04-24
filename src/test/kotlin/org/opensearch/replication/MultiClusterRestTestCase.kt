@@ -645,4 +645,6 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
         val integTestRemote = systemProperties.get("tests.integTestRemote") as String?
         return integTestRemote.equals("true")
     }
+
+
 }

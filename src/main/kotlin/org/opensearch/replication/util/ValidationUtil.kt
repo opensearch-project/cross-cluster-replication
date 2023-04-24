@@ -23,6 +23,9 @@ import org.opensearch.common.settings.Settings
 import org.opensearch.env.Environment
 import org.opensearch.index.IndexNotFoundException
 import java.io.UnsupportedEncodingException
+import org.opensearch.cluster.service.ClusterService
+import org.opensearch.replication.ReplicationPlugin.Companion.KNN_INDEX_SETTING
+import org.opensearch.replication.ReplicationPlugin.Companion.KNN_PLUGIN_PRESENT_SETTING
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Locale
@@ -138,4 +141,17 @@ object ValidationUtil {
             throw validationException
         }
     }
+
+    /**
+     * Throw exception if leader index is knn a knn is not installed
+     */
+    fun checkKNNEligibility(leaderSettings: Settings, clusterService: ClusterService, leaderIndex: String) {
+        if(leaderSettings.getAsBoolean(KNN_INDEX_SETTING, false)) {
+            if(clusterService.clusterSettings.get(KNN_PLUGIN_PRESENT_SETTING) == null){
+                throw IllegalStateException("Cannot proceed with replication for k-NN enabled index ${leaderIndex} as knn plugin is not installed.")
+            }
+        }
+
+    }
+
 }
