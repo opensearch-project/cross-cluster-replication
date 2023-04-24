@@ -188,15 +188,14 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
     override fun getRepositoryData(listener: ActionListener<RepositoryData>) {
         val clusterState = getLeaderClusterState(false, false)
         val shardGenerations = ShardGenerations.builder()
-        clusterState.metadata.indices.values()
-                .map { it.value }
-                .forEach { indexMetadata ->
-                    val indexId = IndexId(indexMetadata.index.name, indexMetadata.indexUUID)
-                    for (i in 0 until indexMetadata.numberOfShards) {
-                        // Generations only make sense for eventually consistent BlobStores so just use a dummy value here.
-                        shardGenerations.put(indexId, i, "dummy")
-                    }
+        clusterState.metadata.indices.values
+            .forEach { indexMetadata ->
+                val indexId = IndexId(indexMetadata.index.name, indexMetadata.indexUUID)
+                for (i in 0 until indexMetadata.numberOfShards) {
+                    // Generations only make sense for eventually consistent BlobStores so just use a dummy value here.
+                    shardGenerations.put(indexId, i, "dummy")
                 }
+            }
         val snapshotId = SnapshotId(REMOTE_SNAPSHOT_NAME, REMOTE_SNAPSHOT_NAME.asUUID())
         val repositoryData = RepositoryData.EMPTY
                 .addSnapshot(snapshotId, SnapshotState.SUCCESS, Version.CURRENT, shardGenerations.build(), null, null)
@@ -210,7 +209,7 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
     override fun getSnapshotInfo(snapshotId: SnapshotId): SnapshotInfo {
         val leaderClusterState = getLeaderClusterState(false, false)
         assert(REMOTE_SNAPSHOT_NAME.equals(snapshotId.name), { "SnapshotName differs" })
-        val indices = leaderClusterState.metadata().indices().keys().map { x -> x.value }
+        val indices = leaderClusterState.metadata().indices().keys.toList()
         return SnapshotInfo(snapshotId, indices, emptyList(), SnapshotState.SUCCESS, Version.CURRENT)
     }
 
