@@ -63,12 +63,9 @@ buildscript {
         security_plugin_path = "build/dependencies/security"
         security_plugin_download_url = 'https://ci.opensearch.org/ci/dbc/distribution-build-opensearch/' + opensearch_no_snapshot +
                 '/latest/linux/x64/tar/builds/opensearch/plugins/opensearch-security-' + security_no_snapshot + '.zip'
-        knn_main_version = opensearch_build
-        if (!isSnapshot) {
-            knn_main_version = opensearch_build.replace("-SNAPSHOT","")
-        }
-        knn_plugin_version = knn_main_version
-
+        knn_plugin_path = "build/dependencies/knn"
+        knn_plugin_download_url = 'https://ci.opensearch.org/ci/dbc/distribution-build-opensearch/' + opensearch_no_snapshot +
+                '/latest/linux/x64/tar/builds/opensearch/plugins/opensearch-knn-' + security_no_snapshot + '.zip'
     }
 
     repositories {
@@ -101,6 +98,8 @@ allprojects {
     // Ref: https://github.com/jacoco/jacoco/issues/1187
     jacoco.toolVersion = "0.8.7"
 }
+
+
 
 apply plugin: 'java'
 apply plugin: 'jacoco'
@@ -241,21 +240,20 @@ def securityPluginFile = new Callable<RegularFile>() {
 
 def knnEnabled = findProperty("knn") == "true"
 
-if(knnEnabled == true ){
-    dependencies{
-        opensearchPlugin "org.opensearch.plugin:opensearch-knn:${knn_plugin_version}@zip"
-    }
-}
-
 def knnPluginFile = new Callable<RegularFile>() {
     @Override
     RegularFile call() throws Exception {
         return new RegularFile() {
             @Override
             File getAsFile() {
-                    return configurations.opensearchPlugin.resolvedConfiguration.resolvedArtifacts
-                            .find { ResolvedArtifact f -> f.name.contains('opensearch-knn') }
-                            .file
+                if (new File("$project.rootDir/$knn_plugin_path").exists()) {
+                    project.delete(files("$project.rootDir/$knn_plugin_path"))
+                }
+                project.mkdir knn_plugin_path
+                ant.get(src: knn_plugin_download_url,
+                        dest: knn_plugin_path,
+                        httpusecaches: false)
+                return fileTree(knn_plugin_path).getSingleFile()
             }
         }
     }
