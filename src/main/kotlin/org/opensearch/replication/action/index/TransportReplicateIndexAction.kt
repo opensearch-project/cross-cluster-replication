@@ -36,15 +36,16 @@ import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.metadata.MetadataCreateIndexService
 import org.opensearch.common.inject.Inject
 import org.opensearch.common.settings.Settings
+import org.opensearch.cluster.service.ClusterService
 import org.opensearch.env.Environment
 import org.opensearch.index.IndexNotFoundException
 import org.opensearch.index.IndexSettings
-import org.opensearch.replication.ReplicationPlugin.Companion.KNN_INDEX_SETTING
 import org.opensearch.tasks.Task
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
 
 class TransportReplicateIndexAction @Inject constructor(transportService: TransportService,
+                                                        private val clusterService: ClusterService,
                                                         val threadPool: ThreadPool,
                                                         actionFilters: ActionFilters,
                                                         private val client : Client,
@@ -98,12 +99,8 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
                 if (!leaderSettings.getAsBoolean(IndexSettings.INDEX_SOFT_DELETES_SETTING.key, false)) {
                     throw IllegalArgumentException("Cannot Replicate an index where the setting ${IndexSettings.INDEX_SOFT_DELETES_SETTING.key} is disabled")
                 }
-
-                // For k-NN indices, k-NN loads its own engine and this conflicts with the replication follower engine
-                // Blocking k-NN indices for replication
-                if(leaderSettings.getAsBoolean(KNN_INDEX_SETTING, false)) {
-                    throw IllegalArgumentException("Cannot replicate k-NN index - ${request.leaderIndex}")
-                }
+                //Not starting replication if leader index is knn as knn plugin is not installed on follower.
+                ValidationUtil.checkKNNEligibility(leaderSettings, clusterService, request.leaderIndex)
 
                 ValidationUtil.validateIndexSettings(
                     environment,
