@@ -19,7 +19,7 @@ class ReplicationEngine(config: EngineConfig) : InternalEngine(config) {
 
     override fun assertPrimaryIncomingSequenceNumber(origin: Operation.Origin, seqNo: Long): Boolean {
         assert(origin == Operation.Origin.PRIMARY) { "Expected origin PRIMARY for replicated ops but was $origin" }
-        assert(seqNo != SequenceNumbers.UNASSIGNED_SEQ_NO) { "Expected valid sequence number for replicated op but was unassigned" }
+        assert(seqNo != SequenceNumbers.UNASSIGNED_SEQ_NO) { "Expected valid sequence number for replicated op but was unassigned." }
         return true
     }
 
