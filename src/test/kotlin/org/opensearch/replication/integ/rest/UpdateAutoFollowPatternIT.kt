@@ -168,9 +168,9 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
             assertBusy ({
                 Assert.assertEquals(
                         "3",
-                        followerClient.indices()
-                                .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                                .indexToSettings[leaderIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+                    followerClient.indices()
+                        .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
+                        .indexToSettings[leaderIndexName]?.get(IndexMetadata.SETTING_NUMBER_OF_REPLICAS)
                 )
                 followerClient.waitForShardTaskStart(leaderIndexName, waitForShardTask)
             }, 15, TimeUnit.SECONDS)

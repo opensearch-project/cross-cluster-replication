@@ -22,7 +22,6 @@ import org.opensearch.cluster.block.ClusterBlockException
 import org.opensearch.cluster.block.ClusterBlockLevel
 import org.opensearch.cluster.block.ClusterBlocks
 import org.opensearch.cluster.service.ClusterService
-import org.opensearch.common.collect.ImmutableOpenMap
 import org.opensearch.index.IndexNotFoundException
 import org.opensearch.rest.RestStatus
 import java.util.*
@@ -49,14 +48,16 @@ fun checkIfIndexBlockedWithLevel(clusterService: ClusterService,
                                  clusterBlockLevel: ClusterBlockLevel) {
     clusterService.state().routingTable.index(indexName) ?:
     throw IndexNotFoundException("Index with name:$indexName doesn't exist")
-    val writeIndexBlockMap : ImmutableOpenMap<String, Set<ClusterBlock>> = clusterService.state().blocks()
+    val writeIndexBlockMap : Map<String, Set<ClusterBlock>> = clusterService.state().blocks()
             .indices(clusterBlockLevel)
     if (!writeIndexBlockMap.containsKey(indexName))
         return
-    val clusterBlocksSet : Set<ClusterBlock> = writeIndexBlockMap.get(indexName)
-    if (clusterBlocksSet.contains(INDEX_REPLICATION_BLOCK)
+    val clusterBlocksSet : Set<ClusterBlock>? = writeIndexBlockMap.get(indexName)
+    if (clusterBlocksSet != null) {
+        if (clusterBlocksSet.contains(INDEX_REPLICATION_BLOCK)
             && clusterBlocksSet.size > 1)
-        throw ClusterBlockException(clusterBlocksSet)
+            throw ClusterBlockException(clusterBlocksSet)
+    }
 }
 
 class UpdateIndexBlockTask(val request: UpdateIndexBlockRequest, listener: ActionListener<AcknowledgedResponse>) :

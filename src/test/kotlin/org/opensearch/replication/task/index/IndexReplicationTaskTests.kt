@@ -174,7 +174,7 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
 
         // Try starting shard tasks
         val shardTasks = replicationTask.startNewOrMissingShardTasks()
-        assertThat(shardTasks.size == 2).isTrue
+        assertThat(shardTasks?.size == 2).isTrue
     }
 
 
@@ -208,7 +208,7 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
 
         // Try starting shard tasks
         val shardTasks = replicationTask.startNewOrMissingShardTasks()
-        assertThat(shardTasks.size == 2).isTrue
+        assertThat(shardTasks?.size == 2).isTrue
     }
 
     fun testIsTrackingTaskForIndex() = runBlocking {

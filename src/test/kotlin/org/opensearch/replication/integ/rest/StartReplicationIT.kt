@@ -128,9 +128,9 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         assertBusy ({
             Assert.assertEquals(
                     "3",
-                    followerClient.indices()
-                            .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                            .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+                followerClient.indices()
+                    .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
+                    .indexToSettings[followerIndexName]?.get(IndexMetadata.SETTING_NUMBER_OF_REPLICAS)
             )
         }, 15, TimeUnit.SECONDS)
     }
@@ -289,7 +289,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                 "0",
                 followerClient.indices()
                     .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                    .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+                    .indexToSettings[followerIndexName]?.get(IndexMetadata.SETTING_NUMBER_OF_REPLICAS)
             )
         }, 30L, TimeUnit.SECONDS)
     }
@@ -446,9 +446,8 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         getSettingsRequest.includeDefaults(true)
         Assert.assertEquals(
                 "0",
-                followerClient.indices()
-                        .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                        .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+            followerClient.indices().getSettings(getSettingsRequest, RequestOptions.DEFAULT)
+                .indexToSettings[followerIndexName]?.get(IndexMetadata.SETTING_NUMBER_OF_REPLICAS)
         )
         settings = Settings.builder()
                 .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 2)
@@ -469,14 +468,14 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                 "2",
                 followerClient.indices()
                     .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                    .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+                    .indexToSettings[followerIndexName]?.get(IndexMetadata.SETTING_NUMBER_OF_REPLICAS)
             )
             assertEqualAliases()
         }, 30L, TimeUnit.SECONDS)
         // Case 2 :  Blocklisted  setting are not copied
         Assert.assertNull(followerClient.indices()
                 .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                .indexToSettings[followerIndexName].get("index.routing.allocation.enable"))
+                .indexToSettings[followerIndexName]?.get("index.routing.allocation.enable"))
         //Alias test case 2: Update existing alias
         aliasAction = IndicesAliasesRequest.AliasActions.add()
                 .index(leaderIndexName)
@@ -500,19 +499,19 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                 "3",
                 followerClient.indices()
                     .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                    .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+                    .indexToSettings[followerIndexName]?.get(IndexMetadata.SETTING_NUMBER_OF_REPLICAS)
             )
             Assert.assertEquals(
                 "10s",
                 followerClient.indices()
                     .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                    .indexToSettings[followerIndexName]["index.search.idle.after"]
+                    .indexToSettings[followerIndexName]?.get("index.search.idle.after")
             )
             Assert.assertEquals(
                 "none",
                 followerClient.indices()
                     .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                    .indexToSettings[followerIndexName]["index.routing.allocation.enable"]
+                    .indexToSettings[followerIndexName]?.get("index.routing.allocation.enable")
             )
             assertEqualAliases()
         }, 30L, TimeUnit.SECONDS)
@@ -539,7 +538,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                 null,
                 followerClient.indices()
                     .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                    .indexToSettings[followerIndexName]["index.search.idle.after"]
+                    .indexToSettings[followerIndexName]?.get("index.search.idle.after")
             )
             assertEqualAliases()
         }, 30L, TimeUnit.SECONDS)
@@ -566,9 +565,9 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         getSettingsRequest.indices(followerIndexName)
         Assert.assertEquals(
                 "1",
-                followerClient.indices()
-                        .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                        .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+            followerClient.indices()
+                .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
+                .indexToSettings[followerIndexName]?.get(IndexMetadata.SETTING_NUMBER_OF_REPLICAS)
         )
         settings = Settings.builder()
                 .put("index.shard.check_on_startup", "checksum")
@@ -577,9 +576,9 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         TimeUnit.SECONDS.sleep(SLEEP_TIME_BETWEEN_SYNC)
         Assert.assertEquals(
                 "checksum",
-                followerClient.indices()
-                        .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                        .indexToSettings[followerIndexName]["index.shard.check_on_startup"]
+            followerClient.indices()
+                .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
+                .indexToSettings[followerIndexName]?.get("index.shard.check_on_startup")
         )
     }
 
@@ -1062,9 +1061,9 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             assertBusy ({
                 Assert.assertEquals(
                         "2",
-                        leaderClient.indices()
-                                .getSettings(getLeaderSettingsRequest, RequestOptions.DEFAULT)
-                                .indexToSettings[leaderIndexName][IndexMetadata.SETTING_WAIT_FOR_ACTIVE_SHARDS.getKey()]
+                    leaderClient.indices()
+                        .getSettings(getLeaderSettingsRequest, RequestOptions.DEFAULT)
+                        .indexToSettings[leaderIndexName]?.get(IndexMetadata.SETTING_WAIT_FOR_ACTIVE_SHARDS.getKey())
                 )
             }, 15, TimeUnit.SECONDS)
 
@@ -1122,9 +1121,9 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             assertBusy ({
                 Assert.assertEquals(
                         "2",
-                        leaderClient.indices()
-                                .getSettings(getLeaderSettingsRequest, RequestOptions.DEFAULT)
-                                .indexToSettings[leaderIndexName][IndexMetadata.SETTING_WAIT_FOR_ACTIVE_SHARDS.getKey()]
+                    leaderClient.indices()
+                        .getSettings(getLeaderSettingsRequest, RequestOptions.DEFAULT)
+                        .indexToSettings[leaderIndexName]?.get(IndexMetadata.SETTING_WAIT_FOR_ACTIVE_SHARDS.getKey())
                 )
             }, 15, TimeUnit.SECONDS)
 
@@ -1174,9 +1173,9 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             assertBusy ({
                 Assert.assertEquals(
                         "2",
-                        followerClient.indices()
-                                .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                                .indexToSettings[followerIndexName][IndexMetadata.SETTING_WAIT_FOR_ACTIVE_SHARDS.getKey()]
+                    followerClient.indices()
+                        .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
+                        .indexToSettings[followerIndexName]?.get(IndexMetadata.SETTING_WAIT_FOR_ACTIVE_SHARDS.getKey())
                 )
             }, 15, TimeUnit.SECONDS)
         } finally {

@@ -126,9 +126,9 @@ class SecurityDlsFlsIT: SecurityBase() {
         getSettingsRequest.indices(followerIndexName)
         Assert.assertEquals(
                 "1",
-                followerClient.indices()
-                        .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                        .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+            followerClient.indices()
+                .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
+                .indexToSettings[followerIndexName]?.get(IndexMetadata.SETTING_NUMBER_OF_REPLICAS)
         )
         settings = Settings.builder()
                 .put("index.shard.check_on_startup", "checksum")
