@@ -92,7 +92,6 @@ import org.opensearch.persistent.PersistentTasksCustomMetadata.PersistentTask
 import org.opensearch.persistent.PersistentTasksNodeService
 import org.opensearch.persistent.PersistentTasksService
 import org.opensearch.replication.ReplicationException
-import org.opensearch.replication.MappingNotAvailableException
 import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING
 import org.opensearch.rest.RestStatus
 import org.opensearch.tasks.TaskId
@@ -189,7 +188,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                     ReplicationState.INIT_FOLLOW -> {
                         log.info("Starting shard tasks")
                         addIndexBlockForReplication()
-                        startNewOrMissingShardTasks()?.let { FollowingState(it) }
+                        FollowingState(startNewOrMissingShardTasks())
 
                     }
                     ReplicationState.FOLLOWING -> {
@@ -214,7 +213,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                             state
                         } else {
                             state = pollShardTaskStatus()
-                            followingTaskState = startNewOrMissingShardTasks()?.let { FollowingState(it) }!!
+                            followingTaskState = FollowingState(startNewOrMissingShardTasks())
                             when (state) {
                                 is MonitoringState -> {
                                     updateMetadata()
@@ -240,7 +239,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                     }
                 }
                 if (newState != currentTaskState) {
-                    currentTaskState = newState?.let { updateState(it) }!!
+                    currentTaskState = updateState(newState)
                 }
                 if (isCompleted) break
             } catch(e: ReplicationException) {
@@ -349,7 +348,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
             ?.stream()?.collect(Collectors.toSet())
         val runningShardTasksForIndex = persistentTasks.findTasks(ShardReplicationExecutor.TASK_NAME, Predicate { true }).stream()
                 .map { task -> task.params as ShardReplicationParams }
-                .filter {taskParam -> followerShardIds?.contains(taskParam.followerShardId) ?: true }
+            .filter {taskParam -> followerShardIds?.contains(taskParam.followerShardId)!! }
                 .collect(Collectors.toList())
 
         if (runningShardTasksForIndex.size != followerShardIds?.size) {
@@ -467,7 +466,8 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                     }
                 }
                 val desiredSettings = desiredSettingsBuilder.build()
-
+                log.info("monu singh")
+                log.info("Desired settings $desiredSettings")
                 val changedSettingsBuilder = Settings.builder()
                 for(key in desiredSettings.keySet()) {
                     if (desiredSettings.get(key) != followerSettings?.get(key)) {
@@ -484,7 +484,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                     }
                 }
 
-                for (key in followerSettings?.keySet()?: emptySet()) {
+                for (key in followerSettings?.keySet()!!) {
                     val setting = indexScopedSettings[key]
                     if (setting == null || setting.isPrivateIndex) {
                         continue
@@ -530,7 +530,8 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 } else {
                     log.info("All aliases are not equal on $followerIndexName. Will sync up them")
                     request  = IndicesAliasesRequest()
-                    var toAdd = followerAliases?.let { leaderAliases?.minus(it.toMutableList()) }
+                    log.info("monu singh2")
+                    var toAdd = followerAliases?.let { leaderAliases?.minus(it.toMutableList().toSet()) }
 
                     if (toAdd != null) {
                         for (alias in toAdd) {
@@ -550,7 +551,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                             request.addAliasAction(aliasAction)
                         }
                     }
-
+                    log.info("monu singh4")
                     var toRemove = followerAliases?.let { leaderAliases?.minus(it.toMutableList()) }
 
                     if (toRemove != null) {

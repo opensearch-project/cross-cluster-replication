@@ -150,7 +150,7 @@ data class FailedState(val failedShards: Map<ShardId, PersistentTask<ShardReplic
 /**
  * State when index is being actively replicated.
  */
-data class FollowingState(val shardReplicationTasks: Map<ShardId, PersistentTask<ShardReplicationParams>>)
+data class FollowingState(val shardReplicationTasks: Map<ShardId, PersistentTask<ShardReplicationParams>>?)
     : IndexReplicationState(ReplicationState.FOLLOWING) {
 
     constructor(inp: StreamInput) : this(inp.readMap(::ShardId, ::PersistentTask))
@@ -162,7 +162,7 @@ data class FollowingState(val shardReplicationTasks: Map<ShardId, PersistentTask
 
     override fun toXContent(builder: XContentBuilder, params: ToXContent.Params?): XContentBuilder {
         return builder.startObject()
-            .field("shard_replication_tasks").map(shardReplicationTasks.mapKeys { it.key.toString() })
+            .field("shard_replication_tasks").map(shardReplicationTasks?.mapKeys { it.key.toString() })
             .field("state", state)
             .endObject()
     }

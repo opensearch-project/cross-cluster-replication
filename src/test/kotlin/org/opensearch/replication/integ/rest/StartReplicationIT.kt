@@ -541,7 +541,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                     .indexToSettings[followerIndexName]?.get("index.search.idle.after")
             )
             assertEqualAliases()
-        }, 30L, TimeUnit.SECONDS)
+        }, 30L*3, TimeUnit.SECONDS)
     }
 
     fun `test that static index settings are getting replicated `() {

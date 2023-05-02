@@ -239,10 +239,13 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
 
         val indexMdBuilder = IndexMetadata.builder(indexMetadata).settings(builder)
         indexMetadata.aliases.values.forEach {
+            log.info("monu singh1")
             indexMdBuilder.putAlias(it)
         }
         return indexMdBuilder.build()
     }
+
+
 
     /*
      * Step 5: restore shard by fetching the lucene segments from the leader cluster
