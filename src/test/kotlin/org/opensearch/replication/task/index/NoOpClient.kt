@@ -109,11 +109,8 @@ open class NoOpClient(testName :String) : NoOpNodeClient(testName) {
             val indexToSettings = HashMap<String, Settings>()
             indexToSettings[IndexReplicationTaskTests.followerIndex] =  desiredSettingsBuilder.build()
 
-
             val settingsMap = indexToSettings.toMutableMap()
-
             var settingResponse = GetSettingsResponse(settingsMap, settingsMap)
-
             listener.onResponse(settingResponse as Response)
         } else if (action == RecoveryAction.INSTANCE) {
             val shardRecoveryStates: MutableMap<String, List<RecoveryState>> = HashMap()

@@ -466,8 +466,6 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                     }
                 }
                 val desiredSettings = desiredSettingsBuilder.build()
-                log.info("monu singh")
-                log.info("Desired settings $desiredSettings")
                 val changedSettingsBuilder = Settings.builder()
                 for(key in desiredSettings.keySet()) {
                     if (desiredSettings.get(key) != followerSettings?.get(key)) {
@@ -499,6 +497,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                         changedSettingsBuilder.putNull(key)
                     }
                 }
+
                 val changedSettings = changedSettingsBuilder.build()
 
                 var updateSettingsRequest :UpdateSettingsRequest?
@@ -522,6 +521,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 var followerAliases = getAliasesRes.aliases.get(followerIndexName)
 
                 var request  :IndicesAliasesRequest?
+
                 if (leaderAliases == followerAliases) {
                     log.debug("All aliases equal")
                     request = null
@@ -558,6 +558,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                         }
                     }
                 }
+
                 if (updateSettingsRequest != null || request != null) {
                     metadataUpdate = MetadataUpdate(updateSettingsRequest, request, staticUpdated)
                 } else {
