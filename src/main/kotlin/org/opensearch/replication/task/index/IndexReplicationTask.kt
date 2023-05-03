@@ -499,7 +499,6 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                         changedSettingsBuilder.putNull(key)
                     }
                 }
-
                 val changedSettings = changedSettingsBuilder.build()
 
                 var updateSettingsRequest :UpdateSettingsRequest?
@@ -523,15 +522,14 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 var followerAliases = getAliasesRes.aliases.get(followerIndexName)
 
                 var request  :IndicesAliasesRequest?
-
                 if (leaderAliases == followerAliases) {
                     log.debug("All aliases equal")
                     request = null
                 } else {
                     log.info("All aliases are not equal on $followerIndexName. Will sync up them")
                     request  = IndicesAliasesRequest()
-                    log.info("monu singh2")
-                    var toAdd = followerAliases?.let { leaderAliases?.minus(it.toMutableList().toSet()) }
+
+                    var toAdd = followerAliases?.let { leaderAliases?.minus(it.toMutableList()) }
 
                     if (toAdd != null) {
                         for (alias in toAdd) {
@@ -547,12 +545,10 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                             if (alias.filteringRequired())  {
                                 aliasAction = aliasAction.filter(alias.filter.string())
                             }
-
                             request.addAliasAction(aliasAction)
                         }
                     }
-                    log.info("monu singh4")
-                    var toRemove = followerAliases?.let { leaderAliases?.minus(it.toMutableList()) }
+                    var toRemove = leaderAliases?.let { followerAliases?.minus(it.toMutableList()) }
 
                     if (toRemove != null) {
                         for (alias in toRemove) {
@@ -562,7 +558,6 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                         }
                     }
                 }
-
                 if (updateSettingsRequest != null || request != null) {
                     metadataUpdate = MetadataUpdate(updateSettingsRequest, request, staticUpdated)
                 } else {
