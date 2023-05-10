@@ -30,7 +30,6 @@ import org.opensearch.action.get.GetResponse
 import org.opensearch.action.support.master.AcknowledgedResponse
 import org.opensearch.common.UUIDs
 import org.opensearch.common.bytes.BytesReference
-import org.opensearch.common.collect.ImmutableOpenMap
 import org.opensearch.common.settings.Settings
 import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.common.xcontent.XContentFactory
@@ -55,8 +54,7 @@ import org.opensearch.snapshots.RestoreInfo
 import org.opensearch.test.OpenSearchTestCase
 import org.opensearch.test.client.NoOpNodeClient
 import java.lang.reflect.Field
-import java.util.ArrayList
-import java.util.HashMap
+import java.util.*
 
 open class NoOpClient(testName :String) : NoOpNodeClient(testName) {
     @Override
@@ -109,9 +107,7 @@ open class NoOpClient(testName :String) : NoOpNodeClient(testName) {
 
             val indexToSettings = HashMap<String, Settings>()
             indexToSettings[IndexReplicationTaskTests.followerIndex] =  desiredSettingsBuilder.build()
-
-            val settingsMap = ImmutableOpenMap.builder<String, Settings>().putAll(indexToSettings).build()
-            var settingResponse = GetSettingsResponse(settingsMap, settingsMap)
+            var settingResponse = GetSettingsResponse(indexToSettings, indexToSettings)
             listener.onResponse(settingResponse as Response)
         } else if (action == RecoveryAction.INSTANCE) {
             val shardRecoveryStates: MutableMap<String, List<RecoveryState>> = HashMap()
