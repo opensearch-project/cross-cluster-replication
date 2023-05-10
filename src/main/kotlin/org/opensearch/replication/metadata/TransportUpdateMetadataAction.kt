@@ -274,8 +274,8 @@ class TransportUpdateMetadataAction @Inject constructor(
             val indexAsArray = arrayOf(concreteIndex)
             val aliasMetadata = metadata.findAliases(action, indexAsArray)
             val finalAliases: MutableList<String> = ArrayList()
-            for (curAliases in aliasMetadata.values()) {
-                for (aliasMeta in curAliases.value) {
+            for (curAliases in aliasMetadata.values) {
+                for (aliasMeta in curAliases) {
                     finalAliases.add(aliasMeta.alias())
                 }
             }
