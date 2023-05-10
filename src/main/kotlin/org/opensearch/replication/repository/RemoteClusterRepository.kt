@@ -244,7 +244,7 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         builder.remove(REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING.key)
 
         val indexMdBuilder = IndexMetadata.builder(indexMetadata).settings(builder)
-        indexMetadata.aliases.valuesIt().forEach {
+        indexMetadata.aliases.values.forEach {
             indexMdBuilder.putAlias(it)
         }
         return indexMdBuilder.build()

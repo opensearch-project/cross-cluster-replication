@@ -228,7 +228,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
                 "1",
                 followerClient.indices()
                         .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                        .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+                    .indexToSettings.getOrDefault(followerIndexName, Settings.EMPTY)[IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
         )
 
         settings = Settings.builder()
@@ -243,7 +243,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
                     "checksum",
                     followerClient.indices()
                             .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                            .indexToSettings[followerIndexName]["index.shard.check_on_startup"]
+                            .indexToSettings.getOrDefault(followerIndexName, Settings.EMPTY)["index.shard.check_on_startup"]
             )
         }, 30L, TimeUnit.SECONDS)
     }
@@ -273,7 +273,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
                 "1",
                 followerClient.indices()
                         .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                        .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+                        .indexToSettings.getOrDefault(followerIndexName, Settings.EMPTY)[IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
         )
         settings = Settings.builder()
                 .put("index.shard.check_on_startup", "checksum")
