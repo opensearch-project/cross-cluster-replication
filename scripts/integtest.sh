@@ -97,12 +97,18 @@ then
 
   leader=$(echo  $data | cut -d ',' -f1 | cut -d ':' -f1,2 )
   follower=$(echo $data  |  cut -d ',' -f2 | cut -d ':' -f1,2 )
+  echo "leader: $leader"
+  echo "follower: $follower"
   
   # Get number of nodes, assuming both leader and follower have same number of nodes
   numNodes=$((${follower##*:} - ${leader##*:}))
+  echo "numNodes: $numNodes"
   
   LTRANSPORT_PORT=$(echo  $data | cut -d ',' -f1 | cut -d ':' -f1,3 )
   FTRANSPORT_PORT=$(echo $data  |  cut -d ',' -f2 | cut -d ':' -f1,3 )
+  echo "LTRANSPORT_PORT: $LTRANSPORT_PORT"
+  echo "FTRANSPORT_PORT: $FTRANSPORT_PORT"
+  
   eval "./gradlew integTestRemote -Dleader.http_host=\"$leader\" -Dfollower.http_host=\"$follower\" -Dfollower.transport_host=\"$FTRANSPORT_PORT\"  -Dleader.transport_host=\"$LTRANSPORT_PORT\"  -Dsecurity_enabled=\"$SECURITY_ENABLED\" -Duser=\"$USERNAME\" -Dpassword=\"$PASSWORD\" -PnumNodes=$numNodes --console=plain "
 
 else
