@@ -78,7 +78,7 @@ class RemoteClusterRetentionLeaseHelper constructor(val followerClusterName: Str
             val params = IndexReplicationParams(replMetadata.connectionName, remoteMetadata.index, followerIndexName)
             val remoteClient = client.getRemoteClusterClient(params.leaderAlias)
             val shards = clusterService.state().routingTable.indicesRouting().get(params.followerIndexName)?.shards()
-            val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
+            val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.state().metadata.clusterUUID()+ ":" + clusterService.clusterName.value(), remoteClient)
             shards?.forEach {
                 val followerShardId = it.value.shardId
                 log.debug("Removing lease for $followerShardId.id ")

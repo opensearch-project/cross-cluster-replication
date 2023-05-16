@@ -132,7 +132,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
     override val followerIndexName = params.followerIndexName
 
     override val log = Loggers.getLogger(javaClass, Index(params.followerIndexName, ClusterState.UNKNOWN_UUID))
-    private val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
+    private val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.state().metadata.clusterUUID() + ":" + clusterService.clusterName.value(), remoteClient)
     private var shouldCallEvalMonitoring = true
     private var updateSettingsContinuousFailCount = 0
     private var updateAliasContinousFailCount = 0

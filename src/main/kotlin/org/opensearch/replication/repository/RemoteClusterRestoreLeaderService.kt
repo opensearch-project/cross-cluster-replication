@@ -25,6 +25,7 @@ import org.opensearch.common.util.io.IOUtils
 import org.opensearch.index.seqno.RetentionLeaseActions
 import org.opensearch.index.store.Store
 import org.opensearch.indices.IndicesService
+import org.opensearch.replication.task.index.IndexReplicationExecutor.Companion.log
 import java.io.Closeable
 import java.io.IOException
 
@@ -88,6 +89,7 @@ class RemoteClusterRestoreLeaderService @Inject constructor(private val indicesS
         val leaderIndexShard = indicesService.getShardOrNull(request.leaderShardId)
                 ?: throw OpenSearchException("Shard [$request.leaderShardId] missing")
         // Passing nodeclient of the leader to acquire the retention lease on leader shard
+        //request.followerCluster is clusteruuid + ":" + followerClusterName
         val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(request.followerCluster, nodeClient)
         /**
          * ODFE Replication supported for >= ES 7.8. History of operations directly from
