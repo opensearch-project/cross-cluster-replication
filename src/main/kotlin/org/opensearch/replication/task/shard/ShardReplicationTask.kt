@@ -201,10 +201,11 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         try {
             //Retention leases preserve the operations including and starting from the retainingSequenceNumber we specify when we take the lease .
             //hence renew retention lease with lastSyncedGlobalCheckpoint + 1
-//            retentionLeaseHelper.renewRetentionLease(leaderShardId, indexShard.lastSyncedGlobalCheckpoint + 1, followerShardId)
-        }catch (ex: Exception){
-//        } catch (ex: RetentionLeaseNotFoundException) {
-//            addNewRetentionLeaseIfOldIdExists(indexShard)
+            retentionLeaseHelper.renewRetentionLease(leaderShardId, indexShard.lastSyncedGlobalCheckpoint + 1, followerShardId)
+        }catch (ex: RetentionLeaseNotFoundException){
+            addNewRetentionLeaseIfOldIdExists(indexShard)
+        }
+        catch (ex: Exception){
             // In case of a failure, we just log it and move on. All failures scenarios are being handled below with
             // retries and backoff depending on exception.
             log.error("Retention lease renewal failed: ${ex.stackTraceToString()}")
@@ -301,7 +302,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         var oldRetentionLeaseHelper =
             RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
         if (oldRetentionLeaseHelper.verifyRetentionLeaseExist(leaderShardId, followerShardId)) {
-            // Retention lease is present
+            // Old Retention lease is present, adding new retention lease
             retentionLeaseHelper.addRetentionLease(
                 leaderShardId,
                 indexShard.lastSyncedGlobalCheckpoint + 1,
