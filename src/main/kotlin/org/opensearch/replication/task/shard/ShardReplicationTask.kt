@@ -44,9 +44,9 @@ import org.opensearch.cluster.ClusterChangedEvent
 import org.opensearch.cluster.ClusterStateListener
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.logging.Loggers
-import org.opensearch.index.seqno.RetentionLeaseActions
 import org.opensearch.index.seqno.RetentionLeaseInvalidRetainingSeqNoException
 import org.opensearch.index.seqno.RetentionLeaseNotFoundException
+import org.opensearch.index.shard.IndexShard
 import org.opensearch.index.shard.ShardId
 import org.opensearch.persistent.PersistentTaskState
 import org.opensearch.persistent.PersistentTasksNodeService
@@ -198,27 +198,13 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         updateTaskState(FollowingState)
         val followerIndexService = indicesService.indexServiceSafe(followerShardId.index)
         val indexShard = followerIndexService.getShard(followerShardId.id)
-
-
         try {
             //Retention leases preserve the operations including and starting from the retainingSequenceNumber we specify when we take the lease .
             //hence renew retention lease with lastSyncedGlobalCheckpoint + 1
-            retentionLeaseHelper.renewRetentionLease(leaderShardId, indexShard.lastSyncedGlobalCheckpoint + 1, followerShardId)
-        } catch (ex: RetentionLeaseNotFoundException) {
-           //have to simplify this
-            try {
-                var oldRetentionLeaseHelper = RemoteClusterRetentionLeaseHelper( clusterService.clusterName.value(), remoteClient)
-                if (oldRetentionLeaseHelper.verifyRetentionLeaseExist(leaderShardId, followerShardId)) {
-                    // Retention lease is present
-                    retentionLeaseHelper.addRetentionLease(leaderShardId,indexShard.lastSyncedGlobalCheckpoint + 1,followerShardId, RemoteClusterRepository.REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC)
-                } else {
-                    throw Exception("Old retention ID not found")
-                }
-
-            }catch (ex: Exception){
-                    log.info("bottle 100")
-            }
-
+//            retentionLeaseHelper.renewRetentionLease(leaderShardId, indexShard.lastSyncedGlobalCheckpoint + 1, followerShardId)
+        }catch (ex: Exception){
+//        } catch (ex: RetentionLeaseNotFoundException) {
+//            addNewRetentionLeaseIfOldIdExists(indexShard)
             // In case of a failure, we just log it and move on. All failures scenarios are being handled below with
             // retries and backoff depending on exception.
             log.error("Retention lease renewal failed: ${ex.stackTraceToString()}")
@@ -309,6 +295,24 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
             }
         }
         sequencer.close()
+    }
+
+    private suspend fun addNewRetentionLeaseIfOldIdExists(indexShard: IndexShard) = try {
+        var oldRetentionLeaseHelper =
+            RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
+        if (oldRetentionLeaseHelper.verifyRetentionLeaseExist(leaderShardId, followerShardId)) {
+            // Retention lease is present
+            retentionLeaseHelper.addRetentionLease(
+                leaderShardId,
+                indexShard.lastSyncedGlobalCheckpoint + 1,
+                followerShardId,
+                RemoteClusterRepository.REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC
+            )
+        } else {
+            log.error("Old retention lease not found")
+        }
+    } catch (ex: Exception) {
+        log.error("Retention lease renewal failed: ${ex.stackTraceToString()}")
     }
 
     private suspend fun getChanges(fromSeqNo: Long, toSeqNo: Long): GetChangesResponse {

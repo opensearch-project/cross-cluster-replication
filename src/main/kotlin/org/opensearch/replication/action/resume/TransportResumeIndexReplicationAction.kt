@@ -131,9 +131,8 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
         val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.state().metadata.clusterUUID() + ":" + clusterService.clusterName.value(), remoteClient)
         val oldRetentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
 
-        if (shards != null) {
-            for(shard in shards){
-                val followerShardId = shard.value.shardId
+           shards?.forEach(){
+                val followerShardId = it.value.shardId
                 if  (!retentionLeaseHelper.verifyRetentionLeaseExist(ShardId(params.leaderIndex, followerShardId.id), followerShardId)) {
                     //Remove retention lease taken during checking for existence
                     retentionLeaseHelper.attemptRetentionLeaseRemoval(ShardId(params.leaderIndex, followerShardId.id), followerShardId)
@@ -149,11 +148,9 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
                         retentionLeaseHelper.addRetentionLease(ShardId(params.leaderIndex, followerShardId.id),
                             indexShard.lastSyncedGlobalCheckpoint+1,followerShardId, RemoteClusterRepository.REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC)
 
-
                     }
                 }
             }
-        }
         return true
     }
 
