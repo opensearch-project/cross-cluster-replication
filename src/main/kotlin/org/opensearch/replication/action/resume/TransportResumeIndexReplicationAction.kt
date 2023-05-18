@@ -21,13 +21,6 @@ import org.opensearch.replication.task.ReplicationState
 import org.opensearch.replication.task.index.IndexReplicationExecutor
 import org.opensearch.replication.task.index.IndexReplicationParams
 import org.opensearch.replication.task.index.IndexReplicationState
-import org.opensearch.replication.util.ValidationUtil
-import org.opensearch.replication.util.completeWith
-import org.opensearch.replication.util.coroutineContext
-import org.opensearch.replication.util.persistentTasksService
-import org.opensearch.replication.util.startTask
-import org.opensearch.replication.util.suspending
-import org.opensearch.replication.util.waitForTaskCondition
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
@@ -55,6 +48,7 @@ import org.opensearch.common.io.stream.StreamInput
 import org.opensearch.env.Environment
 import org.opensearch.index.IndexNotFoundException
 import org.opensearch.index.shard.ShardId
+import org.opensearch.replication.util.*
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
 import java.io.IOException
@@ -132,10 +126,14 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
         var isResumable = true
         val remoteClient = client.getRemoteClusterClient(params.leaderAlias)
         val shards = clusterService.state().routingTable.indicesRouting().get(params.followerIndexName)?.shards()
-        val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
+        val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.state().metadata.clusterUUID(),clusterService.clusterName.value(), remoteClient)
         shards?.forEach {
             val followerShardId = it.value.shardId
-            if  (!retentionLeaseHelper.verifyRetentionLeaseExist(ShardId(params.leaderIndex, followerShardId.id), followerShardId)) {
+
+            val followerIndexService = indicesService.indexServiceSafe(followerShardId.index)
+            val indexShard = followerIndexService.getShard(followerShardId.id)
+
+            if  (!retentionLeaseHelper.verifyRetentionLeaseExist(ShardId(params.leaderIndex, followerShardId.id), followerShardId, indexShard.lastSyncedGlobalCheckpoint+1)) {
                 isResumable = false
             }
         }

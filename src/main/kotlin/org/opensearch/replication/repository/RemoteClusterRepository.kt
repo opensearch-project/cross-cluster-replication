@@ -280,7 +280,7 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
                 snapshotShardId.id)
         restoreUUID = UUIDs.randomBase64UUID()
         val getStoreMetadataRequest = GetStoreMetadataRequest(restoreUUID, leaderShardNode, leaderShardId,
-                clusterService.clusterName.value(), followerShardId)
+                clusterService.state().metadata.clusterUUID() + ":" + clusterService.clusterName.value(), followerShardId)
 
         // Gets the remote store metadata
         val metadataResponse = executeActionOnRemote(GetStoreMetadataAction.INSTANCE, getStoreMetadataRequest, followerIndexName)
