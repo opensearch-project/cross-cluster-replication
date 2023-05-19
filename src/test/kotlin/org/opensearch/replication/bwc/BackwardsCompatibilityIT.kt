@@ -145,15 +145,17 @@ class BackwardsCompatibilityIT : MultiClusterRestTestCase() {
                 Assertions.assertThat(getResponse.sourceAsMap).isEqualTo(source)
             }, 60, TimeUnit.SECONDS)
 
-            assertBusy ({
-
+            //Check for latest retention lease when full cluster restart is done
+            if(ClusterStatus.from(System.getProperty("tests.bwcTask")) == ClusterStatus.FULL_CLUSTER_RESTART){
+                assertBusy ({
                     val followerClusterInfo : Map<String, Any>   = OpenSearchRestTestCase.entityAsMap(follower.lowLevelClient.performRequest(Request("GET", "/")))
                     val clusterUUID = (followerClusterInfo["cluster_uuid"] as String)
                     assert(clusterUUID.isNotEmpty())
                     val retentionLeaseinfo = leader.lowLevelClient.performRequest(Request("GET", "/$LEADER_INDEX/_stats/docs?level=shards"))
                     val retentionLeaseInfoString = EntityUtils.toString(retentionLeaseinfo.entity)
                     assertTrue(retentionLeaseInfoString.contains(clusterUUID))
-            }, 60, TimeUnit.SECONDS)
+                }, 60, TimeUnit.SECONDS)
+            }
 
         } catch (e: Exception) {
             logger.info("Exception while verifying the replication ${e.printStackTrace()}")
