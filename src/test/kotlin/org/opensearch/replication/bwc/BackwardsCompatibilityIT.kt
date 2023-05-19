@@ -146,14 +146,13 @@ class BackwardsCompatibilityIT : MultiClusterRestTestCase() {
             }, 60, TimeUnit.SECONDS)
 
             assertBusy ({
-                assertBusy{
+
                     val followerClusterInfo : Map<String, Any>   = OpenSearchRestTestCase.entityAsMap(follower.lowLevelClient.performRequest(Request("GET", "/")))
                     val clusterUUID = (followerClusterInfo["cluster_uuid"] as String)
                     assert(clusterUUID.isNotEmpty())
                     val retentionLeaseinfo = leader.lowLevelClient.performRequest(Request("GET", "/$LEADER_INDEX/_stats/docs?level=shards"))
                     val retentionLeaseInfoString = EntityUtils.toString(retentionLeaseinfo.entity)
                     assertTrue(retentionLeaseInfoString.contains(clusterUUID))
-                }
             }, 60, TimeUnit.SECONDS)
 
         } catch (e: Exception) {

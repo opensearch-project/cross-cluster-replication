@@ -182,7 +182,6 @@ class RemoteClusterRetentionLeaseHelper constructor(var followerClusterNameWithU
     public fun addRetentionLease(leaderShardId: ShardId, seqNo: Long,
                                  followerShardId: ShardId, timeout: Long) {
         val retentionLeaseId = retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)
-        log.info("bottle 1, adding retention lease id with id ${retentionLeaseId}")
         val request = RetentionLeaseActions.AddRequest(leaderShardId, retentionLeaseId, seqNo, retentionLeaseSource)
         try {
             client.execute(RetentionLeaseActions.Add.INSTANCE, request).actionGet(timeout)
