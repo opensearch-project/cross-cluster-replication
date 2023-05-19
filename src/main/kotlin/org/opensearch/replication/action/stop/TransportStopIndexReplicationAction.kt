@@ -140,6 +140,7 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
             } catch (e: Exception) {
                 log.error("Stop replication failed for index[${request.indexName}] with error ${e.stackTraceToString()}")
                 listener.onFailure(e)
+
             }
         }
     }

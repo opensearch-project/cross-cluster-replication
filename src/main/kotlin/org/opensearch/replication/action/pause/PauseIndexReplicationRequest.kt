@@ -43,6 +43,12 @@ class PauseIndexReplicationRequest : AcknowledgedRequest<PauseIndexReplicationRe
         reason = inp.readString()
     }
 
+    constructor(index: String): super() {
+        indexName = index
+
+    }
+
+
     companion object {
         private val PARSER = ObjectParser<PauseIndexReplicationRequest, Void>("PauseReplicationRequestParser") {
             PauseIndexReplicationRequest()

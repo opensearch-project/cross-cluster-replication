@@ -92,7 +92,6 @@ import org.opensearch.persistent.PersistentTasksCustomMetadata.PersistentTask
 import org.opensearch.persistent.PersistentTasksNodeService
 import org.opensearch.persistent.PersistentTasksService
 import org.opensearch.replication.ReplicationException
-import org.opensearch.replication.MappingNotAvailableException
 import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING
 import org.opensearch.rest.RestStatus
 import org.opensearch.tasks.TaskId
@@ -104,8 +103,6 @@ import java.util.stream.Collectors
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
-import kotlin.streams.toList
-import org.opensearch.cluster.DiffableUtils
 
 open class IndexReplicationTask(id: Long, type: String, action: String, description: String,
                            parentTask: TaskId,

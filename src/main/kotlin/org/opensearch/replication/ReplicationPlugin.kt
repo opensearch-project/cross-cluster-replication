@@ -144,6 +144,16 @@ import java.util.Optional
 import java.util.function.Supplier
 
 import org.opensearch.index.engine.NRTReplicationEngine
+import org.opensearch.replication.action.bulk.CancelBulkReplicationTaskAction
+import org.opensearch.replication.action.bulk.TransportCancelBulkReplicationTaskAction
+import org.opensearch.replication.action.bulk.pause.BulkPauseReplicationAction
+import org.opensearch.replication.action.bulk.pause.TransportPauseReplicationAction
+import org.opensearch.replication.action.bulk.stop.BulkStopReplicationAction
+import org.opensearch.replication.action.bulk.stop.TransportBulkStopReplicationAction
+import org.opensearch.replication.rest.bulk.BulkPauseIndexReplicationHandler
+import org.opensearch.replication.rest.bulk.BulkStopReplicationHandler
+import org.opensearch.replication.rest.bulk.CancelBulkReplicationTaskHandler
+import org.opensearch.replication.task.bulk.BulkExecuter
 
 
 @OpenForTesting
@@ -238,7 +248,10 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             ActionHandler(ReplicationStatusAction.INSTANCE,TransportReplicationStatusAction::class.java),
             ActionHandler(LeaderStatsAction.INSTANCE, TransportLeaderStatsAction::class.java),
             ActionHandler(FollowerStatsAction.INSTANCE, TransportFollowerStatsAction::class.java),
-            ActionHandler(AutoFollowStatsAction.INSTANCE, TransportAutoFollowStatsAction::class.java)
+            ActionHandler(AutoFollowStatsAction.INSTANCE, TransportAutoFollowStatsAction::class.java),
+            ActionHandler(BulkStopReplicationAction.INSTANCE, TransportBulkStopReplicationAction::class.java),
+            ActionHandler(BulkPauseReplicationAction.INSTANCE, TransportPauseReplicationAction::class.java),
+            ActionHandler(CancelBulkReplicationTaskAction.INSTANCE, TransportCancelBulkReplicationTaskAction::class.java)
         )
     }
 
@@ -256,7 +269,10 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             ReplicationStatusHandler(),
             LeaderStatsHandler(),
             FollowerStatsHandler(),
-            AutoFollowStatsHandler())
+            AutoFollowStatsHandler(),
+            BulkStopReplicationHandler(),
+            BulkPauseIndexReplicationHandler(),
+            CancelBulkReplicationTaskHandler())
     }
 
     override fun getExecutorBuilders(settings: Settings): List<ExecutorBuilder<*>> {
@@ -292,7 +308,9 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
         return listOf(
             ShardReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager, replicationSettings, followerClusterStats),
             IndexReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager, replicationSettings, settingsModule),
-            AutoFollowExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager, replicationSettings))
+            AutoFollowExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager, replicationSettings),
+            BulkExecuter(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager, replicationSettings, "" )
+        )
     }
 
     override fun getNamedWriteables(): List<NamedWriteableRegistry.Entry> {

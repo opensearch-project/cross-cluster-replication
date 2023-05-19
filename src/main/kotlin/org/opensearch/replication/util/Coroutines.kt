@@ -33,6 +33,7 @@ import org.opensearch.index.shard.IndexShard
 import org.opensearch.persistent.PersistentTaskParams
 import org.opensearch.persistent.PersistentTasksCustomMetadata.PersistentTask
 import org.opensearch.persistent.PersistentTasksService
+import org.opensearch.replication.task.autofollow.AutoFollowParams
 import org.opensearch.threadpool.ThreadPool
 import java.util.concurrent.TimeoutException
 import kotlin.coroutines.*
