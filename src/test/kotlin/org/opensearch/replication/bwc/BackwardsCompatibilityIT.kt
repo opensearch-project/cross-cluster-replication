@@ -1,5 +1,6 @@
 package org.opensearch.replication.bwc;
 
+import org.apache.http.util.EntityUtils
 import org.assertj.core.api.Assertions
 import org.junit.Assert
 import org.junit.BeforeClass
@@ -8,6 +9,7 @@ import org.opensearch.action.admin.cluster.health.ClusterHealthRequest
 import org.opensearch.action.delete.DeleteRequest
 import org.opensearch.action.get.GetRequest
 import org.opensearch.action.index.IndexRequest
+import org.opensearch.client.Request
 import org.opensearch.client.RequestOptions
 import org.opensearch.client.indices.CreateIndexRequest
 import org.opensearch.replication.MultiClusterAnnotations
@@ -15,6 +17,7 @@ import org.opensearch.replication.MultiClusterRestTestCase
 import org.opensearch.replication.StartReplicationRequest
 import org.opensearch.replication.startReplication
 import org.opensearch.test.OpenSearchTestCase.assertBusy
+import org.opensearch.test.rest.OpenSearchRestTestCase
 import java.util.Collections
 import java.util.concurrent.TimeUnit
 import java.util.stream.Collectors
@@ -139,6 +142,18 @@ class BackwardsCompatibilityIT : MultiClusterRestTestCase() {
                 Assertions.assertThat(getResponse.isExists).isTrue()
                 Assertions.assertThat(getResponse.sourceAsMap).isEqualTo(source)
             }, 60, TimeUnit.SECONDS)
+
+            assertBusy ({
+                assertBusy{
+                    val followerClusterInfo : Map<String, Any>   = OpenSearchRestTestCase.entityAsMap(follower.lowLevelClient.performRequest(Request("GET", "/")))
+                    val clusterUUID = (followerClusterInfo["cluster_uuid"] as String)
+                    assert(clusterUUID.isNotEmpty())
+                    val retentionLeaseinfo = leader.lowLevelClient.performRequest(Request("GET", "/$LEADER_INDEX/_stats/docs?level=shards"))
+                    val retentionLeaseInfoString = EntityUtils.toString(retentionLeaseinfo.entity)
+                    assertTrue(retentionLeaseInfoString.contains(clusterUUID))
+                }
+            }, 60, TimeUnit.SECONDS)
+
         } catch (e: Exception) {
             logger.info("Exception while verifying the replication ${e.printStackTrace()}")
             throw e
