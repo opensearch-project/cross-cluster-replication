@@ -17,7 +17,7 @@ import org.opensearch.replication.task.index.IndexReplicationExecutor.Companion.
 import org.opensearch.action.support.IndicesOptions
 import org.opensearch.client.Requests
 import org.opensearch.client.node.NodeClient
-import org.opensearch.common.Strings
+import org.opensearch.core.common.Strings
 import org.opensearch.rest.BaseRestHandler
 import org.opensearch.rest.BaseRestHandler.RestChannelConsumer
 import org.opensearch.rest.RestChannel
