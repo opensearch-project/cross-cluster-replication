@@ -126,7 +126,7 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
         var isResumable = true
         val remoteClient = client.getRemoteClusterClient(params.leaderAlias)
         val shards = clusterService.state().routingTable.indicesRouting().get(params.followerIndexName)?.shards()
-        val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.state().metadata.clusterUUID(),clusterService.clusterName.value(), remoteClient)
+        val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), clusterService.state().metadata.clusterUUID(), remoteClient)
         shards?.forEach {
             val followerShardId = it.value.shardId
 

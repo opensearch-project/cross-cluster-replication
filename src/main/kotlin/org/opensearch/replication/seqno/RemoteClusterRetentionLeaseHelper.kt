@@ -23,35 +23,42 @@ import org.opensearch.index.seqno.RetentionLeaseAlreadyExistsException
 import org.opensearch.index.seqno.RetentionLeaseInvalidRetainingSeqNoException
 import org.opensearch.index.seqno.RetentionLeaseNotFoundException
 import org.opensearch.index.shard.ShardId
-import org.opensearch.replication.action.stop.TransportStopIndexReplicationAction
 import org.opensearch.replication.metadata.store.ReplicationMetadata
 import org.opensearch.replication.repository.RemoteClusterRepository
 import org.opensearch.replication.task.index.IndexReplicationParams
 import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.replication.util.suspending
 
-class RemoteClusterRetentionLeaseHelper constructor(val followerClusterName: String, val client: Client) {
+class RemoteClusterRetentionLeaseHelper constructor(var followerClusterNameWithUUID: String, val client: Client) {
 
-    private val retentionLeaseSource = retentionLeaseSource(followerClusterName)
+    private val retentionLeaseSource = retentionLeaseSource(followerClusterNameWithUUID)
     private var followerClusterUUID : String = ""
+    private var followerClusterName : String = ""
 
-    constructor(followerClusterUUID: String, followerClusterName: String, client: Client) :this(followerClusterName, client){
+    constructor(followerClusterName: String, followerClusterUUID: String, client: Client) :this(followerClusterName, client){
         this.followerClusterUUID = followerClusterUUID
+        this.followerClusterName = followerClusterName
+        this.followerClusterNameWithUUID = getFollowerClusterNameWithId(followerClusterName, followerClusterUUID)
     }
 
     companion object {
         private val log = LogManager.getLogger(RemoteClusterRetentionLeaseHelper::class.java)
         const val RETENTION_LEASE_PREFIX = "replication:"
-        fun retentionLeaseSource(followerClusterName: String): String = "${RETENTION_LEASE_PREFIX}${followerClusterName}"
+        fun retentionLeaseSource(followerClusterName: String): String
+        = "${RETENTION_LEASE_PREFIX}${followerClusterName}"
 
         fun retentionLeaseIdForShard(followerClusterName: String, followerShardId: ShardId): String {
             val retentionLeaseSource = retentionLeaseSource(followerClusterName)
             return "$retentionLeaseSource:${followerShardId}"
         }
+
+        fun getFollowerClusterNameWithId(followerClusterName: String, followerClusterUUID: String): String{
+            return "$followerClusterName:$followerClusterUUID"
+        }
     }
 
     public suspend fun verifyRetentionLeaseExist(leaderShardId: ShardId, followerShardId: ShardId, seqNo: Long): Boolean  {
-        val retentionLeaseId = retentionLeaseIdForShard(followerClusterUUID + ":" +followerClusterName, followerShardId)
+        val retentionLeaseId = retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)
         // Currently there is no API to describe/list the retention leases .
         // So we are verifying the existence of lease by trying to renew a lease by same name .
         // If retention lease doesn't exist, this will throw an RetentionLeaseNotFoundException exception
@@ -75,23 +82,27 @@ class RemoteClusterRetentionLeaseHelper constructor(val followerClusterName: Str
 
     private suspend fun AddNewRetentionLeaseIfOldExists(leaderShardId: ShardId, followerShardId: ShardId, seqNo: Long): Boolean {
         //Check for old retention lease id
-        val oldRetentionLeaseId = retentionLeaseIdForShard(followerClusterName, followerShardId)
+        val oldRetentionLeaseId = retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)
         val requestForOldId = RetentionLeaseActions.RenewRequest(leaderShardId, oldRetentionLeaseId, seqNo, retentionLeaseSource)
         try {
             client.suspendExecute(RetentionLeaseActions.Renew.INSTANCE, requestForOldId)
         } catch (ex: RetentionLeaseInvalidRetainingSeqNoException) {
             //old retention lease id present, will add new retention lease
+            log.info("Old retention lease Id ${oldRetentionLeaseId} present with invalid seq number, will add new retention lease " +
+                    "${retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)} ")
             return addNewRetentionLease(leaderShardId, seqNo, followerShardId, RemoteClusterRepository.REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC )
         }catch (ex: Exception){
             log.info("Encountered Exception while checking for old retention lease: ${ex.stackTraceToString()}")
             return false
         }
+        log.info("Old retention lease Id ${oldRetentionLeaseId}, will add new retention lease " +
+                "${retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)} ")
         return  addNewRetentionLease(leaderShardId,seqNo, followerShardId, RemoteClusterRepository.REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC )
     }
 
 
     private suspend fun addNewRetentionLease(leaderShardId: ShardId, seqNo: Long, followerShardId: ShardId, timeout: Long): Boolean {
-        val retentionLeaseId = retentionLeaseIdForShard(followerClusterUUID + ":" + followerClusterName, followerShardId)
+        val retentionLeaseId = retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)
         val request = RetentionLeaseActions.AddRequest(leaderShardId, retentionLeaseId, seqNo, retentionLeaseSource)
         try {
             client.execute(RetentionLeaseActions.Add.INSTANCE, request).actionGet(timeout)
@@ -103,7 +114,7 @@ class RemoteClusterRetentionLeaseHelper constructor(val followerClusterName: Str
     }
 
     public suspend fun renewRetentionLease(leaderShardId: ShardId, seqNo: Long, followerShardId: ShardId) {
-        val retentionLeaseId = retentionLeaseIdForShard(followerClusterUUID + ":" +followerClusterName, followerShardId)
+        val retentionLeaseId = retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)
         val request = RetentionLeaseActions.RenewRequest(leaderShardId, retentionLeaseId, seqNo, retentionLeaseSource)
         try {
             client.suspendExecute(RetentionLeaseActions.Renew.INSTANCE, request)
@@ -121,7 +132,7 @@ class RemoteClusterRetentionLeaseHelper constructor(val followerClusterName: Str
             val params = IndexReplicationParams(replMetadata.connectionName, remoteMetadata.index, followerIndexName)
             val remoteClient = client.getRemoteClusterClient(params.leaderAlias)
             val shards = clusterService.state().routingTable.indicesRouting().get(params.followerIndexName)?.shards()
-            val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(followerClusterUUID, clusterService.clusterName.value(), remoteClient)
+            val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper( clusterService.clusterName.value(), followerClusterUUID, remoteClient)
             shards?.forEach {
                 val followerShardId = it.value.shardId
                 log.debug("Removing lease for $followerShardId.id ")
@@ -145,7 +156,7 @@ class RemoteClusterRetentionLeaseHelper constructor(val followerClusterName: Str
 
 
     public suspend fun attemptRetentionLeaseRemoval(leaderShardId: ShardId, followerShardId: ShardId) {
-        val retentionLeaseId = retentionLeaseIdForShard(followerClusterUUID + ":" + followerClusterName, followerShardId)
+        val retentionLeaseId = retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)
         val request = RetentionLeaseActions.RemoveRequest(leaderShardId, retentionLeaseId)
         try {
             client.suspendExecute(RetentionLeaseActions.Remove.INSTANCE, request)
@@ -164,9 +175,10 @@ class RemoteClusterRetentionLeaseHelper constructor(val followerClusterName: Str
     /**
      * Remove these once the callers are moved to above APIs
      */
+    //Is
     public fun addRetentionLease(leaderShardId: ShardId, seqNo: Long,
                                  followerShardId: ShardId, timeout: Long) {
-        val retentionLeaseId = retentionLeaseIdForShard(followerClusterName, followerShardId)
+        val retentionLeaseId = retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)
         val request = RetentionLeaseActions.AddRequest(leaderShardId, retentionLeaseId, seqNo, retentionLeaseSource)
         try {
             client.execute(RetentionLeaseActions.Add.INSTANCE, request).actionGet(timeout)
@@ -181,7 +193,7 @@ class RemoteClusterRetentionLeaseHelper constructor(val followerClusterName: Str
 
     public fun renewRetentionLease(leaderShardId: ShardId, seqNo: Long,
                                    followerShardId: ShardId, timeout: Long) {
-        val retentionLeaseId = retentionLeaseIdForShard(followerClusterName, followerShardId)
+        val retentionLeaseId = retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)
         val request = RetentionLeaseActions.RenewRequest(leaderShardId, retentionLeaseId, seqNo, retentionLeaseSource)
         client.execute(RetentionLeaseActions.Renew.INSTANCE, request).actionGet(timeout)
     }
