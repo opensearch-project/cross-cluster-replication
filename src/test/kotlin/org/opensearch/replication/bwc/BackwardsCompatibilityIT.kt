@@ -125,8 +125,6 @@ class BackwardsCompatibilityIT : MultiClusterRestTestCase() {
         val follower = getClientForCluster(followerName)
         val leader = getClientForCluster(leaderName)
 
-
-
         // Update the seed nodes.
         createConnectionBetweenClusters(followerName, leaderName, CONNECTION_NAME)
 

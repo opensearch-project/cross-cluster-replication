@@ -123,7 +123,8 @@ class RemoteClusterRetentionLeaseHelper constructor(var followerClusterNameWithU
             log.info("Retention lease with ID: ${retentionLeaseId} not found," +
                     " checking for old retention lease with ID: ${retentionLeaseIdForShard(followerClusterName, followerShardId)}")
             if(!AddNewRetentionLeaseIfOldExists(leaderShardId, followerShardId, seqNo)){
-                throw RetentionLeaseNotFoundException("Retention lease not found 1 $retentionLeaseId")
+                log.info("Both new $retentionLeaseId and old ${retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)} retention lease not found.")
+                throw e
             }
         }
     }
@@ -178,7 +179,6 @@ class RemoteClusterRetentionLeaseHelper constructor(var followerClusterNameWithU
     /**
      * Remove these once the callers are moved to above APIs
      */
-    //Is
     public fun addRetentionLease(leaderShardId: ShardId, seqNo: Long,
                                  followerShardId: ShardId, timeout: Long) {
         val retentionLeaseId = retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)

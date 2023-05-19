@@ -21,6 +21,13 @@ import org.opensearch.replication.task.ReplicationState
 import org.opensearch.replication.task.index.IndexReplicationExecutor
 import org.opensearch.replication.task.index.IndexReplicationParams
 import org.opensearch.replication.task.index.IndexReplicationState
+import org.opensearch.replication.util.ValidationUtil
+import org.opensearch.replication.util.completeWith
+import org.opensearch.replication.util.coroutineContext
+import org.opensearch.replication.util.persistentTasksService
+import org.opensearch.replication.util.startTask
+import org.opensearch.replication.util.suspending
+import org.opensearch.replication.util.waitForTaskCondition
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
@@ -42,17 +49,16 @@ import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.cluster.metadata.IndexNameExpressionResolver
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Inject
-import org.opensearch.replication.ReplicationPlugin.Companion.KNN_INDEX_SETTING
-import org.opensearch.replication.ReplicationPlugin.Companion.KNN_PLUGIN_PRESENT_SETTING
+
 import org.opensearch.common.io.stream.StreamInput
 import org.opensearch.env.Environment
 import org.opensearch.index.IndexNotFoundException
 import org.opensearch.index.shard.ShardId
-import org.opensearch.replication.util.*
+import org.opensearch.replication.util.indicesService
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
 import java.io.IOException
-import java.lang.IllegalStateException
+
 
 class TransportResumeIndexReplicationAction @Inject constructor(transportService: TransportService,
                                                                 clusterService: ClusterService,
