@@ -177,7 +177,8 @@ class ReplicationTranslogDeletionPolicyTests : OpenSearchTestCase() {
                 randomNonNegativeLong(),
                 TragicExceptionHolder(),
                 { },
-                BigArrays.NON_RECYCLING_INSTANCE
+                BigArrays.NON_RECYCLING_INSTANCE,
+                false
             )
             writer = Mockito.spy(writer)
             Mockito.doReturn(now - (numberOfReaders - gen + 1) * 1000).`when`(writer).lastModifiedTime
