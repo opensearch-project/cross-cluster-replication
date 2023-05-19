@@ -38,7 +38,7 @@ class RemoteClusterRetentionLeaseHelper constructor(var followerClusterNameWithU
     constructor(followerClusterName: String, followerClusterUUID: String, client: Client) :this(followerClusterName, client){
         this.followerClusterUUID = followerClusterUUID
         this.followerClusterName = followerClusterName
-        this.followerClusterNameWithUUID = getFollowerClusterNameWithId(followerClusterName, followerClusterUUID)
+        this.followerClusterNameWithUUID = getFollowerClusterNameWithUUID(followerClusterName, followerClusterUUID)
     }
 
     companion object {
@@ -52,7 +52,7 @@ class RemoteClusterRetentionLeaseHelper constructor(var followerClusterNameWithU
             return "$retentionLeaseSource:${followerShardId}"
         }
 
-        fun getFollowerClusterNameWithId(followerClusterName: String, followerClusterUUID: String): String{
+        fun getFollowerClusterNameWithUUID(followerClusterName: String, followerClusterUUID: String): String{
             return "$followerClusterName:$followerClusterUUID"
         }
     }
@@ -82,20 +82,20 @@ class RemoteClusterRetentionLeaseHelper constructor(var followerClusterNameWithU
 
     private suspend fun AddNewRetentionLeaseIfOldExists(leaderShardId: ShardId, followerShardId: ShardId, seqNo: Long): Boolean {
         //Check for old retention lease id
-        val oldRetentionLeaseId = retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)
+        val oldRetentionLeaseId = retentionLeaseIdForShard(followerClusterName, followerShardId)
         val requestForOldId = RetentionLeaseActions.RenewRequest(leaderShardId, oldRetentionLeaseId, seqNo, retentionLeaseSource)
         try {
             client.suspendExecute(RetentionLeaseActions.Renew.INSTANCE, requestForOldId)
         } catch (ex: RetentionLeaseInvalidRetainingSeqNoException) {
             //old retention lease id present, will add new retention lease
-            log.info("Old retention lease Id ${oldRetentionLeaseId} present with invalid seq number, will add new retention lease " +
+            log.info("Old retention lease Id ${oldRetentionLeaseId} present with invalid seq number, adding new retention lease with ID:" +
                     "${retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)} ")
             return addNewRetentionLease(leaderShardId, seqNo, followerShardId, RemoteClusterRepository.REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC )
         }catch (ex: Exception){
             log.info("Encountered Exception while checking for old retention lease: ${ex.stackTraceToString()}")
             return false
         }
-        log.info("Old retention lease Id ${oldRetentionLeaseId}, will add new retention lease " +
+        log.info("Old retention lease Id ${oldRetentionLeaseId}, adding new retention lease with ID:" +
                 "${retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)} ")
         return  addNewRetentionLease(leaderShardId,seqNo, followerShardId, RemoteClusterRepository.REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC )
     }
@@ -119,6 +119,9 @@ class RemoteClusterRetentionLeaseHelper constructor(var followerClusterNameWithU
         try {
             client.suspendExecute(RetentionLeaseActions.Renew.INSTANCE, request)
         }catch (e: RetentionLeaseNotFoundException){
+            //New retention lease not found, checking presense of old retention lease
+            log.info("Retention lease with ID: ${retentionLeaseId} not found," +
+                    " checking for old retention lease with ID: ${retentionLeaseIdForShard(followerClusterName, followerShardId)}")
             if(!AddNewRetentionLeaseIfOldExists(leaderShardId, followerShardId, seqNo)){
                 throw RetentionLeaseNotFoundException("Retention lease not found 1 $retentionLeaseId")
             }
@@ -179,6 +182,7 @@ class RemoteClusterRetentionLeaseHelper constructor(var followerClusterNameWithU
     public fun addRetentionLease(leaderShardId: ShardId, seqNo: Long,
                                  followerShardId: ShardId, timeout: Long) {
         val retentionLeaseId = retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)
+        log.info("bottle 1, adding retention lease id with id ${retentionLeaseId}")
         val request = RetentionLeaseActions.AddRequest(leaderShardId, retentionLeaseId, seqNo, retentionLeaseSource)
         try {
             client.execute(RetentionLeaseActions.Add.INSTANCE, request).actionGet(timeout)
