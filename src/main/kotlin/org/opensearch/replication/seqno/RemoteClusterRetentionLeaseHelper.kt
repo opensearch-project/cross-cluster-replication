@@ -73,14 +73,14 @@ class RemoteClusterRetentionLeaseHelper constructor(var followerClusterNameWithU
             return true
         }
         catch (e: RetentionLeaseNotFoundException) {
-            return AddNewRetentionLeaseIfOldExists(leaderShardId, followerShardId, seqNo)
+            return addNewRetentionLeaseIfOldExists(leaderShardId, followerShardId, seqNo)
         }catch (e : Exception) {
             return false
         }
         return true
     }
 
-    private suspend fun AddNewRetentionLeaseIfOldExists(leaderShardId: ShardId, followerShardId: ShardId, seqNo: Long): Boolean {
+    private suspend fun addNewRetentionLeaseIfOldExists(leaderShardId: ShardId, followerShardId: ShardId, seqNo: Long): Boolean {
         //Check for old retention lease id
         val oldRetentionLeaseId = retentionLeaseIdForShard(followerClusterName, followerShardId)
         val requestForOldId = RetentionLeaseActions.RenewRequest(leaderShardId, oldRetentionLeaseId, seqNo, retentionLeaseSource)
@@ -122,7 +122,7 @@ class RemoteClusterRetentionLeaseHelper constructor(var followerClusterNameWithU
             //New retention lease not found, checking presense of old retention lease
             log.info("Retention lease with ID: ${retentionLeaseId} not found," +
                     " checking for old retention lease with ID: ${retentionLeaseIdForShard(followerClusterName, followerShardId)}")
-            if(!AddNewRetentionLeaseIfOldExists(leaderShardId, followerShardId, seqNo)){
+            if(!addNewRetentionLeaseIfOldExists(leaderShardId, followerShardId, seqNo)){
                 log.info("Both new $retentionLeaseId and old ${retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)} retention lease not found.")
                 throw e
             }
