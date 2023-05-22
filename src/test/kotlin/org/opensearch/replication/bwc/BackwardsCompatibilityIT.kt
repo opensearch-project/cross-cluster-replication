@@ -168,7 +168,7 @@ class BackwardsCompatibilityIT : MultiClusterRestTestCase() {
                 assert(clusterUUID.isNotEmpty())
                 assert(clusterName.isNotEmpty())
                 val expectedRetentionLeaseId =
-                    "replication" + ":" + clusterName + ":" + clusterUUID + ":[" + LEADER_INDEX + "][0]"
+                    "replication" + ":" + clusterName + ":" + clusterUUID + ":[" + LEADER_INDEX + "]"
 
                 val retentionLeaseinfo =
                     leader.lowLevelClient.performRequest(Request("GET", "/$LEADER_INDEX/_stats/docs?level=shards"))
