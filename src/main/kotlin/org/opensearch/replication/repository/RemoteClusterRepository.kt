@@ -57,6 +57,7 @@ import org.opensearch.index.store.Store
 import org.opensearch.indices.recovery.RecoverySettings
 import org.opensearch.indices.recovery.RecoveryState
 import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING
+import org.opensearch.replication.seqno.RemoteClusterRetentionLeaseHelper
 import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.repositories.IndexId
 import org.opensearch.repositories.Repository
@@ -280,7 +281,8 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
                 snapshotShardId.id)
         restoreUUID = UUIDs.randomBase64UUID()
         val getStoreMetadataRequest = GetStoreMetadataRequest(restoreUUID, leaderShardNode, leaderShardId,
-                clusterService.clusterName.value(), followerShardId)
+            RemoteClusterRetentionLeaseHelper.getFollowerClusterNameWithUUID(clusterService.clusterName.value(), clusterService.state().metadata.clusterUUID()),
+             followerShardId)
 
         // Gets the remote store metadata
         val metadataResponse = executeActionOnRemote(GetStoreMetadataAction.INSTANCE, getStoreMetadataRequest, followerIndexName)
