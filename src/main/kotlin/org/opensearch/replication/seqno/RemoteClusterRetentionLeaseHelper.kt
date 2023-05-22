@@ -105,7 +105,7 @@ class RemoteClusterRetentionLeaseHelper constructor(var followerClusterNameWithU
         val retentionLeaseId = retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)
         val request = RetentionLeaseActions.AddRequest(leaderShardId, retentionLeaseId, seqNo, retentionLeaseSource)
         try {
-            client.execute(RetentionLeaseActions.Add.INSTANCE, request).actionGet(timeout)
+            client.suspendExecute(RetentionLeaseActions.Add.INSTANCE, request)
             return true
         } catch (e: Exception) {
             log.info("Exception while adding new retention lease with i: $retentionLeaseId")
