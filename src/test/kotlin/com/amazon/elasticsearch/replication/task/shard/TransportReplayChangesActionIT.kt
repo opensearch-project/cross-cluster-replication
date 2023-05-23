@@ -9,15 +9,7 @@ import org.elasticsearch.client.RequestOptions
 import org.elasticsearch.client.core.CountRequest
 import org.elasticsearch.client.indices.PutMappingRequest
 import org.elasticsearch.common.xcontent.XContentType
-import org.elasticsearch.replication.FOLL
-import org.elasticsearch.replication.LEADER
-import org.elasticsearch.replication.MultiClusterAnnotations
-import org.elasticsearch.replication.MultiClusterRestTestCase
-import org.elasticsearch.replication.StartReplicationRequest
-import org.elasticsearch.replication.`validate status syncing response`
-import org.elasticsearch.replication.replicationStatus
-import org.elasticsearch.replication.startReplication
-import org.elasticsearch.replication.stopReplication
+import com.amazon.elasticsearch.replication.*
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
