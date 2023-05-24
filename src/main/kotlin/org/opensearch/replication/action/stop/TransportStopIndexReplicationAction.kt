@@ -57,6 +57,7 @@ import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
 import java.io.IOException
+import java.lang.IllegalStateException
 
 class TransportStopIndexReplicationAction @Inject constructor(transportService: TransportService,
                                                               clusterService: ClusterService,
@@ -115,7 +116,7 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                 try {
                     val replMetadata = replicationMetadataManager.getIndexReplicationMetadata(request.indexName)
                     val remoteClient = client.getRemoteClusterClient(replMetadata.connectionName)
-                    val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
+                    val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), clusterService.state().metadata.clusterUUID(), remoteClient)
                     retentionLeaseHelper.attemptRemoveRetentionLease(clusterService, replMetadata, request.indexName)
                 } catch(e: Exception) {
                     log.error("Failed to remove retention lease from the leader cluster", e)
