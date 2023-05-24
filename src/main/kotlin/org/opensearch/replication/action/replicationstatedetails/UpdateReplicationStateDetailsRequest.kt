@@ -48,6 +48,7 @@ class UpdateReplicationStateDetailsRequest: AcknowledgedRequest<UpdateReplicatio
     override fun writeTo(out: StreamOutput) {
         super.writeTo(out)
         out.writeString(followIndexName)
-        out.writeMap(replicationStateParams)
+        out.writeMap(replicationStateParams, StreamOutput::writeString, StreamOutput::writeString)
+        out.writeEnum(updateType)
     }
 }
