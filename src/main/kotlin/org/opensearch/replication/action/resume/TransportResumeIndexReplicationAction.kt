@@ -54,10 +54,11 @@ import org.opensearch.env.Environment
 import org.opensearch.index.IndexNotFoundException
 import org.opensearch.index.shard.ShardId
 import org.opensearch.replication.ReplicationPlugin.Companion.KNN_INDEX_SETTING
+import org.opensearch.replication.util.indicesService
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
 import java.io.IOException
-import java.lang.IllegalStateException
+
 
 class TransportResumeIndexReplicationAction @Inject constructor(transportService: TransportService,
                                                                 clusterService: ClusterService,
@@ -134,10 +135,14 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
         var isResumable = true
         val remoteClient = client.getRemoteClusterClient(params.leaderAlias)
         val shards = clusterService.state().routingTable.indicesRouting().get(params.followerIndexName).shards()
-        val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
+        val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), clusterService.state().metadata.clusterUUID(), remoteClient)
         shards.forEach {
             val followerShardId = it.value.shardId
-            if  (!retentionLeaseHelper.verifyRetentionLeaseExist(ShardId(params.leaderIndex, followerShardId.id), followerShardId)) {
+
+            val followerIndexService = indicesService.indexServiceSafe(followerShardId.index)
+            val indexShard = followerIndexService.getShard(followerShardId.id)
+
+            if  (!retentionLeaseHelper.verifyRetentionLeaseExist(ShardId(params.leaderIndex, followerShardId.id), followerShardId, indexShard.lastSyncedGlobalCheckpoint+1)) {
                 isResumable = false
             }
         }

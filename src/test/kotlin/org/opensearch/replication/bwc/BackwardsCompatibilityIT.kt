@@ -1,5 +1,7 @@
 package org.opensearch.replication.bwc;
 
+
+import org.apache.http.util.EntityUtils
 import org.assertj.core.api.Assertions
 import org.junit.Assert
 import org.junit.BeforeClass
@@ -8,13 +10,14 @@ import org.opensearch.action.admin.cluster.health.ClusterHealthRequest
 import org.opensearch.action.delete.DeleteRequest
 import org.opensearch.action.get.GetRequest
 import org.opensearch.action.index.IndexRequest
+import org.opensearch.client.Request
 import org.opensearch.client.RequestOptions
+import org.opensearch.client.RestHighLevelClient
 import org.opensearch.client.indices.CreateIndexRequest
-import org.opensearch.replication.MultiClusterAnnotations
 import org.opensearch.replication.MultiClusterRestTestCase
 import org.opensearch.replication.StartReplicationRequest
 import org.opensearch.replication.startReplication
-import org.opensearch.test.OpenSearchTestCase.assertBusy
+import org.opensearch.test.rest.OpenSearchRestTestCase
 import java.util.Collections
 import java.util.concurrent.TimeUnit
 import java.util.stream.Collectors
@@ -139,10 +142,38 @@ class BackwardsCompatibilityIT : MultiClusterRestTestCase() {
                 Assertions.assertThat(getResponse.isExists).isTrue()
                 Assertions.assertThat(getResponse.sourceAsMap).isEqualTo(source)
             }, 60, TimeUnit.SECONDS)
+
+            //Check for latest retention lease when full cluster restart is done
+            if (ClusterStatus.from(System.getProperty("tests.bwcTask")) == ClusterStatus.FULL_CLUSTER_RESTART || ClusterStatus.from(
+                    System.getProperty("tests.bwcTask")) == ClusterStatus.ROLLING_UPGRADED) {
+                validateNewRetentionLeaseId(follower, leader)
+            }
+
         } catch (e: Exception) {
             logger.info("Exception while verifying the replication ${e.printStackTrace()}")
             throw e
         }
+    }
+
+    private fun validateNewRetentionLeaseId(
+        follower: RestHighLevelClient,
+        leader: RestHighLevelClient
+    ) {
+            assertBusy({
+                val followerClusterInfo: Map<String, Any> =
+                    OpenSearchRestTestCase.entityAsMap(follower.lowLevelClient.performRequest(Request("GET", "/")))
+                val clusterUUID = (followerClusterInfo["cluster_uuid"] as String)
+                val clusterName = (followerClusterInfo["cluster_name"] as String)
+                assert(clusterUUID.isNotEmpty())
+                assert(clusterName.isNotEmpty())
+                val expectedRetentionLeaseId =
+                    "replication" + ":" + clusterName + ":" + clusterUUID + ":[" + LEADER_INDEX + "]"
+
+                val retentionLeaseinfo =
+                    leader.lowLevelClient.performRequest(Request("GET", "/$LEADER_INDEX/_stats/docs?level=shards"))
+                val retentionLeaseInfoString = EntityUtils.toString(retentionLeaseinfo.entity)
+                assertTrue(retentionLeaseInfoString.contains(expectedRetentionLeaseId))
+            }, 60, TimeUnit.SECONDS)
     }
 
     // Verifies that replication plugin is installed on all the nodes og the cluster.
