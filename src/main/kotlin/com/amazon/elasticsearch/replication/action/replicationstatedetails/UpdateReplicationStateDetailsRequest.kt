@@ -21,6 +21,7 @@ import org.elasticsearch.action.support.master.AcknowledgedRequest
 import org.elasticsearch.common.io.stream.StreamInput
 import org.elasticsearch.common.io.stream.StreamOutput
 
+
 class UpdateReplicationStateDetailsRequest: AcknowledgedRequest<UpdateReplicationStateDetailsRequest> {
 
     val followIndexName : String
@@ -52,6 +53,7 @@ class UpdateReplicationStateDetailsRequest: AcknowledgedRequest<UpdateReplicatio
     override fun writeTo(out: StreamOutput) {
         super.writeTo(out)
         out.writeString(followIndexName)
-        out.writeMap(replicationStateParams)
+        out.writeMap(replicationStateParams, StreamOutput::writeString, StreamOutput::writeString)
+        out.writeEnum(updateType)
     }
 }
