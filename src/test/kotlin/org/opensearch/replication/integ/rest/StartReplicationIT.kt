@@ -12,28 +12,13 @@
 package org.opensearch.replication.integ.rest
 
 
-import kotlinx.coroutines.delay
-import org.opensearch.replication.IndexUtil
-import org.opensearch.replication.MultiClusterAnnotations
-import org.opensearch.replication.MultiClusterRestTestCase
-import org.opensearch.replication.StartReplicationRequest
-import org.opensearch.replication.`validate not paused status response`
-import org.opensearch.replication.`validate paused status on closed index`
-import org.opensearch.replication.pauseReplication
-import org.opensearch.replication.replicationStatus
-import org.opensearch.replication.resumeReplication
-import org.opensearch.replication.`validate paused status response due to leader index deleted`
-import org.opensearch.replication.`validate status syncing response`
-import org.opensearch.replication.startReplication
-import org.opensearch.replication.stopReplication
-import org.opensearch.replication.updateReplication
 import org.apache.http.HttpStatus
 import org.apache.http.entity.ContentType
 import org.apache.http.nio.entity.NStringEntity
 import org.apache.http.util.EntityUtils
-import org.assertj.core.api.Assertions
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.junit.Assert
 import org.opensearch.OpenSearchStatusException
 import org.opensearch.action.admin.cluster.repositories.put.PutRepositoryRequest
 import org.opensearch.action.admin.cluster.snapshots.create.CreateSnapshotRequest
@@ -51,27 +36,20 @@ import org.opensearch.client.RequestOptions
 import org.opensearch.client.ResponseException
 import org.opensearch.client.RestHighLevelClient
 import org.opensearch.client.core.CountRequest
-import org.opensearch.client.indices.CloseIndexRequest
-import org.opensearch.client.indices.CreateIndexRequest
-import org.opensearch.client.indices.GetIndexRequest
-import org.opensearch.client.indices.GetMappingsRequest
-import org.opensearch.client.indices.PutMappingRequest
+import org.opensearch.client.indices.*
 import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.cluster.metadata.MetadataCreateIndexService
 import org.opensearch.common.io.PathUtils
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.unit.TimeValue
+import org.opensearch.common.xcontent.DeprecationHandler
+import org.opensearch.common.xcontent.NamedXContentRegistry
 import org.opensearch.common.xcontent.XContentType
 import org.opensearch.index.IndexSettings
 import org.opensearch.index.mapper.MapperService
+import org.opensearch.replication.*
 import org.opensearch.repositories.fs.FsRepository
 import org.opensearch.test.OpenSearchTestCase.assertBusy
-import org.junit.Assert
-import org.opensearch.replication.followerStats
-import org.opensearch.replication.leaderStats
-import org.opensearch.replication.task.index.IndexReplicationExecutor.Companion.log
-import java.lang.Thread.sleep
-import org.opensearch.replication.updateReplicationStartBlockSetting
 import java.nio.file.Files
 import java.util.*
 import java.util.concurrent.TimeUnit
@@ -1224,7 +1202,8 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         val nodesRequest = Request("GET", "_cat/nodes?format=json")
         val nodesResponse =  EntityUtils.toString(clusterClient.performRequest(nodesRequest).entity)
         val nodeIPs = arrayListOf<String>()
-        val parser = XContentType.JSON.xContent().createParser(NamedXContentRegistry.EMPTY,
+        val parser = XContentType.JSON.xContent().createParser(
+            NamedXContentRegistry.EMPTY,
                 DeprecationHandler.THROW_UNSUPPORTED_OPERATION, nodesResponse)
         parser.list().forEach {
             it as Map<*, *>
