@@ -12,6 +12,7 @@
 package org.opensearch.replication.integ.rest
 
 
+import kotlinx.coroutines.delay
 import org.opensearch.replication.IndexUtil
 import org.opensearch.replication.MultiClusterAnnotations
 import org.opensearch.replication.MultiClusterRestTestCase
@@ -66,8 +67,8 @@ import org.opensearch.repositories.fs.FsRepository
 import org.opensearch.test.OpenSearchTestCase.assertBusy
 import org.junit.Assert
 import org.opensearch.cluster.metadata.AliasMetadata
-import org.opensearch.common.xcontent.DeprecationHandler
-import org.opensearch.common.xcontent.NamedXContentRegistry
+import org.opensearch.core.xcontent.DeprecationHandler
+import org.opensearch.core.xcontent.NamedXContentRegistry
 import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING
 import org.opensearch.replication.followerStats
 import org.opensearch.replication.leaderStats
@@ -75,6 +76,8 @@ import org.opensearch.replication.updateReplicationStartBlockSetting
 import java.nio.file.Files
 import java.util.*
 import java.util.concurrent.TimeUnit
+import org.opensearch.bootstrap.BootstrapInfo
+
 
 
 @MultiClusterAnnotations.ClusterConfigurations(
@@ -581,6 +584,11 @@ class StartReplicationIT: MultiClusterRestTestCase() {
     }
 
     fun `test that replication fails to start when custom analyser is not present in follower`() {
+
+        if(checkifIntegTestRemote()){
+            return;
+        }
+
         val synonyms = javaClass.getResourceAsStream("/analyzers/synonyms.txt")
         val config = PathUtils.get(buildDir, leaderClusterPath, "config")
         val synonymPath = config.resolve("synonyms.txt")
@@ -611,6 +619,11 @@ class StartReplicationIT: MultiClusterRestTestCase() {
     }
 
     fun `test that replication starts successfully when custom analyser is present in follower`() {
+
+        if(checkifIntegTestRemote()){
+            return;
+        }
+
         val synonyms = javaClass.getResourceAsStream("/analyzers/synonyms.txt")
         val leaderConfig = PathUtils.get(buildDir, leaderClusterPath, "config")
         val leaderSynonymPath = leaderConfig.resolve("synonyms.txt")
@@ -648,6 +661,11 @@ class StartReplicationIT: MultiClusterRestTestCase() {
     }
 
     fun `test that replication starts successfully when custom analyser is overridden and present in follower`() {
+
+        if(checkifIntegTestRemote()){
+            return;
+        }
+
         val synonyms = javaClass.getResourceAsStream("/analyzers/synonyms.txt")
         val leaderConfig = PathUtils.get(buildDir, leaderClusterPath, "config")
         val leaderSynonymPath = leaderConfig.resolve("synonyms.txt")
@@ -782,6 +800,11 @@ class StartReplicationIT: MultiClusterRestTestCase() {
     }
 
     fun `test that snapshot on leader does not affect replication during bootstrap`() {
+
+        if(checkifIntegTestRemote()){
+            return;
+        }
+
         val settings = Settings.builder()
             .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 20)
             .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0)
@@ -1007,6 +1030,80 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                 waitForRestore = true) }
                 .isInstanceOf(ResponseException::class.java)
                 .hasMessageContaining("Primary shards in the Index[source:${leaderIndexName}] are not active")
+    }
+
+    fun `test that follower index mapping updates when leader index gets multi-field mapping`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        var putMappingRequest = PutMappingRequest(leaderIndexName)
+        putMappingRequest.source("{\"properties\":{\"field1\":{\"type\":\"text\"}}}", XContentType.JSON)
+        leaderClient.indices().putMapping(putMappingRequest, RequestOptions.DEFAULT)
+        val sourceMap = mapOf("field1" to randomAlphaOfLength(5))
+        leaderClient.index(IndexRequest(leaderIndexName).id("1").source(sourceMap), RequestOptions.DEFAULT)
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
+            waitForRestore = true)
+        assertBusy {
+            assertThat(followerClient.indices()
+                .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
+                .isEqualTo(true)
+        }
+        Assert.assertEquals(
+            leaderClient.indices().getMapping(GetMappingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
+                .mappings()[leaderIndexName],
+            followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
+                .mappings()[followerIndexName]
+        )
+        putMappingRequest = PutMappingRequest(leaderIndexName)
+        putMappingRequest.source("{\"properties\":{\"field1\":{\"type\":\"text\",\"fields\":{\"field2\":{\"type\":\"text\",\"analyzer\":\"standard\"},\"field3\":{\"type\":\"text\",\"analyzer\":\"standard\"}}}}}",XContentType.JSON)
+        leaderClient.indices().putMapping(putMappingRequest, RequestOptions.DEFAULT)
+        val leaderMappings = leaderClient.indices().getMapping(GetMappingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
+            .mappings()[leaderIndexName]
+        TimeUnit.MINUTES.sleep(2)
+        Assert.assertEquals(
+            leaderMappings,
+            followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
+                .mappings()[followerIndexName]
+        )
+    }
+
+    fun `test that follower index mapping does not update when only new fields are added but not respective docs in leader index`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        var putMappingRequest = PutMappingRequest(leaderIndexName)
+        putMappingRequest.source("{\"properties\":{\"name\":{\"type\":\"text\"}}}", XContentType.JSON)
+        leaderClient.indices().putMapping(putMappingRequest, RequestOptions.DEFAULT)
+        val sourceMap = mapOf("name" to randomAlphaOfLength(5))
+        leaderClient.index(IndexRequest(leaderIndexName).id("1").source(sourceMap), RequestOptions.DEFAULT)
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
+            waitForRestore = true)
+        assertBusy {
+            assertThat(followerClient.indices()
+                .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
+                .isEqualTo(true)
+        }
+        Assert.assertEquals(
+            leaderClient.indices().getMapping(GetMappingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
+                .mappings()[leaderIndexName],
+            followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
+                .mappings()[followerIndexName]
+        )
+        putMappingRequest = PutMappingRequest(leaderIndexName)
+        putMappingRequest.source("{\"properties\":{\"name\":{\"type\":\"text\"},\"age\":{\"type\":\"integer\"}}}",XContentType.JSON)
+        leaderClient.indices().putMapping(putMappingRequest, RequestOptions.DEFAULT)
+        val leaderMappings = leaderClient.indices().getMapping(GetMappingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
+            .mappings()[leaderIndexName]
+        TimeUnit.MINUTES.sleep(2)
+        Assert.assertNotEquals(
+            leaderMappings,
+            followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
+                .mappings()[followerIndexName]
+        )
     }
 
     private fun excludeAllClusterNodes(clusterName: String) {

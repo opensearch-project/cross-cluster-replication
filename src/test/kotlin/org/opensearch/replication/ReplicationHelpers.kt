@@ -23,8 +23,8 @@ import org.opensearch.client.Response
 import org.opensearch.client.RestHighLevelClient
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.unit.TimeValue
-import org.opensearch.common.xcontent.DeprecationHandler
-import org.opensearch.common.xcontent.NamedXContentRegistry
+import org.opensearch.core.xcontent.DeprecationHandler
+import org.opensearch.core.xcontent.NamedXContentRegistry
 import org.opensearch.common.xcontent.XContentType
 import org.opensearch.test.OpenSearchTestCase.assertBusy
 import org.opensearch.test.rest.OpenSearchRestTestCase
@@ -374,6 +374,16 @@ fun RestHighLevelClient.deleteAutoFollowPattern(connection: String, patternName:
 fun RestHighLevelClient.updateReplicationStartBlockSetting(enabled: Boolean) {
     var settings: Settings = Settings.builder()
             .put("plugins.replication.follower.block.start", enabled)
+            .build()
+    var updateSettingsRequest = ClusterUpdateSettingsRequest()
+    updateSettingsRequest.persistentSettings(settings)
+    val response = this.cluster().putSettings(updateSettingsRequest, RequestOptions.DEFAULT)
+    assertThat(response.isAcknowledged).isTrue()
+}
+
+fun RestHighLevelClient.updateAutofollowRetrySetting(duration: String) {
+    var settings: Settings = Settings.builder()
+            .put("plugins.replication.autofollow.retry_poll_interval", duration)
             .build()
     var updateSettingsRequest = ClusterUpdateSettingsRequest()
     updateSettingsRequest.persistentSettings(settings)

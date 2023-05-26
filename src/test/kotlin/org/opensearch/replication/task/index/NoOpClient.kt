@@ -32,7 +32,7 @@ import org.opensearch.common.UUIDs
 import org.opensearch.common.bytes.BytesReference
 import org.opensearch.common.collect.ImmutableOpenMap
 import org.opensearch.common.settings.Settings
-import org.opensearch.common.xcontent.ToXContent
+import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.common.xcontent.XContentFactory
 import org.opensearch.index.Index
 import org.opensearch.index.get.GetResult

@@ -82,7 +82,7 @@ import org.opensearch.cluster.metadata.RepositoryMetadata
 import org.opensearch.cluster.node.DiscoveryNodes
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.CheckedFunction
-import org.opensearch.common.ParseField
+import org.opensearch.core.ParseField
 import org.opensearch.common.component.LifecycleComponent
 import org.opensearch.common.io.stream.NamedWriteableRegistry
 import org.opensearch.common.io.stream.Writeable
@@ -96,8 +96,8 @@ import org.opensearch.common.unit.ByteSizeUnit
 import org.opensearch.common.unit.ByteSizeValue
 import org.opensearch.common.unit.TimeValue
 import org.opensearch.common.util.concurrent.OpenSearchExecutors
-import org.opensearch.common.xcontent.NamedXContentRegistry
-import org.opensearch.common.xcontent.XContentParser
+import org.opensearch.core.xcontent.NamedXContentRegistry
+import org.opensearch.core.xcontent.XContentParser
 import org.opensearch.commons.utils.OpenForTesting
 import org.opensearch.env.Environment
 import org.opensearch.env.NodeEnvironment
@@ -156,9 +156,10 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
     private var followerClusterStats = FollowerClusterStats()
 
     companion object {
+        const val KNN_INDEX_SETTING = "index.knn"
+        const val KNN_PLUGIN_PRESENT_SETTING = "knn.plugin.enabled"
         const val REPLICATION_EXECUTOR_NAME_LEADER = "replication_leader"
         const val REPLICATION_EXECUTOR_NAME_FOLLOWER = "replication_follower"
-        const val KNN_INDEX_SETTING = "index.knn"
         val REPLICATED_INDEX_SETTING: Setting<String> = Setting.simpleString("index.plugins.replication.follower.leader_index",
             Setting.Property.InternalIndex, Setting.Property.IndexScope)
         val REPLICATION_FOLLOWER_OPS_BATCH_SIZE: Setting<Int> = Setting.intSetting("plugins.replication.follower.index.ops_batch_size", 50000, 16,
@@ -178,7 +179,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             TimeValue.timeValueSeconds(1), Setting.Property.Dynamic, Setting.Property.NodeScope)
         val REPLICATION_AUTOFOLLOW_REMOTE_INDICES_POLL_INTERVAL = Setting.timeSetting ("plugins.replication.autofollow.fetch_poll_interval", TimeValue.timeValueSeconds(30), TimeValue.timeValueSeconds(30),
                 TimeValue.timeValueHours(1), Setting.Property.Dynamic, Setting.Property.NodeScope)
-        val REPLICATION_AUTOFOLLOW_REMOTE_INDICES_RETRY_POLL_INTERVAL = Setting.timeSetting ("plugins.replication.autofollow.retry_poll_interval", TimeValue.timeValueHours(1), TimeValue.timeValueMinutes(30),
+        val REPLICATION_AUTOFOLLOW_REMOTE_INDICES_RETRY_POLL_INTERVAL = Setting.timeSetting ("plugins.replication.autofollow.retry_poll_interval", TimeValue.timeValueHours(1), TimeValue.timeValueMinutes(1),
                 TimeValue.timeValueHours(4), Setting.Property.Dynamic, Setting.Property.NodeScope)
         val REPLICATION_METADATA_SYNC_INTERVAL = Setting.timeSetting("plugins.replication.follower.metadata_sync_interval",
                 TimeValue.timeValueSeconds(60), TimeValue.timeValueSeconds(5),

@@ -42,8 +42,8 @@ import org.opensearch.common.io.PathUtils
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.unit.TimeValue
 import org.opensearch.common.util.concurrent.ThreadContext
-import org.opensearch.common.xcontent.DeprecationHandler
-import org.opensearch.common.xcontent.NamedXContentRegistry
+import org.opensearch.core.xcontent.DeprecationHandler
+import org.opensearch.core.xcontent.NamedXContentRegistry
 import org.opensearch.common.xcontent.XContentHelper
 import org.opensearch.common.xcontent.XContentType
 import org.opensearch.common.xcontent.json.JsonXContent
@@ -420,9 +420,7 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
             testCluster.lowLevelClient.performRequest(request)
         }
     }
-
-    protected fun wipeIndicesFromCluster(testCluster: TestCluster) {
-
+    private fun stopAllReplicationJobs(testCluster: TestCluster) {
         val indicesResponse = testCluster.lowLevelClient.performRequest((Request("GET","/_cat/indices/*,-.*?format=json&pretty")))
         val indicesResponseEntity = EntityUtils.toString(indicesResponse.entity)
         var parser = XContentType.JSON.xContent().createParser(NamedXContentRegistry.EMPTY, DeprecationHandler.THROW_UNSUPPORTED_OPERATION, indicesResponseEntity)
@@ -433,18 +431,21 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
                 key to value
             }
             val ind = map.get("index")
-           try {
+            try {
                 val stopRequest = Request("POST","/_plugins/_replication/" + ind.toString() + "/_stop")
                 stopRequest.setJsonEntity("{}")
                 stopRequest.setOptions(RequestOptions.DEFAULT)
                 val response=testCluster.lowLevelClient.performRequest(stopRequest)
-           }
+            }
             catch (e:ResponseException){
                 if(e.response.statusLine.statusCode!=400) {
                     throw e
                 }
             }
         }
+    }
+    protected fun wipeIndicesFromCluster(testCluster: TestCluster) {
+        stopAllReplicationJobs(testCluster)
         try {
             val deleteRequest = Request("DELETE", "*,-.*") // All except system indices
             val response = testCluster.lowLevelClient.performRequest(deleteRequest)
@@ -633,4 +634,13 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
         updateSettingsRequest.transientSettings(Collections.singletonMap<String, String?>(ReplicationPlugin.REPLICATION_METADATA_SYNC_INTERVAL.key, "5s"))
         followerClient.cluster().putSettings(updateSettingsRequest, RequestOptions.DEFAULT)
     }
+
+//    TODO Find a way to skip tests when tests are run for remote clusters
+    protected  fun checkifIntegTestRemote(): Boolean {
+        val systemProperties = BootstrapInfo.getSystemProperties()
+        val integTestRemote = systemProperties.get("tests.integTestRemote") as String?
+        return integTestRemote.equals("true")
+    }
+
+
 }

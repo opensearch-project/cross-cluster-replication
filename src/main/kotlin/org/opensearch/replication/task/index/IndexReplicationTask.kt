@@ -55,6 +55,9 @@ import org.opensearch.action.admin.indices.alias.get.GetAliasesRequest
 import org.opensearch.action.admin.indices.delete.DeleteIndexRequest
 import org.opensearch.action.admin.indices.settings.get.GetSettingsRequest
 import org.opensearch.action.admin.indices.settings.put.UpdateSettingsRequest
+import org.opensearch.action.admin.indices.mapping.get.GetMappingsRequest
+import org.opensearch.action.admin.indices.mapping.put.PutMappingRequest
+import org.opensearch.action.support.IndicesOptions
 import org.opensearch.client.Client
 import org.opensearch.client.Requests
 import org.opensearch.cluster.ClusterChangedEvent
@@ -72,9 +75,10 @@ import org.opensearch.common.settings.Settings
 import org.opensearch.common.settings.SettingsModule
 import org.opensearch.common.unit.ByteSizeUnit
 import org.opensearch.common.unit.ByteSizeValue
-import org.opensearch.common.xcontent.ToXContent
-import org.opensearch.common.xcontent.ToXContentObject
-import org.opensearch.common.xcontent.XContentBuilder
+import org.opensearch.core.xcontent.ToXContent
+import org.opensearch.core.xcontent.ToXContentObject
+import org.opensearch.core.xcontent.XContentBuilder
+import org.opensearch.common.xcontent.XContentType
 import org.opensearch.index.Index
 import org.opensearch.index.IndexService
 import org.opensearch.index.IndexSettings
@@ -88,6 +92,7 @@ import org.opensearch.persistent.PersistentTasksCustomMetadata.PersistentTask
 import org.opensearch.persistent.PersistentTasksNodeService
 import org.opensearch.persistent.PersistentTasksService
 import org.opensearch.replication.ReplicationException
+import org.opensearch.replication.MappingNotAvailableException
 import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING
 import org.opensearch.rest.RestStatus
 import org.opensearch.tasks.TaskId
@@ -99,6 +104,8 @@ import java.util.stream.Collectors
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
+import kotlin.streams.toList
+import org.opensearch.cluster.DiffableUtils
 
 open class IndexReplicationTask(id: Long, type: String, action: String, description: String,
                            parentTask: TaskId,
@@ -125,7 +132,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
     override val followerIndexName = params.followerIndexName
 
     override val log = Loggers.getLogger(javaClass, Index(params.followerIndexName, ClusterState.UNKNOWN_UUID))
-    private val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
+    private val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), clusterService.state().metadata.clusterUUID(), remoteClient)
     private var shouldCallEvalMonitoring = true
     private var updateSettingsContinuousFailCount = 0
     private var updateAliasContinousFailCount = 0
@@ -405,6 +412,16 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         }
     }
 
+    private suspend fun updateFollowerMapping(followerIndex: String,mappingSource: String?) {
+
+        val options = IndicesOptions.strictSingleIndexNoExpandForbidClosed()
+        val putMappingRequest = PutMappingRequest().indices(followerIndex).indicesOptions(options)
+            .source(mappingSource, XContentType.JSON)
+        val updateMappingRequest = UpdateMetadataRequest(followerIndex, UpdateMetadataRequest.Type.MAPPING, putMappingRequest)
+        client.suspendExecute(UpdateMetadataAction.INSTANCE, updateMappingRequest, injectSecurityContext = true)
+        log.debug("Mappings synced for $followerIndex")
+    }
+
     private suspend fun pollForMetadata(scope: CoroutineScope) {
         while (scope.isActive) {
             try {
@@ -545,7 +562,23 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 } else {
                     metadataUpdate = null
                 }
-
+                val options = IndicesOptions.strictSingleIndexNoExpandForbidClosed()
+                var gmr = GetMappingsRequest().indices(this.leaderIndex.name).indicesOptions(options)
+                var mappingResponse = remoteClient.suspending(remoteClient.admin().indices()::getMappings, injectSecurityContext = true)(gmr)
+                var leaderMappingSource = mappingResponse?.mappings?.get(this.leaderIndex.name)?.source()?.toString()
+                @Suppress("UNCHECKED_CAST")
+                val leaderProperties = mappingResponse?.mappings()?.get(this.leaderIndex.name)?.sourceAsMap()?.toMap()?.get("properties") as? Map<String,Any>?
+                gmr = GetMappingsRequest().indices(this.followerIndexName).indicesOptions(options)
+                mappingResponse = client.suspending(client.admin().indices()::getMappings, injectSecurityContext = true)(gmr)
+                @Suppress("UNCHECKED_CAST")
+                val followerProperties = mappingResponse?.mappings()?.get(this.followerIndexName)?.sourceAsMap()?.toMap()?.get("properties") as? Map<String,Any>?
+                for((key,value) in followerProperties?: emptyMap()) {
+                    if (leaderProperties?.getValue(key).toString() != (value).toString()) {
+                        log.debug("Updating Multi-field Mapping at Follower")
+                        updateFollowerMapping(this.followerIndexName, leaderMappingSource)
+                        break
+                    }
+                }
             } catch (e: Exception) {
                 log.error("Error in getting the required metadata ${e.stackTraceToString()}")
             } finally {

@@ -18,7 +18,7 @@ import org.opensearch.common.bytes.BytesArray
 import org.opensearch.common.bytes.ReleasableBytesReference
 import org.opensearch.common.collect.Tuple
 import org.opensearch.common.util.BigArrays
-import org.opensearch.core.internal.io.IOUtils
+import org.opensearch.common.util.io.IOUtils
 import org.opensearch.index.seqno.RetentionLease
 import org.opensearch.index.seqno.RetentionLeases
 import org.opensearch.index.shard.ShardId
@@ -177,7 +177,8 @@ class ReplicationTranslogDeletionPolicyTests : OpenSearchTestCase() {
                 randomNonNegativeLong(),
                 TragicExceptionHolder(),
                 { },
-                BigArrays.NON_RECYCLING_INSTANCE
+                BigArrays.NON_RECYCLING_INSTANCE,
+                false
             )
             writer = Mockito.spy(writer)
             Mockito.doReturn(now - (numberOfReaders - gen + 1) * 1000).`when`(writer).lastModifiedTime

@@ -21,7 +21,7 @@ import org.opensearch.common.component.AbstractLifecycleComponent
 import org.opensearch.common.inject.Inject
 import org.opensearch.common.inject.Singleton
 import org.opensearch.common.lucene.store.InputStreamIndexInput
-import org.opensearch.core.internal.io.IOUtils
+import org.opensearch.common.util.io.IOUtils
 import org.opensearch.index.seqno.RetentionLeaseActions
 import org.opensearch.index.store.Store
 import org.opensearch.indices.IndicesService
