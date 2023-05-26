@@ -63,6 +63,7 @@ import org.elasticsearch.index.snapshots.IndexShardSnapshotStatus
 import org.elasticsearch.index.store.Store
 import org.elasticsearch.indices.recovery.RecoverySettings
 import org.elasticsearch.indices.recovery.RecoveryState
+import com.amazon.elasticsearch.replication.seqno.RemoteClusterRetentionLeaseHelper
 import org.elasticsearch.repositories.IndexId
 import org.elasticsearch.repositories.Repository
 import org.elasticsearch.repositories.RepositoryData
@@ -290,7 +291,8 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
                 snapshotShardId.id)
         restoreUUID = UUIDs.randomBase64UUID()
         val getStoreMetadataRequest = GetStoreMetadataRequest(restoreUUID, leaderShardNode, leaderShardId,
-                clusterService.clusterName.value(), followerShardId)
+            RemoteClusterRetentionLeaseHelper.getFollowerClusterNameWithUUID(clusterService.clusterName.value(), clusterService.state().metadata.clusterUUID()),
+             followerShardId)
 
         // Gets the remote store metadata
         val metadataResponse = executeActionOnRemote(GetStoreMetadataAction.INSTANCE, getStoreMetadataRequest, followerIndexName)
