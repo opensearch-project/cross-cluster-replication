@@ -81,7 +81,6 @@ import java.lang.Thread.sleep
 import java.nio.file.Files
 import java.util.concurrent.TimeUnit
 
-
 @MultiClusterAnnotations.ClusterConfigurations(
         MultiClusterAnnotations.ClusterConfiguration(clusterName = LEADER),
         MultiClusterAnnotations.ClusterConfiguration(clusterName = FOLLOWER)
@@ -1145,6 +1144,80 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         } finally {
             followerClient.stopReplication(followerIndexName)
         }
+    }
+
+    fun `test that follower index mapping updates when leader index gets multi-field mapping`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        var putMappingRequest = PutMappingRequest(leaderIndexName)
+        putMappingRequest.source("{\"properties\":{\"field1\":{\"type\":\"text\"}}}", XContentType.JSON)
+        leaderClient.indices().putMapping(putMappingRequest, RequestOptions.DEFAULT)
+        val sourceMap = mapOf("field1" to randomAlphaOfLength(5))
+        leaderClient.index(IndexRequest(leaderIndexName).id("1").source(sourceMap), RequestOptions.DEFAULT)
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
+            waitForRestore = true)
+        assertBusy {
+            assertThat(followerClient.indices()
+                .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
+                .isEqualTo(true)
+        }
+        Assert.assertEquals(
+            leaderClient.indices().getMapping(GetMappingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
+                .mappings()[leaderIndexName],
+            followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
+                .mappings()[followerIndexName]
+        )
+        putMappingRequest = PutMappingRequest(leaderIndexName)
+        putMappingRequest.source("{\"properties\":{\"field1\":{\"type\":\"text\",\"fields\":{\"field2\":{\"type\":\"text\",\"analyzer\":\"standard\"},\"field3\":{\"type\":\"text\",\"analyzer\":\"standard\"}}}}}",XContentType.JSON)
+        leaderClient.indices().putMapping(putMappingRequest, RequestOptions.DEFAULT)
+        val leaderMappings = leaderClient.indices().getMapping(GetMappingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
+            .mappings()[leaderIndexName]
+        TimeUnit.MINUTES.sleep(2)
+        Assert.assertEquals(
+            leaderMappings,
+            followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
+                .mappings()[followerIndexName]
+        )
+    }
+
+    fun `test that follower index mapping does not update when only new fields are added but not respective docs in leader index`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        var putMappingRequest = PutMappingRequest(leaderIndexName)
+        putMappingRequest.source("{\"properties\":{\"name\":{\"type\":\"text\"}}}", XContentType.JSON)
+        leaderClient.indices().putMapping(putMappingRequest, RequestOptions.DEFAULT)
+        val sourceMap = mapOf("name" to randomAlphaOfLength(5))
+        leaderClient.index(IndexRequest(leaderIndexName).id("1").source(sourceMap), RequestOptions.DEFAULT)
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
+            waitForRestore = true)
+        assertBusy {
+            assertThat(followerClient.indices()
+                .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
+                .isEqualTo(true)
+        }
+        Assert.assertEquals(
+            leaderClient.indices().getMapping(GetMappingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
+                .mappings()[leaderIndexName],
+            followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
+                .mappings()[followerIndexName]
+        )
+        putMappingRequest = PutMappingRequest(leaderIndexName)
+        putMappingRequest.source("{\"properties\":{\"name\":{\"type\":\"text\"},\"age\":{\"type\":\"integer\"}}}",XContentType.JSON)
+        leaderClient.indices().putMapping(putMappingRequest, RequestOptions.DEFAULT)
+        val leaderMappings = leaderClient.indices().getMapping(GetMappingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
+            .mappings()[leaderIndexName]
+        TimeUnit.MINUTES.sleep(2)
+        Assert.assertNotEquals(
+            leaderMappings,
+            followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
+                .mappings()[followerIndexName]
+        )
     }
 
     private fun assertValidationFailure(client: RestHighLevelClient, leader: String, follower: String, errrorMsg: String) {
