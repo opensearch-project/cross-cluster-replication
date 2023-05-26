@@ -74,7 +74,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     private val leaderShardId = params.leaderShardId
     private val followerShardId = params.followerShardId
     private val remoteClient = client.getRemoteClusterClient(leaderAlias)
-    private val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
+    private val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), clusterService.state().metadata.clusterUUID(), remoteClient)
 
     //Start backOff for exceptions with a second
     private val initialBackoffMillis = 1000L
