@@ -149,7 +149,8 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 IndexMetadata.INDEX_BLOCKS_READ_ONLY_ALLOW_DELETE_SETTING,
                 EnableAllocationDecider.INDEX_ROUTING_REBALANCE_ENABLE_SETTING,
                 EnableAllocationDecider.INDEX_ROUTING_ALLOCATION_ENABLE_SETTING,
-                IndexSettings.INDEX_SOFT_DELETES_RETENTION_LEASE_PERIOD_SETTING
+                IndexSettings.INDEX_SOFT_DELETES_RETENTION_LEASE_PERIOD_SETTING,
+                IndexMetadata.SETTING_WAIT_FOR_ACTIVE_SHARDS
         )
 
         val blockListedSettings :Set<String> = blSettings.stream().map { k -> k.key }.collect(Collectors.toSet())
