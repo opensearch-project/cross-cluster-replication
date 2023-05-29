@@ -31,7 +31,7 @@ jobs:
         uses: actions/checkout@v2
       - name: Build and run Replication tests
         run: |
-          ./gradlew clean release -D"build.snapshot=true"
+          ./gradlew --refresh-dependencies clean release -D"build.snapshot=true"
       - name: Upload failed logs
         uses: actions/upload-artifact@v2
         if: failure()
