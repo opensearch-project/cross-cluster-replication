@@ -71,6 +71,8 @@ import org.elasticsearch.cluster.metadata.MetadataCreateIndexService
 import org.elasticsearch.common.io.PathUtils
 import org.elasticsearch.common.settings.Settings
 import org.elasticsearch.common.unit.TimeValue
+import org.elasticsearch.common.xcontent.DeprecationHandler
+import org.elasticsearch.common.xcontent.NamedXContentRegistry
 import org.elasticsearch.common.xcontent.XContentType
 import org.elasticsearch.index.IndexSettings
 import org.elasticsearch.index.mapper.MapperService
@@ -1218,6 +1220,189 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
                 .mappings()[followerIndexName]
         )
+    }
+
+
+    fun `test that wait_for_active_shards setting is set on leader and not on follower`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+
+        val settings = Settings.builder()
+                .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 1)
+                .put(IndexMetadata.SETTING_WAIT_FOR_ACTIVE_SHARDS.getKey(), Integer.toString(2))
+                .build()
+
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName).settings(settings), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
+            assertBusy {
+                assertThat(followerClient.indices()
+                        .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
+                        .isEqualTo(true)
+            }
+            TimeUnit.SECONDS.sleep(SLEEP_TIME_BETWEEN_SYNC)
+
+            // Verify the setting on leader
+            val getLeaderSettingsRequest = GetSettingsRequest()
+            getLeaderSettingsRequest.indices(leaderIndexName)
+            getLeaderSettingsRequest.includeDefaults(true)
+
+            assertBusy ({
+                Assert.assertEquals(
+                        "2",
+                        leaderClient.indices()
+                                .getSettings(getLeaderSettingsRequest, RequestOptions.DEFAULT)
+                                .indexToSettings[leaderIndexName][IndexMetadata.SETTING_WAIT_FOR_ACTIVE_SHARDS.getKey()]
+                )
+            }, 15, TimeUnit.SECONDS)
+
+            // Verify that the setting is not updated on follower and follower has default value of the setting
+            val getSettingsRequest = GetSettingsRequest()
+            getSettingsRequest.indices(followerIndexName)
+            getSettingsRequest.includeDefaults(true)
+
+            assertBusy ({
+                Assert.assertEquals(
+                        "1",
+                        followerClient.indices()
+                                .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
+                                .getSetting(followerIndexName, IndexMetadata.SETTING_WAIT_FOR_ACTIVE_SHARDS.key)
+                )
+            }, 15, TimeUnit.SECONDS)
+        } finally {
+            followerClient.stopReplication(followerIndexName)
+        }
+    }
+
+    fun `test that wait_for_active_shards setting is updated on leader and not on follower`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
+            assertBusy {
+                assertThat(followerClient.indices()
+                        .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
+                        .isEqualTo(true)
+            }
+            TimeUnit.SECONDS.sleep(SLEEP_TIME_BETWEEN_SYNC)
+
+            //Use Update API
+            val settingsBuilder = Settings.builder()
+                    .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 1)
+                    .put(IndexMetadata.SETTING_WAIT_FOR_ACTIVE_SHARDS.getKey(), Integer.toString(2))
+
+            val settingsUpdateResponse = leaderClient.indices().putSettings(UpdateSettingsRequest(leaderIndexName)
+                    .settings(settingsBuilder.build()), RequestOptions.DEFAULT)
+            Assert.assertEquals(settingsUpdateResponse.isAcknowledged, true)
+
+            TimeUnit.SECONDS.sleep(SLEEP_TIME_BETWEEN_SYNC)
+
+            // Verify the setting on leader
+            val getLeaderSettingsRequest = GetSettingsRequest()
+            getLeaderSettingsRequest.indices(leaderIndexName)
+            getLeaderSettingsRequest.includeDefaults(true)
+
+            assertBusy ({
+                Assert.assertEquals(
+                        "2",
+                        leaderClient.indices()
+                                .getSettings(getLeaderSettingsRequest, RequestOptions.DEFAULT)
+                                .indexToSettings[leaderIndexName][IndexMetadata.SETTING_WAIT_FOR_ACTIVE_SHARDS.getKey()]
+                )
+            }, 15, TimeUnit.SECONDS)
+
+
+            val getSettingsRequest = GetSettingsRequest()
+            getSettingsRequest.indices(followerIndexName)
+            getSettingsRequest.includeDefaults(true)
+
+            assertBusy ({
+                Assert.assertEquals(
+                        "1",
+                        followerClient.indices()
+                                .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
+                                .getSetting(followerIndexName, IndexMetadata.SETTING_WAIT_FOR_ACTIVE_SHARDS.key)
+                )
+            }, 15, TimeUnit.SECONDS)
+        } finally {
+            followerClient.stopReplication(followerIndexName)
+        }
+    }
+
+    fun `test that wait_for_active_shards setting is updated on follower through start replication api`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+
+        val settings = Settings.builder()
+                .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 1)
+                .put(IndexMetadata.SETTING_WAIT_FOR_ACTIVE_SHARDS.getKey(), Integer.toString(2))
+                .build()
+        try {
+            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName, settings = settings))
+            assertBusy {
+                assertThat(followerClient.indices()
+                        .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
+                        .isEqualTo(true)
+            }
+            TimeUnit.SECONDS.sleep(SLEEP_TIME_BETWEEN_SYNC)
+
+            val getSettingsRequest = GetSettingsRequest()
+            getSettingsRequest.indices(followerIndexName)
+            getSettingsRequest.includeDefaults(true)
+            assertBusy ({
+                Assert.assertEquals(
+                        "2",
+                        followerClient.indices()
+                                .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
+                                .indexToSettings[followerIndexName][IndexMetadata.SETTING_WAIT_FOR_ACTIVE_SHARDS.getKey()]
+                )
+            }, 15, TimeUnit.SECONDS)
+        } finally {
+            followerClient.stopReplication(followerIndexName)
+        }
+    }
+
+    private fun excludeAllClusterNodes(clusterName: String) {
+        val transientSettingsRequest = Request("PUT", "_cluster/settings")
+        // Get IPs directly from the cluster to handle all cases - single node cluster, multi node cluster and remote test cluster.
+        val excludeIps = getClusterNodeIPs(clusterName)
+        val entityAsString = """
+                        {
+                          "transient": {
+                             "cluster.routing.allocation.exclude._ip": "${excludeIps.joinToString()}"
+                          }
+                        }""".trimMargin()
+        transientSettingsRequest.entity = NStringEntity(entityAsString, ContentType.APPLICATION_JSON)
+        val transientSettingsResponse = getNamedCluster(clusterName).lowLevelClient.performRequest(transientSettingsRequest)
+        assertEquals(HttpStatus.SC_OK.toLong(), transientSettingsResponse.statusLine.statusCode.toLong())
+    }
+
+    private fun getClusterNodeIPs(clusterName: String): List<String> {
+        val clusterClient = getNamedCluster(clusterName).lowLevelClient
+        val nodesRequest = Request("GET", "_cat/nodes?format=json")
+        val nodesResponse =  EntityUtils.toString(clusterClient.performRequest(nodesRequest).entity)
+        val nodeIPs = arrayListOf<String>()
+        val parser = XContentType.JSON.xContent().createParser(
+            NamedXContentRegistry.EMPTY,
+                DeprecationHandler.THROW_UNSUPPORTED_OPERATION, nodesResponse)
+        parser.list().forEach {
+            it as Map<*, *>
+            nodeIPs.add(it["ip"] as String)
+        }
+        return nodeIPs
     }
 
     private fun assertValidationFailure(client: RestHighLevelClient, leader: String, follower: String, errrorMsg: String) {
