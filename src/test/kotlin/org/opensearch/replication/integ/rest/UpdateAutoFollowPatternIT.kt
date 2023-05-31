@@ -42,6 +42,7 @@ import org.opensearch.cluster.metadata.MetadataCreateIndexService
 import org.opensearch.replication.AutoFollowStats
 import org.opensearch.replication.ReplicationPlugin
 import org.opensearch.replication.updateReplicationStartBlockSetting
+import org.opensearch.replication.updateAutofollowRetrySetting
 import org.opensearch.replication.updateAutoFollowConcurrentStartReplicationJobSetting
 import org.opensearch.replication.waitForShardTaskStart
 import org.opensearch.test.OpenSearchTestCase.assertBusy
@@ -321,6 +322,8 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
         createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
         val leaderIndexName = createRandomIndex(leaderClient)
         try {
+            //modify retry duration to account for autofollow trigger in next retry
+            followerClient.updateAutofollowRetrySetting("1m")
             // Add replication start block
             followerClient.updateReplicationStartBlockSetting(true)
             followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern)
@@ -330,12 +333,19 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
             // Autofollow task should still be up - 1 task
             Assertions.assertThat(getIndexReplicationTasks(FOLLOWER).size).isEqualTo(0)
             Assertions.assertThat(getAutoFollowTasks(FOLLOWER).size).isEqualTo(1)
+
+            var stats = followerClient.AutoFollowStats()
+            var failedIndices = stats["failed_indices"] as List<*>
+            assert(failedIndices.size == 1)
             // Remove replication start block
             followerClient.updateReplicationStartBlockSetting(false)
-            sleep(45000) // poll for auto follow in worst case
+            sleep(60000) // wait for auto follow trigger in the worst case
             // Index should be replicated and autofollow task should be present
             Assertions.assertThat(getIndexReplicationTasks(FOLLOWER).size).isEqualTo(1)
             Assertions.assertThat(getAutoFollowTasks(FOLLOWER).size).isEqualTo(1)
+            stats = followerClient.AutoFollowStats()
+            failedIndices = stats["failed_indices"] as List<*>
+            assert(failedIndices.isEmpty())
         } finally {
             followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
         }
