@@ -60,9 +60,14 @@ class ShardReplicationExecutor(executor: String, private val clusterService : Cl
     }
 
     override fun getAssignment(params: ShardReplicationParams, clusterState: ClusterState) : Assignment {
-        val primaryShard = clusterState.routingTable().shardRoutingTable(params.followerShardId).primaryShard()
-        if (!primaryShard.active()) return SHARD_NOT_ACTIVE
-        return Assignment(primaryShard.currentNodeId(), "node with primary shard")
+        try {
+            val primaryShard = clusterState.routingTable().shardRoutingTable(params.followerShardId).primaryShard()
+            if (!primaryShard.active()) return SHARD_NOT_ACTIVE
+            return Assignment(primaryShard.currentNodeId(), "node with primary shard")
+        } catch (e: Exception) {
+            log.error("Failed to assign shard replication task with id  ${params.followerShardId}", e)
+            return SHARD_NOT_ACTIVE
+        }
     }
 
     override fun nodeOperation(task: AllocatedPersistentTask, params: ShardReplicationParams, state: PersistentTaskState?) {
