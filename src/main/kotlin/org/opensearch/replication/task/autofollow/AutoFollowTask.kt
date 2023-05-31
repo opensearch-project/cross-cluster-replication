@@ -36,6 +36,9 @@ import org.opensearch.common.xcontent.ToXContent
 import org.opensearch.common.xcontent.XContentBuilder
 import org.opensearch.persistent.PersistentTaskState
 import org.opensearch.replication.ReplicationException
+import org.opensearch.replication.action.status.ReplicationStatusAction
+import org.opensearch.replication.action.status.ShardInfoRequest
+import org.opensearch.replication.action.status.ShardInfoResponse
 import org.opensearch.rest.RestStatus
 import org.opensearch.tasks.Task
 import org.opensearch.tasks.TaskId
@@ -60,7 +63,7 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
     override val followerIndexName: String = params.patternName //Special case for auto follow
     override val log = Loggers.getLogger(javaClass, leaderAlias)
     private var trackingIndicesOnTheCluster = setOf<String>()
-    private var failedIndices = ConcurrentSkipListSet<String>() // Failed indices for replication from this autofollow task
+    private var replicationJobsQueue = ConcurrentSkipListSet<String>() // To keep track of outstanding replication jobs for this autofollow task
     private var retryScheduler: Scheduler.ScheduledCancellable? = null
     lateinit var stat: AutoFollowStat
 
@@ -69,7 +72,7 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
         while (scope.isActive) {
             try {
                 addRetryScheduler()
-                autoFollow()
+                pollForIndices()
                 stat.lastExecutionTime = System.currentTimeMillis()
                 delay(replicationSettings.autofollowFetchPollDuration.millis)
             } catch(e: OpenSearchException) {
@@ -86,14 +89,21 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
     }
 
     private fun addRetryScheduler() {
+        log.debug("Adding retry scheduler")
         if(retryScheduler != null && !retryScheduler!!.isCancelled) {
             return
         }
-        retryScheduler = try {
-            threadPool.schedule({ failedIndices.clear() }, replicationSettings.autofollowRetryPollDuration, ThreadPool.Names.GENERIC)
+         try {
+            retryScheduler = threadPool.schedule(
+                    {
+                        log.debug("Clearing failed indices to schedule for the next retry")
+                        stat.failedIndices.clear()
+                    },
+                    replicationSettings.autofollowRetryPollDuration,
+                    ThreadPool.Names.SAME)
         } catch (e: Exception) {
             log.error("Error scheduling retry on failed autofollow indices ${e.stackTraceToString()}")
-            null
+             retryScheduler = null
         }
     }
 
@@ -101,7 +111,7 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
         retryScheduler?.cancel()
     }
 
-    private suspend fun autoFollow() {
+    private suspend fun pollForIndices() {
         log.debug("Checking $leaderAlias under pattern name $patternName for new indices to auto follow")
         val entry = replicationMetadata.leaderContext.resource
 
@@ -118,10 +128,10 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
         } catch (e: Exception) {
             // Ideally, Calls to the remote cluster shouldn't fail and autofollow task should be able to pick-up the newly created indices
             // matching the pattern. Should be safe to retry after configured delay.
-            stat.failedLeaderCall++
-            if(stat.failedLeaderCall > 0 && stat.failedLeaderCall.rem(10) == 0L) {
+            if(stat.failedLeaderCall >= 0 && stat.failedLeaderCall.rem(10) == 0L) {
                 log.error("Fetching remote indices failed with error - ${e.stackTraceToString()}")
             }
+            stat.failedLeaderCall++
         }
 
         var currentIndices = clusterService.state().metadata().concreteAllIndices.asIterable() // All indices - open and closed on the cluster
@@ -133,13 +143,44 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
                 trackingIndicesOnTheCluster = currentIndices.toSet()
             }
         }
-        remoteIndices = remoteIndices.minus(currentIndices).minus(failedIndices)
+        remoteIndices = remoteIndices.minus(currentIndices).minus(stat.failedIndices).minus(replicationJobsQueue)
 
         stat.failCounterForRun = 0
-        for (newRemoteIndex in remoteIndices) {
-            startReplication(newRemoteIndex)
-        }
+        startReplicationJobs(remoteIndices)
         stat.failCount = stat.failCounterForRun
+    }
+
+    private suspend fun startReplicationJobs(remoteIndices: Iterable<String>) {
+        val completedJobs = ConcurrentSkipListSet<String>()
+        for(index in replicationJobsQueue) {
+            val statusReq = ShardInfoRequest(index, false)
+            try {
+                val statusRes = client.suspendExecute(ReplicationStatusAction.INSTANCE, statusReq, injectSecurityContext = true)
+                if(statusRes.status != ShardInfoResponse.BOOTSTRAPPING) {
+                    completedJobs.add(index)
+                }
+            } catch (ex: Exception) {
+                log.error("Error while fetching the status for index $index", ex)
+            }
+        }
+
+        // Remove the indices in "syncing" state from the queue
+        replicationJobsQueue.removeAll(completedJobs)
+        val concurrentJobsAllowed = replicationSettings.autofollowConcurrentJobsTriggerSize
+        if(replicationJobsQueue.size >= concurrentJobsAllowed) {
+            log.debug("Max concurrent replication jobs already in the queue for autofollow task[${params.patternName}]")
+            return
+        }
+
+        var totalJobsToTrigger = concurrentJobsAllowed - replicationJobsQueue.size
+        for (newRemoteIndex in remoteIndices) {
+            if(totalJobsToTrigger <= 0) {
+                break
+            }
+            startReplication(newRemoteIndex)
+            replicationJobsQueue.add(newRemoteIndex)
+            totalJobsToTrigger--
+        }
     }
 
     private suspend fun startReplication(leaderIndex: String) {
@@ -171,8 +212,6 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
         } catch (e: OpenSearchSecurityException) {
             // For permission related failures, Adding as part of failed indices as autofollow role doesn't have required permissions.
             log.trace("Cannot start replication on $leaderIndex due to missing permissions $e")
-            failedIndices.add(leaderIndex)
-
         } catch (e: Exception) {
             // Any failure other than security exception can be safely retried and not adding to the failed indices
             log.warn("Failed to start replication for $leaderAlias:$leaderIndex -> $leaderIndex.", e)
@@ -213,7 +252,7 @@ class AutoFollowStat: Task.Status {
     val name :String
     val pattern :String
     var failCount: Long=0
-    var failedIndices :MutableSet<String> = mutableSetOf()
+    var failedIndices = ConcurrentSkipListSet<String>() // Failed indices for replication from this autofollow task
     var failCounterForRun :Long=0
     var successCount: Long=0
     var failedLeaderCall :Long=0
@@ -229,7 +268,8 @@ class AutoFollowStat: Task.Status {
         name = inp.readString()
         pattern = inp.readString()
         failCount = inp.readLong()
-        failedIndices = inp.readSet(StreamInput::readString)
+        val inpFailedIndices = inp.readList(StreamInput::readString)
+        failedIndices = ConcurrentSkipListSet<String>(inpFailedIndices)
         successCount = inp.readLong()
         failedLeaderCall = inp.readLong()
         lastExecutionTime = inp.readLong()

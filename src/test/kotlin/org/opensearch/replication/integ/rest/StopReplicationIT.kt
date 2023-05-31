@@ -40,7 +40,7 @@ import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.unit.TimeValue
 import org.opensearch.index.mapper.MapperService
-import java.util.Random
+import org.opensearch.common.Randomness
 import java.util.concurrent.TimeUnit
 
 
@@ -247,7 +247,7 @@ class StopReplicationIT: MultiClusterRestTestCase() {
         createConnectionBetweenClusters(FOLLOWER, LEADER, "source")
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
-        val snapshotSuffix = Random().nextInt(1000).toString()
+        val snapshotSuffix = Randomness.get().nextInt(1000).toString()
         followerClient.startReplication(
                 StartReplicationRequest("source", leaderIndexName, followerIndexName),
                 TimeValue.timeValueSeconds(10),
