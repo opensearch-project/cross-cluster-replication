@@ -5,6 +5,7 @@
   - [Feature Requests](#feature-requests)
   - [Documentation Changes](#documentation-changes)
   - [Contributing Code](#contributing-code)
+- [Becoming a maintainer](#becoming-a-maintainer)
 - [Developer Certificate of Origin](#developer-certificate-of-origin)
 - [License Headers](#license-headers)
 - [Backports](#backports)
@@ -40,11 +41,15 @@ If you've thought of a way that OpenSearch could be better, we want to hear abou
 
 ### Documentation Changes
 
-TODO
+If you would like to contribute to the documentation, please do so in the [documentation-website](https://github.com/opensearch-project/documentation-website) repo.
 
 ### Contributing Code
 
 As with other types of contributions, the first step is to [open an issue on GitHub](issues/new/choose). Opening an issue before you make changes makes sure that someone else isn't already working on that particular problem. It also lets us all work together to find the right approach before you spend a bunch of time on a PR. So again, when in doubt, open an issue.
+
+## Becoming a maintainer
+You can become a maintainer by actively contributing to any project, and being nominated by an existing maintainer.
+Refer to [this](https://github.com/opensearch-project/.github/blob/main/RESPONSIBILITIES.md#becoming-a-maintainer) for the nomination process.  
 
 ## Developer Certificate of Origin
 
