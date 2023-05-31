@@ -11,4 +11,4 @@ This document contains a list of maintainers in this repo. See [opensearch-proje
 | Sai              | [saikaranam-amazon](https://github.com/saikaranam-amazon) | Amazon      |
 | Sooraj Sinha     | [soosinha](https://github.com/soosinha)            | Amazon      |
 | Gaurav Bafna     | [gbbafna](https://github.com/gbbafna)              | Amazon      |
-| Monu Singh       | [gbbafna](https://github.com/monusingh-1)          | Amazon      |
+| Monu Singh       | [monusingh-1](https://github.com/monusingh-1)          | Amazon      |
