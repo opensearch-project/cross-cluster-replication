@@ -156,7 +156,8 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         val blockListedSettings :Set<String> = blSettings.stream().map { k -> k.key }.collect(Collectors.toSet())
 
         const val SLEEP_TIME_BETWEEN_POLL_MS = 5000L
-        const val TASK_CANCELLATION_REASON = "Index replication task was cancelled by user"
+        const val AUTOPAUSED_REASON_PREFIX = "AutoPaused: "
+        const val TASK_CANCELLATION_REASON = AUTOPAUSED_REASON_PREFIX + "Index replication task was cancelled by user"
 
     }
 
@@ -263,13 +264,6 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         }
     }
 
-    override fun onCancelled() {
-        log.info("Cancelling the index replication task.")
-        client.execute(PauseIndexReplicationAction.INSTANCE,
-            PauseIndexReplicationRequest(followerIndexName, TASK_CANCELLATION_REASON))
-        super.onCancelled()
-    }
-
     private suspend fun failReplication(failedState: FailedState) {
         withContext(NonCancellable) {
             val reason = failedState.errorMsg
@@ -311,6 +305,23 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         }
         delay(SLEEP_TIME_BETWEEN_POLL_MS)
         return MonitoringState
+    }
+
+    fun isTrackingTaskForIndex(): Boolean {
+        val persistentTasks = clusterService.state().metadata.custom<PersistentTasksCustomMetadata>(PersistentTasksCustomMetadata.TYPE)
+        val runningTasksForIndex = persistentTasks.findTasks(IndexReplicationExecutor.TASK_NAME, Predicate { true }).stream()
+                .map { task -> task as PersistentTask<IndexReplicationParams> }
+                .filter { task -> task.params!!.followerIndexName  == followerIndexName}
+                .toArray()
+        assert(runningTasksForIndex.size <= 1) { "Found more than one running index task for index[$followerIndexName]" }
+        for (runningTask in runningTasksForIndex) {
+            val currentTask = runningTask as PersistentTask<IndexReplicationParams>
+            log.info("Verifying task details - currentTask={isAssigned=${currentTask.isAssigned},executorNode=${currentTask.executorNode}}")
+            if(currentTask.isAssigned && currentTask.executorNode == clusterService.state().nodes.localNodeId) {
+                return true
+            }
+        }
+        return false
     }
 
     private fun isResumed(): Boolean {
@@ -652,7 +663,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
             log.error("Going to initiate auto-pause of $followerIndexName due to shard failures - $state")
             val pauseReplicationResponse = client.suspendExecute(
                 replicationMetadata,
-                PauseIndexReplicationAction.INSTANCE, PauseIndexReplicationRequest(followerIndexName, "AutoPaused: ${state.errorMsg}"),
+                PauseIndexReplicationAction.INSTANCE, PauseIndexReplicationRequest(followerIndexName, "$AUTOPAUSED_REASON_PREFIX + ${state.errorMsg}"),
                 defaultContext = true
             )
             if (!pauseReplicationResponse.isAcknowledged) {
@@ -689,10 +700,27 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
     }
 
     override suspend fun cleanup() {
-        if (currentTaskState.state == ReplicationState.RESTORING)  {
-            log.info("Replication stopped before restore could finish, so removing partial restore..")
-            cancelRestore()
+        // If the task is already running on the other node,
+        // OpenSearch persistent task framework cancels any stale tasks on the old nodes.
+        // Currently, we don't have view on the cancellation reason. Before triggering
+        // any further actions on the index from this task, verify that, this is the actual task tracking the index.
+        // - stale task during cancellation shouldn't trigger further actions.
+        if(isTrackingTaskForIndex()) {
+            if (currentTaskState.state == ReplicationState.RESTORING)  {
+                log.info("Replication stopped before restore could finish, so removing partial restore..")
+                cancelRestore()
+            }
+
+            // if cancelled and not in paused state.
+            val replicationStateParams = getReplicationStateParamsForIndex(clusterService, followerIndexName)
+            if(isCancelled && replicationStateParams != null
+                    && replicationStateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE] == ReplicationOverallState.RUNNING.name) {
+                log.info("Task is cancelled. Moving the index to auto-pause state")
+                client.execute(PauseIndexReplicationAction.INSTANCE,
+                        PauseIndexReplicationRequest(followerIndexName, TASK_CANCELLATION_REASON))
+            }
         }
+
         /* This is to minimise overhead of calling an additional listener as
          * it continues to be called even after the task is completed.
          */
