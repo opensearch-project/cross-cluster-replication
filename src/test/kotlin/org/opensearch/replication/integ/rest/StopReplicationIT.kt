@@ -17,22 +17,30 @@ import org.opensearch.replication.MultiClusterRestTestCase
 import org.opensearch.replication.StartReplicationRequest
 import org.opensearch.replication.startReplication
 import org.opensearch.replication.stopReplication
+import org.opensearch.replication.replicationStatus
+import org.opensearch.replication.getShardReplicationTasks
+import org.opensearch.replication.`validate status syncing response`
 import org.apache.http.util.EntityUtils
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.junit.Assert
 import org.opensearch.OpenSearchStatusException
 import org.opensearch.action.admin.cluster.settings.ClusterUpdateSettingsRequest
+import org.opensearch.action.admin.cluster.snapshots.create.CreateSnapshotRequest
+import org.opensearch.action.admin.cluster.snapshots.restore.RestoreSnapshotRequest
+import org.opensearch.action.admin.cluster.snapshots.status.SnapshotsStatusRequest
 import org.opensearch.action.index.IndexRequest
 import org.opensearch.client.Request
 import org.opensearch.client.RequestOptions
 import org.opensearch.client.ResponseException
 import org.opensearch.client.indices.CreateIndexRequest
 import org.opensearch.client.indices.GetIndexRequest
+import org.opensearch.cluster.SnapshotsInProgress
 import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.unit.TimeValue
 import org.opensearch.index.mapper.MapperService
-import org.opensearch.test.OpenSearchTestCase.assertBusy
+import java.util.Random
 import java.util.concurrent.TimeUnit
 
 
@@ -231,5 +239,77 @@ class StopReplicationIT: MultiClusterRestTestCase() {
         followerClient.stopReplication(followerIndexName)
         val sourceMap = mapOf("name" to randomAlphaOfLength(5))
         followerClient.index(IndexRequest(followerIndexName).id("2").source(sourceMap), RequestOptions.DEFAULT)
+    }
+
+    fun `test stop replication with stale replication settings at leader cluster`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER, "source")
+
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        val snapshotSuffix = Random().nextInt(1000).toString()
+
+        try {
+            followerClient.startReplication(
+                    StartReplicationRequest("source", leaderIndexName, followerIndexName),
+                    TimeValue.timeValueSeconds(10),
+                    true
+            )
+
+            assertBusy({
+                var statusResp = followerClient.replicationStatus(followerIndexName)
+                `validate status syncing response`(statusResp)
+                assertThat(followerClient.getShardReplicationTasks(followerIndexName)).isNotEmpty()
+            }, 60, TimeUnit.SECONDS)
+
+            // Trigger snapshot on the follower cluster
+            val createSnapshotRequest = CreateSnapshotRequest(TestCluster.FS_SNAPSHOT_REPO, "test-$snapshotSuffix")
+            createSnapshotRequest.waitForCompletion(true)
+            followerClient.snapshot().create(createSnapshotRequest, RequestOptions.DEFAULT)
+
+            assertBusy {
+                var snapshotStatusResponse = followerClient.snapshot().status(SnapshotsStatusRequest(TestCluster.FS_SNAPSHOT_REPO,
+                        arrayOf("test-$snapshotSuffix")), RequestOptions.DEFAULT)
+                for (snapshotStatus in snapshotStatusResponse.snapshots) {
+                    Assert.assertEquals(SnapshotsInProgress.State.SUCCESS, snapshotStatus.state)
+                }
+            }
+
+            // Restore follower index on leader cluster
+            val restoreSnapshotRequest = RestoreSnapshotRequest(TestCluster.FS_SNAPSHOT_REPO, "test-$snapshotSuffix")
+            restoreSnapshotRequest.indices(followerIndexName)
+            restoreSnapshotRequest.waitForCompletion(true)
+            restoreSnapshotRequest.renamePattern("(.+)")
+            restoreSnapshotRequest.renameReplacement("restored-\$1")
+            leaderClient.snapshot().restore(restoreSnapshotRequest, RequestOptions.DEFAULT)
+
+            assertBusy {
+                assertThat(leaderClient.indices().exists(GetIndexRequest("restored-$followerIndexName"), RequestOptions.DEFAULT)).isEqualTo(true)
+            }
+
+            // Invoke stop on the new leader cluster index
+            assertThatThrownBy { leaderClient.stopReplication("restored-$followerIndexName") }
+                    .isInstanceOf(ResponseException::class.java)
+                    .hasMessageContaining("Metadata for restored-$followerIndexName doesn't exist")
+
+            // Start replication on the new leader index
+            followerClient.startReplication(
+                    StartReplicationRequest("source", "restored-$followerIndexName", "restored-$followerIndexName"),
+                    TimeValue.timeValueSeconds(10),
+                    true, true
+            )
+
+            assertBusy({
+                var statusResp = followerClient.replicationStatus("restored-$followerIndexName")
+                `validate status syncing response`(statusResp)
+                assertThat(followerClient.getShardReplicationTasks("restored-$followerIndexName")).isNotEmpty()
+            }, 60, TimeUnit.SECONDS)
+
+        } finally {
+            followerClient.stopReplication("restored-$followerIndexName")
+            followerClient.stopReplication(followerIndexName)
+        }
+
     }
 }
