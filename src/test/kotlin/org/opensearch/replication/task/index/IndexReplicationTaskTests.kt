@@ -240,7 +240,8 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
                 .routingTable(routingTableBuilder.build())
                 .nodes(discoveryNodesBuilder.build()).build()
         setState(clusterService, newClusterState)
-        assertThat(replicationTask.isTrackingTaskForIndex()).isTrue
+        assertThat(replicationTask.isTrackingTaskForIndex()).isTrue()
+
 
         // when index replication task is not valid
         tasks = PersistentTasksCustomMetadata.builder()
@@ -263,7 +264,7 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
                 .routingTable(routingTableBuilder.build())
                 .nodes(discoveryNodesBuilder.build()).build()
         setState(clusterService, newClusterState)
-        assertThat(replicationTask.isTrackingTaskForIndex()).isFalse
+        assertThat(replicationTask.isTrackingTaskForIndex()).isFalse()
     }
 
     private fun createIndexReplicationTask() : IndexReplicationTask {
