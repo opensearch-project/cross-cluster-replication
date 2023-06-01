@@ -74,9 +74,8 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
                 addRetryScheduler()
                 pollForIndices()
                 stat.lastExecutionTime = System.currentTimeMillis()
-		delay(replicationSettings.autofollowFetchPollDuration.millis)
-            }
-            catch(e: OpenSearchException) {
+                delay(replicationSettings.autofollowFetchPollDuration.millis)
+            } catch(e: OpenSearchException) {
                 // Any transient error encountered during auto follow execution should be re-tried
                 val status = e.status().status
                 if(status < 500 && status != RestStatus.TOO_MANY_REQUESTS.status) {
