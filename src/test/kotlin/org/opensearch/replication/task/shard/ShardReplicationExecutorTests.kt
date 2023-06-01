@@ -11,7 +11,7 @@ import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.cluster.metadata.Metadata
 import org.opensearch.cluster.routing.*
 import org.opensearch.common.unit.TimeValue
-import org.opensearch.core.xcontent.NamedXContentRegistry
+import org.opensearch.common.xcontent.NamedXContentRegistry
 import org.opensearch.index.Index
 import org.opensearch.index.shard.ShardId
 import org.opensearch.replication.ReplicationSettings
