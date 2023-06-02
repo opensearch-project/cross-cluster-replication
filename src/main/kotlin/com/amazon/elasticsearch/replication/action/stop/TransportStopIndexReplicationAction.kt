@@ -66,6 +66,8 @@ import org.elasticsearch.index.IndexNotFoundException
 import org.elasticsearch.index.shard.ShardId
 import org.elasticsearch.threadpool.ThreadPool
 import org.elasticsearch.transport.TransportService
+import org.elasticsearch.persistent.PersistentTasksCustomMetadata
+import org.elasticsearch.persistent.RemovePersistentTaskAction
 import java.io.IOException
 
 class TransportStopIndexReplicationAction @Inject constructor(transportService: TransportService,
@@ -148,6 +150,7 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                     }
                 }
                 replicationMetadataManager.deleteIndexReplicationMetadata(request.indexName)
+                removeStaleReplicationTasksFromClusterState(request)
                 listener.onResponse(AcknowledgedResponse(true))
             } catch (e: Exception) {
                 log.error("Stop replication failed for index[${request.indexName}] with error ${e.stackTraceToString()}")
@@ -156,7 +159,41 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
         }
     }
 
+    private suspend fun removeStaleReplicationTasksFromClusterState(request: StopIndexReplicationRequest) {
+        try {
+            val allTasks: PersistentTasksCustomMetadata =
+                clusterService.state().metadata().custom(PersistentTasksCustomMetadata.TYPE)
+            for (singleTask in allTasks.tasks()) {
+                if (isReplicationTask(singleTask, request) && !singleTask.isAssigned){
+                    log.info("Removing task: ${singleTask.id} from cluster state")
+                    val removeRequest: RemovePersistentTaskAction.Request =
+                        RemovePersistentTaskAction.Request(singleTask.id)
+                    client.suspendExecute(RemovePersistentTaskAction.INSTANCE, removeRequest)
+                }
+            }
+        } catch (e: Exception) {
+            log.info("Could not update cluster state")
+        }
+    }
+    // Remove index replication task metadata, format replication:index:fruit-1
+    // Remove shard replication task metadata, format replication:[fruit-1][0]
+    private fun isReplicationTask(
+        singleTask: PersistentTasksCustomMetadata.PersistentTask<*>,
+        request: StopIndexReplicationRequest
+    ) = singleTask.id.startsWith("replication:") &&
+            (singleTask.id == "replication:index:${request.indexName}" || singleTask.id.split(":")[1].contains(request.indexName))
+
+
+
     private fun validateStopReplicationRequest(request: StopIndexReplicationRequest) {
+
+        val allTasks: PersistentTasksCustomMetadata? =
+            clusterService.state()?.metadata()?.custom(PersistentTasksCustomMetadata.TYPE)
+        allTasks?.tasks()?.forEach{
+            if (isReplicationTask(it, request) && !it.isAssigned){
+                return
+            }
+        }
         val replicationStateParams = getReplicationStateParamsForIndex(clusterService, request.indexName)
                 ?:
             throw IllegalArgumentException("No replication in progress for index:${request.indexName}")
