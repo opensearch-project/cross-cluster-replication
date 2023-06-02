@@ -49,6 +49,7 @@ import org.elasticsearch.tasks.TaskId
 import org.elasticsearch.threadpool.Scheduler
 import org.elasticsearch.threadpool.ThreadPool
 import java.util.concurrent.ConcurrentSkipListSet
+import java.util.concurrent.TimeUnit
 
 class AutoFollowTask(id: Long, type: String, action: String, description: String, parentTask: TaskId,
                      headers: Map<String, String>,
@@ -95,7 +96,7 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
 
     private fun addRetryScheduler() {
         log.debug("Adding retry scheduler")
-        if(retryScheduler != null && !retryScheduler!!.isCancelled) {
+        if(retryScheduler != null && retryScheduler!!.getDelay(TimeUnit.NANOSECONDS) > 0L) {
             return
         }
          try {

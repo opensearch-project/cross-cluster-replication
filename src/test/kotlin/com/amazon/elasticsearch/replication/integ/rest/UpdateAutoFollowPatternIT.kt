@@ -28,6 +28,7 @@ import com.amazon.elasticsearch.replication.task.index.IndexReplicationExecutor
 import org.apache.http.HttpStatus
 import org.apache.http.entity.ContentType
 import org.apache.http.nio.entity.NStringEntity
+import org.apache.logging.log4j.LogManager
 import org.assertj.core.api.Assertions
 import org.elasticsearch.action.admin.cluster.settings.ClusterUpdateSettingsRequest
 import org.elasticsearch.action.admin.indices.settings.get.GetSettingsRequest
@@ -66,6 +67,10 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
     private val connectionAlias = "test_conn"
     private val longIndexPatternName = "index_".repeat(43)
     private val waitForShardTask = TimeValue.timeValueSeconds(10)
+
+    companion object {
+        private val log = LogManager.getLogger(UpdateAutoFollowPatternIT::class.java)
+    }
 
     fun `test auto follow pattern`() {
         val followerClient = getClientForCluster(FOLLOWER)
@@ -366,42 +371,45 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
         followerClient.stopReplication(leaderIndexName)
     }
 
-    fun `test autofollow task with start replication block`() {
+    fun `test autofollow task with start replication block and retries`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
         createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
-
-        val leaderIndexName = createRandomIndex(leaderClient)
         try {
             //modify retry duration to account for autofollow trigger in next retry
             followerClient.updateAutofollowRetrySetting("1m")
-            // Add replication start block
-            followerClient.updateReplicationStartBlockSetting(true)
-            followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern)
-            sleep(30000) // Default poll for auto follow in worst case
+            for (repeat in 1..2) {
+                log.info("Current Iteration $repeat")
+                // Add replication start block
+                followerClient.updateReplicationStartBlockSetting(true)
+                createRandomIndex(leaderClient)
+                followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern)
+                sleep(95000) // wait for auto follow trigger in the worst case
+                // verify both index replication tasks and autofollow tasks
+                // Replication shouldn't have been started - (repeat-1) tasks as for current loop index shouldn't be
+                // created yet.
+                // Autofollow task should still be up - 1 task
+                Assertions.assertThat(getIndexReplicationTasks(FOLLOWER).size).isEqualTo(repeat-1)
+                Assertions.assertThat(getAutoFollowTasks(FOLLOWER).size).isEqualTo(1)
 
-            // verify both index replication tasks and autofollow tasks
-            // Replication shouldn't have been started - 0 tasks
-            // Autofollow task should still be up - 1 task
-            Assertions.assertThat(getIndexReplicationTasks(FOLLOWER).size).isEqualTo(0)
-            Assertions.assertThat(getAutoFollowTasks(FOLLOWER).size).isEqualTo(1)
-
-
-            var stats = followerClient.AutoFollowStats()
-            var failedIndices = stats["failed_indices"] as List<*>
-            assert(failedIndices.size == 1)
-            // Remove replication start block
-            followerClient.updateReplicationStartBlockSetting(false)
-            sleep(60000) // wait for auto follow trigger in the worst case
-            // Index should be replicated and autofollow task should be present
-            Assertions.assertThat(getIndexReplicationTasks(FOLLOWER).size).isEqualTo(1)
-            Assertions.assertThat(getAutoFollowTasks(FOLLOWER).size).isEqualTo(1)
-            stats = followerClient.AutoFollowStats()
-            failedIndices = stats["failed_indices"] as List<*>
-            assert(failedIndices.isEmpty())
+                var stats = followerClient.AutoFollowStats()
+                var failedIndices = stats["failed_indices"] as List<*>
+                // Every time failed replication task will be 1 as
+                // there are already running jobs in the previous iteration
+                log.info("Current failed indices $failedIndices")
+                assert(failedIndices.size == 1)
+                // Remove replication start block
+                followerClient.updateReplicationStartBlockSetting(false)
+                sleep(95000) // wait for auto follow trigger in the worst case
+                // Index should be replicated and autofollow task should be present
+                Assertions.assertThat(getIndexReplicationTasks(FOLLOWER).size).isEqualTo(repeat)
+                Assertions.assertThat(getAutoFollowTasks(FOLLOWER).size).isEqualTo(1)
+                stats = followerClient.AutoFollowStats()
+                failedIndices = stats["failed_indices"] as List<*>
+                assert(failedIndices.isEmpty())
+            }
         } finally {
             followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
-            followerClient.stopReplication(leaderIndexName)
         }
     }
 
