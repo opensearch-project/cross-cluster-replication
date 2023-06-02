@@ -1,4 +1,4 @@
-/*
+    /*
  *   Copyright 2020 Amazon.com, Inc. or its affiliates. All Rights Reserved.
  *
  *   Licensed under the Apache License, Version 2.0 (the "License").
@@ -180,22 +180,47 @@ class RemoteClusterRetentionLeaseHelper constructor(var followerClusterNameWithU
         }
     }
 
+    public fun attemptRetentionLeaseRemoval(leaderShardId: ShardId, followerShardId: ShardId, timeout: Long) {
+        val retentionLeaseId = retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)
+        val request = RetentionLeaseActions.RemoveRequest(leaderShardId, retentionLeaseId)
+        try {
+            client.execute(RetentionLeaseActions.Remove.INSTANCE, request).actionGet(timeout)
+            log.info("Removed retention lease with id - $retentionLeaseId")
+        } catch(e: RetentionLeaseNotFoundException) {
+            // log error and bail
+            log.error(e.stackTraceToString())
+        } catch (e: Exception) {
+            // We are not bubbling up the exception as the stop action/ task cleanup should succeed
+            // even if we fail to remove the retention lease from leader cluster
+            log.error("Exception in removing retention lease", e)
+        }
+    }
+
 
     /**
      * Remove these once the callers are moved to above APIs
      */
     public fun addRetentionLease(leaderShardId: ShardId, seqNo: Long,
-                                 followerShardId: ShardId, timeout: Long) {
+                                         followerShardId: ShardId, timeout: Long) {
         val retentionLeaseId = retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)
         val request = RetentionLeaseActions.AddRequest(leaderShardId, retentionLeaseId, seqNo, retentionLeaseSource)
-        try {
-            client.execute(RetentionLeaseActions.Add.INSTANCE, request).actionGet(timeout)
-        } catch (e: RetentionLeaseAlreadyExistsException) {
-            log.error(e.stackTraceToString())
-            log.info("Renew retention lease as it already exists $retentionLeaseId with $seqNo")
-            // Only one retention lease should exists for the follower shard
-            // Ideally, this should have got cleaned-up
-            renewRetentionLease(leaderShardId, seqNo, followerShardId, timeout)
+        var canRetry = true
+        while (true) {
+            try {
+                log.info("Adding retention lease $retentionLeaseId")
+                client.execute(RetentionLeaseActions.Add.INSTANCE, request).actionGet(timeout)
+                break
+            } catch (e: RetentionLeaseAlreadyExistsException) {
+                log.info("Found a stale retention lease $retentionLeaseId on leader.")
+                if (canRetry) {
+                    canRetry = false
+                    attemptRetentionLeaseRemoval(leaderShardId, followerShardId, timeout)
+                    log.info("Cleared stale retention lease $retentionLeaseId on leader. Retrying...")
+                } else {
+                    log.error(e.stackTraceToString())
+                    throw e
+                }
+            }
         }
     }
 
