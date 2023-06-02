@@ -11,7 +11,6 @@
 
 package org.opensearch.replication
 
-import com.nhaarman.mockitokotlin2.stub
 import org.opensearch.replication.MultiClusterAnnotations.ClusterConfiguration
 import org.opensearch.replication.MultiClusterAnnotations.ClusterConfigurations
 import org.opensearch.replication.MultiClusterAnnotations.getAnnotationsFromClass
@@ -21,6 +20,7 @@ import org.apache.http.HttpHost
 import org.apache.http.HttpStatus
 import org.apache.http.client.config.RequestConfig
 import org.apache.http.entity.ContentType
+import org.apache.http.entity.StringEntity
 import org.apache.http.impl.nio.client.HttpAsyncClientBuilder
 import org.apache.http.message.BasicHeader
 import org.apache.http.nio.conn.ssl.SSLIOSessionStrategy
@@ -516,6 +516,32 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
         return OpenSearchRestTestCase.entityAsMap(client.performRequest(Request("GET", endpoint)))
     }
 
+    fun getAsList(client: RestClient, endpoint: String): List<Any> {
+        return OpenSearchRestTestCase.entityAsList(client.performRequest(Request("GET", endpoint)))
+    }
+
+    protected fun deleteConnection(fromClusterName: String, connectionName: String="source") {
+        val fromCluster = getNamedCluster(fromClusterName)
+        val persistentConnectionRequest = Request("PUT", "_cluster/settings")
+
+        val entityAsString = """
+                        {
+                          "persistent": {
+                             "cluster": {
+                               "remote": {
+                                 "$connectionName": {
+                                   "seeds": null
+                                 }
+                               }
+                             }
+                          }
+                        }""".trimMargin()
+
+        persistentConnectionRequest.entity = StringEntity(entityAsString, ContentType.APPLICATION_JSON)
+        val persistentConnectionResponse = fromCluster.lowLevelClient.performRequest(persistentConnectionRequest)
+        assertEquals(HttpStatus.SC_OK.toLong(), persistentConnectionResponse.statusLine.statusCode.toLong())
+    }
+
     protected fun createConnectionBetweenClusters(fromClusterName: String, toClusterName: String, connectionName: String="source") {
         val toCluster = getNamedCluster(toClusterName)
         val fromCluster = getNamedCluster(fromClusterName)
@@ -647,4 +673,17 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
         updateSettingsRequest.transientSettings(Collections.singletonMap<String, String?>(ReplicationPlugin.REPLICATION_METADATA_SYNC_INTERVAL.key, "5s"))
         followerClient.cluster().putSettings(updateSettingsRequest, RequestOptions.DEFAULT)
     }
+
+    protected fun docCount(cluster: RestHighLevelClient, indexName: String) : Int {
+        val persistentConnectionRequest = Request("GET", "/$indexName/_search?pretty&q=*")
+
+        val persistentConnectionResponse = cluster.lowLevelClient.performRequest(persistentConnectionRequest)
+        val statusResponse: Map<String, Map<String, Map<String, Any>>> = OpenSearchRestTestCase.entityAsMap(persistentConnectionResponse) as Map<String, Map<String, Map<String, String>>>
+        return statusResponse["hits"]?.get("total")?.get("value") as Int
+    }
+
+    protected fun deleteIndex(testCluster: RestHighLevelClient, indexName: String) {
+        testCluster.lowLevelClient.performRequest(Request("DELETE", indexName))
+    }
+
 }
