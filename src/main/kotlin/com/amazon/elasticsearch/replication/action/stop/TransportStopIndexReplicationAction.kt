@@ -103,7 +103,7 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                     throw ElasticsearchException("Failed to remove index block on ${request.indexName}")
                 }
 
-                validateStopReplicationRequest(request)
+                validateReplicationStateOfIndex(request)
 
                 // Index will be deleted if replication is stopped while it is restoring.  So no need to close/reopen
                 val restoring = clusterService.state().custom<RestoreInProgress>(RestoreInProgress.TYPE, RestoreInProgress.EMPTY).any { entry ->
@@ -123,9 +123,9 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                         throw ElasticsearchException("Unable to close index: ${request.indexName}")
                     }
                 }
-                val replMetadata = replicationMetadataManager.getIndexReplicationMetadata(request.indexName)
-
+                
                 try {
+                    val replMetadata = replicationMetadataManager.getIndexReplicationMetadata(request.indexName)
                     val remoteClient = client.getRemoteClusterClient(replMetadata.connectionName)
                     val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), clusterService.state().metadata.clusterUUID(), remoteClient)
                     retentionLeaseHelper.attemptRemoveRetentionLease(clusterService, replMetadata, request.indexName)
@@ -134,12 +134,12 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                 }
 
                 val clusterStateUpdateResponse : AcknowledgedResponse =
-                    clusterService.waitForClusterStateUpdate("stop_replication") { l -> StopReplicationTask(request, l)}
+                        clusterService.waitForClusterStateUpdate("stop_replication") { l -> StopReplicationTask(request, l)}
                 if (!clusterStateUpdateResponse.isAcknowledged) {
                     throw ElasticsearchException("Failed to update cluster state")
                 }
 
-                // Index will be deleted if stop is called while it is restoring.  So no need to reopen
+                // Index will be deleted if stop is called while it is restoring. So no need to reopen
                 if (!restoring &&
                         state.routingTable.hasIndex(request.indexName)) {
                     val reopenResponse = client.suspending(client.admin().indices()::open, injectSecurityContext = true)(OpenIndexRequest(request.indexName))
@@ -156,7 +156,15 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
         }
     }
 
-    private fun validateStopReplicationRequest(request: StopIndexReplicationRequest) {
+    private fun validateReplicationStateOfIndex(request: StopIndexReplicationRequest) {
+        // If replication blocks/settings are present, Stop action should proceed with the clean-up
+        // This can happen during settings of follower index are carried over in the snapshot and the restore is
+        // performed using this snapshot.
+        if (clusterService.state().blocks.hasIndexBlock(request.indexName, INDEX_REPLICATION_BLOCK)
+                || clusterService.state().metadata.index(request.indexName)?.settings?.get(REPLICATED_INDEX_SETTING.key) != null) {
+            return
+        }
+
         val replicationStateParams = getReplicationStateParamsForIndex(clusterService, request.indexName)
                 ?:
             throw IllegalArgumentException("No replication in progress for index:${request.indexName}")
@@ -194,13 +202,15 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
             val mdBuilder = Metadata.builder(currentState.metadata)
             // remove replicated index setting
             val currentIndexMetadata = currentState.metadata.index(request.indexName)
-            if (currentIndexMetadata != null) {
+            if (currentIndexMetadata != null &&
+                    currentIndexMetadata.settings[REPLICATED_INDEX_SETTING.key] != null) {
                 val newIndexMetadata = IndexMetadata.builder(currentIndexMetadata)
                         .settings(Settings.builder().put(currentIndexMetadata.settings).putNull(REPLICATED_INDEX_SETTING.key))
                         .settingsVersion(1 + currentIndexMetadata.settingsVersion)
                 mdBuilder.put(newIndexMetadata)
             }
             newState.metadata(mdBuilder)
+
             return newState.build()
         }
 
