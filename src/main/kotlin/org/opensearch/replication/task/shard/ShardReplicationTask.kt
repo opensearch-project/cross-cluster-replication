@@ -218,6 +218,10 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
 
         val changeTracker = ShardReplicationChangesTracker(indexShard, replicationSettings)
         followerClusterStats.stats[followerShardId]!!.followerCheckpoint = indexShard.localCheckpoint
+        // In case the shard task starts on a new node and there are no active writes on the leader shard, leader checkpoint
+        // never gets initialized and defaults to 0. To get around this, we set the leaderCheckpoint to follower shard's
+        // localCheckpoint as the leader shard is guaranteed to equal or more.
+        followerClusterStats.stats[followerShardId]!!.leaderCheckpoint = indexShard.localCheckpoint
         coroutineScope {
             while (isActive) {
                 rateLimiter.acquire()
