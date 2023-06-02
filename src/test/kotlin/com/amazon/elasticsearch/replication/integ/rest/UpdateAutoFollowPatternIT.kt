@@ -28,6 +28,7 @@ import com.amazon.elasticsearch.replication.task.index.IndexReplicationExecutor
 import org.apache.http.HttpStatus
 import org.apache.http.entity.ContentType
 import org.apache.http.nio.entity.NStringEntity
+import org.apache.logging.log4j.LogManager
 import org.assertj.core.api.Assertions
 import org.elasticsearch.action.admin.cluster.settings.ClusterUpdateSettingsRequest
 import org.elasticsearch.action.admin.indices.settings.get.GetSettingsRequest
@@ -46,8 +47,11 @@ import org.elasticsearch.cluster.metadata.IndexMetadata
 import org.elasticsearch.cluster.metadata.MetadataCreateIndexService
 import com.amazon.elasticsearch.replication.ReplicationPlugin
 import com.amazon.elasticsearch.replication.updateReplicationStartBlockSetting
+import com.amazon.elasticsearch.replication.updateAutofollowRetrySetting
+import com.amazon.elasticsearch.replication.updateAutoFollowConcurrentStartReplicationJobSetting
 import com.amazon.elasticsearch.replication.waitForShardTaskStart
 import org.elasticsearch.test.ESTestCase.assertBusy
+
 import java.lang.Thread.sleep
 import java.util.concurrent.TimeUnit
 
@@ -63,6 +67,10 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
     private val connectionAlias = "test_conn"
     private val longIndexPatternName = "index_".repeat(43)
     private val waitForShardTask = TimeValue.timeValueSeconds(10)
+
+    companion object {
+        private val log = LogManager.getLogger(UpdateAutoFollowPatternIT::class.java)
+    }
 
     fun `test auto follow pattern`() {
         val followerClient = getClientForCluster(FOLLOWER)
@@ -363,35 +371,122 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
         followerClient.stopReplication(leaderIndexName)
     }
 
-    fun `test autofollow task with start replication block`() {
+    fun `test autofollow task with start replication block and retries`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
+        try {
+            //modify retry duration to account for autofollow trigger in next retry
+            followerClient.updateAutofollowRetrySetting("1m")
+            for (repeat in 1..2) {
+                log.info("Current Iteration $repeat")
+                // Add replication start block
+                followerClient.updateReplicationStartBlockSetting(true)
+                createRandomIndex(leaderClient)
+                followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern)
+                sleep(95000) // wait for auto follow trigger in the worst case
+                // verify both index replication tasks and autofollow tasks
+                // Replication shouldn't have been started - (repeat-1) tasks as for current loop index shouldn't be
+                // created yet.
+                // Autofollow task should still be up - 1 task
+                Assertions.assertThat(getIndexReplicationTasks(FOLLOWER).size).isEqualTo(repeat-1)
+                Assertions.assertThat(getAutoFollowTasks(FOLLOWER).size).isEqualTo(1)
+
+                var stats = followerClient.AutoFollowStats()
+                var failedIndices = stats["failed_indices"] as List<*>
+                // Every time failed replication task will be 1 as
+                // there are already running jobs in the previous iteration
+                log.info("Current failed indices $failedIndices")
+                assert(failedIndices.size == 1)
+                // Remove replication start block
+                followerClient.updateReplicationStartBlockSetting(false)
+                sleep(95000) // wait for auto follow trigger in the worst case
+                // Index should be replicated and autofollow task should be present
+                Assertions.assertThat(getIndexReplicationTasks(FOLLOWER).size).isEqualTo(repeat)
+                Assertions.assertThat(getAutoFollowTasks(FOLLOWER).size).isEqualTo(1)
+                stats = followerClient.AutoFollowStats()
+                failedIndices = stats["failed_indices"] as List<*>
+                assert(failedIndices.isEmpty())
+            }
+        } finally {
+            followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
+        }
+    }
+
+    fun `test autofollow task with concurrent job setting set to run parallel jobs`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
         createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
 
-        val leaderIndexName = createRandomIndex(leaderClient)
-        try {
+        // create two leader indices and test autofollow to trigger to trigger jobs based on setting
+        val leaderIndexName1 = createRandomIndex(leaderClient)
+        val leaderIndexName2 = createRandomIndex(leaderClient)
 
-            // Add replication start block
-            followerClient.updateReplicationStartBlockSetting(true)
+        followerClient.updateAutoFollowConcurrentStartReplicationJobSetting(2)
+        try {
             followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern)
+
+            // Verify that existing index matching the pattern are replicated.
+            assertBusy {
+                Assertions.assertThat(followerClient.indices()
+                    .exists(GetIndexRequest(leaderIndexName1), RequestOptions.DEFAULT))
+                    .isEqualTo(true)
+            }
+
+            assertBusy {
+                Assertions.assertThat(followerClient.indices()
+                    .exists(GetIndexRequest(leaderIndexName2), RequestOptions.DEFAULT))
+                    .isEqualTo(true)
+            }
+
             sleep(30000) // Default poll for auto follow in worst case
 
-            // verify both index replication tasks and autofollow tasks
-            // Replication shouldn't have been started - 0 tasks
-            // Autofollow task should still be up - 1 task
-            Assertions.assertThat(getIndexReplicationTasks(FOLLOWER).size).isEqualTo(0)
             Assertions.assertThat(getAutoFollowTasks(FOLLOWER).size).isEqualTo(1)
 
-            // Remove replication start block
-            followerClient.updateReplicationStartBlockSetting(false)
-            sleep(45000) // poll for auto follow in worst case
-
-            // Index should be replicated and autofollow task should be present
-            Assertions.assertThat(getIndexReplicationTasks(FOLLOWER).size).isEqualTo(1)
-            Assertions.assertThat(getAutoFollowTasks(FOLLOWER).size).isEqualTo(1)
         } finally {
+            // Reset default autofollow setting
+            followerClient.updateAutoFollowConcurrentStartReplicationJobSetting(null)
             followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
-            followerClient.stopReplication(leaderIndexName)
+            followerClient.stopReplication(leaderIndexName1)
+            followerClient.stopReplication(leaderIndexName2)
+        }
+    }
+
+    fun `test autofollow task with concurrent job setting set to run single job`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
+
+        // create two leader indices and test autofollow to trigger to trigger jobs based on setting
+        val leaderIndexName1 = createRandomIndex(leaderClient)
+        val leaderIndexName2 = createRandomIndex(leaderClient)
+
+        followerClient.updateAutoFollowConcurrentStartReplicationJobSetting(1)
+        try {
+            followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern)
+
+            // Verify that existing index matching the pattern are replicated.
+            assertBusy {
+                // check that the index replication task is created for only index
+                Assertions.assertThat(getIndexReplicationTasks(FOLLOWER).size).isEqualTo(1)
+            }
+
+            sleep(30000) // Default poll for auto follow in worst case
+
+            assertBusy {
+                // check that the index replication task is created for only index
+                Assertions.assertThat(getIndexReplicationTasks(FOLLOWER).size).isEqualTo(2)
+            }
+
+            sleep(30000) // Default poll for auto follow in worst case
+            Assertions.assertThat(getAutoFollowTasks(FOLLOWER).size).isEqualTo(1)
+
+        } finally {
+            // Reset default autofollow setting
+            followerClient.updateAutoFollowConcurrentStartReplicationJobSetting(null)
+            followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
+            followerClient.stopReplication(leaderIndexName1)
+            followerClient.stopReplication(leaderIndexName2)
         }
     }
 

@@ -18,6 +18,11 @@ class ShardInfoResponse : BroadcastShardResponse, ToXContentObject {
     lateinit var replayDetails: ReplayDetails
     lateinit var restoreDetails: RestoreDetails
 
+    companion object {
+        const val BOOTSTRAPPING = "BOOTSTRAPPING"
+        const val SYNCING = "SYNCING"
+    }
+
     constructor(si: StreamInput) : super(si) {
         this.status = si.readString()
         if (status.equals("SYNCING"))
