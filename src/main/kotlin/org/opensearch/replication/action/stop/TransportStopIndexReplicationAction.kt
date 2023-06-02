@@ -53,6 +53,7 @@ import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Inject
 import org.opensearch.common.io.stream.StreamInput
 import org.opensearch.common.settings.Settings
+import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.persistent.PersistentTasksCustomMetadata
 import org.opensearch.persistent.RemovePersistentTaskAction
 import org.opensearch.threadpool.ThreadPool
