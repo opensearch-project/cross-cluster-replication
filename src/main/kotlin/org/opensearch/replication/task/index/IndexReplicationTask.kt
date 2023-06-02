@@ -289,7 +289,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
     private suspend fun pollShardTaskStatus(): IndexReplicationState {
         val failedShardTasks = findAllReplicationFailedShardTasks(followerIndexName, clusterService.state())
         if (failedShardTasks.isNotEmpty()) {
-            log.info("Failed shard tasks - ", failedShardTasks)
+            log.info("Failed shard tasks - $failedShardTasks")
             var msg = ""
             for ((shard, task) in failedShardTasks) {
                 val taskState = task.state
