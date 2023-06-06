@@ -282,17 +282,17 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
         }
 
         private fun addUsers(){
-            addUserToCluster("testUser1","password", FOLLOWER)
-            addUserToCluster("testUser1","password", LEADER)
-            addUserToCluster("testUser2","password", FOLLOWER)
-            addUserToCluster("testUser2","password", LEADER)
-            addUserToCluster("testUser3","password", FOLLOWER)
-            addUserToCluster("testUser4","password", FOLLOWER)
-            addUserToCluster("testUser5","password", FOLLOWER)
-            addUserToCluster("testUser6","password", LEADER)
-            addUserToCluster("testUser6","password", FOLLOWER)
-            addUserToCluster("testUser7","password", LEADER)
-            addUserToCluster("testUser7","password", FOLLOWER)
+            addUserToCluster("testUser1","password@123", FOLLOWER)
+            addUserToCluster("testUser1","password@123", LEADER)
+            addUserToCluster("testUser2","password@123", FOLLOWER)
+            addUserToCluster("testUser2","password@123", LEADER)
+            addUserToCluster("testUser3","password@123", FOLLOWER)
+            addUserToCluster("testUser4","password@123", FOLLOWER)
+            addUserToCluster("testUser5","password@123", FOLLOWER)
+            addUserToCluster("testUser6","password@123", LEADER)
+            addUserToCluster("testUser6","password@123", FOLLOWER)
+            addUserToCluster("testUser7","password@123", LEADER)
+            addUserToCluster("testUser7","password@123", FOLLOWER)
         }
 
         private fun addUserToCluster(userName: String, password: String, clusterName: String) {
@@ -300,7 +300,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
             val persistentConnectionRequest = Request("PUT", "_plugins/_security/api/internalusers/"+userName)
             val entityAsString = """
             {
-                "password":"$password"
+                "password@123":"$password"
             }
             """.trimMargin()
             persistentConnectionRequest.entity = StringEntity(entityAsString, ContentType.APPLICATION_JSON)

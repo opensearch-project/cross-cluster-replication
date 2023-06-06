@@ -49,7 +49,7 @@ class SecurityDlsFlsIT: SecurityBase() {
         var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
                     useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerDlsRole"))
         Assertions.assertThatThrownBy { followerClient.startReplication(startReplicationRequest,
-                    requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser3","password")) }
+                    requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser3","password@123")) }
                 .isInstanceOf(ResponseException::class.java)
                 .hasMessageContaining(DLS_FLS_EXCEPTION_MESSAGE)
                 .hasMessageContaining("403 Forbidden")
@@ -59,7 +59,7 @@ class SecurityDlsFlsIT: SecurityBase() {
         val followerClient = getClientForCluster(FOLLOWER)
         Assertions.assertThatThrownBy {
             followerClient.stopReplication("follower-index1-stop-forbidden",
-                    requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser3","password"))
+                    requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser3","password@123"))
         }.isInstanceOf(ResponseException::class.java)
         .hasMessageContaining(DLS_FLS_EXCEPTION_MESSAGE)
         .hasMessageContaining("403 Forbidden")
@@ -75,10 +75,10 @@ class SecurityDlsFlsIT: SecurityBase() {
         var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
                 useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
         followerClient.startReplication(startReplicationRequest, waitForRestore = true,
-                requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
+                requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password@123"))
         Assertions.assertThatThrownBy {
             followerClient.pauseReplication(followerIndexName,
-                    requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser3","password"))
+                    requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser3","password@123"))
         }.isInstanceOf(ResponseException::class.java)
         .hasMessageContaining(DLS_FLS_EXCEPTION_MESSAGE)
         .hasMessageContaining("403 Forbidden")
@@ -94,10 +94,10 @@ class SecurityDlsFlsIT: SecurityBase() {
         var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
                 useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
         followerClient.startReplication(startReplicationRequest, waitForRestore = true,
-                requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
+                requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password@123"))
         Assertions.assertThatThrownBy {
             followerClient.replicationStatus(followerIndexName,
-                    requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser3","password"))
+                    requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser3","password@123"))
         }.isInstanceOf(ResponseException::class.java)
         .hasMessageContaining(DLS_FLS_EXCEPTION_MESSAGE)
         .hasMessageContaining("403 Forbidden")
@@ -116,7 +116,7 @@ class SecurityDlsFlsIT: SecurityBase() {
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
         followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName,
                 useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms")),
-                requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"), waitForRestore = true)
+                requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password@123"), waitForRestore = true)
         assertBusy {
             Assertions.assertThat(followerClient.indices()
                     .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
@@ -135,7 +135,7 @@ class SecurityDlsFlsIT: SecurityBase() {
                 .build()
         Assertions.assertThatThrownBy {
             followerClient.updateReplication(followerIndexName, settings,
-                    requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser3","password"))
+                    requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser3","password@123"))
         }.isInstanceOf(ResponseException::class.java)
         .hasMessageContaining(DLS_FLS_EXCEPTION_MESSAGE)
         .hasMessageContaining("403 Forbidden")
@@ -151,7 +151,7 @@ class SecurityDlsFlsIT: SecurityBase() {
         var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
                 useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerFlsRole"))
         Assertions.assertThatThrownBy { followerClient.startReplication(startReplicationRequest,
-                requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser4","password")) }
+                requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser4","password@123")) }
         .isInstanceOf(ResponseException::class.java)
         .hasMessageContaining(DLS_FLS_EXCEPTION_MESSAGE)
         .hasMessageContaining("403 Forbidden")
@@ -167,7 +167,7 @@ class SecurityDlsFlsIT: SecurityBase() {
         var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
                 useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerFieldMaskRole"))
         Assertions.assertThatThrownBy { followerClient.startReplication(startReplicationRequest,
-                requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser5","password")) }
+                requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser5","password@123")) }
         .isInstanceOf(ResponseException::class.java)
         .hasMessageContaining(DLS_FLS_EXCEPTION_MESSAGE)
         .hasMessageContaining("403 Forbidden")
@@ -190,7 +190,7 @@ class SecurityDlsFlsIT: SecurityBase() {
         )
         followerClient.startReplication(
             startReplicationRequest,
-            requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser7", "password"),
+            requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser7", "password@123"),
             waitForRestore = true
         )
         OpenSearchTestCase.assertBusy {
