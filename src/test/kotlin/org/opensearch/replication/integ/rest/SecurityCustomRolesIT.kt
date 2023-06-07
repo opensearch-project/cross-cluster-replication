@@ -61,7 +61,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
                 useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
 
         followerClient.startReplication(startReplicationRequest,
-                requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"), waitForRestore = true)
+                requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser1",INTEG_TEST_PASSWORD), waitForRestore = true)
         assertBusy {
             Assertions.assertThat(followerClient.indices().exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT)).isEqualTo(true)
         }
@@ -80,7 +80,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
                 useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleNoPerms"))
 
         Assertions.assertThatThrownBy { followerClient.startReplication(startReplicationRequest,
-                requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser2","password")) }
+                requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser2",INTEG_TEST_PASSWORD)) }
                     .isInstanceOf(ResponseException::class.java)
                     .hasMessageContaining("403 Forbidden")
     }
@@ -90,7 +90,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
 
         Assertions.assertThatThrownBy {
             followerClient.stopReplication("follower-index1",
-                    requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
+                    requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser1",INTEG_TEST_PASSWORD))
         }.isInstanceOf(ResponseException::class.java)
                 .hasMessageContaining("No replication in progress for index:follower-index1")
     }
@@ -100,7 +100,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
 
         Assertions.assertThatThrownBy {
             followerClient.stopReplication("follower-index1",
-                    requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser2","password"))
+                    requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser2",INTEG_TEST_PASSWORD))
         }.isInstanceOf(ResponseException::class.java)
         .hasMessageContaining("403 Forbidden")
     }
@@ -116,7 +116,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
 
         var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
                 useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
-        var requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password")
+        var requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1",INTEG_TEST_PASSWORD)
         followerClient.startReplication(startReplicationRequest, waitForRestore = true,
                 requestOptions = requestOptions)
 
@@ -146,11 +146,11 @@ class SecurityCustomRolesIT: SecurityBase()  {
                 useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
 
         followerClient.startReplication(startReplicationRequest, waitForRestore = true,
-                requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
+                requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1",INTEG_TEST_PASSWORD))
 
         Assertions.assertThatThrownBy {
             followerClient.pauseReplication(followerIndexName,
-                    requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser2","password"))
+                    requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser2",INTEG_TEST_PASSWORD))
         }.isInstanceOf(ResponseException::class.java)
         .hasMessageContaining("403 Forbidden")
     }
@@ -168,11 +168,11 @@ class SecurityCustomRolesIT: SecurityBase()  {
                 useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
 
         followerClient.startReplication(startReplicationRequest,  waitForRestore = true,
-                requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
+                requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1",INTEG_TEST_PASSWORD))
 
         assertBusy {
             `validate status syncing response`(followerClient.replicationStatus(followerIndexName,
-                    requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password")))
+                    requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1",INTEG_TEST_PASSWORD)))
         }
     }
 
@@ -189,11 +189,11 @@ class SecurityCustomRolesIT: SecurityBase()  {
                 useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
 
         followerClient.startReplication(startReplicationRequest, waitForRestore = true,
-                requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
+                requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1",INTEG_TEST_PASSWORD))
 
         Assertions.assertThatThrownBy {
             followerClient.replicationStatus(followerIndexName,
-                    requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser2","password"))
+                    requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser2",INTEG_TEST_PASSWORD))
         }.isInstanceOf(ResponseException::class.java)
         .hasMessageContaining("403 Forbidden")
     }
@@ -216,7 +216,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
 
         followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName,
             useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms")),
-            requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
+            requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1",INTEG_TEST_PASSWORD))
         assertBusy {
             Assertions.assertThat(followerClient.indices()
                     .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
@@ -235,7 +235,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
                 .put("index.shard.check_on_startup", "checksum")
                 .build()
         followerClient.updateReplication(followerIndexName, settings,
-                requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
+                requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1",INTEG_TEST_PASSWORD))
 
         // Wait for the settings to get updated at follower cluster.
         assertBusy ({
@@ -261,7 +261,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
         followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName,
                 useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms")),
-                requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"), waitForRestore = true)
+                requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1",INTEG_TEST_PASSWORD), waitForRestore = true)
         assertBusy {
             Assertions.assertThat(followerClient.indices()
                     .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
@@ -280,7 +280,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
                 .build()
         Assertions.assertThatThrownBy {
             followerClient.updateReplication(followerIndexName, settings,
-                    requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser2","password"))
+                    requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser2",INTEG_TEST_PASSWORD))
         }.isInstanceOf(ResponseException::class.java)
         .hasMessageContaining("403 Forbidden")
     }
@@ -298,7 +298,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
         try {
             followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern,
                     useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"),
-                    requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
+                    requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser1",INTEG_TEST_PASSWORD))
             // Verify that existing index matching the pattern are replicated.
             assertBusy ({
                 Assertions.assertThat(followerClient.indices()
@@ -327,7 +327,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
         Assertions.assertThatThrownBy {
             followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern,
                     useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleNoPerms"),
-                    requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser2","password"))
+                    requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser2",INTEG_TEST_PASSWORD))
         }.isInstanceOf(ResponseException::class.java)
         .hasMessageContaining("403 Forbidden")
     }
@@ -359,7 +359,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
             var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
                     useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
             followerClient.startReplication(startReplicationRequest, waitForRestore = true,
-                    requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
+                    requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1",INTEG_TEST_PASSWORD))
             insertDocToIndex(LEADER, "1", "dummy data 1",leaderIndexName)
             //Querying ES cluster throws random exceptions like ClusterManagerNotDiscovered or ShardsFailed etc, so catching them and retrying
             assertBusy ({
@@ -371,7 +371,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
             }, 1, TimeUnit.MINUTES)
             assertBusy {
                 `validate status syncing response`(followerClient.replicationStatus(followerIndexName,
-                        requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password")))
+                        requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1",INTEG_TEST_PASSWORD)))
             }
 
             updateRole(followerIndexName,"followerRoleValidPerms", false)
@@ -379,7 +379,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
 
             assertBusy ({
                 validatePausedState(followerClient.replicationStatus(followerIndexName,
-                        requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password")))
+                        requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1",INTEG_TEST_PASSWORD)))
             }, 100, TimeUnit.SECONDS)
         } finally {
             updateRole(followerIndexName,"followerRoleValidPerms", true)
