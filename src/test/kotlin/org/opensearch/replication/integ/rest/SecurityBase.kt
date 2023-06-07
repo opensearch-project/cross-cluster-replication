@@ -20,6 +20,8 @@ import org.junit.AfterClass
 import org.junit.BeforeClass
 import javax.swing.text.StyledEditorKit
 
+const val INTEG_TEST_PASSWORD = "ccr-integ-test@123"
+
 abstract class SecurityBase : MultiClusterRestTestCase()   {
     companion object {
         var initialized : Boolean = false
@@ -284,17 +286,17 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
         }
 
         private fun addUsers(){
-            addUserToCluster("testUser1","password", FOLLOWER)
-            addUserToCluster("testUser1","password", LEADER)
-            addUserToCluster("testUser2","password", FOLLOWER)
-            addUserToCluster("testUser2","password", LEADER)
-            addUserToCluster("testUser3","password", FOLLOWER)
-            addUserToCluster("testUser4","password", FOLLOWER)
-            addUserToCluster("testUser5","password", FOLLOWER)
-            addUserToCluster("testUser6","password", LEADER)
-            addUserToCluster("testUser6","password", FOLLOWER)
-            addUserToCluster("testUser7","password", LEADER)
-            addUserToCluster("testUser7","password", FOLLOWER)
+            addUserToCluster("testUser1", INTEG_TEST_PASSWORD, FOLLOWER)
+            addUserToCluster("testUser1", INTEG_TEST_PASSWORD, LEADER)
+            addUserToCluster("testUser2", INTEG_TEST_PASSWORD, FOLLOWER)
+            addUserToCluster("testUser2", INTEG_TEST_PASSWORD, LEADER)
+            addUserToCluster("testUser3", INTEG_TEST_PASSWORD, FOLLOWER)
+            addUserToCluster("testUser4", INTEG_TEST_PASSWORD, FOLLOWER)
+            addUserToCluster("testUser5", INTEG_TEST_PASSWORD, FOLLOWER)
+            addUserToCluster("testUser6", INTEG_TEST_PASSWORD, LEADER)
+            addUserToCluster("testUser6", INTEG_TEST_PASSWORD, FOLLOWER)
+            addUserToCluster("testUser7", INTEG_TEST_PASSWORD, LEADER)
+            addUserToCluster("testUser7", INTEG_TEST_PASSWORD, FOLLOWER)
         }
 
         private fun addUserToCluster(userName: String, password: String, clusterName: String) {
