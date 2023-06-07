@@ -47,7 +47,7 @@ class SecurityCustomRolesLeaderIT: SecurityBase() {
         var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
                 useRoles = UseRoles(leaderClusterRole = "leaderRoleNoPerms",followerClusterRole = "followerRoleValidPerms"))
         Assertions.assertThatThrownBy { followerClient.startReplication(startReplicationRequest,
-                requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser6","password")) }
+                requestOptions= RequestOptions.DEFAULT.addBasicAuthHeader("testUser6",INTEG_TEST_PASSWORD)) }
                 .isInstanceOf(ResponseException::class.java)
                 .hasMessageContaining("403 Forbidden")
                 .hasMessageContaining("no permissions for [indices:admin/plugins/replication/index/setup/validate]")
@@ -64,7 +64,7 @@ class SecurityCustomRolesLeaderIT: SecurityBase() {
             var startReplicationRequest = StartReplicationRequest("source",leaderIndexName,followerIndexName,
                     useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
             followerClient.startReplication(startReplicationRequest, waitForRestore = true,
-                    requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
+                    requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1",INTEG_TEST_PASSWORD))
             insertDocToIndex(LEADER, "1", "dummy data 1",leaderIndexName)
             //Querying ES cluster throws random exceptions like ClusterManagerNotDiscovered or ShardsFailed etc, so catching them and retrying
             assertBusy ({
@@ -76,13 +76,13 @@ class SecurityCustomRolesLeaderIT: SecurityBase() {
             }, 1, TimeUnit.MINUTES)
             assertBusy {
                 `validate status syncing response`(followerClient.replicationStatus(followerIndexName,
-                        requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password")))
+                        requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1",INTEG_TEST_PASSWORD)))
             }
             updateRole(followerIndexName,"leaderRoleValidPerms", false)
             insertDocToIndex(LEADER, "2", "dummy data 2",leaderIndexName)
             assertBusy ({
                 validatePausedState(followerClient.replicationStatus(followerIndexName,
-                        requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password")))
+                        requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1",INTEG_TEST_PASSWORD)))
             }, 100, TimeUnit.SECONDS)
         } finally {
             updateRole(followerIndexName,"leaderRoleValidPerms", true)
@@ -101,10 +101,10 @@ class SecurityCustomRolesLeaderIT: SecurityBase() {
                     useRoles = UseRoles(leaderClusterRole = "leaderRoleValidPerms",followerClusterRole = "followerRoleValidPerms"))
             updateFileChunkPermissions("","leaderRoleValidPerms", false)
             followerClient.startReplication(startReplicationRequest,
-                    requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password"))
+                    requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1",INTEG_TEST_PASSWORD))
             assertBusy ({
                 validateFailedState(followerClient.replicationStatus(followerIndexName,
-                        requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1","password")))
+                        requestOptions = RequestOptions.DEFAULT.addBasicAuthHeader("testUser1",INTEG_TEST_PASSWORD)))
             }, 60, TimeUnit.SECONDS)
         } catch (ex : Exception) {
             logger.info("Exception is", ex)
