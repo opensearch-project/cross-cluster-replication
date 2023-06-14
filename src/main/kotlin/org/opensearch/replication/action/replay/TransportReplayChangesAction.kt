@@ -27,11 +27,9 @@ import kotlinx.coroutines.launch
 import org.apache.logging.log4j.LogManager
 import org.opensearch.action.ActionListener
 import org.opensearch.action.admin.indices.alias.IndicesAliasesRequest
-import org.opensearch.action.admin.indices.get.GetIndexRequest
 import org.opensearch.action.admin.indices.mapping.get.GetMappingsRequest
 import org.opensearch.action.admin.indices.mapping.put.PutMappingRequest
 import org.opensearch.action.admin.indices.settings.get.GetSettingsRequest
-import org.opensearch.action.admin.indices.settings.put.UpdateSettingsAction
 import org.opensearch.action.admin.indices.settings.put.UpdateSettingsRequest
 import org.opensearch.action.index.IndexRequest
 import org.opensearch.action.resync.TransportResyncReplicationAction
@@ -51,7 +49,6 @@ import org.opensearch.common.io.stream.StreamInput
 import org.opensearch.common.io.stream.Writeable
 import org.opensearch.common.settings.IndexScopedSettings
 import org.opensearch.common.settings.Settings
-import org.opensearch.common.settings.SettingsModule
 import org.opensearch.common.xcontent.XContentType
 import org.opensearch.index.IndexingPressureService
 import org.opensearch.index.engine.Engine
