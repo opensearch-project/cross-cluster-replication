@@ -28,7 +28,9 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
 import org.opensearch.client.Client
 import org.opensearch.OpenSearchException
+import org.opensearch.action.support.TransportActions
 import org.opensearch.common.logging.Loggers
+import org.opensearch.index.IndexNotFoundException
 import org.opensearch.index.shard.ShardId
 import org.opensearch.index.translog.Translog
 import org.opensearch.replication.util.indicesService
@@ -55,7 +57,7 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
                         private val followerShardId: ShardId,
                         private val leaderAlias: String, private val leaderIndexName: String,
                         private val parentTaskId: TaskId, private val client: Client, initialSeqNo: Long,
-                        private val followerClusterStats: FollowerClusterStats, readersPerShard : Int) {
+                        private val followerClusterStats: FollowerClusterStats, writersPerShard : Int) {
     //Start backOff for exceptions with a second
     private val initialBackoffMillis = 1000L
     //Start backOff for exceptions with a second
@@ -75,7 +77,7 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
 
         // Exceptions thrown here will mark the channel as failed and the next attempt to send to the channel will
         // raise the same exception.  See [SendChannel.close] method for details.
-        val rateLimiter = Semaphore(readersPerShard)
+        val rateLimiter = Semaphore(writersPerShard)
         var highWatermark = initialSeqNo
         for (m in channel) {
             rateLimiter.acquire()
@@ -88,10 +90,10 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
                     var relativeStartNanos  = System.nanoTime()
                     val retryOnExceptions = ArrayList<Class<*>>()
                     retryOnExceptions.add(MappingNotAvailableException::class.java)
-                    var tooManyRequestsAcknowledgement = true
+                    var retriableOpenSearchException = true
                     try {
-                        while (tooManyRequestsAcknowledgement) {
-                            tooManyRequestsAcknowledgement = false
+                        while (retriableOpenSearchException) {
+                            retriableOpenSearchException = false
                             try {
                                 val replayResponse = client.suspendExecuteWithRetries(
                                     replicationMetadata,
@@ -121,10 +123,13 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
                                     replayRequest.changes.size.toLong()
                                 )
                             } catch (e: OpenSearchException) {
-                                if (e.status() == RestStatus.TOO_MANY_REQUESTS) {
-                                    tooManyRequestsAcknowledgement = true
+                                if (e !is IndexNotFoundException && (TransportActions.isShardNotAvailableException(e)
+                                            // This waits for the dependencies to load and retry. Helps during boot-up
+                                            || e.status().status >= 500
+                                            || e.status() == RestStatus.TOO_MANY_REQUESTS)) {
+                                    retriableOpenSearchException = true
                                 } else {
-                                    log.info("Got a exception here  : $e and it status is ${e.status()} and its code is ${e.status().status}")
+                                    log.error("Got non-retriable Exception:${e.message} with status:${e.status()}")
                                     throw e
                                 }
                                 delay(backOffForRetry)

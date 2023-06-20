@@ -214,7 +214,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         // Since this setting is not dynamic, setting update would only reflect after pause-resume or on a new replication job.
         val rateLimiter = Semaphore(replicationSettings.readersPerShard)
         val sequencer = TranslogSequencer(scope, replicationMetadata, followerShardId, leaderAlias, leaderShardId.indexName,
-                                          TaskId(clusterService.nodeName, id), client, indexShard.localCheckpoint, followerClusterStats, replicationSettings.readersPerShard)
+                                          TaskId(clusterService.nodeName, id), client, indexShard.localCheckpoint, followerClusterStats, replicationSettings.writersPerShard)
 
         val changeTracker = ShardReplicationChangesTracker(indexShard, replicationSettings)
         followerClusterStats.stats[followerShardId]!!.followerCheckpoint = indexShard.localCheckpoint
