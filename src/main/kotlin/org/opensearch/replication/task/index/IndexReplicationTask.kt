@@ -828,7 +828,11 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
             }
         } catch(e: Exception) {
             val err = "Unable to initiate restore call for $followerIndexName from $leaderAlias:${leaderIndex.name}"
+            val aliasErrMsg = "cannot rename index [${leaderIndex.name}] into [$followerIndexName] because of conflict with an alias with the same name"
             log.error(err, e)
+            if (e.message!!.contains(aliasErrMsg)) {
+                return FailedState (Collections.emptyMap(), aliasErrMsg)
+            }
             return FailedState(Collections.emptyMap(), err)
         }
         cso.waitForNextChange("remote restore start") { inProgressRestore(it) != null }

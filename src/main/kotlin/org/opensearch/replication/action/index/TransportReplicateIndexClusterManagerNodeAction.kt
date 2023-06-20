@@ -127,7 +127,8 @@ class TransportReplicateIndexClusterManagerNodeAction @Inject constructor(transp
                 persistentTasksService.waitForTaskCondition(task.id, replicateIndexReq.timeout()) { t ->
                     val replicationState = (t.state as IndexReplicationState?)?.state
                     replicationState == ReplicationState.FOLLOWING ||
-                            (!replicateIndexReq.waitForRestore && replicationState == ReplicationState.RESTORING)
+                            (!replicateIndexReq.waitForRestore && replicationState == ReplicationState.RESTORING) ||
+                            (!replicateIndexReq. waitForRestore && replicationState == ReplicationState. FAILED)
                 }
 
                 listener.onResponse(AcknowledgedResponse(true))
