@@ -128,7 +128,7 @@ class TransportReplicateIndexClusterManagerNodeAction @Inject constructor(transp
                     val replicationState = (t.state as IndexReplicationState?)?.state
                     replicationState == ReplicationState.FOLLOWING ||
                             (!replicateIndexReq.waitForRestore && replicationState == ReplicationState.RESTORING) ||
-                            (!replicateIndexReq. waitForRestore && replicationState == ReplicationState. FAILED)
+                            (!replicateIndexReq.waitForRestore && replicationState == ReplicationState.FAILED)
                 }
 
                 listener.onResponse(AcknowledgedResponse(true))
