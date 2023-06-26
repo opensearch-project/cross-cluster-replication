@@ -134,7 +134,7 @@ suspend fun <Req: ActionRequest, Resp: ActionResponse> Client.suspendExecuteWith
                 retryException = e;
             }
             else {
-                throw ReplicationException(e.message.toString(), RestStatus.TOO_MANY_REQUESTS,e as Throwable)
+                throw ReplicationException(e, RestStatus.TOO_MANY_REQUESTS)
             }
         }
         log.warn(

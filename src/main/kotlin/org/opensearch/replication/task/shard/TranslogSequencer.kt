@@ -21,8 +21,6 @@ import org.opensearch.replication.util.suspendExecuteWithRetries
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ObsoleteCoroutinesApi
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.channels.Channel
 import kotlinx.coroutines.channels.actor
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
@@ -58,14 +56,7 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
                         private val leaderAlias: String, private val leaderIndexName: String,
                         private val parentTaskId: TaskId, private val client: Client, initialSeqNo: Long,
                         private val followerClusterStats: FollowerClusterStats, writersPerShard : Int) {
-    //Start backOff for exceptions with a second
-    private val initialBackoffMillis = 1000L
-    //Start backOff for exceptions with a second
-    private var backOffForRetry = initialBackoffMillis
-    //Max timeout for backoff
-    private val maxTimeOut = 60000L
-    //Backoff factor after every retry
-    private val factor = 2.0
+
     private val unAppliedChanges = ConcurrentHashMap<Long, GetChangesResponse>()
     private val log = Loggers.getLogger(javaClass, followerShardId)!!
     private val completed = CompletableDeferred<Unit>()
@@ -90,10 +81,10 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
                     var relativeStartNanos  = System.nanoTime()
                     val retryOnExceptions = ArrayList<Class<*>>()
                     retryOnExceptions.add(MappingNotAvailableException::class.java)
-                    var retriableOpenSearchException = true
+                    var tryReplay = true
                     try {
-                        while (retriableOpenSearchException) {
-                            retriableOpenSearchException = false
+                        while (tryReplay) {
+                            tryReplay = false
                             try {
                                 val replayResponse = client.suspendExecuteWithRetries(
                                     replicationMetadata,
@@ -123,17 +114,17 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
                                     replayRequest.changes.size.toLong()
                                 )
                             } catch (e: OpenSearchException) {
-                                if (e !is IndexNotFoundException && (TransportActions.isShardNotAvailableException(e)
+                                if (e !is IndexNotFoundException && (retryOnExceptions.contains(e.javaClass)
+                                            || TransportActions.isShardNotAvailableException(e)
                                             // This waits for the dependencies to load and retry. Helps during boot-up
                                             || e.status().status >= 500
                                             || e.status() == RestStatus.TOO_MANY_REQUESTS)) {
-                                    retriableOpenSearchException = true
-                                } else {
+                                                tryReplay = true
+                                    }
+                                    else {
                                     log.error("Got non-retriable Exception:${e.message} with status:${e.status()}")
                                     throw e
                                 }
-                                delay(backOffForRetry)
-                                backOffForRetry = (backOffForRetry * factor).toLong().coerceAtMost(maxTimeOut)
                             }
                         }
                     } finally {

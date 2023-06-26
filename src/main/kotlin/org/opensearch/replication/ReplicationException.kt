@@ -31,6 +31,8 @@ class ReplicationException: OpenSearchStatusException {
 
     constructor(message: String, status: RestStatus, vararg args: Any) : super(message, status, *args)
 
+    constructor(cause: Throwable, status: RestStatus, vararg  args: Any) : super(cause.message, status, *args)
+
     constructor(message: String, shardFailures: Array<ShardOperationFailedException>):  super(message, shardFailures.firstOrNull()?.status()?:RestStatus.INTERNAL_SERVER_ERROR)  {
         shardFailures.firstOrNull()?.let {
             setShard(ShardId(it.index(), INDEX_UUID_NA_VALUE, it.shardId()))
