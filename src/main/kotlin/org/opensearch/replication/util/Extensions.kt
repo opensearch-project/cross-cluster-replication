@@ -28,8 +28,8 @@ import org.opensearch.action.index.IndexRequestBuilder
 import org.opensearch.action.index.IndexResponse
 import org.opensearch.action.support.TransportActions
 import org.opensearch.client.Client
+import org.opensearch.common.util.concurrent.OpenSearchRejectedExecutionException
 import org.opensearch.common.util.concurrent.ThreadContext
-import org.opensearch.core.concurrency.OpenSearchRejectedExecutionException
 import org.opensearch.index.IndexNotFoundException
 import org.opensearch.index.shard.ShardId
 import org.opensearch.index.store.Store
