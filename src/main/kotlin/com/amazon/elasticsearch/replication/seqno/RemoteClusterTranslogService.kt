@@ -23,7 +23,7 @@ class RemoteClusterTranslogService : AbstractLifecycleComponent(){
 
     override fun doClose() {
     }
-    
+
     public fun getHistoryOfOperations(indexShard: IndexShard, startSeqNo: Long, toSeqNo: Long): List<Translog.Operation> {
         log.trace("Fetching translog snapshot for $indexShard - from $startSeqNo to $toSeqNo")
         val snapshot = indexShard.getHistoryOperations(SOURCE_NAME, Engine.HistorySource.TRANSLOG, startSeqNo, toSeqNo)

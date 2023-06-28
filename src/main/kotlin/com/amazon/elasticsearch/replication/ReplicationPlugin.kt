@@ -175,6 +175,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                 Setting.Property.Dynamic, Setting.Property.NodeScope)
         val REPLICATION_FOLLOWER_CONCURRENT_READERS_PER_SHARD = Setting.intSetting("plugins.replication.follower.concurrent_readers_per_shard", 2, 1,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
+        val REPLICATION_FOLLOWER_CONCURRENT_WRITERS_PER_SHARD = Setting.intSetting("plugins.replication.follower.concurrent_writers_per_shard", 2, 1,
+            Setting.Property.Dynamic, Setting.Property.NodeScope)
         val REPLICATION_PARALLEL_READ_POLL_INTERVAL = Setting.timeSetting ("plugins.replication.follower.poll_interval", TimeValue.timeValueMillis(50), TimeValue.timeValueMillis(1),
             TimeValue.timeValueSeconds(1), Setting.Property.Dynamic, Setting.Property.NodeScope)
         val REPLICATION_AUTOFOLLOW_REMOTE_INDICES_POLL_INTERVAL = Setting.timeSetting ("plugins.replication.autofollow.fetch_poll_interval", TimeValue.timeValueSeconds(30), TimeValue.timeValueSeconds(30),
@@ -344,9 +346,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                 REPLICATION_FOLLOWER_RECOVERY_CHUNK_SIZE, REPLICATION_FOLLOWER_RECOVERY_PARALLEL_CHUNKS,
                 REPLICATION_PARALLEL_READ_POLL_INTERVAL, REPLICATION_AUTOFOLLOW_REMOTE_INDICES_POLL_INTERVAL,
                 REPLICATION_AUTOFOLLOW_REMOTE_INDICES_RETRY_POLL_INTERVAL, REPLICATION_METADATA_SYNC_INTERVAL,
-                REPLICATION_RETENTION_LEASE_MAX_FAILURE_DURATION, REPLICATION_FOLLOWER_BLOCK_START)
+                REPLICATION_RETENTION_LEASE_MAX_FAILURE_DURATION, REPLICATION_FOLLOWER_BLOCK_START, REPLICATION_FOLLOWER_CONCURRENT_WRITERS_PER_SHARD)
     }
-
     override fun getInternalRepositories(env: Environment, namedXContentRegistry: NamedXContentRegistry,
                                          clusterService: ClusterService, recoverySettings: RecoverySettings): Map<String, Repository.Factory> {
         val repoFactory = Repository.Factory { repoMetadata: RepositoryMetadata ->
