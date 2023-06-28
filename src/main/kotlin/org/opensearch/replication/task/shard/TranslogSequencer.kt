@@ -126,13 +126,6 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
                     } finally {
                         rateLimiter.release()
                     }
-<<<<<<< HEAD
-
-                    val tookInNanos = System.nanoTime() - relativeStartNanos
-                    followerClusterStats.stats[followerShardId]!!.totalWriteTime.addAndGet(TimeUnit.NANOSECONDS.toMillis(tookInNanos))
-                    followerClusterStats.stats[followerShardId]!!.opsWritten.addAndGet(replayRequest.changes.size.toLong())
-=======
->>>>>>> 448e7a7 (Handling OpenSearchRejectExecuteException Exception (#1004))
                 }
                 highWatermark = next.changes.lastOrNull()?.seqNo() ?: highWatermark
             }

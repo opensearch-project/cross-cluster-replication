@@ -125,13 +125,13 @@ suspend fun <Req: ActionRequest, Resp: ActionResponse> Client.suspendExecuteWith
                             // This waits for the dependencies to load and retry. Helps during boot-up
                             || e.status().status >= 500
                             || e.status() == RestStatus.TOO_MANY_REQUESTS)) {
-                retryException = e;
+                retryException = e
             } else {
                 throw e
             }
         } catch (e: OpenSearchRejectedExecutionException) {
             if(index < numberOfRetries-2) {
-                retryException = e;
+                retryException = e
             }
             else {
                 throw ReplicationException(e, RestStatus.TOO_MANY_REQUESTS)
