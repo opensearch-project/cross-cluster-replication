@@ -60,7 +60,6 @@ import org.elasticsearch.index.IndexNotFoundException
 import org.elasticsearch.index.shard.ShardId
 import org.elasticsearch.threadpool.ThreadPool
 import org.elasticsearch.transport.TransportService
-import com.amazon.elasticsearch.replication.util.indicesService
 import java.io.IOException
 
 class TransportResumeIndexReplicationAction @Inject constructor(transportService: TransportService,
@@ -142,10 +141,7 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
         shards.forEach {
             val followerShardId = it.value.shardId
 
-            val followerIndexService = indicesService.indexServiceSafe(followerShardId.index)
-            val indexShard = followerIndexService.getShard(followerShardId.id)
-
-            if  (!retentionLeaseHelper.verifyRetentionLeaseExist(ShardId(params.leaderIndex, followerShardId.id), followerShardId, indexShard.lastSyncedGlobalCheckpoint+1)) {
+            if  (!retentionLeaseHelper.verifyRetentionLeaseExist(ShardId(params.leaderIndex, followerShardId.id), followerShardId)) {
                 isResumable = false
             }
         }
