@@ -49,12 +49,12 @@ import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.cluster.metadata.IndexNameExpressionResolver
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Inject
+
 import org.opensearch.common.io.stream.StreamInput
 import org.opensearch.env.Environment
 import org.opensearch.index.IndexNotFoundException
 import org.opensearch.index.shard.ShardId
 import org.opensearch.replication.ReplicationPlugin.Companion.KNN_INDEX_SETTING
-import org.opensearch.replication.util.indicesService
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
 import java.io.IOException
@@ -139,10 +139,7 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
         shards.forEach {
             val followerShardId = it.value.shardId
 
-            val followerIndexService = indicesService.indexServiceSafe(followerShardId.index)
-            val indexShard = followerIndexService.getShard(followerShardId.id)
-
-            if  (!retentionLeaseHelper.verifyRetentionLeaseExist(ShardId(params.leaderIndex, followerShardId.id), followerShardId, indexShard.lastSyncedGlobalCheckpoint+1)) {
+            if  (!retentionLeaseHelper.verifyRetentionLeaseExist(ShardId(params.leaderIndex, followerShardId.id), followerShardId)) {
                 isResumable = false
             }
         }
