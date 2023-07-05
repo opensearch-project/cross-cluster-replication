@@ -44,7 +44,7 @@ class RemoteClusterRetentionLeaseHelper constructor(val followerClusterName: Str
     }
 
     public suspend fun verifyRetentionLeaseExist(leaderShardId: ShardId, followerShardId: ShardId): Boolean  {
-        val retentionLeaseId = retentionLeaseIdForShard(followerClusterName, followerShardId)
+        val retentionLeaseId = retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)
         // Currently there is no API to describe/list the retention leases .
         // So we are verifying the existence of lease by trying to renew a lease by same name .
         // If retention lease doesn't exist, this will throw an RetentionLeaseNotFoundException exception
@@ -59,6 +59,8 @@ class RemoteClusterRetentionLeaseHelper constructor(val followerClusterName: Str
             return true
         }
         catch (e: RetentionLeaseNotFoundException) {
+            return addNewRetentionLeaseIfOldExists(leaderShardId, followerShardId, RetentionLeaseActions.RETAIN_ALL)
+        }catch (e : Exception) {
             return false
         }
         return true

@@ -137,6 +137,10 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
         val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
         shards.forEach {
             val followerShardId = it.value.shardId
+<<<<<<< HEAD
+=======
+
+>>>>>>> 66d126e (Avoid use of indicesService in Resume replicaiton flow (#1030))
             if  (!retentionLeaseHelper.verifyRetentionLeaseExist(ShardId(params.leaderIndex, followerShardId.id), followerShardId)) {
                 isResumable = false
             }
