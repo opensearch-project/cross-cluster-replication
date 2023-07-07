@@ -75,12 +75,12 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
         val rateLimiter = Semaphore(writersPerShard)
         var highWatermark = initialSeqNo
         for (m in channel) {
-            rateLimiter.acquire()
             while (unAppliedChanges.containsKey(highWatermark + 1)) {
                 val next = unAppliedChanges.remove(highWatermark + 1)!!
                 val replayRequest = ReplayChangesRequest(followerShardId, next.changes, next.maxSeqNoOfUpdatesOrDeletes,
                                                          leaderAlias, leaderIndexName)
                 replayRequest.parentTask = parentTaskId
+                rateLimiter.acquire()
                 launch {
                     var relativeStartNanos  = System.nanoTime()
                     val retryOnExceptions = ArrayList<Class<*>>()
