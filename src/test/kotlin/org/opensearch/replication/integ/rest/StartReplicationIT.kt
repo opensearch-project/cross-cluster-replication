@@ -878,7 +878,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             assertThat(stats.containsKey("index_stats"))
         }, 60L, TimeUnit.SECONDS)
     }
-
+    @AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/176")
     fun `test follower stats`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
