@@ -16,22 +16,30 @@
 package com.amazon.elasticsearch.replication
 
 import org.elasticsearch.ElasticsearchException
+import org.elasticsearch.ElasticsearchStatusException
 import org.elasticsearch.action.ShardOperationFailedException
 import org.elasticsearch.cluster.metadata.IndexMetadata.INDEX_UUID_NA_VALUE
 import org.elasticsearch.index.shard.ShardId
+import org.elasticsearch.rest.RestStatus
+
 
 /**
  * Base class replication exceptions. Note: Replication process may throw exceptions that do not derive from this such as
  * [org.elasticsearch.ResourceAlreadyExistsException], [org.elasticsearch.index.IndexNotFoundException] or
  * [org.elasticsearch.index.shard.ShardNotFoundException].
  */
-class ReplicationException: ElasticsearchException {
+class ReplicationException: ElasticsearchStatusException {
 
-    constructor(message: String, vararg args: Any) : super(message, *args)
+    constructor(message: String, status : RestStatus, cause: Throwable, vararg args: Any) : super(message, status, cause, *args)
 
-    constructor(message: String, cause: Throwable, vararg args: Any) : super(message,  cause, *args)
+    constructor(message: String, vararg args: Any) : super(message, RestStatus.INTERNAL_SERVER_ERROR, *args)
 
-    constructor(message: String, shardFailures: Array<ShardOperationFailedException>) : super(message) {
+    constructor(message: String, status: RestStatus, vararg args: Any) : super(message, status, *args)
+
+    constructor(cause: Throwable, status: RestStatus, vararg args: Any) : super(cause.message, status, *args)
+
+
+    constructor(message: String, shardFailures: Array<ShardOperationFailedException>): super(message, shardFailures.firstOrNull()?.status()?:RestStatus.INTERNAL_SERVER_ERROR) {
         shardFailures.firstOrNull()?.let {
             setShard(ShardId(it.index(), INDEX_UUID_NA_VALUE, it.shardId()))
             // Add first failure as cause and rest as suppressed...

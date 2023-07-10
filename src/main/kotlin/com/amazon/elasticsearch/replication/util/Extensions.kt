@@ -32,6 +32,7 @@ import org.elasticsearch.action.index.IndexResponse
 import org.elasticsearch.action.support.TransportActions
 import org.elasticsearch.client.Client
 import org.elasticsearch.common.util.concurrent.ThreadContext
+import org.elasticsearch.common.util.concurrent.EsRejectedExecutionException
 import org.elasticsearch.index.IndexNotFoundException
 import org.elasticsearch.index.shard.ShardId
 import org.elasticsearch.index.store.Store
@@ -44,6 +45,7 @@ import org.elasticsearch.transport.NodeDisconnectedException
 import org.elasticsearch.transport.NodeNotConnectedException
 import java.io.PrintWriter
 import java.io.StringWriter
+import java.lang.Exception
 
 /*
  * Extension function to use the store object
@@ -110,8 +112,8 @@ suspend fun <Req: ActionRequest, Resp: ActionResponse> Client.suspendExecuteWith
         defaultContext: Boolean = false): Resp {
     var currentBackoff = backoff
     retryOn.addAll(defaultRetryableExceptions())
-
-    repeat(numberOfRetries - 1) {
+    var retryException: Exception
+    repeat(numberOfRetries - 1) { index ->
         try {
             return suspendExecute(replicationMetadata, action, req,
                     injectSecurityContext = injectSecurityContext, defaultContext = defaultContext)
@@ -123,20 +125,30 @@ suspend fun <Req: ActionRequest, Resp: ActionResponse> Client.suspendExecuteWith
                             // This waits for the dependencies to load and retry. Helps during boot-up
                             || e.status().status >= 500
                             || e.status() == RestStatus.TOO_MANY_REQUESTS)) {
-                log.warn("Encountered a failure while executing in $req. Retrying in ${currentBackoff/1000} seconds" +
-                        ".", e)
-                delay(currentBackoff)
-                currentBackoff = (currentBackoff * factor).toLong().coerceAtMost(maxTimeOut)
+                retryException = e;
             } else {
                 throw e
             }
+        } catch (e: EsRejectedExecutionException) {
+            if(index < numberOfRetries-2) {
+                retryException = e;
+            }
+            else {
+                throw ReplicationException(e, RestStatus.TOO_MANY_REQUESTS)
+            }
         }
+        log.warn(
+            "Encountered a failure while executing in $req. Retrying in ${currentBackoff / 1000} seconds" +
+                    ".", retryException
+        )
+        delay(currentBackoff)
+        currentBackoff = (currentBackoff * factor).toLong().coerceAtMost(maxTimeOut)
+
     }
 
     return suspendExecute(replicationMetadata, action, req,
             injectSecurityContext = injectSecurityContext, defaultContext = defaultContext) // last attempt
 }
-
 
 /**
  * Restore shard from leader cluster with retries.
