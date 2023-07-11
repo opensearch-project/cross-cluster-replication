@@ -193,8 +193,8 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
     override fun getRepositoryData(listener: ActionListener<RepositoryData>) {
         val clusterState = getLeaderClusterState(false, false)
         val shardGenerations = ShardGenerations.builder()
-        clusterState.metadata.indices.values()
-                .map { it.value }
+        clusterState.metadata.indices.values
+                .map { it }
                 .forEach { indexMetadata ->
                     val indexId = IndexId(indexMetadata.index.name, indexMetadata.indexUUID)
                     for (i in 0 until indexMetadata.numberOfShards) {
@@ -215,7 +215,7 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
     override fun getSnapshotInfo(snapshotId: SnapshotId): SnapshotInfo {
         val leaderClusterState = getLeaderClusterState(false, false)
         assert(REMOTE_SNAPSHOT_NAME.equals(snapshotId.name), { "SnapshotName differs" })
-        val indices = leaderClusterState.metadata().indices().keys().map { x -> x.value }
+        val indices = leaderClusterState.metadata().indices().keys.map { x -> x }
         return SnapshotInfo(snapshotId, indices, emptyList(), SnapshotState.SUCCESS, Version.CURRENT)
     }
 
@@ -244,7 +244,7 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         builder.remove(REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING.key)
 
         val indexMdBuilder = IndexMetadata.builder(indexMetadata).settings(builder)
-        indexMetadata.aliases.valuesIt().forEach {
+        indexMetadata.aliases.values.forEach {
             indexMdBuilder.putAlias(it)
         }
         return indexMdBuilder.build()
