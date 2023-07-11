@@ -74,8 +74,8 @@ import org.opensearch.replication.followerStats
 import org.opensearch.replication.leaderStats
 import org.opensearch.replication.updateReplicationStartBlockSetting
 import java.nio.file.Files
-import java.util.*
 import java.util.concurrent.TimeUnit
+import java.util.Locale
 import org.opensearch.bootstrap.BootstrapInfo
 
 
@@ -130,7 +130,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                     "3",
                     followerClient.indices()
                             .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                            .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+                            .indexToSettings.getOrDefault(followerIndexName, Settings.EMPTY)[IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
             )
         }, 15, TimeUnit.SECONDS)
     }
@@ -289,7 +289,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                 "0",
                 followerClient.indices()
                     .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                    .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+                    .indexToSettings.getOrDefault(followerIndexName, Settings.EMPTY)[IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
             )
         }, 30L, TimeUnit.SECONDS)
     }
@@ -448,7 +448,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                 "0",
                 followerClient.indices()
                         .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                        .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+                        .indexToSettings.getOrDefault(followerIndexName, Settings.EMPTY)[IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
         )
         settings = Settings.builder()
                 .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 2)
@@ -469,14 +469,14 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                 "2",
                 followerClient.indices()
                     .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                    .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+                    .indexToSettings.getOrDefault(followerIndexName, Settings.EMPTY)[IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
             )
             assertEqualAliases()
         }, 30L, TimeUnit.SECONDS)
         // Case 2 :  Blocklisted  setting are not copied
         Assert.assertNull(followerClient.indices()
                 .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                .indexToSettings[followerIndexName].get("index.routing.allocation.enable"))
+                .indexToSettings.getOrDefault(followerIndexName, Settings.EMPTY).get("index.routing.allocation.enable"))
         //Alias test case 2: Update existing alias
         aliasAction = IndicesAliasesRequest.AliasActions.add()
                 .index(leaderIndexName)
@@ -500,19 +500,19 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                 "3",
                 followerClient.indices()
                     .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                    .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+                    .indexToSettings.getOrDefault(followerIndexName, Settings.EMPTY)[IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
             )
             Assert.assertEquals(
                 "10s",
                 followerClient.indices()
                     .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                    .indexToSettings[followerIndexName]["index.search.idle.after"]
+                    .indexToSettings.getOrDefault(followerIndexName, Settings.EMPTY)["index.search.idle.after"]
             )
             Assert.assertEquals(
                 "none",
                 followerClient.indices()
                     .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                    .indexToSettings[followerIndexName]["index.routing.allocation.enable"]
+                    .indexToSettings.getOrDefault(followerIndexName, Settings.EMPTY)["index.routing.allocation.enable"]
             )
             assertEqualAliases()
         }, 30L, TimeUnit.SECONDS)
@@ -539,7 +539,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                 null,
                 followerClient.indices()
                     .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                    .indexToSettings[followerIndexName]["index.search.idle.after"]
+                    .indexToSettings.getOrDefault(followerIndexName, Settings.EMPTY)["index.search.idle.after"]
             )
             assertEqualAliases()
         }, 30L, TimeUnit.SECONDS)
@@ -568,7 +568,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                 "1",
                 followerClient.indices()
                         .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                        .indexToSettings[followerIndexName][IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+                        .indexToSettings.getOrDefault(followerIndexName, Settings.EMPTY)[IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
         )
         settings = Settings.builder()
                 .put("index.shard.check_on_startup", "checksum")
@@ -579,7 +579,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                 "checksum",
                 followerClient.indices()
                         .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                        .indexToSettings[followerIndexName]["index.shard.check_on_startup"]
+                        .indexToSettings.getOrDefault(followerIndexName, Settings.EMPTY)["index.shard.check_on_startup"]
         )
     }
 
@@ -1138,7 +1138,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                         "2",
                         leaderClient.indices()
                                 .getSettings(getLeaderSettingsRequest, RequestOptions.DEFAULT)
-                                .indexToSettings[leaderIndexName][IndexMetadata.SETTING_WAIT_FOR_ACTIVE_SHARDS.getKey()]
+                                .indexToSettings.getOrDefault(leaderIndexName, Settings.EMPTY)[IndexMetadata.SETTING_WAIT_FOR_ACTIVE_SHARDS.getKey()]
                 )
             }, 15, TimeUnit.SECONDS)
 
@@ -1198,7 +1198,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                         "2",
                         leaderClient.indices()
                                 .getSettings(getLeaderSettingsRequest, RequestOptions.DEFAULT)
-                                .indexToSettings[leaderIndexName][IndexMetadata.SETTING_WAIT_FOR_ACTIVE_SHARDS.getKey()]
+                                .indexToSettings.getOrDefault(leaderIndexName, Settings.EMPTY)[IndexMetadata.SETTING_WAIT_FOR_ACTIVE_SHARDS.getKey()]
                 )
             }, 15, TimeUnit.SECONDS)
 
@@ -1250,7 +1250,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                         "2",
                         followerClient.indices()
                                 .getSettings(getSettingsRequest, RequestOptions.DEFAULT)
-                                .indexToSettings[followerIndexName][IndexMetadata.SETTING_WAIT_FOR_ACTIVE_SHARDS.getKey()]
+                                .indexToSettings.getOrDefault(followerIndexName, Settings.EMPTY)[IndexMetadata.SETTING_WAIT_FOR_ACTIVE_SHARDS.getKey()]
                 )
             }, 15, TimeUnit.SECONDS)
         } finally {

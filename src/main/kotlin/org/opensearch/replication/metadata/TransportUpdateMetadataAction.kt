@@ -48,7 +48,7 @@ import org.opensearch.rest.action.admin.indices.AliasesNotFoundException
 import org.opensearch.tasks.Task
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
-import java.util.*
+import java.util.Collections
 
 /*
  This action allows the replication plugin to update the index metadata(mapping, setting & aliases) on the follower index
@@ -274,8 +274,8 @@ class TransportUpdateMetadataAction @Inject constructor(
             val indexAsArray = arrayOf(concreteIndex)
             val aliasMetadata = metadata.findAliases(action, indexAsArray)
             val finalAliases: MutableList<String> = ArrayList()
-            for (curAliases in aliasMetadata.values()) {
-                for (aliasMeta in curAliases.value) {
+            for (curAliases in aliasMetadata.values) {
+                for (aliasMeta in curAliases) {
                     finalAliases.add(aliasMeta.alias())
                 }
             }

@@ -22,7 +22,7 @@ import org.opensearch.common.settings.Settings
 import org.opensearch.common.settings.Settings.readSettingsFromStream
 import org.opensearch.core.xcontent.*
 import java.io.IOException
-import java.util.*
+import java.util.Collections
 
 
 class UpdateIndexReplicationRequest : AcknowledgedRequest<UpdateIndexReplicationRequest>, IndicesRequest.Replaceable, ToXContentObject {
