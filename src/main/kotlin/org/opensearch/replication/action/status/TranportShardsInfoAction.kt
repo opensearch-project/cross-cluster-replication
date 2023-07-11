@@ -28,7 +28,6 @@ import org.opensearch.indices.IndicesService
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
 import java.io.IOException
-import java.util.*
 
 class TranportShardsInfoAction  @Inject constructor(clusterService: ClusterService,
                                                     transportService: TransportService,

@@ -54,7 +54,6 @@ import org.opensearch.snapshots.RestoreInfo
 import org.opensearch.test.OpenSearchTestCase
 import org.opensearch.test.client.NoOpNodeClient
 import java.lang.reflect.Field
-import java.util.*
 
 open class NoOpClient(testName :String) : NoOpNodeClient(testName) {
     @Override

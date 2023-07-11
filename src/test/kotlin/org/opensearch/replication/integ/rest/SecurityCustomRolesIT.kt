@@ -29,11 +29,11 @@ import org.opensearch.common.settings.Settings
 import org.opensearch.test.OpenSearchTestCase
 import org.junit.Assert
 import org.junit.Assume
-import java.util.*
 import java.util.concurrent.TimeUnit
 import org.opensearch.replication.task.autofollow.AutoFollowExecutor
 import org.opensearch.tasks.TaskInfo
 import org.junit.Before
+import java.util.Locale
 
 @MultiClusterAnnotations.ClusterConfigurations(
         MultiClusterAnnotations.ClusterConfiguration(clusterName = LEADER),

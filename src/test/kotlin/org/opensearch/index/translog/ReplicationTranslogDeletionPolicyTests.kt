@@ -28,8 +28,8 @@ import java.nio.channels.FileChannel
 import java.nio.file.Files
 import java.nio.file.OpenOption
 import java.nio.file.Path
-import java.util.*
 import java.util.function.Supplier
+import java.util.LinkedList
 
 
 class ReplicationTranslogDeletionPolicyTests : OpenSearchTestCase() {

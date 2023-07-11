@@ -22,9 +22,8 @@ import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.XContentBuilder
 import org.opensearch.core.xcontent.XContentParser
 import java.io.IOException
-import java.util.*
 import java.util.function.BiConsumer
-import java.util.function.BiFunction
+import java.util.Collections
 
 const val KEY_SETTINGS = "settings"
 

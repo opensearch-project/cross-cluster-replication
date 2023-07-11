@@ -48,7 +48,7 @@ import org.opensearch.rest.action.admin.indices.AliasesNotFoundException
 import org.opensearch.tasks.Task
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
-import java.util.*
+import java.util.Collections
 
 /*
  This action allows the replication plugin to update the index metadata(mapping, setting & aliases) on the follower index

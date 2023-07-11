@@ -58,8 +58,8 @@ import org.opensearch.test.ClusterServiceUtils
 import org.opensearch.test.ClusterServiceUtils.setState
 import org.opensearch.test.OpenSearchTestCase
 import org.opensearch.threadpool.TestThreadPool
-import java.util.*
 import java.util.concurrent.TimeUnit
+import java.util.Collections
 
 @ThreadLeakScope(ThreadLeakScope.Scope.NONE)
 class IndexReplicationTaskTests : OpenSearchTestCase()  {

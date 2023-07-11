@@ -74,8 +74,8 @@ import org.opensearch.replication.followerStats
 import org.opensearch.replication.leaderStats
 import org.opensearch.replication.updateReplicationStartBlockSetting
 import java.nio.file.Files
-import java.util.*
 import java.util.concurrent.TimeUnit
+import java.util.Locale
 import org.opensearch.bootstrap.BootstrapInfo
 
 
