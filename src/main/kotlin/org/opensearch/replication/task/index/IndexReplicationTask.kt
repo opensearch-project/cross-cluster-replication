@@ -865,9 +865,9 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                     This can happen if there was a badly timed cluster manager node failure.""".trimIndent())
             }
         } else if (restore.state() == RestoreInProgress.State.FAILURE) {
-            val failureReason = restore.shards().values.find {
-                it.state() == RestoreInProgress.State.FAILURE
-            }!!.reason()
+            val failureReason = restore.shards().values().find {
+                it.value.state() == RestoreInProgress.State.FAILURE
+            }!!.value.reason()
             return FailedState(Collections.emptyMap(), failureReason)
         } else {
             return InitFollowState
