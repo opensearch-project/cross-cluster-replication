@@ -113,6 +113,7 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
                                 followerClusterStats.stats[followerShardId]!!.opsWritten.addAndGet(
                                     replayRequest.changes.size.toLong()
                                 )
+                                followerClusterStats.stats[followerShardId]!!.followerCheckpoint = indexShard.localCheckpoint
                             } catch (e: OpenSearchException) {
                                 if (e !is IndexNotFoundException && (retryOnExceptions.contains(e.javaClass)
                                             || TransportActions.isShardNotAvailableException(e)
