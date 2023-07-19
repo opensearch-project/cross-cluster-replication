@@ -1223,7 +1223,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
     fun `test that wait_for_active_shards setting is updated on follower through start replication api`() {
 
         //Ignore this test if clusters dont have multiple nodes
-        if(!isMultiNodeClusterConfiguration){
+        if(!isMultiNodeClusterConfiguration(LEADER, FOLLOWER)){
             return
         }
 
