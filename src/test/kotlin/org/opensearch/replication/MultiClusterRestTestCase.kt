@@ -661,9 +661,12 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
 
     protected fun isMultiNodeClusterConfiguration(leaderCluster: String, followerCluster: String): Boolean{
         val systemProperties = BootstrapInfo.getSystemProperties()
-        val totalLeaderNodes = systemProperties.get("tests.cluster.${leaderCluster}.total_nodes") as String?
-        val totalFollowerNodes = systemProperties.get("tests.cluster.${followerCluster}.total_nodes") as String?
-        if(totalLeaderNodes != null && totalFollowerNodes !=null && totalLeaderNodes < "2" && totalFollowerNodes < "2" ) {
+        val totalLeaderNodes = systemProperties.get("tests.cluster.${leaderCluster}.total_nodes") as String
+        val totalFollowerNodes = systemProperties.get("tests.cluster.${followerCluster}.total_nodes") as String
+
+        assertNotNull(totalLeaderNodes)
+        assertNotNull(totalFollowerNodes)
+        if(totalLeaderNodes < "2" ||  totalFollowerNodes < "2" ) {
             return false
         }
         return true
