@@ -931,9 +931,8 @@ task integTestRemote (type: RestIntegTestTask) {
 
         nonInputProperties.systemProperty('tests.integTestRemote', "true")
         var numberOfNodes = findProperty('numNodes') as Integer
-        systemProperty "tests.cluster.followCluster.total_nodes", "${-> _numNodes.toString()}"
-        systemProperty "tests.cluster.leaderCluster.total_nodes", "${-> _numNodes.toString()}"
-        nonInputProperties.systemProperty('tests.numNodes', "${-> numberOfNodes.toString()}")
+        systemProperty "tests.cluster.followCluster.total_nodes", "${-> numberOfNodes.toString()}"
+        systemProperty "tests.cluster.leaderCluster.total_nodes", "${-> numberOfNodes.toString()}"
         systemProperty "build.dir", "${buildDir}"
 
     }
