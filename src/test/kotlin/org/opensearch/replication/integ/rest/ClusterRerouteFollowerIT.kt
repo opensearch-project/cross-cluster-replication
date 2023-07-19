@@ -30,7 +30,7 @@ class ClusterRerouteFollowerIT : MultiClusterRestTestCase() {
 
     @Before
     fun beforeTest() {
-        Assume.assumeTrue(isMultiNodeClusterConfiguration)
+        Assume.assumeTrue(isMultiNodeClusterConfiguration(LEADER, FOLLOWER))
     }
 
     fun `test replication works after rerouting a shard from one node to another in follower cluster`() {
