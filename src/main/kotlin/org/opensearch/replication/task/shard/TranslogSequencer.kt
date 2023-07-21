@@ -29,14 +29,14 @@ import org.opensearch.OpenSearchException
 import org.opensearch.action.support.TransportActions
 import org.opensearch.common.logging.Loggers
 import org.opensearch.index.IndexNotFoundException
-import org.opensearch.index.shard.ShardId
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.index.translog.Translog
 import org.opensearch.replication.util.indicesService
 import org.opensearch.tasks.TaskId
 import java.util.ArrayList
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
-import org.opensearch.rest.RestStatus
+import org.opensearch.core.rest.RestStatus
 
 
 /**

@@ -12,8 +12,8 @@
 package org.opensearch.replication.action.index
 
 import org.opensearch.action.support.master.AcknowledgedResponse
-import org.opensearch.common.io.stream.StreamInput
-import org.opensearch.common.io.stream.StreamOutput
+import org.opensearch.core.common.io.stream.StreamInput
+import org.opensearch.core.common.io.stream.StreamOutput
 
 class ReplicateIndexResponse(val ack: Boolean) : AcknowledgedResponse(ack) {
     constructor(inp: StreamInput) : this(inp.readBoolean())

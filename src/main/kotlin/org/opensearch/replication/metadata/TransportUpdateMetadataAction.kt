@@ -40,8 +40,8 @@ import org.opensearch.cluster.metadata.*
 import org.opensearch.cluster.metadata.AliasAction.RemoveIndex
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Inject
-import org.opensearch.common.io.stream.StreamInput
-import org.opensearch.index.Index
+import org.opensearch.core.common.io.stream.StreamInput
+import org.opensearch.core.index.Index
 import org.opensearch.index.IndexNotFoundException
 import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.rest.action.admin.indices.AliasesNotFoundException

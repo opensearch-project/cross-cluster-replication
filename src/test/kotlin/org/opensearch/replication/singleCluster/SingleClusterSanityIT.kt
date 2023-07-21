@@ -45,6 +45,7 @@ class SingleClusterSanityIT : MultiClusterRestTestCase() {
     fun testReplicationPluginWithSingleCluster() {
         when(ClusterState.from(System.getProperty("tests.sanitySingleCluster"))) {
             ClusterState.SINGLE_CLUSTER_SANITY_SUITE -> basicReplicationSanityWithSingleCluster()
+            else -> {throw AssertionError("${System.getProperty("tests.sanitySingleCluster")} is not a valid option for ClusterState")}
         }
     }
 

@@ -23,7 +23,7 @@ import org.opensearch.index.seqno.RetentionLeaseAlreadyExistsException
 import org.opensearch.index.seqno.RetentionLeaseInvalidRetainingSeqNoException
 import org.opensearch.index.seqno.RetentionLeaseNotFoundException
 import org.opensearch.index.shard.IndexShard
-import org.opensearch.index.shard.ShardId
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.replication.metadata.store.ReplicationMetadata
 import org.opensearch.replication.repository.RemoteClusterRepository
 import org.opensearch.replication.task.index.IndexReplicationParams

@@ -20,7 +20,7 @@ import org.opensearch.action.support.nodes.TransportNodesAction
 import org.opensearch.client.node.NodeClient
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Inject
-import org.opensearch.common.io.stream.StreamInput
+import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.replication.metadata.state.ReplicationStateMetadata
 import org.opensearch.replication.seqno.RemoteClusterStats
 import org.opensearch.replication.task.shard.FollowerClusterStats

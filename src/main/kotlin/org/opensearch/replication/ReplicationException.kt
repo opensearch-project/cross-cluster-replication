@@ -13,10 +13,10 @@ package org.opensearch.replication
 
 import org.opensearch.OpenSearchException
 import org.opensearch.OpenSearchStatusException
-import org.opensearch.action.ShardOperationFailedException
+import org.opensearch.core.action.ShardOperationFailedException
 import org.opensearch.cluster.metadata.IndexMetadata.INDEX_UUID_NA_VALUE
-import org.opensearch.index.shard.ShardId
-import org.opensearch.rest.RestStatus
+import org.opensearch.core.index.shard.ShardId
+import org.opensearch.core.rest.RestStatus
 
 /**
  * Base class replication exceptions. Note: Replication process may throw exceptions that do not derive from this such as
