@@ -13,8 +13,8 @@ package org.opensearch.replication.action.repository
 
 import org.opensearch.action.ActionRequestValidationException
 import org.opensearch.cluster.node.DiscoveryNode
-import org.opensearch.common.io.stream.StreamInput
-import org.opensearch.index.shard.ShardId
+import org.opensearch.core.common.io.stream.StreamInput
+import org.opensearch.core.index.shard.ShardId
 
 class ReleaseLeaderResourcesRequest: RemoteClusterRepositoryRequest<ReleaseLeaderResourcesRequest> {
 

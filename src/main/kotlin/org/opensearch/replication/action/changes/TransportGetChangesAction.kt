@@ -23,10 +23,10 @@ import org.opensearch.cluster.metadata.IndexNameExpressionResolver
 import org.opensearch.cluster.routing.ShardsIterator
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Inject
-import org.opensearch.common.io.stream.StreamInput
-import org.opensearch.common.io.stream.Writeable
+import org.opensearch.core.common.io.stream.StreamInput
+import org.opensearch.core.common.io.stream.Writeable
 import org.opensearch.common.unit.TimeValue
-import org.opensearch.index.shard.ShardId
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.index.translog.Translog
 import org.opensearch.indices.IndicesService
 import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING

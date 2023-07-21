@@ -47,10 +47,10 @@ import org.opensearch.common.logging.Loggers
 import org.opensearch.index.seqno.RetentionLeaseActions
 import org.opensearch.index.seqno.RetentionLeaseInvalidRetainingSeqNoException
 import org.opensearch.index.seqno.RetentionLeaseNotFoundException
-import org.opensearch.index.shard.ShardId
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.persistent.PersistentTaskState
 import org.opensearch.persistent.PersistentTasksNodeService
-import org.opensearch.rest.RestStatus
+import org.opensearch.core.rest.RestStatus
 import org.opensearch.tasks.TaskId
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.NodeNotConnectedException

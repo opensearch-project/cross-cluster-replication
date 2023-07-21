@@ -61,7 +61,7 @@ import org.opensearch.common.io.PathUtils
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.unit.TimeValue
 import org.opensearch.common.xcontent.XContentType
-import org.opensearch.index.IndexSettings
+import org.opensearch.core.index.IndexSettings
 import org.opensearch.index.mapper.MapperService
 import org.opensearch.repositories.fs.FsRepository
 import org.opensearch.test.OpenSearchTestCase.assertBusy

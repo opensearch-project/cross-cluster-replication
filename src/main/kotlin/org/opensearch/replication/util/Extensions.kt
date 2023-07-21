@@ -31,13 +31,13 @@ import org.opensearch.client.Client
 import org.opensearch.common.util.concurrent.ThreadContext
 import org.opensearch.core.concurrency.OpenSearchRejectedExecutionException
 import org.opensearch.index.IndexNotFoundException
-import org.opensearch.index.shard.ShardId
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.index.store.Store
 import org.opensearch.indices.recovery.RecoveryState
 import org.opensearch.replication.ReplicationException
 import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.repositories.IndexId
-import org.opensearch.rest.RestStatus
+import org.opensearch.core.rest.RestStatus
 import org.opensearch.snapshots.SnapshotId
 import org.opensearch.transport.ConnectTransportException
 import org.opensearch.transport.NodeDisconnectedException

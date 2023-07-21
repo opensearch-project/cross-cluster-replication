@@ -13,9 +13,9 @@ package org.opensearch.replication.action.repository
 
 import org.opensearch.action.support.single.shard.SingleShardRequest
 import org.opensearch.cluster.node.DiscoveryNode
-import org.opensearch.common.io.stream.StreamInput
-import org.opensearch.common.io.stream.StreamOutput
-import org.opensearch.index.shard.ShardId
+import org.opensearch.core.common.io.stream.StreamInput
+import org.opensearch.core.common.io.stream.StreamOutput
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.transport.RemoteClusterAwareRequest
 
 abstract class RemoteClusterRepositoryRequest<T : SingleShardRequest<T>?>:

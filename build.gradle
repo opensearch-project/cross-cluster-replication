@@ -53,7 +53,7 @@ buildscript {
         plugin_previous_version = opensearch_previous_version.replaceAll(/(\.\d)([^\d]*)$/, '$1.0$2')
 
         common_utils_version = System.getProperty("common_utils.version", opensearch_build)
-        kotlin_version = System.getProperty("kotlin.version", "1.6.0")
+        kotlin_version = System.getProperty("kotlin.version", "1.8.21")
 
         security_plugin_version = opensearch_build
         if (!isSnapshot) {

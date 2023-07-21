@@ -29,13 +29,13 @@ import org.opensearch.action.get.GetAction
 import org.opensearch.action.get.GetResponse
 import org.opensearch.action.support.master.AcknowledgedResponse
 import org.opensearch.common.UUIDs
-import org.opensearch.common.bytes.BytesReference
+import org.opensearch.core.common.bytes.BytesReference
 import org.opensearch.common.settings.Settings
 import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.common.xcontent.XContentFactory
-import org.opensearch.index.Index
+import org.opensearch.core.index.Index
 import org.opensearch.index.get.GetResult
-import org.opensearch.index.shard.ShardId
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.indices.recovery.RecoveryState
 import org.opensearch.persistent.PersistentTaskResponse
 import org.opensearch.persistent.PersistentTasksCustomMetadata

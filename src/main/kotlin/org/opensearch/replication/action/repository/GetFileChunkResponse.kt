@@ -12,9 +12,9 @@
 package org.opensearch.replication.action.repository
 
 import org.opensearch.action.ActionResponse
-import org.opensearch.common.bytes.BytesReference
-import org.opensearch.common.io.stream.StreamInput
-import org.opensearch.common.io.stream.StreamOutput
+import org.opensearch.core.common.bytes.BytesReference
+import org.opensearch.core.common.io.stream.StreamInput
+import org.opensearch.core.common.io.stream.StreamOutput
 import org.opensearch.index.store.StoreFileMetadata
 
 class GetFileChunkResponse : ActionResponse {

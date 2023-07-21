@@ -40,14 +40,14 @@ import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.cluster.metadata.IndexNameExpressionResolver
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Inject
-import org.opensearch.common.io.stream.StreamInput
+import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.common.settings.IndexScopedSettings
 import org.opensearch.index.IndexNotFoundException
 import org.opensearch.persistent.PersistentTasksService
 import org.opensearch.replication.ReplicationPlugin
 import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.repositories.RepositoriesService
-import org.opensearch.rest.RestStatus
+import org.opensearch.core.rest.RestStatus
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
 import java.io.IOException
