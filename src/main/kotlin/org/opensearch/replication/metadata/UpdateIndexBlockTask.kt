@@ -23,7 +23,7 @@ import org.opensearch.cluster.block.ClusterBlockLevel
 import org.opensearch.cluster.block.ClusterBlocks
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.index.IndexNotFoundException
-import org.opensearch.rest.RestStatus
+import org.opensearch.core.rest.RestStatus
 import java.util.Collections
 import java.util.EnumSet
 

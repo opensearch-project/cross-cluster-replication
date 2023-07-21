@@ -20,8 +20,8 @@ import org.opensearch.action.support.nodes.TransportNodesAction
 import org.opensearch.client.node.NodeClient
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Inject
-import org.opensearch.common.io.stream.StreamInput
-import org.opensearch.index.shard.ShardId
+import org.opensearch.core.common.io.stream.StreamInput
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.indices.IndicesService
 import org.opensearch.replication.seqno.RemoteClusterRetentionLeaseHelper.Companion.RETENTION_LEASE_PREFIX
 import org.opensearch.replication.seqno.RemoteClusterStats

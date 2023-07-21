@@ -14,8 +14,8 @@ package org.opensearch.replication.task.shard
 import org.opensearch.replication.task.ReplicationState
 import org.opensearch.OpenSearchException
 import org.opensearch.core.ParseField
-import org.opensearch.common.io.stream.StreamInput
-import org.opensearch.common.io.stream.StreamOutput
+import org.opensearch.core.common.io.stream.StreamInput
+import org.opensearch.core.common.io.stream.StreamOutput
 import org.opensearch.core.xcontent.ObjectParser
 import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.XContentBuilder

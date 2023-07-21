@@ -26,7 +26,7 @@ import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Inject
 import org.opensearch.common.util.concurrent.ThreadContext
 import org.opensearch.replication.util.stackTraceToString
-import org.opensearch.rest.RestStatus
+import org.opensearch.core.rest.RestStatus
 import org.opensearch.tasks.Task
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.ActionNotFoundTransportException

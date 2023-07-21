@@ -14,12 +14,12 @@ package org.opensearch.replication.action.status
 import org.opensearch.action.support.broadcast.BroadcastResponse
 import org.opensearch.action.support.broadcast.BroadcastShardResponse
 import org.opensearch.core.ParseField
-import org.opensearch.common.io.stream.StreamInput
-import org.opensearch.common.io.stream.StreamOutput
+import org.opensearch.core.common.io.stream.StreamInput
+import org.opensearch.core.common.io.stream.StreamOutput
 import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.ToXContentObject
 import org.opensearch.core.xcontent.XContentBuilder
-import org.opensearch.index.shard.ShardId
+import org.opensearch.core.index.shard.ShardId
 import java.io.IOException
 
 class ShardInfoResponse : BroadcastShardResponse, ToXContentObject {

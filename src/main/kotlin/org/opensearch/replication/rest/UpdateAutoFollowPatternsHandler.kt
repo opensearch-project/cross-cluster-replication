@@ -19,7 +19,7 @@ import org.opensearch.rest.BaseRestHandler
 import org.opensearch.rest.BaseRestHandler.RestChannelConsumer
 import org.opensearch.rest.RestHandler
 import org.opensearch.rest.RestRequest
-import org.opensearch.rest.RestStatus
+import org.opensearch.core.rest.RestStatus
 import org.opensearch.rest.action.RestToXContentListener
 
 class UpdateAutoFollowPatternsHandler : BaseRestHandler() {
