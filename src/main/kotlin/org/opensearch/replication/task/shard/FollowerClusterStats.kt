@@ -13,13 +13,13 @@ package org.opensearch.replication.task.shard
 
 import org.apache.logging.log4j.LogManager
 import org.opensearch.common.inject.Singleton
-import org.opensearch.common.io.stream.StreamInput
-import org.opensearch.common.io.stream.StreamOutput
+import org.opensearch.core.common.io.stream.StreamInput
+import org.opensearch.core.common.io.stream.StreamOutput
 import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.ToXContentFragment
 import org.opensearch.core.xcontent.XContentBuilder
 import org.opensearch.common.xcontent.XContentType
-import org.opensearch.index.shard.ShardId
+import org.opensearch.core.index.shard.ShardId
 import java.util.concurrent.atomic.AtomicLong
 
 class FollowerShardMetric  {

@@ -12,8 +12,8 @@
 package org.opensearch.replication.action.changes
 
 import org.opensearch.action.ActionResponse
-import org.opensearch.common.io.stream.StreamInput
-import org.opensearch.common.io.stream.StreamOutput
+import org.opensearch.core.common.io.stream.StreamInput
+import org.opensearch.core.common.io.stream.StreamOutput
 import org.opensearch.index.translog.Translog
 
 class GetChangesResponse(val changes: List<Translog.Operation>,

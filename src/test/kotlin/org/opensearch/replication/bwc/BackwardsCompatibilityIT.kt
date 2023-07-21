@@ -82,6 +82,7 @@ class BackwardsCompatibilityIT : MultiClusterRestTestCase() {
             ClusterStatus.ONE_THIRD_UPGRADED, ClusterStatus.TWO_THIRD_UPGRADED, ClusterStatus.ROLLING_UPGRADED,
                 ClusterStatus.FULL_CLUSTER_RESTART -> verifyReplication()
             ClusterStatus.COMPLETE_SUITE -> {} // Do nothing as all tests have run already
+            else -> {throw AssertionError()}
         }
     }
 

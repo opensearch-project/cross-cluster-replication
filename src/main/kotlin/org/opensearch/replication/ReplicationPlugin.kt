@@ -84,8 +84,8 @@ import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.CheckedFunction
 import org.opensearch.core.ParseField
 import org.opensearch.common.component.LifecycleComponent
-import org.opensearch.common.io.stream.NamedWriteableRegistry
-import org.opensearch.common.io.stream.Writeable
+import org.opensearch.core.common.io.stream.NamedWriteableRegistry
+import org.opensearch.core.common.io.stream.Writeable
 import org.opensearch.common.settings.ClusterSettings
 import org.opensearch.common.settings.IndexScopedSettings
 import org.opensearch.common.settings.Setting

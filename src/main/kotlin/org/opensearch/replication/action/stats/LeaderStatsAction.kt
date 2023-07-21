@@ -12,7 +12,7 @@
 package org.opensearch.replication.action.stats
 
 import org.opensearch.action.ActionType
-import org.opensearch.common.io.stream.Writeable
+import org.opensearch.core.common.io.stream.Writeable
 
 class LeaderStatsAction : ActionType<LeaderStatsResponse>(NAME, reader) {
     companion object {

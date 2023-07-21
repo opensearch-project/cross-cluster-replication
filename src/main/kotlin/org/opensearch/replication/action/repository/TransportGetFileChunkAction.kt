@@ -20,11 +20,11 @@ import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.metadata.IndexNameExpressionResolver
 import org.opensearch.cluster.routing.ShardsIterator
 import org.opensearch.cluster.service.ClusterService
-import org.opensearch.common.bytes.BytesArray
+import org.opensearch.core.common.bytes.BytesArray
 import org.opensearch.common.inject.Inject
-import org.opensearch.common.io.stream.StreamInput
-import org.opensearch.common.io.stream.Writeable
-import org.opensearch.index.shard.ShardId
+import org.opensearch.core.common.io.stream.StreamInput
+import org.opensearch.core.common.io.stream.Writeable
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.indices.IndicesService
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportActionProxy
