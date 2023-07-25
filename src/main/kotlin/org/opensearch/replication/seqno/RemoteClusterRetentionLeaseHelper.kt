@@ -23,7 +23,7 @@ import org.opensearch.index.seqno.RetentionLeaseAlreadyExistsException
 import org.opensearch.index.seqno.RetentionLeaseInvalidRetainingSeqNoException
 import org.opensearch.index.seqno.RetentionLeaseNotFoundException
 import org.opensearch.index.shard.IndexShard
-import org.opensearch.index.shard.ShardId
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.replication.metadata.store.ReplicationMetadata
 import org.opensearch.replication.repository.RemoteClusterRepository
 import org.opensearch.replication.task.index.IndexReplicationParams
@@ -58,7 +58,7 @@ class RemoteClusterRetentionLeaseHelper constructor(var followerClusterNameWithU
         }
     }
 
-    public suspend fun verifyRetentionLeaseExist(leaderShardId: ShardId, followerShardId: ShardId, seqNo: Long): Boolean  {
+    public suspend fun verifyRetentionLeaseExist(leaderShardId: ShardId, followerShardId: ShardId): Boolean  {
         val retentionLeaseId = retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)
         // Currently there is no API to describe/list the retention leases .
         // So we are verifying the existence of lease by trying to renew a lease by same name .
@@ -74,7 +74,7 @@ class RemoteClusterRetentionLeaseHelper constructor(var followerClusterNameWithU
             return true
         }
         catch (e: RetentionLeaseNotFoundException) {
-            return addNewRetentionLeaseIfOldExists(leaderShardId, followerShardId, seqNo)
+            return addNewRetentionLeaseIfOldExists(leaderShardId, followerShardId, RetentionLeaseActions.RETAIN_ALL)
         }catch (e : Exception) {
             return false
         }

@@ -47,10 +47,10 @@ import org.opensearch.common.logging.Loggers
 import org.opensearch.index.seqno.RetentionLeaseActions
 import org.opensearch.index.seqno.RetentionLeaseInvalidRetainingSeqNoException
 import org.opensearch.index.seqno.RetentionLeaseNotFoundException
-import org.opensearch.index.shard.ShardId
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.persistent.PersistentTaskState
 import org.opensearch.persistent.PersistentTasksNodeService
-import org.opensearch.rest.RestStatus
+import org.opensearch.core.rest.RestStatus
 import org.opensearch.tasks.TaskId
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.NodeNotConnectedException
@@ -214,7 +214,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         // Since this setting is not dynamic, setting update would only reflect after pause-resume or on a new replication job.
         val rateLimiter = Semaphore(replicationSettings.readersPerShard)
         val sequencer = TranslogSequencer(scope, replicationMetadata, followerShardId, leaderAlias, leaderShardId.indexName,
-                                          TaskId(clusterService.nodeName, id), client, indexShard.localCheckpoint, followerClusterStats)
+                                          TaskId(clusterService.nodeName, id), client, indexShard.localCheckpoint, followerClusterStats, replicationSettings.writersPerShard)
 
         val changeTracker = ShardReplicationChangesTracker(indexShard, replicationSettings)
         followerClusterStats.stats[followerShardId]!!.followerCheckpoint = indexShard.localCheckpoint
@@ -255,7 +255,6 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                         followerClusterStats.stats[followerShardId]!!.opsReadFailures.addAndGet(1)
                         logInfo("Unable to get changes from seqNo: $fromSeqNo. ${e.stackTraceToString()}")
                         changeTracker.updateBatchFetched(false, fromSeqNo, toSeqNo, fromSeqNo - 1,-1)
-
                         // Propagate 4xx exceptions up the chain and halt replication as they are irrecoverable
                         val range4xx = 400.rangeTo(499)
                         if (e is OpenSearchException &&

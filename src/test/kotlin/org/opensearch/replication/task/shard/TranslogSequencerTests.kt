@@ -24,7 +24,7 @@ import org.opensearch.action.support.replication.ReplicationResponse.ShardInfo
 import org.opensearch.common.settings.Settings
 import org.opensearch.index.IndexService
 import org.opensearch.index.shard.IndexShard
-import org.opensearch.index.shard.ShardId
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.index.translog.Translog
 import org.opensearch.indices.IndicesService
 import org.opensearch.replication.action.changes.GetChangesResponse
@@ -94,7 +94,7 @@ class TranslogSequencerTests : OpenSearchTestCase() {
         Mockito.`when`(indicesService.indexServiceSafe(followerShardId.index)).thenReturn(followerIndexService)
         Mockito.`when`(followerIndexService.getShard(followerShardId.id)).thenReturn(indexShard)
         val sequencer = TranslogSequencer(this, replicationMetadata, followerShardId, leaderAlias, leaderIndex, EMPTY_TASK_ID,
-                                          client, startSeqNo, stats)
+                                          client, startSeqNo, stats, 2)
 
         // Send requests out of order (shuffled seqNo) and await for them to be processed.
         var batchSeqNo = startSeqNo

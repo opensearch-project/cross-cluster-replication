@@ -68,7 +68,7 @@ import org.opensearch.cluster.RestoreInProgress
 import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.cluster.routing.allocation.decider.EnableAllocationDecider
 import org.opensearch.cluster.service.ClusterService
-import org.opensearch.common.io.stream.StreamOutput
+import org.opensearch.core.common.io.stream.StreamOutput
 import org.opensearch.common.logging.Loggers
 import org.opensearch.common.settings.Setting
 import org.opensearch.common.settings.Settings
@@ -79,11 +79,11 @@ import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.ToXContentObject
 import org.opensearch.core.xcontent.XContentBuilder
 import org.opensearch.common.xcontent.XContentType
-import org.opensearch.index.Index
+import org.opensearch.core.index.Index
 import org.opensearch.index.IndexService
 import org.opensearch.index.IndexSettings
 import org.opensearch.index.shard.IndexShard
-import org.opensearch.index.shard.ShardId
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.indices.cluster.IndicesClusterStateService
 import org.opensearch.indices.recovery.RecoveryState
 import org.opensearch.persistent.PersistentTaskState
@@ -94,7 +94,7 @@ import org.opensearch.persistent.PersistentTasksService
 import org.opensearch.replication.ReplicationException
 import org.opensearch.replication.MappingNotAvailableException
 import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING
-import org.opensearch.rest.RestStatus
+import org.opensearch.core.rest.RestStatus
 import org.opensearch.tasks.TaskId
 import org.opensearch.tasks.TaskManager
 import org.opensearch.threadpool.ThreadPool

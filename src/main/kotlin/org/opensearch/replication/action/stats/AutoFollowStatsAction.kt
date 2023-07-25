@@ -15,9 +15,9 @@ import org.opensearch.action.ActionType
 import org.opensearch.action.FailedNodeException
 import org.opensearch.action.TaskOperationFailure
 import org.opensearch.action.support.tasks.BaseTasksResponse
-import org.opensearch.common.io.stream.StreamInput
-import org.opensearch.common.io.stream.StreamOutput
-import org.opensearch.common.io.stream.Writeable
+import org.opensearch.core.common.io.stream.StreamInput
+import org.opensearch.core.common.io.stream.StreamOutput
+import org.opensearch.core.common.io.stream.Writeable
 import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.ToXContent.EMPTY_PARAMS
 import org.opensearch.core.xcontent.ToXContentObject
