@@ -29,8 +29,8 @@ import org.opensearch.action.admin.indices.get.GetIndexRequest
 import org.opensearch.action.support.IndicesOptions
 import org.opensearch.client.Client
 import org.opensearch.cluster.service.ClusterService
-import org.opensearch.common.io.stream.StreamInput
-import org.opensearch.common.io.stream.StreamOutput
+import org.opensearch.core.common.io.stream.StreamInput
+import org.opensearch.core.common.io.stream.StreamOutput
 import org.opensearch.common.logging.Loggers
 import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.XContentBuilder
@@ -39,7 +39,7 @@ import org.opensearch.replication.ReplicationException
 import org.opensearch.replication.action.status.ReplicationStatusAction
 import org.opensearch.replication.action.status.ShardInfoRequest
 import org.opensearch.replication.action.status.ShardInfoResponse
-import org.opensearch.rest.RestStatus
+import org.opensearch.core.rest.RestStatus
 import org.opensearch.tasks.Task
 import org.opensearch.tasks.TaskId
 import org.opensearch.threadpool.Scheduler

@@ -23,7 +23,7 @@ import org.opensearch.index.seqno.RetentionLeaseAlreadyExistsException
 import org.opensearch.index.seqno.RetentionLeaseInvalidRetainingSeqNoException
 import org.opensearch.index.seqno.RetentionLeaseNotFoundException
 import org.opensearch.index.shard.IndexShard
-import org.opensearch.index.shard.ShardId
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.replication.metadata.store.ReplicationMetadata
 import org.opensearch.replication.repository.RemoteClusterRepository
 import org.opensearch.replication.task.index.IndexReplicationParams
@@ -136,9 +136,9 @@ class RemoteClusterRetentionLeaseHelper constructor(var followerClusterNameWithU
             val remoteMetadata = getLeaderIndexMetadata(replMetadata.connectionName, replMetadata.leaderContext.resource)
             val params = IndexReplicationParams(replMetadata.connectionName, remoteMetadata.index, followerIndexName)
             val remoteClient = client.getRemoteClusterClient(params.leaderAlias)
-            val shards = clusterService.state().routingTable.indicesRouting().get(params.followerIndexName).shards()
+            val shards = clusterService.state().routingTable.indicesRouting().get(params.followerIndexName)?.shards()
             val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), followerClusterUUID, remoteClient)
-            shards.forEach {
+            shards?.forEach {
                 val followerShardId = it.value.shardId
                 log.debug("Removing lease for $followerShardId.id ")
                 retentionLeaseHelper.attemptRetentionLeaseRemoval(ShardId(params.leaderIndex, followerShardId.id), followerShardId)

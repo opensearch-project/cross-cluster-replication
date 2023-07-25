@@ -28,7 +28,7 @@ import org.opensearch.client.Client
 import org.opensearch.cluster.node.DiscoveryNode
 import org.opensearch.common.unit.ByteSizeValue
 import org.opensearch.common.util.concurrent.ThreadContext
-import org.opensearch.index.shard.ShardId
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.index.store.Store
 import org.opensearch.index.store.StoreFileMetadata
 import org.opensearch.indices.recovery.MultiChunkTransfer

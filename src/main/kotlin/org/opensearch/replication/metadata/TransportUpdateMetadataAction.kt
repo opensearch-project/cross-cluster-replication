@@ -40,8 +40,8 @@ import org.opensearch.cluster.metadata.*
 import org.opensearch.cluster.metadata.AliasAction.RemoveIndex
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Inject
-import org.opensearch.common.io.stream.StreamInput
-import org.opensearch.index.Index
+import org.opensearch.core.common.io.stream.StreamInput
+import org.opensearch.core.index.Index
 import org.opensearch.index.IndexNotFoundException
 import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.rest.action.admin.indices.AliasesNotFoundException
@@ -274,8 +274,8 @@ class TransportUpdateMetadataAction @Inject constructor(
             val indexAsArray = arrayOf(concreteIndex)
             val aliasMetadata = metadata.findAliases(action, indexAsArray)
             val finalAliases: MutableList<String> = ArrayList()
-            for (curAliases in aliasMetadata.values()) {
-                for (aliasMeta in curAliases.value) {
+            for (curAliases in aliasMetadata.values) {
+                for (aliasMeta in curAliases) {
                     finalAliases.add(aliasMeta.alias())
                 }
             }

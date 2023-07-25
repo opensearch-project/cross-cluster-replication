@@ -18,8 +18,8 @@ import org.opensearch.cluster.DiffableUtils.getStringKeySerializer
 import org.opensearch.cluster.NamedDiff
 import org.opensearch.cluster.metadata.Metadata
 import org.opensearch.cluster.service.ClusterService
-import org.opensearch.common.io.stream.StreamInput
-import org.opensearch.common.io.stream.StreamOutput
+import org.opensearch.core.common.io.stream.StreamInput
+import org.opensearch.core.common.io.stream.StreamOutput
 import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.XContentBuilder
 import org.opensearch.core.xcontent.XContentParser

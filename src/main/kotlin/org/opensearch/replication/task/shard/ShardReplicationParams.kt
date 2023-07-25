@@ -14,17 +14,17 @@ package org.opensearch.replication.task.shard
 import org.opensearch.Version
 import org.opensearch.core.ParseField
 import org.opensearch.common.Strings
-import org.opensearch.common.io.stream.StreamInput
-import org.opensearch.common.io.stream.StreamOutput
+import org.opensearch.core.common.io.stream.StreamInput
+import org.opensearch.core.common.io.stream.StreamOutput
 import org.opensearch.core.xcontent.ObjectParser
 import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.XContentBuilder
 import org.opensearch.core.xcontent.XContentParser
 import org.opensearch.common.xcontent.XContentType
-import org.opensearch.index.shard.ShardId
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.persistent.PersistentTaskParams
 import java.io.IOException
-import org.opensearch.index.Index
+import org.opensearch.core.index.Index
 
 
 class ShardReplicationParams : PersistentTaskParams {

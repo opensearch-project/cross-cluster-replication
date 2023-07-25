@@ -50,10 +50,10 @@ import org.opensearch.cluster.metadata.IndexNameExpressionResolver
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Inject
 
-import org.opensearch.common.io.stream.StreamInput
+import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.env.Environment
 import org.opensearch.index.IndexNotFoundException
-import org.opensearch.index.shard.ShardId
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
 import java.io.IOException
@@ -130,9 +130,9 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
     private suspend fun isResumable(params :IndexReplicationParams): Boolean {
         var isResumable = true
         val remoteClient = client.getRemoteClusterClient(params.leaderAlias)
-        val shards = clusterService.state().routingTable.indicesRouting().get(params.followerIndexName).shards()
+        val shards = clusterService.state().routingTable.indicesRouting().get(params.followerIndexName)?.shards()
         val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), clusterService.state().metadata.clusterUUID(), remoteClient)
-        shards.forEach {
+        shards?.forEach {
             val followerShardId = it.value.shardId
 
             if  (!retentionLeaseHelper.verifyRetentionLeaseExist(ShardId(params.leaderIndex, followerShardId.id), followerShardId)) {
@@ -146,7 +146,7 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
 
         // clean up all retention leases we may have accidentally took while doing verifyRetentionLeaseExist .
         // Idempotent Op which does no harm
-        shards.forEach {
+        shards?.forEach {
             val followerShardId = it.value.shardId
             log.debug("Removing lease for $followerShardId.id ")
             retentionLeaseHelper.attemptRetentionLeaseRemoval(ShardId(params.leaderIndex, followerShardId.id), followerShardId)
