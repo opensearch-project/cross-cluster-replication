@@ -1,6 +1,6 @@
 package org.opensearch.index.translog
 
-import org.opensearch.common.unit.ByteSizeValue
+import org.opensearch.core.common.unit.ByteSizeValue
 import org.opensearch.index.IndexSettings
 import org.opensearch.index.seqno.RetentionLease
 import org.opensearch.index.seqno.RetentionLeases
