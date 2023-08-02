@@ -83,7 +83,7 @@ import org.opensearch.cluster.node.DiscoveryNodes
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.CheckedFunction
 import org.opensearch.core.ParseField
-import org.opensearch.common.component.LifecycleComponent
+import org.opensearch.common.lifecycle.LifecycleComponent
 import org.opensearch.core.common.io.stream.NamedWriteableRegistry
 import org.opensearch.core.common.io.stream.Writeable
 import org.opensearch.common.settings.ClusterSettings
@@ -92,8 +92,8 @@ import org.opensearch.common.settings.Setting
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.settings.SettingsFilter
 import org.opensearch.common.settings.SettingsModule
-import org.opensearch.common.unit.ByteSizeUnit
-import org.opensearch.common.unit.ByteSizeValue
+import org.opensearch.core.common.unit.ByteSizeUnit
+import org.opensearch.core.common.unit.ByteSizeValue
 import org.opensearch.common.unit.TimeValue
 import org.opensearch.common.util.concurrent.OpenSearchExecutors
 import org.opensearch.core.xcontent.NamedXContentRegistry

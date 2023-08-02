@@ -17,7 +17,7 @@ import org.opensearch.replication.util.performOp
 import org.opensearch.OpenSearchException
 import org.opensearch.action.support.single.shard.SingleShardRequest
 import org.opensearch.client.node.NodeClient
-import org.opensearch.common.component.AbstractLifecycleComponent
+import org.opensearch.common.lifecycle.AbstractLifecycleComponent
 import org.opensearch.common.inject.Inject
 import org.opensearch.common.inject.Singleton
 import org.opensearch.common.lucene.store.InputStreamIndexInput

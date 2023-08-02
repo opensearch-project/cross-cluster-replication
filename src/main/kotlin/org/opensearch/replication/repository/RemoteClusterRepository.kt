@@ -47,7 +47,7 @@ import org.opensearch.cluster.node.DiscoveryNode
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.Nullable
 import org.opensearch.common.UUIDs
-import org.opensearch.common.component.AbstractLifecycleComponent
+import org.opensearch.common.lifecycle.AbstractLifecycleComponent
 import org.opensearch.common.metrics.CounterMetric
 import org.opensearch.common.settings.Settings
 import org.opensearch.index.mapper.MapperService
