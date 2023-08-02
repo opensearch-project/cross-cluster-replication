@@ -26,7 +26,7 @@ import org.apache.logging.log4j.Logger
 import org.opensearch.action.ActionListener
 import org.opensearch.client.Client
 import org.opensearch.cluster.node.DiscoveryNode
-import org.opensearch.common.unit.ByteSizeValue
+import org.opensearch.core.common.unit.ByteSizeValue
 import org.opensearch.common.util.concurrent.ThreadContext
 import org.opensearch.core.index.shard.ShardId
 import org.opensearch.index.store.Store
