@@ -25,7 +25,7 @@ import org.opensearch.common.settings.Settings
 import org.opensearch.common.unit.TimeValue
 import org.opensearch.core.xcontent.DeprecationHandler
 import org.opensearch.core.xcontent.NamedXContentRegistry
-import org.opensearch.common.xcontent.XContentType
+import org.opensearch.core.xcontent.MediaType
 import org.opensearch.test.OpenSearchTestCase.assertBusy
 import org.opensearch.test.rest.OpenSearchRestTestCase
 import org.junit.Assert
@@ -96,7 +96,7 @@ fun RestHighLevelClient.startReplication(request: StartReplicationRequest,
         waitForNoInitializingShards()
 }
 fun getAckResponse(lowLevelResponse: Response): AcknowledgedResponse {
-    val xContentType = XContentType.fromMediaType(lowLevelResponse.entity.contentType.value)
+    val xContentType = MediaType.fromMediaType(lowLevelResponse.entity.contentType.value)
     val xcp = xContentType.xContent().createParser(NamedXContentRegistry.EMPTY, DeprecationHandler.IGNORE_DEPRECATIONS,
             lowLevelResponse.entity.content)
     return AcknowledgedResponse.fromXContent(xcp)
