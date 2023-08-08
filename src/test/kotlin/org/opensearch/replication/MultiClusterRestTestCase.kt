@@ -38,7 +38,6 @@ import org.opensearch.client.ResponseException
 import org.opensearch.client.RestClient
 import org.opensearch.client.RestClientBuilder
 import org.opensearch.client.RestHighLevelClient
-import org.opensearch.common.Strings
 import org.opensearch.common.io.PathUtils
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.unit.TimeValue
@@ -419,7 +418,7 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
         clearCommand.endObject()
         if (mustClear) {
             val request = Request("PUT", "/_cluster/settings")
-            request.setJsonEntity(Strings.toString(clearCommand))
+            request.setJsonEntity(clearCommand.toString())
             testCluster.lowLevelClient.performRequest(request)
         }
     }
