@@ -16,7 +16,6 @@ import org.apache.logging.log4j.LogManager
 import org.opensearch.action.FailedNodeException
 import org.opensearch.action.support.nodes.BaseNodesResponse
 import org.opensearch.cluster.ClusterName
-import org.opensearch.common.Strings
 import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.core.common.io.stream.StreamOutput
 import org.opensearch.core.xcontent.ToXContent.EMPTY_PARAMS
@@ -76,7 +75,7 @@ class LeaderStatsResponse : BaseNodesResponse<LeaderNodeStatsResponse?>, ToXCont
     override fun toString(): String {
         val builder: XContentBuilder = XContentFactory.jsonBuilder().prettyPrint()
         toXContent(builder, EMPTY_PARAMS)
-        return Strings.toString(builder)
+        return builder.toString()
     }
 }
 

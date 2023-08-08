@@ -17,7 +17,7 @@ import org.opensearch.Version
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.cluster.metadata.MetadataCreateIndexService
-import org.opensearch.common.Strings
+import org.opensearch.core.common.Strings
 import org.opensearch.common.ValidationException
 import org.opensearch.common.settings.Settings
 import org.opensearch.env.Environment
