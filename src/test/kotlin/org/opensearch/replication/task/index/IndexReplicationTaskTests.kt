@@ -52,7 +52,7 @@ import org.opensearch.replication.task.shard.ShardReplicationExecutor
 import org.opensearch.replication.task.shard.ShardReplicationParams
 import org.opensearch.snapshots.Snapshot
 import org.opensearch.snapshots.SnapshotId
-import org.opensearch.tasks.TaskId.EMPTY_TASK_ID
+import org.opensearch.core.tasks.TaskId.EMPTY_TASK_ID
 import org.opensearch.tasks.TaskManager
 import org.opensearch.test.ClusterServiceUtils
 import org.opensearch.test.ClusterServiceUtils.setState

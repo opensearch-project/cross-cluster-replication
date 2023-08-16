@@ -14,7 +14,7 @@ package org.opensearch.replication.action.stats
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.GlobalScope
 import org.apache.logging.log4j.LogManager
-import org.opensearch.action.ActionListener
+import org.opensearch.core.action.ActionListener
 import org.opensearch.action.FailedNodeException
 import org.opensearch.action.TaskOperationFailure
 import org.opensearch.action.support.ActionFilters

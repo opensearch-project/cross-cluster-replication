@@ -30,8 +30,8 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.ObsoleteCoroutinesApi
 import org.apache.logging.log4j.Logger
 import org.opensearch.OpenSearchException
-import org.opensearch.action.ActionListener
-import org.opensearch.action.ActionResponse
+import org.opensearch.core.action.ActionListener
+import org.opensearch.core.action.ActionResponse
 import org.opensearch.client.Client
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.core.common.io.stream.StreamOutput
@@ -48,7 +48,7 @@ import org.opensearch.persistent.PersistentTaskState
 import org.opensearch.persistent.PersistentTasksService
 import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.core.rest.RestStatus
-import org.opensearch.tasks.TaskId
+import org.opensearch.core.tasks.TaskId
 import org.opensearch.tasks.TaskManager
 import org.opensearch.threadpool.ThreadPool
 

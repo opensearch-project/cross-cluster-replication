@@ -29,7 +29,7 @@ import org.opensearch.commons.ConfigConstants
 import org.opensearch.commons.authuser.User
 import org.apache.logging.log4j.LogManager
 import org.opensearch.action.ActionRequest
-import org.opensearch.action.ActionResponse
+import org.opensearch.core.action.ActionResponse
 import org.opensearch.action.ActionType
 import org.opensearch.common.util.concurrent.ThreadContext
 import org.opensearch.transport.RemoteClusterAwareRequest

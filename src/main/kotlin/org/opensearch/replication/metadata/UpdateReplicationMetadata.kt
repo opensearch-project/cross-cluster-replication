@@ -14,7 +14,7 @@ package org.opensearch.replication.metadata
 import org.opensearch.replication.action.replicationstatedetails.UpdateReplicationStateDetailsRequest
 import org.opensearch.replication.metadata.state.ReplicationStateMetadata
 import org.apache.logging.log4j.LogManager
-import org.opensearch.action.ActionListener
+import org.opensearch.core.action.ActionListener
 import org.opensearch.cluster.AckedClusterStateUpdateTask
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.ClusterStateTaskExecutor
