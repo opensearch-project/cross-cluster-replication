@@ -22,7 +22,7 @@ import kotlinx.coroutines.launch
 import org.apache.logging.log4j.LogManager
 import org.opensearch.OpenSearchException
 import org.opensearch.ResourceAlreadyExistsException
-import org.opensearch.action.ActionListener
+import org.opensearch.core.action.ActionListener
 import org.opensearch.action.support.ActionFilters
 import org.opensearch.action.support.master.AcknowledgedRequest
 import org.opensearch.action.support.master.AcknowledgedResponse

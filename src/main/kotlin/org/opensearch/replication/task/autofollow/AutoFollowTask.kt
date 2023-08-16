@@ -41,7 +41,7 @@ import org.opensearch.replication.action.status.ShardInfoRequest
 import org.opensearch.replication.action.status.ShardInfoResponse
 import org.opensearch.core.rest.RestStatus
 import org.opensearch.tasks.Task
-import org.opensearch.tasks.TaskId
+import org.opensearch.core.tasks.TaskId
 import org.opensearch.threadpool.Scheduler
 import org.opensearch.threadpool.ThreadPool
 import java.util.concurrent.ConcurrentSkipListSet

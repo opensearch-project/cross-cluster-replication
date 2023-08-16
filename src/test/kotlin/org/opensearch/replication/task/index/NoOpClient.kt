@@ -12,9 +12,9 @@ package org.opensearch.replication.task.index
 
 import com.nhaarman.mockitokotlin2.doReturn
 import org.mockito.Mockito
-import org.opensearch.action.ActionListener
+import org.opensearch.core.action.ActionListener
 import org.opensearch.action.ActionRequest
-import org.opensearch.action.ActionResponse
+import org.opensearch.core.action.ActionResponse
 import org.opensearch.action.ActionType
 import org.opensearch.action.admin.cluster.health.ClusterHealthAction
 import org.opensearch.action.admin.cluster.health.ClusterHealthResponse

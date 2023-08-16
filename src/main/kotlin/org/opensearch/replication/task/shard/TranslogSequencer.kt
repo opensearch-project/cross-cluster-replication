@@ -32,7 +32,7 @@ import org.opensearch.index.IndexNotFoundException
 import org.opensearch.core.index.shard.ShardId
 import org.opensearch.index.translog.Translog
 import org.opensearch.replication.util.indicesService
-import org.opensearch.tasks.TaskId
+import org.opensearch.core.tasks.TaskId
 import java.util.ArrayList
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit

@@ -16,7 +16,7 @@ import org.opensearch.replication.util.SecurityContext
 import org.apache.logging.log4j.LogManager
 import org.opensearch.OpenSearchSecurityException
 import org.opensearch.ExceptionsHelper
-import org.opensearch.action.ActionListener
+import org.opensearch.core.action.ActionListener
 import org.opensearch.action.StepListener
 import org.opensearch.action.support.ActionFilters
 import org.opensearch.action.support.HandledTransportAction

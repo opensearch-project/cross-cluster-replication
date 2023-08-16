@@ -16,9 +16,9 @@ import kotlinx.coroutines.ObsoleteCoroutinesApi
 import kotlinx.coroutines.test.runBlockingTest
 import org.assertj.core.api.Assertions.assertThat
 import org.mockito.Mockito
-import org.opensearch.action.ActionListener
+import org.opensearch.core.action.ActionListener
 import org.opensearch.action.ActionRequest
-import org.opensearch.action.ActionResponse
+import org.opensearch.core.action.ActionResponse
 import org.opensearch.action.ActionType
 import org.opensearch.action.support.replication.ReplicationResponse.ShardInfo
 import org.opensearch.common.settings.Settings
@@ -36,7 +36,7 @@ import org.opensearch.replication.metadata.store.ReplicationContext
 import org.opensearch.replication.metadata.store.ReplicationMetadata
 import org.opensearch.replication.metadata.store.ReplicationStoreMetadataType
 import org.opensearch.replication.util.indicesService
-import org.opensearch.tasks.TaskId.EMPTY_TASK_ID
+import org.opensearch.core.tasks.TaskId.EMPTY_TASK_ID
 import org.opensearch.test.OpenSearchTestCase
 import org.opensearch.test.client.NoOpClient
 import java.util.Locale

@@ -27,7 +27,7 @@ import org.opensearch.persistent.AllocatedPersistentTask
 import org.opensearch.persistent.PersistentTaskState
 import org.opensearch.persistent.PersistentTasksCustomMetadata.PersistentTask
 import org.opensearch.persistent.PersistentTasksExecutor
-import org.opensearch.tasks.TaskId
+import org.opensearch.core.tasks.TaskId
 import org.opensearch.threadpool.ThreadPool
 
 class IndexReplicationExecutor(executor: String, private val clusterService: ClusterService,
