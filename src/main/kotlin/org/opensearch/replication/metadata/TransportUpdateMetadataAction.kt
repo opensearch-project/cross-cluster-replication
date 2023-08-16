@@ -13,7 +13,7 @@ package org.opensearch.replication.metadata
 
 import org.apache.logging.log4j.LogManager
 import org.apache.logging.log4j.message.ParameterizedMessage
-import org.opensearch.action.ActionListener
+import org.opensearch.core.action.ActionListener
 import org.opensearch.action.IndicesRequest
 import org.opensearch.action.admin.indices.alias.IndicesAliasesClusterStateUpdateRequest
 import org.opensearch.action.admin.indices.alias.IndicesAliasesRequest

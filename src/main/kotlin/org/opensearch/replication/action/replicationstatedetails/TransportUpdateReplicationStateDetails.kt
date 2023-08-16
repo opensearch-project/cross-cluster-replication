@@ -18,7 +18,7 @@ import org.opensearch.replication.util.submitClusterStateUpdateTask
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
-import org.opensearch.action.ActionListener
+import org.opensearch.core.action.ActionListener
 import org.opensearch.action.support.ActionFilters
 import org.opensearch.action.support.master.AcknowledgedRequest
 import org.opensearch.action.support.master.AcknowledgedResponse

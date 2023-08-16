@@ -30,9 +30,9 @@ import kotlinx.coroutines.Dispatchers
 import org.apache.logging.log4j.LogManager
 import org.apache.lucene.index.IndexCommit
 import org.opensearch.Version
-import org.opensearch.action.ActionListener
+import org.opensearch.core.action.ActionListener
 import org.opensearch.action.ActionRequest
-import org.opensearch.action.ActionResponse
+import org.opensearch.core.action.ActionResponse
 import org.opensearch.action.ActionType
 import org.opensearch.action.admin.indices.stats.IndicesStatsAction
 import org.opensearch.action.admin.indices.stats.IndicesStatsRequest
