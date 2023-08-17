@@ -24,6 +24,7 @@ import org.apache.hc.core5.http.io.entity.EntityUtils
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.Assert
+import org.junit.Assume
 import org.opensearch.OpenSearchStatusException
 import org.opensearch.action.admin.cluster.settings.ClusterUpdateSettingsRequest
 import org.opensearch.action.admin.cluster.snapshots.create.CreateSnapshotRequest
@@ -40,6 +41,7 @@ import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.unit.TimeValue
 import org.opensearch.index.mapper.MapperService
+import org.opensearch.replication.SNAPSHOTS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS
 import java.util.Random
 import java.util.concurrent.TimeUnit
 
@@ -243,9 +245,7 @@ class StopReplicationIT: MultiClusterRestTestCase() {
 
     fun `test stop replication with stale replication settings at leader cluster`() {
 
-        if(checkifIntegTestRemote()){
-            return;
-        }
+        Assume.assumeFalse(SNAPSHOTS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS, checkifIntegTestRemote())
         
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)

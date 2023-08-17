@@ -55,6 +55,9 @@ const val INDEX_TASK_CANCELLATION_REASON = "AutoPaused: Index replication task w
 const val STATUS_REASON_USER_INITIATED = "User initiated"
 const val STATUS_REASON_SHARD_TASK_CANCELLED = "Shard task killed or cancelled."
 const val STATUS_REASON_INDEX_NOT_FOUND = "no such index"
+const val ANALYZERS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS = "Analysers are not accessible when run on remote clusters."
+const val SNAPSHOTS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS = "Snapshots are not accessible when run on remote clusters."
+const val REROUTE_TESTS_NOT_ELIGIBLE_FOR_SINGLE_NODE_CLUSTER = "Reroute not eligible for single node clusters"
 
 
 fun RestHighLevelClient.startReplication(request: StartReplicationRequest,
