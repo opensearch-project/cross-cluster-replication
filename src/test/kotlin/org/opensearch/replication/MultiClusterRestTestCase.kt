@@ -117,7 +117,6 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
         lateinit var testClusters : Map<String, TestCluster>
         var isSecurityPropertyEnabled = false
         var forceInitSecurityConfiguration = false
-        var isMultiNodeClusterConfiguration = true
 
         internal fun createTestCluster(configuration: ClusterConfiguration) : TestCluster {
             return createTestCluster(configuration.clusterName, configuration.preserveSnapshots, configuration.preserveIndices,
@@ -130,7 +129,6 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
             val httpHostsProp = systemProperties.get("tests.cluster.${cluster}.http_hosts") as String?
             val transportHostsProp = systemProperties.get("tests.cluster.${cluster}.transport_hosts") as String?
             val securityEnabled = systemProperties.get("tests.cluster.${cluster}.security_enabled") as String?
-            val totalNodes = systemProperties.get("tests.cluster.${cluster}.total_nodes") as String?
 
             requireNotNull(httpHostsProp) { "Missing http hosts property for cluster: $cluster."}
             requireNotNull(transportHostsProp) { "Missing transport hosts property for cluster: $cluster."}
@@ -142,9 +140,6 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
                 isSecurityPropertyEnabled = true
             }
 
-            if(totalNodes != null && totalNodes < "2") {
-                isMultiNodeClusterConfiguration = false
-            }
 
             forceInitSecurityConfiguration = isSecurityPropertyEnabled && initSecurityConfiguration
 
@@ -661,6 +656,19 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
         val systemProperties = BootstrapInfo.getSystemProperties()
         val integTestRemote = systemProperties.get("tests.integTestRemote") as String?
         return integTestRemote.equals("true")
+    }
+
+    protected fun isMultiNodeClusterConfiguration(leaderCluster: String, followerCluster: String): Boolean{
+        val systemProperties = BootstrapInfo.getSystemProperties()
+        val totalLeaderNodes = systemProperties.get("tests.cluster.${leaderCluster}.total_nodes") as String
+        val totalFollowerNodes = systemProperties.get("tests.cluster.${followerCluster}.total_nodes") as String
+
+        assertNotNull(totalLeaderNodes)
+        assertNotNull(totalFollowerNodes)
+        if(totalLeaderNodes < "2" ||  totalFollowerNodes < "2" ) {
+            return false
+        }
+        return true
     }
 
     protected fun docCount(cluster: RestHighLevelClient, indexName: String) : Int {

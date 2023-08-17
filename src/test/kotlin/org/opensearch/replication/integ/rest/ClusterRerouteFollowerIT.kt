@@ -7,6 +7,7 @@ import org.opensearch.replication.startReplication
 import org.opensearch.replication.stopReplication
 import org.apache.http.entity.ContentType
 import org.apache.http.nio.entity.NStringEntity
+import org.opensearch.replication.REROUTE_TESTS_NOT_ELIGIBLE_FOR_SINGLE_NODE_CLUSTER
 import org.assertj.core.api.Assertions
 import org.opensearch.client.Request
 import org.opensearch.client.RequestOptions
@@ -30,7 +31,7 @@ class ClusterRerouteFollowerIT : MultiClusterRestTestCase() {
 
     @Before
     fun beforeTest() {
-        Assume.assumeTrue(isMultiNodeClusterConfiguration)
+        Assume.assumeTrue(REROUTE_TESTS_NOT_ELIGIBLE_FOR_SINGLE_NODE_CLUSTER, isMultiNodeClusterConfiguration(LEADER, FOLLOWER))
     }
 
     fun `test replication works after rerouting a shard from one node to another in follower cluster`() {
