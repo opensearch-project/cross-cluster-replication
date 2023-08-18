@@ -25,6 +25,8 @@ import org.opensearch.replication.resumeReplication
 import org.opensearch.replication.`validate paused status response due to leader index deleted`
 import org.opensearch.replication.`validate status syncing response`
 import org.opensearch.replication.startReplication
+import org.opensearch.replication.ANALYZERS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS
+import org.opensearch.replication.SNAPSHOTS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS
 import org.opensearch.replication.stopReplication
 import org.opensearch.replication.updateReplication
 import org.apache.http.HttpStatus
@@ -66,7 +68,7 @@ import org.opensearch.index.mapper.MapperService
 import org.opensearch.repositories.fs.FsRepository
 import org.opensearch.test.OpenSearchTestCase.assertBusy
 import org.junit.Assert
-import org.opensearch.cluster.metadata.AliasMetadata
+import org.junit.Assume
 import org.opensearch.core.xcontent.DeprecationHandler
 import org.opensearch.core.xcontent.NamedXContentRegistry
 import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING
@@ -585,9 +587,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
 
     fun `test that replication fails to start when custom analyser is not present in follower`() {
 
-        if(checkifIntegTestRemote()){
-            return;
-        }
+        Assume.assumeFalse(ANALYZERS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS, checkifIntegTestRemote())
 
         val synonyms = javaClass.getResourceAsStream("/analyzers/synonyms.txt")
         val config = PathUtils.get(buildDir, leaderClusterPath, "config")
@@ -620,9 +620,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
 
     fun `test that replication starts successfully when custom analyser is present in follower`() {
 
-        if(checkifIntegTestRemote()){
-            return;
-        }
+        Assume.assumeFalse(ANALYZERS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS, checkifIntegTestRemote())
 
         val synonyms = javaClass.getResourceAsStream("/analyzers/synonyms.txt")
         val leaderConfig = PathUtils.get(buildDir, leaderClusterPath, "config")
@@ -662,9 +660,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
 
     fun `test that replication starts successfully when custom analyser is overridden and present in follower`() {
 
-        if(checkifIntegTestRemote()){
-            return;
-        }
+        Assume.assumeFalse(ANALYZERS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS, checkifIntegTestRemote())
 
         val synonyms = javaClass.getResourceAsStream("/analyzers/synonyms.txt")
         val leaderConfig = PathUtils.get(buildDir, leaderClusterPath, "config")
@@ -801,9 +797,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
 
     fun `test that snapshot on leader does not affect replication during bootstrap`() {
 
-        if(checkifIntegTestRemote()){
-            return;
-        }
+        Assume.assumeFalse(SNAPSHOTS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS,checkifIntegTestRemote())
 
         val settings = Settings.builder()
             .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 20)
@@ -1221,6 +1215,10 @@ class StartReplicationIT: MultiClusterRestTestCase() {
     }
 
     fun `test that wait_for_active_shards setting is updated on follower through start replication api`() {
+
+        Assume.assumeTrue("Ignore this test if clusters dont have multiple nodes as this test reles on wait_for_active_shards",
+            isMultiNodeClusterConfiguration(LEADER, FOLLOWER))
+
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
 
