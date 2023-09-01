@@ -107,6 +107,14 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         return restoreRateLimitingTimeInNanos.count()
     }
 
+    override fun getRemoteUploadThrottleTimeInNanos(): Long {
+        TODO("Not yet implemented")
+    }
+
+    override fun getRemoteDownloadThrottleTimeInNanos(): Long {
+        TODO("Not yet implemented")
+    }
+
     override fun finalizeSnapshot(shardGenerations: ShardGenerations?, repositoryStateId: Long, clusterMetadata: Metadata?,
                                   snapshotInfo: SnapshotInfo?, repositoryMetaVersion: Version?,
                                   stateTransformer: Function<ClusterState, ClusterState>?,
