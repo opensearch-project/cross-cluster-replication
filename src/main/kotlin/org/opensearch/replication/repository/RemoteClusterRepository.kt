@@ -107,6 +107,14 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         return restoreRateLimitingTimeInNanos.count()
     }
 
+    override fun getRemoteUploadThrottleTimeInNanos(): Long {
+        throw UnsupportedOperationException("Operation not permitted")
+    }
+
+    override fun getRemoteDownloadThrottleTimeInNanos(): Long {
+        throw UnsupportedOperationException("Operation not permitted")
+    }
+
     override fun finalizeSnapshot(shardGenerations: ShardGenerations?, repositoryStateId: Long, clusterMetadata: Metadata?,
                                   snapshotInfo: SnapshotInfo?, repositoryMetaVersion: Version?,
                                   stateTransformer: Function<ClusterState, ClusterState>?,
