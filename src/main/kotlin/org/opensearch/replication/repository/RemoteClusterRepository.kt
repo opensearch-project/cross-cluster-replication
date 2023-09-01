@@ -108,11 +108,11 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
     }
 
     override fun getRemoteUploadThrottleTimeInNanos(): Long {
-        TODO("Not yet implemented")
+        throw UnsupportedOperationException("Operation not permitted")
     }
 
     override fun getRemoteDownloadThrottleTimeInNanos(): Long {
-        TODO("Not yet implemented")
+        throw UnsupportedOperationException("Operation not permitted")
     }
 
     override fun finalizeSnapshot(shardGenerations: ShardGenerations?, repositoryStateId: Long, clusterMetadata: Metadata?,
