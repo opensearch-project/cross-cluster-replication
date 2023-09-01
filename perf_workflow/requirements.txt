@@ -3,7 +3,7 @@ validators
 yamlfix
 cerberus
 pipenv
-requests
+requests~=2.31.0
 retry
 ndg-httpsclient
 pyopenssl
