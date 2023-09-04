@@ -138,8 +138,8 @@ suspend fun <Req: ActionRequest, Resp: ActionResponse> Client.suspendExecuteWith
             }
         }
         log.warn(
-            "Encountered a failure while executing changes. Retrying in ${currentBackoff / 1000} seconds" +
-                    "." + " OpenSearchTimeoutException can be ignored!!",
+            "Encountered a failure(can be ignored) while getting changes:  OpenSearchTimeoutException. Retrying in ${currentBackoff / 1000} seconds" +
+                    "."
         )
         delay(currentBackoff)
         currentBackoff = (currentBackoff * factor).toLong().coerceAtMost(maxTimeOut)
