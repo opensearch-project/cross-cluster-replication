@@ -137,6 +137,10 @@ suspend fun <Req: ActionRequest, Resp: ActionResponse> Client.suspendExecuteWith
                 throw ReplicationException(e, RestStatus.TOO_MANY_REQUESTS)
             }
         }
+        log.warn(
+            "Encountered a failure while executing changes. Retrying in ${currentBackoff / 1000} seconds" +
+                    "." + "OpenSearchTimeoutException can be ignored!!",
+        )
         delay(currentBackoff)
         currentBackoff = (currentBackoff * factor).toLong().coerceAtMost(maxTimeOut)
 
