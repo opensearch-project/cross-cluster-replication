@@ -4,8 +4,8 @@ Compatible with OpenSearch 2.10.0
 
 
 ### Bug Fixes
-* Settings should be synced before syncing mappings ([#994](https://github.com/opensearch-project/cross-cluster-replication/pull/994))
-* Replication job moves to paused state after old node joins the cluster([#1004](https://github.com/opensearch-project/cross-cluster-replication/pull/1004))
-* Fix tests relying on wait_for_active_shards ([#1091](https://github.com/opensearch-project/cross-cluster-replication/pull/1091))
-* Avoid excessive logging during certain exception types ([#1114](https://github.com/opensearch-project/cross-cluster-replication/pull/1114))
+* Settings are synced before syncing mapping ([#994](https://github.com/opensearch-project/cross-cluster-replication/pull/994))
+* Handle OpenSearchRejectExecuteException, introduces new settings. ([#1004](https://github.com/opensearch-project/cross-cluster-replication/pull/1004))
+* Fixed tests relying on wait_for_active_shards ([#1091](https://github.com/opensearch-project/cross-cluster-replication/pull/1091))
+* Excessive logging avoided during certain exception types such as OpensearchTimeoutException ([#1114](https://github.com/opensearch-project/cross-cluster-replication/pull/1114))
 
