@@ -359,6 +359,10 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         return true
     }
 
+    override fun isSystemRepository(): Boolean {
+        throw UnsupportedOperationException("Operation not permitted")
+    }
+
 
     /*
      * This method makes a blocking call to the leader cluster
