@@ -63,7 +63,7 @@ jobs:
       - name: Build and run Replication tests
         run: |
           ls -al src/test/resources/security/plugin
-          ./gradlew clean release -Dbuild.snapshot=true -PnumNodes=1 -Psecurity=true
+          ./gradlew clean release -Dbuild.snapshot=true -Psecurity=true
       - name: Upload failed logs
         uses: actions/upload-artifact@v2
         if: failure()
