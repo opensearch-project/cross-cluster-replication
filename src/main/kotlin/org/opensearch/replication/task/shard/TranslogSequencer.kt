@@ -71,12 +71,12 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
         val rateLimiter = Semaphore(writersPerShard)
         var highWatermark = initialSeqNo
         for (m in channel) {
-            rateLimiter.acquire()
             while (unAppliedChanges.containsKey(highWatermark + 1)) {
                 val next = unAppliedChanges.remove(highWatermark + 1)!!
                 val replayRequest = ReplayChangesRequest(followerShardId, next.changes, next.maxSeqNoOfUpdatesOrDeletes,
-                                                         leaderAlias, leaderIndexName)
+                    leaderAlias, leaderIndexName)
                 replayRequest.parentTask = parentTaskId
+                rateLimiter.acquire()
                 launch {
                     var relativeStartNanos  = System.nanoTime()
                     val retryOnExceptions = ArrayList<Class<*>>()
@@ -113,15 +113,16 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
                                 followerClusterStats.stats[followerShardId]!!.opsWritten.addAndGet(
                                     replayRequest.changes.size.toLong()
                                 )
+                                followerClusterStats.stats[followerShardId]!!.followerCheckpoint = indexShard.localCheckpoint
                             } catch (e: OpenSearchException) {
                                 if (e !is IndexNotFoundException && (retryOnExceptions.contains(e.javaClass)
                                             || TransportActions.isShardNotAvailableException(e)
                                             // This waits for the dependencies to load and retry. Helps during boot-up
                                             || e.status().status >= 500
                                             || e.status() == RestStatus.TOO_MANY_REQUESTS)) {
-                                                tryReplay = true
-                                    }
-                                    else {
+                                    tryReplay = true
+                                }
+                                else {
                                     log.error("Got non-retriable Exception:${e.message} with status:${e.status()}")
                                     throw e
                                 }
