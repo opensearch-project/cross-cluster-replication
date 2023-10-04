@@ -11,6 +11,14 @@
 
 package org.opensearch.replication.task.shard
 
+import org.opensearch.replication.action.changes.GetChangesResponse
+import org.opensearch.replication.action.replay.ReplayChangesAction
+import org.opensearch.replication.action.replay.ReplayChangesRequest
+import org.opensearch.replication.action.replay.ReplayChangesResponse
+import org.opensearch.replication.metadata.ReplicationOverallState
+import org.opensearch.replication.metadata.store.ReplicationContext
+import org.opensearch.replication.metadata.store.ReplicationMetadata
+import org.opensearch.replication.metadata.store.ReplicationStoreMetadataType
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.ObsoleteCoroutinesApi
 import kotlinx.coroutines.test.runBlockingTest
@@ -27,20 +35,12 @@ import org.opensearch.index.shard.IndexShard
 import org.opensearch.index.shard.ShardId
 import org.opensearch.index.translog.Translog
 import org.opensearch.indices.IndicesService
-import org.opensearch.replication.action.changes.GetChangesResponse
-import org.opensearch.replication.action.replay.ReplayChangesAction
-import org.opensearch.replication.action.replay.ReplayChangesRequest
-import org.opensearch.replication.action.replay.ReplayChangesResponse
-import org.opensearch.replication.metadata.ReplicationOverallState
-import org.opensearch.replication.metadata.store.ReplicationContext
-import org.opensearch.replication.metadata.store.ReplicationMetadata
-import org.opensearch.replication.metadata.store.ReplicationStoreMetadataType
 import org.opensearch.replication.util.indicesService
 import org.opensearch.tasks.TaskId.EMPTY_TASK_ID
 import org.opensearch.test.OpenSearchTestCase
+import org.opensearch.test.OpenSearchTestCase.randomList
 import org.opensearch.test.client.NoOpClient
 import java.util.Locale
-
 
 @ObsoleteCoroutinesApi
 class TranslogSequencerTests : OpenSearchTestCase() {
@@ -72,7 +72,7 @@ class TranslogSequencerTests : OpenSearchTestCase() {
     val leaderIndex = "leaderIndex"
     val followerShardId = ShardId("follower", "follower_uuid", 0)
     val replicationMetadata = ReplicationMetadata(leaderAlias, ReplicationStoreMetadataType.INDEX.name, ReplicationOverallState.RUNNING.name, "test user",
-            ReplicationContext(followerShardId.indexName, null), ReplicationContext(leaderIndex, null), Settings.EMPTY)
+        ReplicationContext(followerShardId.indexName, null), ReplicationContext(leaderIndex, null), Settings.EMPTY)
     val client = RequestCapturingClient()
     init {
         closeAfterSuite(client)
@@ -94,7 +94,7 @@ class TranslogSequencerTests : OpenSearchTestCase() {
         Mockito.`when`(indicesService.indexServiceSafe(followerShardId.index)).thenReturn(followerIndexService)
         Mockito.`when`(followerIndexService.getShard(followerShardId.id)).thenReturn(indexShard)
         val sequencer = TranslogSequencer(this, replicationMetadata, followerShardId, leaderAlias, leaderIndex, EMPTY_TASK_ID,
-                                          client, startSeqNo, stats)
+            client, startSeqNo, stats, 2)
 
         // Send requests out of order (shuffled seqNo) and await for them to be processed.
         var batchSeqNo = startSeqNo
@@ -120,7 +120,7 @@ class TranslogSequencerTests : OpenSearchTestCase() {
         val changes = randomList(1, randomIntBetween(1, 512)) {
             seqNo = seqNo.inc()
             Translog.Index(randomAlphaOfLength(10).toLowerCase(Locale.ROOT), seqNo,
-                           1L, "{}".toByteArray(Charsets.UTF_8))
+                1L, "{}".toByteArray(Charsets.UTF_8))
         }
         return Pair(GetChangesResponse(changes, startSeqNo.inc(), startSeqNo, -1), seqNo)
     }
