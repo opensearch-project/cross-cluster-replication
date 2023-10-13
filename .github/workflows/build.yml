@@ -21,7 +21,7 @@ jobs:
         with:
           crane-release: v0.15.2
       - name: Checkout opensearch-build repository
-        uses: actions/checkout@v2
+        uses: actions/checkout@v1
         with:
           repository: 'opensearch-project/opensearch-build'
           ref: 'main'
@@ -52,9 +52,6 @@ jobs:
     steps:
       - name: Checkout CCR
         uses: actions/checkout@v2
-        with:
-          submodules: true
-
       - name: Setup Java ${{ matrix.java }}
         uses: actions/setup-java@v1
         with:
