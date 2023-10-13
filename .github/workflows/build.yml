@@ -64,7 +64,7 @@ jobs:
         # switching the user, as OpenSearch cluster can only be started as root/Administrator on linux-deb/linux-rpm/windows-zip.
         run: |
           chown -R opensearch.opensearch `pwd`
-          su opensearch -c "whoami && java -version && ./gradlew build"
+          su opensearch -c "whoami && java -version && ./gradlew --refresh-dependencies clean release -D"build.snapshot=true" -x test -x IntegTest"
 
       - name: Upload Coverage Report
         uses: codecov/codecov-action@v1
