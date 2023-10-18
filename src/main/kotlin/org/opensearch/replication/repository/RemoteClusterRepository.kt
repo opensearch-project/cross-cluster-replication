@@ -245,6 +245,9 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
 
         // Remove translog pruning for the follower index
         builder.remove(REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING.key)
+        builder.remove(IndexMetadata.SETTING_REMOTE_STORE_ENABLED)
+        builder.remove(IndexMetadata.SETTING_REMOTE_SEGMENT_STORE_REPOSITORY)
+        builder.remove(IndexMetadata.SETTING_REMOTE_TRANSLOG_STORE_REPOSITORY)
 
         val indexMdBuilder = IndexMetadata.builder(indexMetadata).settings(builder)
         indexMetadata.aliases.values.forEach {
