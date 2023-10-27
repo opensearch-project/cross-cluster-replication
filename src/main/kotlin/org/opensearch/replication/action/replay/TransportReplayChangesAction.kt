@@ -47,11 +47,13 @@ import org.opensearch.common.settings.Settings
 import org.opensearch.common.xcontent.XContentType
 import org.opensearch.index.IndexingPressureService
 import org.opensearch.index.engine.Engine
+import org.opensearch.index.engine.Engine.NoOp
 import org.opensearch.index.mapper.MapperParsingException
 import org.opensearch.index.shard.IndexShard
 import org.opensearch.index.translog.Translog
 import org.opensearch.indices.IndicesService
 import org.opensearch.indices.SystemIndices
+import org.opensearch.telemetry.tracing.noop.NoopTracer
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
 import java.util.function.Function
@@ -72,7 +74,7 @@ class TransportReplayChangesAction @Inject constructor(settings: Settings, trans
     TransportWriteAction<ReplayChangesRequest, ReplayChangesRequest, ReplayChangesResponse>(
         settings, ReplayChangesAction.NAME, transportService, clusterService, indicesService, threadPool, shardStateAction,
         actionFilters, Writeable.Reader { inp -> ReplayChangesRequest(inp) }, Writeable.Reader { inp -> ReplayChangesRequest(inp) },
-            EXECUTOR_NAME_FUNCTION, false, indexingPressureService, systemIndices) {
+            EXECUTOR_NAME_FUNCTION, false, indexingPressureService, systemIndices, NoopTracer.INSTANCE) {
 
     companion object {
         private val log = LogManager.getLogger(TransportReplayChangesAction::class.java)!!
