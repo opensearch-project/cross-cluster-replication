@@ -144,14 +144,12 @@ import java.util.Optional
 import java.util.function.Supplier
 
 import org.opensearch.index.engine.NRTReplicationEngine
-import org.opensearch.replication.util.ValidationUtil
 
 
 @OpenForTesting
 internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin, RepositoryPlugin, EnginePlugin {
 
     private lateinit var client: Client
-    private lateinit var clusterService: ClusterService
     private lateinit var threadPool: ThreadPool
     private lateinit var replicationMetadataManager: ReplicationMetadataManager
     private lateinit var replicationSettings: ReplicationSettings
@@ -209,7 +207,6 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                                   repositoriesService: Supplier<RepositoriesService>): Collection<Any> {
         this.client = client
         this.threadPool = threadPool
-        this.clusterService = clusterService
         this.replicationMetadataManager = ReplicationMetadataManager(clusterService, client,
                 ReplicationMetadataStore(client, clusterService, xContentRegistry))
         this.replicationSettings = ReplicationSettings(clusterService)
@@ -382,15 +379,9 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
     }
 
     override fun getCustomTranslogDeletionPolicyFactory(): Optional<TranslogDeletionPolicyFactory> {
-        // We don't need a retention lease translog deletion policy for remote store enabled clusters as
-        // we fetch the operations directly from lucene in such cases.
-        return if (ValidationUtil.isRemoteStoreEnabledCluster(clusterService) == false) {
-            Optional.of(TranslogDeletionPolicyFactory { indexSettings, retentionLeasesSupplier ->
-                ReplicationTranslogDeletionPolicy(indexSettings, retentionLeasesSupplier)
-            })
-        } else {
-            Optional.empty()
-        }
+       return Optional.of(TranslogDeletionPolicyFactory{
+               indexSettings, retentionLeasesSupplier -> ReplicationTranslogDeletionPolicy(indexSettings, retentionLeasesSupplier)
+       })
     }
 
     override fun onIndexModule(indexModule: IndexModule) {
