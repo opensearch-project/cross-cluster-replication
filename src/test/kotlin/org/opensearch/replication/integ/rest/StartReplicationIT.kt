@@ -882,36 +882,31 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         }, 60L, TimeUnit.SECONDS)
     }
 
-    @AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/176")
     fun `test follower stats`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
-        val leaderIndexName2 = randomAlphaOfLength(10).toLowerCase(Locale.ROOT)+"leader"
         val followerIndexName2 = randomAlphaOfLength(10).toLowerCase(Locale.ROOT)+"follower"
-        val leaderIndexName3 = randomAlphaOfLength(10).toLowerCase(Locale.ROOT)+"leader"
         val followerIndexName3 = randomAlphaOfLength(10).toLowerCase(Locale.ROOT)+"follower"
-//        val followerIndex2 = "follower_index_2"
-//        val followerIndex3 = "follower_index_3"
         createConnectionBetweenClusters(FOLLOWER, LEADER)
         val createIndexResponse = leaderClient.indices().create(
-                CreateIndexRequest(leaderIndexName),
-                RequestOptions.DEFAULT
+            CreateIndexRequest(leaderIndexName),
+            RequestOptions.DEFAULT
         )
         assertThat(createIndexResponse.isAcknowledged).isTrue()
         followerClient.startReplication(
-                StartReplicationRequest("source", leaderIndexName, followerIndexName),
-                TimeValue.timeValueSeconds(10),
-                true
+            StartReplicationRequest("source", leaderIndexName, followerIndexName),
+            TimeValue.timeValueSeconds(10),
+            true
         )
         followerClient.startReplication(
-                StartReplicationRequest("source", leaderIndexName2, followerIndexName2),
-                TimeValue.timeValueSeconds(10),
-                true
+            StartReplicationRequest("source", leaderIndexName, followerIndexName2),
+            TimeValue.timeValueSeconds(10),
+            true
         )
         followerClient.startReplication(
-                StartReplicationRequest("source", leaderIndexName3, followerIndexName3),
-                TimeValue.timeValueSeconds(10),
-                true
+            StartReplicationRequest("source", leaderIndexName, followerIndexName3),
+            TimeValue.timeValueSeconds(10),
+            true
         )
         val docCount = 50
         for (i in 1..docCount) {
@@ -919,12 +914,16 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             leaderClient.index(IndexRequest(leaderIndexName).id(i.toString()).source(sourceMap), RequestOptions.DEFAULT)
         }
         followerClient.pauseReplication(followerIndexName2)
-        val stats = followerClient.followerStats()
+        followerClient.stopReplication(followerIndexName3)
+        var stats = followerClient.followerStats()
         assertThat(stats.getValue("num_syncing_indices").toString()).isEqualTo("1")
         assertThat(stats.getValue("num_paused_indices").toString()).isEqualTo("1")
         assertThat(stats.getValue("num_failed_indices").toString()).isEqualTo("0")
         assertThat(stats.getValue("num_shard_tasks").toString()).isEqualTo("1")
-        assertThat(stats.getValue("operations_written").toString()).isEqualTo("50")
+        assertBusy({
+            stats = followerClient.followerStats()
+            assertThat(stats.getValue("operations_written").toString()).isEqualTo("50")
+        }, 60, TimeUnit.SECONDS)
         assertThat(stats.getValue("operations_read").toString()).isEqualTo("50")
         assertThat(stats.getValue("failed_read_requests").toString()).isEqualTo("0")
         assertThat(stats.getValue("failed_write_requests").toString()).isEqualTo("0")
