@@ -114,6 +114,7 @@ import org.opensearch.plugins.ActionPlugin
 import org.opensearch.plugins.ActionPlugin.ActionHandler
 import org.opensearch.plugins.EnginePlugin
 import org.opensearch.plugins.PersistentTaskPlugin
+import org.opensearch.plugins.SystemIndexPlugin
 import org.opensearch.plugins.Plugin
 import org.opensearch.plugins.RepositoryPlugin
 import org.opensearch.replication.action.autofollow.*
@@ -144,11 +145,13 @@ import java.util.Optional
 import java.util.function.Supplier
 
 import org.opensearch.index.engine.NRTReplicationEngine
+import org.opensearch.indices.SystemIndexDescriptor
 import org.opensearch.replication.util.ValidationUtil
 
 
 @OpenForTesting
-internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin, RepositoryPlugin, EnginePlugin {
+internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
+    RepositoryPlugin, EnginePlugin, SystemIndexPlugin {
 
     private lateinit var client: Client
     private lateinit var clusterService: ClusterService
@@ -398,5 +401,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
         if (indexModule.settings.get(REPLICATED_INDEX_SETTING.key) != null) {
             indexModule.addIndexEventListener(IndexCloseListener)
         }
+    }
+    override fun getSystemIndexDescriptors(settings: Settings): Collection<SystemIndexDescriptor> {
+        return listOf(SystemIndexDescriptor(ReplicationMetadataStore.REPLICATION_CONFIG_SYSTEM_INDEX, "System Index for storing cross cluster replication configuration."))
     }
 }
