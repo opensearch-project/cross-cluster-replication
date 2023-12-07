@@ -92,10 +92,19 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
     override fun validate(): ActionRequestValidationException? {
 
         var validationException = ActionRequestValidationException()
-        if (!this::leaderAlias.isInitialized ||
-            !this::leaderIndex.isInitialized ||
-            !this::followerIndex.isInitialized) {
-            validationException.addValidationError("Mandatory params are missing for the request")
+        val missingFields: MutableList<String> = mutableListOf()
+        if (!this::leaderAlias.isInitialized){
+            missingFields.add("leader_alias")
+        }
+        if(!this::leaderIndex.isInitialized){
+            missingFields.add("leader_index")
+        }
+        if (!this::followerIndex.isInitialized){
+            missingFields.add("follower_index")
+        }
+        if(missingFields.isNotEmpty()){
+            validationException.addValidationError("Mandatory params $missingFields are missing for the request")
+            return validationException
         }
 
         validateName(leaderIndex, validationException)
