@@ -102,7 +102,6 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
         if (!this::followerIndex.isInitialized){
             missingFields.add("follower_index")
         }
-        missingFields.add("follower_index")
         if(missingFields.isNotEmpty()){
             validationException.addValidationError("Mandatory params $missingFields are missing for the request")
             return validationException
