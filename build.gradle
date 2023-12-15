@@ -34,6 +34,7 @@ import org.opensearch.gradle.test.RestIntegTestTask
 
 buildscript {
     ext {
+        System.setProperty("OPENSEARCH_INITIAL_ADMIN_PASSWORD", "admin")
         isSnapshot = "true" == System.getProperty("build.snapshot", "true")
         opensearch_version = System.getProperty("opensearch.version", "3.0.0-SNAPSHOT")
         buildVersionQualifier = System.getProperty("build.version_qualifier", "")
@@ -681,8 +682,8 @@ clusters.each { name ->
 
             if (securityEnabled) {
                 plugin(provider(securityPluginOld))
-                cliSetup("opensearch-security/install_demo_configuration.sh", "-y")
-                
+                cliSetup("opensearch-security/install_demo_configuration.sh", "-y", "-t")
+
             }
             // Currently fetching the ARCHIVE distribution fails on mac as it tries to fetch the Mac specific "DARWIN" distribution
             // for Opensearch which is not publish yet. Changing this to INTEG_TEST to make it work on mac.
