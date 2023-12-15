@@ -682,6 +682,7 @@ clusters.each { name ->
             if (securityEnabled) {
                 plugin(provider(securityPluginOld))
                 cliSetup("opensearch-security/install_demo_configuration.sh", "-y")
+                
             }
             // Currently fetching the ARCHIVE distribution fails on mac as it tries to fetch the Mac specific "DARWIN" distribution
             // for Opensearch which is not publish yet. Changing this to INTEG_TEST to make it work on mac.
