@@ -430,7 +430,7 @@ def configureCluster(OpenSearchCluster cluster, Boolean securityEnabled) {
         }
         CrossClusterWaitForHttpResource wait = new CrossClusterWaitForHttpResource(protocol, cluster.getFirstNode().getHttpSocketURI(), cluster.nodes.size())
         wait.setUsername("admin")
-        wait.setPassword("admin")
+        wait.setPassword(System.getProperty("OPENSEARCH_INITIAL_ADMIN_PASSWORD"))
         return wait.wait(500)
     }
 
