@@ -70,7 +70,7 @@ then
   SECURITY_ENABLED="true"
 fi
 
-IFS='.' read -ra version_array <<< "$version"
+IFS='.' read -ra version_array <<< "$VERSION"
 
 
 
