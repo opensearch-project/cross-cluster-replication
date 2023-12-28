@@ -13,7 +13,7 @@ package org.opensearch.replication.action.setup
 
 import org.opensearch.replication.util.completeWith
 import org.apache.logging.log4j.LogManager
-import org.opensearch.action.ActionListener
+import org.opensearch.core.action.ActionListener
 import org.opensearch.action.support.ActionFilters
 import org.opensearch.action.support.HandledTransportAction
 import org.opensearch.action.support.master.AcknowledgedResponse

@@ -17,6 +17,7 @@ import org.junit.Assert
 import org.junit.Assume
 import org.junit.Before
 import org.junit.Ignore
+import org.opensearch.replication.REROUTE_TESTS_NOT_ELIGIBLE_FOR_SINGLE_NODE_CLUSTER
 import java.util.concurrent.TimeUnit
 
 @MultiClusterAnnotations.ClusterConfigurations(
@@ -30,7 +31,7 @@ class ClusterRerouteLeaderIT : MultiClusterRestTestCase() {
 
     @Before
     fun beforeTest() {
-        Assume.assumeTrue(isMultiNodeClusterConfiguration)
+        Assume.assumeTrue(REROUTE_TESTS_NOT_ELIGIBLE_FOR_SINGLE_NODE_CLUSTER, isMultiNodeClusterConfiguration(LEADER, FOLLOWER),)
     }
 
     fun `test replication works after rerouting a shard from one node to another in leader cluster`() {

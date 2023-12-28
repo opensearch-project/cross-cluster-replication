@@ -73,7 +73,7 @@ import org.opensearch.replication.task.shard.ShardReplicationParams
 import org.opensearch.replication.task.shard.ShardReplicationState
 import org.opensearch.replication.util.Injectables
 import org.opensearch.action.ActionRequest
-import org.opensearch.action.ActionResponse
+import org.opensearch.core.action.ActionResponse
 import org.opensearch.client.Client
 import org.opensearch.cluster.NamedDiff
 import org.opensearch.cluster.metadata.IndexNameExpressionResolver
@@ -83,7 +83,7 @@ import org.opensearch.cluster.node.DiscoveryNodes
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.CheckedFunction
 import org.opensearch.core.ParseField
-import org.opensearch.common.component.LifecycleComponent
+import org.opensearch.common.lifecycle.LifecycleComponent
 import org.opensearch.core.common.io.stream.NamedWriteableRegistry
 import org.opensearch.core.common.io.stream.Writeable
 import org.opensearch.common.settings.ClusterSettings
@@ -92,8 +92,8 @@ import org.opensearch.common.settings.Setting
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.settings.SettingsFilter
 import org.opensearch.common.settings.SettingsModule
-import org.opensearch.common.unit.ByteSizeUnit
-import org.opensearch.common.unit.ByteSizeValue
+import org.opensearch.core.common.unit.ByteSizeUnit
+import org.opensearch.core.common.unit.ByteSizeValue
 import org.opensearch.common.unit.TimeValue
 import org.opensearch.common.util.concurrent.OpenSearchExecutors
 import org.opensearch.core.xcontent.NamedXContentRegistry
@@ -114,6 +114,7 @@ import org.opensearch.plugins.ActionPlugin
 import org.opensearch.plugins.ActionPlugin.ActionHandler
 import org.opensearch.plugins.EnginePlugin
 import org.opensearch.plugins.PersistentTaskPlugin
+import org.opensearch.plugins.SystemIndexPlugin
 import org.opensearch.plugins.Plugin
 import org.opensearch.plugins.RepositoryPlugin
 import org.opensearch.replication.action.autofollow.*
@@ -144,12 +145,16 @@ import java.util.Optional
 import java.util.function.Supplier
 
 import org.opensearch.index.engine.NRTReplicationEngine
+import org.opensearch.indices.SystemIndexDescriptor
+import org.opensearch.replication.util.ValidationUtil
 
 
 @OpenForTesting
-internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin, RepositoryPlugin, EnginePlugin {
+internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
+    RepositoryPlugin, EnginePlugin, SystemIndexPlugin {
 
     private lateinit var client: Client
+    private lateinit var clusterService: ClusterService
     private lateinit var threadPool: ThreadPool
     private lateinit var replicationMetadataManager: ReplicationMetadataManager
     private lateinit var replicationSettings: ReplicationSettings
@@ -207,6 +212,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                                   repositoriesService: Supplier<RepositoriesService>): Collection<Any> {
         this.client = client
         this.threadPool = threadPool
+        this.clusterService = clusterService
         this.replicationMetadataManager = ReplicationMetadataManager(clusterService, client,
                 ReplicationMetadataStore(client, clusterService, xContentRegistry))
         this.replicationSettings = ReplicationSettings(clusterService)
@@ -379,9 +385,15 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
     }
 
     override fun getCustomTranslogDeletionPolicyFactory(): Optional<TranslogDeletionPolicyFactory> {
-       return Optional.of(TranslogDeletionPolicyFactory{
-               indexSettings, retentionLeasesSupplier -> ReplicationTranslogDeletionPolicy(indexSettings, retentionLeasesSupplier)
-       })
+        // We don't need a retention lease translog deletion policy for remote store enabled clusters as
+        // we fetch the operations directly from lucene in such cases.
+        return if (ValidationUtil.isRemoteStoreEnabledCluster(clusterService) == false) {
+            Optional.of(TranslogDeletionPolicyFactory { indexSettings, retentionLeasesSupplier ->
+                ReplicationTranslogDeletionPolicy(indexSettings, retentionLeasesSupplier)
+            })
+        } else {
+            Optional.empty()
+        }
     }
 
     override fun onIndexModule(indexModule: IndexModule) {
@@ -389,5 +401,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
         if (indexModule.settings.get(REPLICATED_INDEX_SETTING.key) != null) {
             indexModule.addIndexEventListener(IndexCloseListener)
         }
+    }
+    override fun getSystemIndexDescriptors(settings: Settings): Collection<SystemIndexDescriptor> {
+        return listOf(SystemIndexDescriptor(ReplicationMetadataStore.REPLICATION_CONFIG_SYSTEM_INDEX, "System Index for storing cross cluster replication configuration."))
     }
 }

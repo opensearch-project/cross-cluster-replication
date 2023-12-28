@@ -11,7 +11,7 @@
 
 package org.opensearch.replication.action.repository
 
-import org.opensearch.action.ActionResponse
+import org.opensearch.core.action.ActionResponse
 import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.core.common.io.stream.StreamOutput
 import org.opensearch.index.store.Store

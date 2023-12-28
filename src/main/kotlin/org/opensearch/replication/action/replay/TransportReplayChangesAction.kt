@@ -25,7 +25,7 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.asCoroutineDispatcher
 import kotlinx.coroutines.launch
 import org.apache.logging.log4j.LogManager
-import org.opensearch.action.ActionListener
+import org.opensearch.core.action.ActionListener
 import org.opensearch.action.admin.indices.mapping.get.GetMappingsRequest
 import org.opensearch.action.admin.indices.mapping.put.PutMappingRequest
 import org.opensearch.action.index.IndexRequest
@@ -47,11 +47,13 @@ import org.opensearch.common.settings.Settings
 import org.opensearch.common.xcontent.XContentType
 import org.opensearch.index.IndexingPressureService
 import org.opensearch.index.engine.Engine
+import org.opensearch.index.engine.Engine.NoOp
 import org.opensearch.index.mapper.MapperParsingException
 import org.opensearch.index.shard.IndexShard
 import org.opensearch.index.translog.Translog
 import org.opensearch.indices.IndicesService
 import org.opensearch.indices.SystemIndices
+import org.opensearch.telemetry.tracing.noop.NoopTracer
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
 import java.util.function.Function
@@ -72,7 +74,7 @@ class TransportReplayChangesAction @Inject constructor(settings: Settings, trans
     TransportWriteAction<ReplayChangesRequest, ReplayChangesRequest, ReplayChangesResponse>(
         settings, ReplayChangesAction.NAME, transportService, clusterService, indicesService, threadPool, shardStateAction,
         actionFilters, Writeable.Reader { inp -> ReplayChangesRequest(inp) }, Writeable.Reader { inp -> ReplayChangesRequest(inp) },
-            EXECUTOR_NAME_FUNCTION, false, indexingPressureService, systemIndices) {
+            EXECUTOR_NAME_FUNCTION, false, indexingPressureService, systemIndices, NoopTracer.INSTANCE) {
 
     companion object {
         private val log = LogManager.getLogger(TransportReplayChangesAction::class.java)!!

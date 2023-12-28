@@ -48,7 +48,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.opensearch.OpenSearchException
 import org.opensearch.OpenSearchTimeoutException
-import org.opensearch.action.ActionListener
+import org.opensearch.core.action.ActionListener
 import org.opensearch.action.admin.indices.alias.IndicesAliasesRequest
 import org.opensearch.action.admin.indices.alias.IndicesAliasesRequest.AliasActions
 import org.opensearch.action.admin.indices.alias.get.GetAliasesRequest
@@ -73,8 +73,8 @@ import org.opensearch.common.logging.Loggers
 import org.opensearch.common.settings.Setting
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.settings.SettingsModule
-import org.opensearch.common.unit.ByteSizeUnit
-import org.opensearch.common.unit.ByteSizeValue
+import org.opensearch.core.common.unit.ByteSizeUnit
+import org.opensearch.core.common.unit.ByteSizeValue
 import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.ToXContentObject
 import org.opensearch.core.xcontent.XContentBuilder
@@ -95,7 +95,7 @@ import org.opensearch.replication.ReplicationException
 import org.opensearch.replication.MappingNotAvailableException
 import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING
 import org.opensearch.core.rest.RestStatus
-import org.opensearch.tasks.TaskId
+import org.opensearch.core.tasks.TaskId
 import org.opensearch.tasks.TaskManager
 import org.opensearch.threadpool.ThreadPool
 import java.util.Collections

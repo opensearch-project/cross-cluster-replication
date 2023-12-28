@@ -30,9 +30,9 @@ import kotlinx.coroutines.Dispatchers
 import org.apache.logging.log4j.LogManager
 import org.apache.lucene.index.IndexCommit
 import org.opensearch.Version
-import org.opensearch.action.ActionListener
+import org.opensearch.core.action.ActionListener
 import org.opensearch.action.ActionRequest
-import org.opensearch.action.ActionResponse
+import org.opensearch.core.action.ActionResponse
 import org.opensearch.action.ActionType
 import org.opensearch.action.admin.indices.stats.IndicesStatsAction
 import org.opensearch.action.admin.indices.stats.IndicesStatsRequest
@@ -47,7 +47,7 @@ import org.opensearch.cluster.node.DiscoveryNode
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.Nullable
 import org.opensearch.common.UUIDs
-import org.opensearch.common.component.AbstractLifecycleComponent
+import org.opensearch.common.lifecycle.AbstractLifecycleComponent
 import org.opensearch.common.metrics.CounterMetric
 import org.opensearch.common.settings.Settings
 import org.opensearch.index.mapper.MapperService
@@ -105,6 +105,14 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
 
     override fun getRestoreThrottleTimeInNanos(): Long {
         return restoreRateLimitingTimeInNanos.count()
+    }
+
+    override fun getRemoteUploadThrottleTimeInNanos(): Long {
+        throw UnsupportedOperationException("Operation not permitted")
+    }
+
+    override fun getRemoteDownloadThrottleTimeInNanos(): Long {
+        throw UnsupportedOperationException("Operation not permitted")
     }
 
     override fun finalizeSnapshot(shardGenerations: ShardGenerations?, repositoryStateId: Long, clusterMetadata: Metadata?,
@@ -237,6 +245,9 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
 
         // Remove translog pruning for the follower index
         builder.remove(REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING.key)
+        builder.remove(IndexMetadata.SETTING_REMOTE_STORE_ENABLED)
+        builder.remove(IndexMetadata.SETTING_REMOTE_SEGMENT_STORE_REPOSITORY)
+        builder.remove(IndexMetadata.SETTING_REMOTE_TRANSLOG_STORE_REPOSITORY)
 
         val indexMdBuilder = IndexMetadata.builder(indexMetadata).settings(builder)
         indexMetadata.aliases.values.forEach {
@@ -349,6 +360,10 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
 
     override fun isReadOnly(): Boolean {
         return true
+    }
+
+    override fun isSystemRepository(): Boolean {
+        throw UnsupportedOperationException("Operation not permitted")
     }
 
 

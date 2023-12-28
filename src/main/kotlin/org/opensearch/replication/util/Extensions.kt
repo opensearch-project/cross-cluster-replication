@@ -20,9 +20,9 @@ import org.apache.logging.log4j.Logger
 import org.opensearch.OpenSearchException
 import org.opensearch.OpenSearchSecurityException
 import org.opensearch.ResourceNotFoundException
-import org.opensearch.action.ActionListener
+import org.opensearch.core.action.ActionListener
 import org.opensearch.action.ActionRequest
-import org.opensearch.action.ActionResponse
+import org.opensearch.core.action.ActionResponse
 import org.opensearch.action.ActionType
 import org.opensearch.action.index.IndexRequestBuilder
 import org.opensearch.action.index.IndexResponse
@@ -138,8 +138,8 @@ suspend fun <Req: ActionRequest, Resp: ActionResponse> Client.suspendExecuteWith
             }
         }
         log.warn(
-            "Encountered a failure while executing in $req. Retrying in ${currentBackoff / 1000} seconds" +
-                    ".", retryException
+            "Encountered a failure(can be ignored) while getting changes:  OpenSearchTimeoutException. Retrying in ${currentBackoff / 1000} seconds" +
+                    "."
         )
         delay(currentBackoff)
         currentBackoff = (currentBackoff * factor).toLong().coerceAtMost(maxTimeOut)
