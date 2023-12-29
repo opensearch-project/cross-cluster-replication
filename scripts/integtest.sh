@@ -70,7 +70,7 @@ then
   SECURITY_ENABLED="true"
 fi
 
-IFS='.' read -ra version_array <<< "$VERSION"
+IFS='.' read -ra version_array <<< "$OPENSEARCH_VERSION"
 
 if [ -z "$CREDENTIAL" ]
 then
