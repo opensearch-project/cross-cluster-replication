@@ -461,7 +461,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                             continue
                         }
                         val setting = indexScopedSettings[key]
-                        if (!setting.isPrivateIndex) {
+                        if (!setting.isPrivateIndex && !setting.isFinal) {
                             desiredSettingsBuilder.copy(key, settings);
                         }
                     }
@@ -473,7 +473,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                     if (desiredSettings.get(key) != followerSettings.get(key)) {
                         //Not intended setting on follower side.
                         val setting = indexScopedSettings[key]
-                        if (indexScopedSettings.isPrivateSetting(key)) {
+                        if (indexScopedSettings.isPrivateSetting(key) || setting.isFinal) {
                             continue
                         }
                         if (!setting.isDynamic()) {
@@ -486,7 +486,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
 
                 for (key in followerSettings.keySet()) {
                     val setting = indexScopedSettings[key]
-                    if (setting == null || setting.isPrivateIndex) {
+                    if (setting == null || setting.isPrivateIndex || setting.isFinal) {
                         continue
                     }
 
