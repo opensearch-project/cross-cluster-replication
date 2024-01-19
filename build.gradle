@@ -34,6 +34,7 @@ import org.opensearch.gradle.test.RestIntegTestTask
 
 buildscript {
     ext {
+        System.setProperty("OPENSEARCH_INITIAL_ADMIN_PASSWORD", "myStrongPassword123!")
         isSnapshot = "true" == System.getProperty("build.snapshot", "true")
         opensearch_version = System.getProperty("opensearch.version", "3.0.0-SNAPSHOT")
         buildVersionQualifier = System.getProperty("build.version_qualifier", "")
@@ -429,7 +430,7 @@ def configureCluster(OpenSearchCluster cluster, Boolean securityEnabled) {
         }
         CrossClusterWaitForHttpResource wait = new CrossClusterWaitForHttpResource(protocol, cluster.getFirstNode().getHttpSocketURI(), cluster.nodes.size())
         wait.setUsername("admin")
-        wait.setPassword("admin")
+        wait.setPassword(System.getProperty("OPENSEARCH_INITIAL_ADMIN_PASSWORD"))
         return wait.wait(500)
     }
 
@@ -682,6 +683,7 @@ clusters.each { name ->
             if (securityEnabled) {
                 plugin(provider(securityPluginOld))
                 cliSetup("opensearch-security/install_demo_configuration.sh", "-y")
+
             }
             // Currently fetching the ARCHIVE distribution fails on mac as it tries to fetch the Mac specific "DARWIN" distribution
             // for Opensearch which is not publish yet. Changing this to INTEG_TEST to make it work on mac.
