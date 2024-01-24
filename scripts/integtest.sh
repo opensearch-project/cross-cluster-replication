@@ -74,12 +74,14 @@ IFS='.' read -ra version_array <<< "$OPENSEARCH_VERSION"
 
 if [ -z "$CREDENTIAL" ]
 then
+  CREDENTIAL="admin:admin"
   # Starting in 2.12.0, security demo configuration script requires an initial admin password
+  # That same password must be supplied here, else 401 Unauthorized may be seen when running this task
   if (( ${version_array[0]} > 2 || (${version_array[0]} == 2 && ${version_array[1]} >= 12) )); then
-    CREDENTIAL="admin:myStrongPassword123!"
-  else
-    CREDENTIAL="admin:admin"
-  fi
+    if [ "$SECURITY_ENABLED" == true]; then
+      CREDENTIAL="admin:myStrongPassword123!"
+      echo "A password is required to execute the integTest. This must the same as the password used to setup admin user."
+    fi
 fi
 
 USERNAME=`echo $CREDENTIAL | awk -F ':' '{print $1}'`
