@@ -534,7 +534,7 @@ jacocoTestReport {
     dependsOn test
     dependsOn integTest
     reports {
-//        xml.enabled true
+        xml.required.set(true)
     }
     // We're combining the coverage data for both test and integ tests.
     getExecutionData().setFrom(fileTree(buildDir).include("/jacoco/*.exec"))
