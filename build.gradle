@@ -82,7 +82,7 @@ buildscript {
 }
 
 plugins {
-    id 'nebula.ospackage' version "8.3.0"
+    id 'com.netflix.nebula.ospackage' version "11.6.0"
     id "com.dorongold.task-tree" version "1.5"
     id "jacoco"
 }
@@ -166,15 +166,14 @@ repositories {
 
 compileKotlin {
     kotlinOptions {
-        // This should be 11, but the OpenSearch logger usage checker tool doesn't like classes > 1.8
-        jvmTarget = "1.8"
+        jvmTarget = "11"
         freeCompilerArgs = ['-Xjsr305=strict'] // Handle OpenSearch @Nullable annotation correctly
     }
 }
 
 compileTestKotlin {
     kotlinOptions {
-        jvmTarget = "1.8"
+        jvmTarget = "11"
         freeCompilerArgs = ['-Xjsr305=strict']
     }
 }
@@ -536,7 +535,7 @@ jacocoTestReport {
     dependsOn test
     dependsOn integTest
     reports {
-        xml.enabled true
+        xml.required.set(true)
     }
     // We're combining the coverage data for both test and integ tests.
     getExecutionData().setFrom(fileTree(buildDir).include("/jacoco/*.exec"))
