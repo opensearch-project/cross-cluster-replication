@@ -34,7 +34,6 @@ import org.opensearch.gradle.test.RestIntegTestTask
 
 buildscript {
     ext {
-        System.setProperty("OPENSEARCH_INITIAL_ADMIN_PASSWORD", "myStrongPassword123!")
         isSnapshot = "true" == System.getProperty("build.snapshot", "true")
         opensearch_version = System.getProperty("opensearch.version", "3.0.0-SNAPSHOT")
         buildVersionQualifier = System.getProperty("build.version_qualifier", "")
@@ -429,7 +428,7 @@ def configureCluster(OpenSearchCluster cluster, Boolean securityEnabled) {
         }
         CrossClusterWaitForHttpResource wait = new CrossClusterWaitForHttpResource(protocol, cluster.getFirstNode().getHttpSocketURI(), cluster.nodes.size())
         wait.setUsername("admin")
-        wait.setPassword(System.getProperty("OPENSEARCH_INITIAL_ADMIN_PASSWORD"))
+        wait.setPassword("admin")
         return wait.wait(500)
     }
 
