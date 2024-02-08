@@ -27,6 +27,7 @@ import org.apache.hc.core5.http.message.BasicHeader
 import org.apache.hc.core5.http.io.entity.StringEntity
 import org.apache.hc.core5.ssl.SSLContexts
 import org.apache.hc.core5.http.io.entity.EntityUtils
+import org.apache.hc.core5.http2.HttpVersionPolicy
 import org.apache.hc.core5.util.Timeout
 import org.apache.lucene.util.SetOnce
 import org.opensearch.action.admin.cluster.node.tasks.list.ListTasksRequest
@@ -102,6 +103,7 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
 
             val builder = RestClient.builder(*httpHosts.toTypedArray()).setHttpClientConfigCallback { httpAsyncClientBuilder ->
                 httpAsyncClientBuilder.setConnectionManager(connManager)
+                httpAsyncClientBuilder.setVersionPolicy(HttpVersionPolicy.FORCE_HTTP_1)
             }
             configureClient(builder, getClusterSettings(clusterName), securityEnabled)
             builder.setStrictDeprecationMode(false)
