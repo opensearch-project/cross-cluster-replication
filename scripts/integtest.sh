@@ -75,8 +75,11 @@ OPENSEARCH_REQUIRED_VERSION="2.12.0"
 if [ -z "$CREDENTIAL" ]
 then
   # Starting in 2.12.0, security demo configuration script requires an initial admin password
-  COMPARE_VERSION=`echo $OPENSEARCH_REQUIRED_VERSION $OPENSEARCH_VERSION | tr ' ' '\n' | sort -V | uniq | head -n 1`
-  if [ "$COMPARE_VERSION" != "$OPENSEARCH_REQUIRED_VERSION" ]; then
+  # Pick the minimum of two versions
+  VERSION_TO_COMPARE=`echo $OPENSEARCH_REQUIRED_VERSION $OPENSEARCH_VERSION | tr ' ' '\n' | sort -V | uniq | head -n 1`
+  # Check if the compared version is not equal to the required version.
+  # If it is not equal, it means the current version is older.
+  if [ "$VERSION_TO_COMPARE" != "$OPENSEARCH_REQUIRED_VERSION" ]; then
     CREDENTIAL="admin:admin"
   else
     CREDENTIAL="admin:myStrongPassword123!"
