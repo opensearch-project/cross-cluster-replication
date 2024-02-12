@@ -66,7 +66,7 @@ plugins.security.nodes_dn_dynamic_config_enabled: true
 Allow connections from follower cluster on the leader as follows
 
 ```bash
-curl -k -u admin:admin -XPUT "https://${LEADER}/_plugins/_security/api/nodesdn/follower" \
+curl -k -u admin:<admin password> -XPUT "https://${LEADER}/_plugins/_security/api/nodesdn/follower" \
 -H 'Content-type: application/json' \
 -d'{"nodes_dn": ["CN=follower.example.com"]}'
 ```

@@ -50,7 +50,7 @@ while getopts ":h:b:p:t:e:s:c:v:" arg; do
             CREDENTIAL=$OPTARG
             ;;
         v)
-            # Do nothing as we're not consuming this param.
+            OPENSEARCH_VERSION=$OPTARG
             ;;
         :)
             echo "-${OPTARG} requires an argument"
@@ -70,9 +70,20 @@ then
   SECURITY_ENABLED="true"
 fi
 
+OPENSEARCH_REQUIRED_VERSION="2.12.0"
+
 if [ -z "$CREDENTIAL" ]
 then
-  CREDENTIAL="admin:admin"
+  # Starting in 2.12.0, security demo configuration script requires an initial admin password
+  # Pick the minimum of two versions
+  VERSION_TO_COMPARE=`echo $OPENSEARCH_REQUIRED_VERSION $OPENSEARCH_VERSION | tr ' ' '\n' | sort -V | uniq | head -n 1`
+  # Check if the compared version is not equal to the required version.
+  # If it is not equal, it means the current version is older.
+  if [ "$VERSION_TO_COMPARE" != "$OPENSEARCH_REQUIRED_VERSION" ]; then
+    CREDENTIAL="admin:admin"
+  else
+    CREDENTIAL="admin:myStrongPassword123!"
+  fi
 fi
 
 USERNAME=`echo $CREDENTIAL | awk -F ':' '{print $1}'`
