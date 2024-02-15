@@ -236,9 +236,9 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
                 defaultHeaders[i++] = BasicHeader(key, value)
             }
 
-            val creds = System.getProperty("user", "admin") + System.getProperty("password", "myStrongPassword123!");
+            val creds = System.getProperty("user", "admin") + ":" + System.getProperty("password", "myStrongPassword123!")
             if(securityEnabled) {
-                defaultHeaders[i++] = BasicHeader("Authorization", "Basic " + Base64.getUrlEncoder().encodeToString(creds.toByteArray(StandardCharsets.UTF_8)))
+                defaultHeaders[i++] = BasicHeader("Authorization", "Basic " + Base64.getEncoder().encodeToString(creds.toByteArray(StandardCharsets.UTF_8)))
             }
 
             builder.setDefaultHeaders(defaultHeaders)
