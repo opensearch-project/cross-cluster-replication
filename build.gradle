@@ -451,6 +451,7 @@ int endJmxPort = startJmxPort
 integTest {
     useCluster testClusters.leaderCluster
     useCluster testClusters.followCluster
+    systemProperty "password", "admin" // setting it to `admin` explicitly since its a custom security setup
 
     if(knnEnabled){
         nonInputProperties.systemProperty('tests.knn_plugin_enabled', "true")
