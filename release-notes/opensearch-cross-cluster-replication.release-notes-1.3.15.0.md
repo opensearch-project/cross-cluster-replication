@@ -1,4 +1,4 @@
-## Version 1.3.15 Release Notes
+## Version 1.3.15.0 Release Notes
 
 Compatible with OpenSearch 1.3.15
 
