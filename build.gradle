@@ -69,7 +69,7 @@ buildscript {
         mavenCentral()
         maven { url "https://aws.oss.sonatype.org/content/repositories/snapshots" }
         maven { url "https://plugins.gradle.org/m2/" }
-        maven { url "https://d1nvenhzbhpy0q.cloudfront.net/snapshots/lucene/" }
+        maven { url "https://artifacts.opensearch.org/snapshots/lucene/" }
     }
 
     dependencies {
@@ -161,7 +161,7 @@ repositories {
     mavenCentral()
     maven { url "https://aws.oss.sonatype.org/content/repositories/snapshots" }
     maven { url "https://plugins.gradle.org/m2/" }
-    maven { url "https://d1nvenhzbhpy0q.cloudfront.net/snapshots/lucene/" }
+    maven { url "https://artifacts.opensearch.org/snapshots/lucene/" }
 }
 
 compileKotlin {
