@@ -79,7 +79,10 @@ import java.nio.file.Files
 import java.util.*
 import java.util.concurrent.TimeUnit
 import org.opensearch.bootstrap.BootstrapInfo
+import org.opensearch.cluster.service.ClusterService
 import org.opensearch.index.mapper.Mapping
+import org.opensearch.indices.replication.common.ReplicationType
+import org.opensearch.replication.util.ValidationUtil
 
 
 @MultiClusterAnnotations.ClusterConfigurations(
@@ -1255,6 +1258,62 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         )
     }
 
+    fun `test operations are fetched from lucene when leader is in mixed mode`() {
+
+        val leaderClient = getClientForCluster(LEADER)
+        val followerClient = getClientForCluster(FOLLOWER)
+
+        // create index on leader cluster
+        val settings = Settings.builder()
+                .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 1)
+                .build()
+        val createIndexResponse = leaderClient.indices().create(
+                CreateIndexRequest(leaderIndexName).settings(settings),
+                RequestOptions.DEFAULT
+        )
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+
+        // Update leader cluster settings to enable mixed mode and set migration direction to remote_store
+        val leaderClusterUpdateSettingsRequest = Request("PUT", "_cluster/settings")
+        val entityAsString = """
+                        {
+                          "persistent": {
+                             "remote_store.compatibility_mode": "mixed",
+                             "migration.direction" : "remote_store"
+                          }
+                        }""".trimMargin()
+
+        leaderClusterUpdateSettingsRequest.entity = StringEntity(entityAsString,ContentType.APPLICATION_JSON)
+        val updateSettingResponse = leaderClient.lowLevelClient.performRequest(leaderClusterUpdateSettingsRequest)
+        assertEquals(HttpStatus.SC_OK.toLong(), updateSettingResponse.statusLine.statusCode.toLong())
+
+        //create connection and start replication
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+
+        followerClient.startReplication(
+                StartReplicationRequest("source", leaderIndexName, followerIndexName),
+                TimeValue.timeValueSeconds(10),
+                true
+        )
+
+        //Index documents on leader index
+        val docCount = 50
+        for (i in 1..docCount) {
+            val sourceMap = mapOf("name" to randomAlphaOfLength(5))
+            leaderClient.index(IndexRequest(leaderIndexName).id(i.toString()).source(sourceMap), RequestOptions.DEFAULT)
+        }
+
+        // Verify that all the documents are replicated to follower index and are fetched from lucene
+        assertBusy({
+            val stats = leaderClient.leaderStats()
+            assertThat(stats.size).isEqualTo(9)
+            assertThat(stats.getValue("num_replicated_indices").toString()).isEqualTo("1")
+            assertThat(stats.getValue("operations_read").toString()).isEqualTo(docCount.toString())
+            assertThat(stats.getValue("operations_read_lucene").toString()).isEqualTo(docCount.toString())
+            assertThat(stats.getValue("operations_read_translog").toString()).isEqualTo("0")
+            assertThat(stats.containsKey("index_stats"))
+        }, 60L, TimeUnit.SECONDS)
+    }
 
     private fun excludeAllClusterNodes(clusterName: String) {
         val transientSettingsRequest = Request("PUT", "_cluster/settings")
