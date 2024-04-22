@@ -77,7 +77,7 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
                 indexMetric.lastFetchTime.set(relativeStartNanos)
 
                 val indexShard = indicesService.indexServiceSafe(shardId.index).getShard(shardId.id)
-                val isRemoteEnabledOrMigrating = ValidationUtil.isRemoteStoreEnabledCluster(clusterService) || ValidationUtil.isRemoteMigrating(clusterService)
+                val isRemoteEnabledOrMigrating = ValidationUtil.isRemoteEnabledOrMigrating(clusterService)
                 if (lastGlobalCheckpoint(indexShard, isRemoteEnabledOrMigrating) < request.fromSeqNo) {
                     // There are no new operations to sync. Do a long poll and wait for GlobalCheckpoint to advance. If
                     // the checkpoint doesn't advance by the timeout this throws an ESTimeoutException which the caller
@@ -173,7 +173,7 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
     override fun shards(state: ClusterState, request: InternalRequest): ShardsIterator {
         val shardIt = state.routingTable().shardRoutingTable(request.request().shardId)
         // Random active shards
-        return if (ValidationUtil.isRemoteStoreEnabledCluster(clusterService) || ValidationUtil.isRemoteMigrating(clusterService)) shardIt.primaryShardIt()
+        return if (ValidationUtil.isRemoteEnabledOrMigrating(clusterService)) shardIt.primaryShardIt()
         else shardIt.activeInitializingShardsRandomIt()
     }
 }

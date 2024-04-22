@@ -161,7 +161,8 @@ object ValidationUtil {
         return clusterService.settings.getByPrefix(Node.NODE_ATTRIBUTES.key + RemoteStoreNodeAttribute.REMOTE_STORE_NODE_ATTRIBUTE_KEY_PREFIX).isEmpty == false
     }
 
-    fun isRemoteMigrating(clusterService: ClusterService): Boolean {
-        return clusterService.clusterSettings.get(RemoteStoreNodeService.REMOTE_STORE_COMPATIBILITY_MODE_SETTING).equals(RemoteStoreNodeService.CompatibilityMode.MIXED)
+    fun isRemoteEnabledOrMigrating(clusterService: ClusterService): Boolean {
+        return isRemoteStoreEnabledCluster(clusterService) ||
+                clusterService.clusterSettings.get(RemoteStoreNodeService.REMOTE_STORE_COMPATIBILITY_MODE_SETTING).equals(RemoteStoreNodeService.CompatibilityMode.MIXED)
     }
 }
