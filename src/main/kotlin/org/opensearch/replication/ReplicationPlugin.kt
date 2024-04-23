@@ -387,7 +387,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
     override fun getCustomTranslogDeletionPolicyFactory(): Optional<TranslogDeletionPolicyFactory> {
         // We don't need a retention lease translog deletion policy for remote store enabled clusters as
         // we fetch the operations directly from lucene in such cases.
-        return if (ValidationUtil.isRemoteStoreEnabledCluster(clusterService) == false) {
+        return if (ValidationUtil.isRemoteEnabledOrMigrating(clusterService) == false) {
             Optional.of(TranslogDeletionPolicyFactory { indexSettings, retentionLeasesSupplier ->
                 ReplicationTranslogDeletionPolicy(indexSettings, retentionLeasesSupplier)
             })
