@@ -380,6 +380,8 @@ testClusters {
             testDistribution = "ARCHIVE"
         }
         int debugPort = 5005
+        //adding it to test migration
+        systemProperty('opensearch.experimental.feature.remote_store.migration.enabled','true')
 
         if (_numNodes > 1) numberOfNodes = _numNodes
         //numberOfNodes = 3
