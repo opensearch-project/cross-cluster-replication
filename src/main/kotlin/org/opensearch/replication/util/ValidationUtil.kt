@@ -17,18 +17,18 @@ import org.opensearch.Version
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.cluster.metadata.MetadataCreateIndexService
-import org.opensearch.core.common.Strings
+import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.ValidationException
 import org.opensearch.common.settings.Settings
+import org.opensearch.core.common.Strings
 import org.opensearch.env.Environment
 import org.opensearch.index.IndexNotFoundException
-import java.io.UnsupportedEncodingException
-import org.opensearch.cluster.service.ClusterService
 import org.opensearch.node.Node
 import org.opensearch.node.remotestore.RemoteStoreNodeAttribute
+import org.opensearch.node.remotestore.RemoteStoreNodeService
 import org.opensearch.replication.ReplicationPlugin.Companion.KNN_INDEX_SETTING
 import org.opensearch.replication.ReplicationPlugin.Companion.KNN_PLUGIN_PRESENT_SETTING
-import org.opensearch.replication.action.changes.TransportGetChangesAction
+import java.io.UnsupportedEncodingException
 import java.nio.file.Files
 import java.nio.file.Path
 import java.util.Locale
@@ -161,4 +161,8 @@ object ValidationUtil {
         return clusterService.settings.getByPrefix(Node.NODE_ATTRIBUTES.key + RemoteStoreNodeAttribute.REMOTE_STORE_NODE_ATTRIBUTE_KEY_PREFIX).isEmpty == false
     }
 
+    fun isRemoteEnabledOrMigrating(clusterService: ClusterService): Boolean {
+        return isRemoteStoreEnabledCluster(clusterService) ||
+                clusterService.clusterSettings.get(RemoteStoreNodeService.REMOTE_STORE_COMPATIBILITY_MODE_SETTING).equals(RemoteStoreNodeService.CompatibilityMode.MIXED)
+    }
 }
