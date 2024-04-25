@@ -295,6 +295,22 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
             .hasMessageContaining(errorMsg)
     }
 
+    fun `test deletion of auto follow pattern`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
+        followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern)
+        //Delete a replication rule which does not exist
+        Assertions.assertThatThrownBy {
+            followerClient.deleteAutoFollowPattern(connectionAlias, "dummy_conn")
+        }.isInstanceOf(ResponseException::class.java)
+                .hasMessageContaining("does not exist")
+        //Delete a replication rule which exists
+        Assertions.assertThatCode {
+            followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
+        }.doesNotThrowAnyException()
+
+    }
+
     fun `test removing autofollow pattern stop autofollow task`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)

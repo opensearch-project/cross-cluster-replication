@@ -123,6 +123,7 @@ class TransportAutoFollowClusterManagerNodeAction @Inject constructor(transportS
         } catch(e: ResourceNotFoundException) {
             // Log warn as the task is already removed
             log.warn("Task already stopped for '$clusterAlias:$patternName'", e)
+            throw OpenSearchException("Autofollow replication rule $clusterAlias:$patternName does not exist")
         } catch (e: Exception) {
            log.error("Failed to stop auto follow task for cluster '$clusterAlias:$patternName'", e)
             throw OpenSearchException(AUTOFOLLOW_EXCEPTION_GENERIC_STRING)
