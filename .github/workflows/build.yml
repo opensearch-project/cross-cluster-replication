@@ -33,5 +33,4 @@ jobs:
       - name: Checkout Branch
         uses: actions/checkout@v2
       - name: Build and run Replication tests
-        run: |
-          ./gradlew --refresh-dependencies clean release -D"build.snapshot=true" -x test -x IntegTest
+        run: ./gradlew --refresh-dependencies clean release -D"build.snapshot=true" -x test -x IntegTest
