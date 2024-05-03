@@ -27,6 +27,7 @@ import org.apache.hc.core5.http.message.BasicHeader
 import org.apache.hc.core5.http.io.entity.StringEntity
 import org.apache.hc.core5.ssl.SSLContexts
 import org.apache.hc.core5.http.io.entity.EntityUtils
+import org.apache.hc.core5.http2.HttpVersionPolicy
 import org.apache.hc.core5.util.Timeout
 import org.apache.lucene.util.SetOnce
 import org.opensearch.action.admin.cluster.node.tasks.list.ListTasksRequest
@@ -56,12 +57,14 @@ import org.junit.After
 import org.junit.AfterClass
 import org.junit.Before
 import org.junit.BeforeClass
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.security.KeyManagementException
 import java.security.KeyStore
 import java.security.KeyStoreException
 import java.security.NoSuchAlgorithmException
 import java.security.cert.CertificateException
+import java.util.Base64
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import java.util.Collections
@@ -102,6 +105,7 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
 
             val builder = RestClient.builder(*httpHosts.toTypedArray()).setHttpClientConfigCallback { httpAsyncClientBuilder ->
                 httpAsyncClientBuilder.setConnectionManager(connManager)
+                httpAsyncClientBuilder.setVersionPolicy(HttpVersionPolicy.FORCE_HTTP_1)
             }
             configureClient(builder, getClusterSettings(clusterName), securityEnabled)
             builder.setStrictDeprecationMode(false)
@@ -231,8 +235,10 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
             for ((key, value) in headers) {
                 defaultHeaders[i++] = BasicHeader(key, value)
             }
+
+            val creds = System.getProperty("user", "admin") + ":" + System.getProperty("password", "myStrongPassword123!")
             if(securityEnabled) {
-                defaultHeaders[i++] = BasicHeader("Authorization", "Basic YWRtaW46YWRtaW4=")
+                defaultHeaders[i++] = BasicHeader("Authorization", "Basic " + Base64.getEncoder().encodeToString(creds.toByteArray(StandardCharsets.UTF_8)))
             }
 
             builder.setDefaultHeaders(defaultHeaders)
