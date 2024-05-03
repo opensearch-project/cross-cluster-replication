@@ -113,6 +113,7 @@ then
               while (getline) {
                   if ($1 ~ "\"" field "\"") {
                       gsub(/"/, "", $2)
+                      gsub(/ /, "", $2)
                       print $2
                       exit
                   }
@@ -145,7 +146,7 @@ then
   echo "numNodes: $numNodes"
 
   
-  eval "./gradlew integTestRemote -Dleader.http_host=$leader_endpoint:$leader_port -Dfollower.http_host=$follower_endpoint:$follower_port -Dfollower.transport_host=$follower_endpoint:$follower_transport  -Dleader.transport_host=$leader_endpoint:$leader_transport  -Dsecurity_enabled=$SECURITY_ENABLED -Duser=$USERNAME -Dpassword=$PASSWORD -PnumNodes=$numNodes --console=plain "
+  ./gradlew integTestRemote -Dleader.http_host="$leader_endpoint:$leader_port" -Dfollower.http_host="$follower_endpoint:$follower_port" -Dfollower.transport_host="$follower_endpoint:$follower_transport"  -Dleader.transport_host="$leader_endpoint:$leader_transport"  -Dsecurity_enabled=$SECURITY_ENABLED -Duser=$USERNAME -Dpassword=$PASSWORD -PnumNodes=$numNodes --console=plain
 
 else
   # Single cluster
