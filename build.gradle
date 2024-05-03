@@ -940,7 +940,8 @@ task integTestRemote (type: RestIntegTestTask) {
 
     }
     filter {
-            setExcludePatterns("org.opensearch.replication.bwc.BackwardsCompatibilityIT","org.opensearch.replication.singleCluster.SingleClusterSanityIT")
+            setExcludePatterns("org.opensearch.replication.bwc.BackwardsCompatibilityIT","org.opensearch.replication.singleCluster.SingleClusterSanityIT",
+                    "org.opensearch.replication.integ.rest.StartReplicationIT.test operations are fetched from lucene when leader is in mixed mode")
     }
 }
 
