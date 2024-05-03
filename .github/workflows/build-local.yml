@@ -1,0 +1,33 @@
+name: Build Replication plugin
+# This workflow is triggered on pull requests to main branch
+on:
+  push:
+    branches:
+      - '*'
+
+# We build for other platforms except linux which is already covered in build-and-test.
+# Also, We're not running tests here as those are already covered with linux build.
+jobs:
+  build:
+    continue-on-error: true
+    strategy:
+      matrix:
+        java:
+          - 17
+        os:
+          - windows-latest
+    # Job name
+    name: Java ${{ matrix.java }} On ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    steps:
+      # This step uses the setup-java Github action: https://github.com/actions/setup-java
+      - name: Set Up JDK ${{ matrix.java }}
+        uses: actions/setup-java@v1
+        with:
+          java-version: ${{ matrix.java }}
+      # This step uses the checkout Github action: https://github.com/actions/checkout
+      - name: Checkout Branch
+        uses: actions/checkout@v2
+      - name: Build and run Replication tests
+        run: |
+          scripts/integtest.sh -e '[{"cluster_name": "leader","data_nodes": [{"endpoint": "localhost","port": 9200,"transport": 9300},{"endpoint": "localhost","port": 9201,"transport": 9301}],"cluster_manager_nodes": []},{"cluster_name": "follower","data_nodes": [{"endpoint": "localhost","port": 9202,"transport": 9302},{"endpoint": "localhost","port": 9203,"transport":9303}],"cluster_manager_nodes": []}]' -s false -v 2.13.0
