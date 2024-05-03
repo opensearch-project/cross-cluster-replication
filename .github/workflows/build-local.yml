@@ -30,8 +30,5 @@ jobs:
         uses: actions/checkout@v2
       - name: Build and run Replication tests
         run: |
-          king=$(ls)
-          khan=$(pwd)
-          echo $khan
           jon=$(bash scripts/integtest.sh -e '[{"cluster_name": "leader","data_nodes": [{"endpoint": "localhost","port": 9200,"transport": 9300},{"endpoint": "localhost","port": 9201,"transport": 9301}],"cluster_manager_nodes": []},{"cluster_name": "follower","data_nodes": [{"endpoint": "localhost","port": 9202,"transport": 9302},{"endpoint": "localhost","port": 9203,"transport":9303}],"cluster_manager_nodes": []}]' -s false -v 2.13.0)
           echo $jon
