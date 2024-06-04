@@ -11,8 +11,8 @@
 
 package org.opensearch.replication.rest
 
-import org.opensearch.replication.action.stop.StopIndexReplicationAction
-import org.opensearch.replication.action.stop.StopIndexReplicationRequest
+import org.opensearch.commons.replication.action.ReplicationActions.STOP_REPLICATION_ACTION_TYPE
+import org.opensearch.commons.replication.action.StopIndexReplicationRequest
 import org.opensearch.transport.client.node.NodeClient
 import org.opensearch.rest.BaseRestHandler
 import org.opensearch.rest.RestChannel
@@ -38,7 +38,7 @@ class StopIndexReplicationHandler : BaseRestHandler() {
             val stopReplicationRequest = StopIndexReplicationRequest.fromXContent(parser, followIndex)
             return RestChannelConsumer { channel: RestChannel? ->
                 client.admin().cluster()
-                        .execute(StopIndexReplicationAction.INSTANCE, stopReplicationRequest, RestToXContentListener(channel))
+                        .execute(STOP_REPLICATION_ACTION_TYPE, stopReplicationRequest, RestToXContentListener(channel))
             }
         }
     }
