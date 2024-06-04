@@ -11,6 +11,7 @@
 
 package org.opensearch.replication
 
+import org.opensearch.commons.replication.action.ReplicationActions.STOP_REPLICATION_ACTION_TYPE
 import org.opensearch.replication.action.changes.GetChangesAction
 import org.opensearch.replication.action.changes.TransportGetChangesAction
 import org.opensearch.replication.action.index.ReplicateIndexAction
@@ -41,8 +42,7 @@ import org.opensearch.replication.action.status.ReplicationStatusAction
 import org.opensearch.replication.action.status.ShardsInfoAction
 import org.opensearch.replication.action.status.TranportShardsInfoAction
 import org.opensearch.replication.action.status.TransportReplicationStatusAction
-import org.opensearch.replication.action.stop.StopIndexReplicationAction
-import org.opensearch.replication.action.stop.TransportStopIndexReplicationAction
+import org.opensearch.replication.action.stop.TransportStopIndexReplicationBaseAction
 import org.opensearch.replication.action.update.TransportUpdateIndexReplicationAction
 import org.opensearch.replication.action.update.UpdateIndexReplicationAction
 import org.opensearch.replication.metadata.ReplicationMetadataManager
@@ -233,7 +233,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             ActionHandler(GetFileChunkAction.INSTANCE, TransportGetFileChunkAction::class.java),
             ActionHandler(UpdateAutoFollowPatternAction.INSTANCE, TransportUpdateAutoFollowPatternAction::class.java),
             ActionHandler(AutoFollowClusterManagerNodeAction.INSTANCE, TransportAutoFollowClusterManagerNodeAction::class.java),
-            ActionHandler(StopIndexReplicationAction.INSTANCE, TransportStopIndexReplicationAction::class.java),
+            ActionHandler(STOP_REPLICATION_ACTION_TYPE, TransportStopIndexReplicationBaseAction::class.java),
             ActionHandler(PauseIndexReplicationAction.INSTANCE, TransportPauseIndexReplicationAction::class.java),
             ActionHandler(ResumeIndexReplicationAction.INSTANCE, TransportResumeIndexReplicationAction::class.java),
             ActionHandler(UpdateIndexReplicationAction.INSTANCE, TransportUpdateIndexReplicationAction::class.java),
