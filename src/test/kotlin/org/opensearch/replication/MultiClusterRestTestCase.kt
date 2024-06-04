@@ -11,6 +11,8 @@
 
 package org.opensearch.replication
 
+import org.opensearch.commons.replication.action.ReplicationActions.STOP_REPLICATION_NAME
+import org.opensearch.commons.replication.action.ReplicationActions.STOP_REPLICATION_BASE_ACTION_NAME
 import org.opensearch.replication.MultiClusterAnnotations.ClusterConfiguration
 import org.opensearch.replication.MultiClusterAnnotations.ClusterConfigurations
 import org.opensearch.replication.MultiClusterAnnotations.getAnnotationsFromClass
@@ -329,7 +331,8 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
                                 "indices:admin/plugins/replication/index/start",
                                 "indices:admin/plugins/replication/index/pause",
                                 "indices:admin/plugins/replication/index/resume",
-                                "indices:admin/plugins/replication/index/stop",
+                                "$STOP_REPLICATION_NAME",
+                                "$STOP_REPLICATION_BASE_ACTION_NAME",
                                 "indices:admin/plugins/replication/index/update",
                                 "indices:admin/plugins/replication/index/status_check"
                             ]
