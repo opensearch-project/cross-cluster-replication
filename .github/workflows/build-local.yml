@@ -1,9 +1,6 @@
-name: Build Replication plugin
+name: IntegTest Remote testing for windows
 # This workflow is triggered on pull requests to main branch
 on:
-  pull_request:
-    branches:
-      - '*'
   push:
     branches:
       - '*'
@@ -19,7 +16,6 @@ jobs:
           - 17
         os:
           - windows-latest
-          - macos-latest
     # Job name
     name: Java ${{ matrix.java }} On ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -33,4 +29,7 @@ jobs:
       - name: Checkout Branch
         uses: actions/checkout@v2
       - name: Build and run Replication tests
-        run: ./gradlew --refresh-dependencies clean release -D"build.snapshot=true" -x test -x IntegTest
+        shell: bash
+        run: |
+          jon=$(bash scripts/integtest.sh -e '[{"cluster_name": "leader","data_nodes": [{"endpoint": "localhost","port": 9200,"transport": 9300},{"endpoint": "localhost","port": 9201,"transport": 9301}],"cluster_manager_nodes": []},{"cluster_name": "follower","data_nodes": [{"endpoint": "localhost","port": 9202,"transport": 9302},{"endpoint": "localhost","port": 9203,"transport":9303}],"cluster_manager_nodes": []}]' -s false -v 2.13.0)
+          echo $jon

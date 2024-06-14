@@ -829,7 +829,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         } catch(e: Exception) {
             val err = "Unable to initiate restore call for $followerIndexName from $leaderAlias:${leaderIndex.name}"
             log.error(err, e)
-            return FailedState(Collections.emptyMap(), err)
+            return FailedState(Collections.emptyMap(), e.message!!)
         }
         cso.waitForNextChange("remote restore start") { inProgressRestore(it) != null }
         return RestoreState
