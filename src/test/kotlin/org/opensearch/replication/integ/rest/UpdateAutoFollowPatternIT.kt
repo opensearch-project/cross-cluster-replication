@@ -115,7 +115,7 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
         try {
             // Set poll duration to 30sec from 60sec (default)
             val settings = Settings.builder().put(ReplicationPlugin.REPLICATION_AUTOFOLLOW_REMOTE_INDICES_POLL_INTERVAL.key,
-                    TimeValue.timeValueSeconds(30))
+                TimeValue.timeValueSeconds(30))
             val clusterUpdateSetttingsReq = ClusterUpdateSettingsRequest().persistentSettings(settings)
             val clusterUpdateResponse = followerClient.cluster().putSettings(clusterUpdateSetttingsReq, RequestOptions.DEFAULT)
             var lastExecutionTime = 0L
@@ -138,12 +138,12 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
                 }
             }, 30, TimeUnit.SECONDS)
             assertBusy({
-                var af_stats = stats.get("autofollow_stats")!! as ArrayList<HashMap<String, Any>>
-                for (key in af_stats) {
-                    if(key["name"] == indexPatternName) {
-                        Assertions.assertThat(key["last_execution_time"]!! as Long).isNotEqualTo(lastExecutionTime)
-                    }
+            var af_stats = stats.get("autofollow_stats")!! as ArrayList<HashMap<String, Any>>
+            for (key in af_stats) {
+                if(key["name"] == indexPatternName) {
+                    Assertions.assertThat(key["last_execution_time"]!! as Long).isNotEqualTo(lastExecutionTime)
                 }
+            }
             }, 40, TimeUnit.SECONDS)
         } finally {
             followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
@@ -263,35 +263,35 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
         val followerClient = getClientForCluster(FOLLOWER)
         createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
         assertPatternNameValidation(followerClient, "testPattern",
-                "Value testPattern must be lowercase")
+            "Value testPattern must be lowercase")
         assertPatternNameValidation(followerClient, "testPattern*",
-                "Value testPattern* must not contain the following characters")
+            "Value testPattern* must not contain the following characters")
         assertPatternNameValidation(followerClient, "test#",
-                "Value test# must not contain '#' or ':'")
+            "Value test# must not contain '#' or ':'")
         assertPatternNameValidation(followerClient, "test:",
-                "Value test: must not contain '#' or ':'")
+            "Value test: must not contain '#' or ':'")
         assertPatternNameValidation(followerClient, ".",
-                "Value . must not be '.' or '..'")
+            "Value . must not be '.' or '..'")
         assertPatternNameValidation(followerClient, "..",
-                "Value .. must not be '.' or '..'")
+            "Value .. must not be '.' or '..'")
         assertPatternNameValidation(followerClient, "_leader",
-                "Value _leader must not start with '_' or '-' or '+'")
+            "Value _leader must not start with '_' or '-' or '+'")
         assertPatternNameValidation(followerClient, "-leader",
-                "Value -leader must not start with '_' or '-' or '+'")
+            "Value -leader must not start with '_' or '-' or '+'")
         assertPatternNameValidation(followerClient, "+leader",
-                "Value +leader must not start with '_' or '-' or '+'")
+            "Value +leader must not start with '_' or '-' or '+'")
         assertPatternNameValidation(followerClient, longIndexPatternName,
-                "Value $longIndexPatternName must not be longer than ${MetadataCreateIndexService.MAX_INDEX_NAME_BYTES} bytes")
+            "Value $longIndexPatternName must not be longer than ${MetadataCreateIndexService.MAX_INDEX_NAME_BYTES} bytes")
         assertPatternNameValidation(followerClient, ".leaderIndex",
-                "Value .leaderIndex must not start with '.'")
+            "Value .leaderIndex must not start with '.'")
     }
 
     private fun assertPatternNameValidation(followerClient: RestHighLevelClient, patternName: String,
-                                            errorMsg: String) {
+        errorMsg: String) {
         Assertions.assertThatThrownBy {
             followerClient.updateAutoFollowPattern(connectionAlias, patternName, indexPattern)
         }.isInstanceOf(ResponseException::class.java)
-                .hasMessageContaining(errorMsg)
+            .hasMessageContaining(errorMsg)
     }
 
     fun `test deletion of auto follow pattern`() {
@@ -418,13 +418,13 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
             // Verify that existing index matching the pattern are replicated.
             assertBusy {
                 Assertions.assertThat(followerClient.indices()
-                        .exists(GetIndexRequest(leaderIndexName1), RequestOptions.DEFAULT))
-                        .isEqualTo(true)
+                    .exists(GetIndexRequest(leaderIndexName1), RequestOptions.DEFAULT))
+                    .isEqualTo(true)
             }
             assertBusy {
                 Assertions.assertThat(followerClient.indices()
-                        .exists(GetIndexRequest(leaderIndexName2), RequestOptions.DEFAULT))
-                        .isEqualTo(true)
+                    .exists(GetIndexRequest(leaderIndexName2), RequestOptions.DEFAULT))
+                    .isEqualTo(true)
             }
             sleep(30000) // Default poll for auto follow in worst case
             Assertions.assertThat(getAutoFollowTasks(FOLLOWER).size).isEqualTo(1)
