@@ -184,7 +184,7 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
             followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
         }
     }
-    
+
     fun `test auto follow stats`() {
         val indexPatternName2 = "test_pattern2"
         val indexPattern2 = "lead_index*"
@@ -309,6 +309,32 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
         }.doesNotThrowAnyException()
 
     }
+    fun `test updation of auto follow pattern`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
+        followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern)
+        val indexPattern1 = "log*"
+        //Re-create the same replication rule
+        Assertions.assertThatThrownBy {
+            followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern)
+        }.isInstanceOf(ResponseException::class.java)
+                .hasMessageContaining("autofollow replication rule cannot be recreated/updated")
+
+        //Update the replication rule with different indexpattern
+        Assertions.assertThatThrownBy {
+            followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern1)
+        }.isInstanceOf(ResponseException::class.java)
+                .hasMessageContaining("autofollow replication rule cannot be recreated/updated")
+
+        //Create a new replication rule with same indexpattern but unique rule name
+        Assertions.assertThatCode {
+            followerClient.updateAutoFollowPattern(connectionAlias, "unique-rule", indexPattern1)
+        }.doesNotThrowAnyException()
+
+        followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
+        followerClient.deleteAutoFollowPattern(connectionAlias, "unique-rule")
+
+    }
 
     fun `test removing autofollow pattern stop autofollow task`() {
         val followerClient = getClientForCluster(FOLLOWER)
@@ -344,12 +370,12 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
         try {
             //modify retry duration to account for autofollow trigger in next retry
             followerClient.updateAutofollowRetrySetting("1m")
+            followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern)
             for (repeat in 1..2) {
                 log.info("Current Iteration $repeat")
                 // Add replication start block
                 followerClient.updateReplicationStartBlockSetting(true)
                 createRandomIndex(leaderClient)
-                followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern)
                 sleep(95000) // wait for auto follow trigger in the worst case
                 // verify both index replication tasks and autofollow tasks
                 // Replication shouldn't have been started - (repeat-1) tasks as for current loop index shouldn't be
