@@ -528,7 +528,7 @@ integTest {
         }
     }
     filter {
-        setExcludePatterns("org.opensearch.replication.integ.rest.StartReplicationIT.test operations are fetched from lucene when leader is in mixed mode")
+        setExcludePatterns("org.opensearch.replication.bwc.BackwardsCompatibilityIT","org.opensearch.replication.singleCluster.SingleClusterSanityIT","org.opensearch.replication.integ.rest.StartReplicationIT.test operations are fetched from lucene when leader is in mixed mode")
     }
     systemProperty "build.dir", "${buildDir}"
     systemProperty "java.security.policy", "file://${projectDir}/src/test/resources/plugin-security.policy"
