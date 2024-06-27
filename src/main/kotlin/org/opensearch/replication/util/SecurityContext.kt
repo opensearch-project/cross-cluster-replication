@@ -11,8 +11,8 @@
 
 package org.opensearch.replication.util
 
-import org.opensearch.commons.replication.action.ReplicationActions.STOP_REPLICATION_NAME
-import org.opensearch.commons.replication.action.ReplicationActions.STOP_REPLICATION_BASE_ACTION_NAME
+import org.opensearch.commons.replication.action.ReplicationActions.STOP_REPLICATION_ACTION_NAME
+import org.opensearch.commons.replication.action.ReplicationActions.UNFOLLOW_REPLICATION_ACTION_NAME
 import org.opensearch.replication.action.autofollow.UpdateAutoFollowPatternAction
 import org.opensearch.replication.action.changes.GetChangesAction
 import org.opensearch.replication.action.index.ReplicateIndexAction
@@ -50,7 +50,7 @@ class SecurityContext {
         val LEADER_USER_ACTIONS = listOf(GetChangesAction.NAME, GetFileChunkAction.NAME)
         val FOLLOWER_USER_ACTIONS = listOf(ReplayChangesAction.NAME,
                 ReplicateIndexAction.NAME, PauseIndexReplicationAction.NAME,
-                ResumeIndexReplicationAction.NAME, STOP_REPLICATION_NAME, STOP_REPLICATION_BASE_ACTION_NAME,
+                ResumeIndexReplicationAction.NAME, STOP_REPLICATION_ACTION_NAME, UNFOLLOW_REPLICATION_ACTION_NAME,
                 UpdateIndexReplicationAction.NAME, ReplicationStatusAction.NAME,
                 UpdateAutoFollowPatternAction.NAME)
 

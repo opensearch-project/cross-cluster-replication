@@ -11,7 +11,7 @@
 
 package org.opensearch.replication.action.stop
 
-import org.opensearch.commons.replication.action.ReplicationActions.STOP_REPLICATION_NAME
+import org.opensearch.commons.replication.action.ReplicationActions.STOP_REPLICATION_ACTION_NAME
 import org.opensearch.commons.replication.action.StopIndexReplicationRequest
 import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATED_INDEX_SETTING
 import org.opensearch.replication.action.index.block.IndexBlockUpdateType
