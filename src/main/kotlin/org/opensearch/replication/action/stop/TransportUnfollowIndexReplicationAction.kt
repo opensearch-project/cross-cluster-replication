@@ -27,6 +27,12 @@ import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
 
 
+/**
+ * This action transforms the request from ActionRequest type to StopIndexReplicationRequest
+ * and performs the TransportStopIndexReplicationAction on it.
+ * While TransportStopIndexReplicationAction is used directly by the _stop replication REST API,
+ * this action is used for inter-plugin communication by ism plugin to unfollow i.e. stop replication.
+ */
 class TransportUnfollowIndexReplicationAction @Inject constructor (
     val name: String,
     val transportService: TransportService,
@@ -50,7 +56,7 @@ class TransportUnfollowIndexReplicationAction @Inject constructor (
             try {
 
                 var response = client.suspendExecute(STOP_REPLICATION_ACTION_TYPE, transformedRequest, true)
-                log.info("Stop replication successful for index[${transformedRequest.indexName}], response: " + response.isAcknowledged)
+                log.info("Stop replication successful for index[${transformedRequest.indexName}] with response: " + response.isAcknowledged)
                 listener?.onResponse(AcknowledgedResponse(true))
             } catch (e: Exception) {
                 log.error("Stop replication failed for index[${transformedRequest.indexName}] with error ${e.stackTraceToString()}")
