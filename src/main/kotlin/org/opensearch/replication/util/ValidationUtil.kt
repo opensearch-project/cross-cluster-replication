@@ -122,6 +122,7 @@ object ValidationUtil {
 
         if ((pattern?.startsWith('_') ?: false) || (pattern?.startsWith('-') ?: false))
             validationException.addValidationError("Autofollow pattern: $pattern must not start with '_' or '-'")
+
     }
 
     /**
