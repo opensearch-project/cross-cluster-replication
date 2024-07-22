@@ -310,6 +310,32 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
         }.doesNotThrowAnyException()
 
     }
+    fun `test updation of auto follow pattern`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
+        followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern)
+        val indexPattern1 = "log*"
+        //Re-create the same replication rule
+        Assertions.assertThatThrownBy {
+            followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern)
+        }.isInstanceOf(ResponseException::class.java)
+                .hasMessageContaining("autofollow replication rule cannot be recreated/updated")
+
+        //Update the replication rule with different indexpattern
+        Assertions.assertThatThrownBy {
+            followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern1)
+        }.isInstanceOf(ResponseException::class.java)
+                .hasMessageContaining("autofollow replication rule cannot be recreated/updated")
+
+        //Create a new replication rule with same indexpattern but unique rule name
+        Assertions.assertThatCode {
+            followerClient.updateAutoFollowPattern(connectionAlias, "unique-rule", indexPattern1)
+        }.doesNotThrowAnyException()
+
+        followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
+        followerClient.deleteAutoFollowPattern(connectionAlias, "unique-rule")
+
+    }
 
     fun `test removing autofollow pattern stop autofollow task`() {
         val followerClient = getClientForCluster(FOLLOWER)

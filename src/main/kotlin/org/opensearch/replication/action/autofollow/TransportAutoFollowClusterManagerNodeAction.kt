@@ -111,6 +111,7 @@ class TransportAutoFollowClusterManagerNodeAction @Inject constructor(transportS
         } catch(e: ResourceAlreadyExistsException) {
             // Log and bail as task is already running
             log.warn("Task already started for '$clusterAlias:$patternName'", e)
+            throw OpenSearchException("Exisiting autofollow replication rule cannot be recreated/updated", e)
         } catch (e: Exception) {
             log.error("Failed to start auto follow task for cluster '$clusterAlias:$patternName'", e)
             throw OpenSearchException(AUTOFOLLOW_EXCEPTION_GENERIC_STRING)
