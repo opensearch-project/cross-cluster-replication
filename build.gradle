@@ -381,8 +381,6 @@ testClusters {
             testDistribution = "ARCHIVE"
         }
         int debugPort = 5005
-        //adding it to test migration
-        systemProperty('opensearch.experimental.feature.remote_store.migration.enabled','true')
 
         if (_numNodes > 1) numberOfNodes = _numNodes
         //numberOfNodes = 3
@@ -939,8 +937,7 @@ task integTestRemote (type: RestIntegTestTask) {
 
     }
     filter {
-            setExcludePatterns("org.opensearch.replication.bwc.BackwardsCompatibilityIT","org.opensearch.replication.singleCluster.SingleClusterSanityIT",
-                    "org.opensearch.replication.integ.rest.StartReplicationIT.test operations are fetched from lucene when leader is in mixed mode")
+            setExcludePatterns("org.opensearch.replication.bwc.BackwardsCompatibilityIT","org.opensearch.replication.singleCluster.SingleClusterSanityIT")
     }
 }
 
