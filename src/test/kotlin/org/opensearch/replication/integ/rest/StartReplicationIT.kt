@@ -1278,8 +1278,8 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         val entityAsString = """
                         {
                           "persistent": {
-                             "remote_store.compatibility_mode": "mixed",
-                             "migration.direction" : "remote_store"
+                             "cluster.remote_store.compatibility_mode": "mixed",
+                             "cluster.migration.direction" : "remote_store"
                           }
                         }""".trimMargin()
 
