@@ -106,6 +106,26 @@ object ValidationUtil {
     }
 
     /**
+     * Validate the pattern against the rules that we have for indexPattern name.
+     */
+
+    fun validatePattern(pattern: String?, validationException: ValidationException) {
+
+        if (!Strings.validFileNameExcludingAstrix(pattern))
+            validationException.addValidationError("Autofollow pattern: $pattern must not contain the following characters ${Strings.INVALID_FILENAME_CHARS}")
+
+        if (pattern.isNullOrEmpty() == true)
+            validationException.addValidationError("Autofollow pattern: $pattern must not be empty")
+
+        if ((pattern?.contains("#") ?: false)|| (pattern?.contains(":") ?: false))
+            validationException.addValidationError("Autofollow pattern: $pattern must not contain '#' or ':'")
+
+        if ((pattern?.startsWith('_') ?: false) || (pattern?.startsWith('-') ?: false))
+            validationException.addValidationError("Autofollow pattern: $pattern must not start with '_' or '-'")
+
+    }
+
+    /**
      * validate leader index version for compatibility
      * If on higher version - Replication will not be allowed
      *  - Upgrade path - Upgrade Follower cluster to higher version
