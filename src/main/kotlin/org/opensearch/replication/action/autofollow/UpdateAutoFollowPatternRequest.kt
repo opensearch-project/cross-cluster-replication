@@ -14,6 +14,7 @@ package org.opensearch.replication.action.autofollow
 import org.opensearch.replication.action.index.ReplicateIndexRequest
 import org.opensearch.replication.metadata.store.KEY_SETTINGS
 import org.opensearch.replication.util.ValidationUtil.validateName
+import org.opensearch.replication.util.ValidationUtil.validatePattern
 import org.opensearch.action.ActionRequestValidationException
 import org.opensearch.action.support.master.AcknowledgedRequest
 import org.opensearch.core.ParseField
@@ -113,8 +114,11 @@ class UpdateAutoFollowPatternRequest: AcknowledgedRequest<UpdateAutoFollowPatter
             if(pattern != null) {
                 validationException.addValidationError("Unexpected pattern")
             }
-        } else if(pattern == null) {
-            validationException.addValidationError("Missing pattern")
+        } else {
+            if(pattern == null)
+                validationException.addValidationError("Missing pattern")
+            else
+                validatePattern(pattern, validationException)
         }
 
         return if(validationException.validationErrors().isEmpty()) return null else validationException
