@@ -74,6 +74,10 @@ import java.util.UUID
 import java.util.function.Consumer
 import java.util.function.Function
 import kotlin.collections.ArrayList
+<<<<<<< HEAD
+=======
+import org.opensearch.common.Priority
+>>>>>>> 735b1f1 ( Fixing Identation)
 
 const val REMOTE_REPOSITORY_PREFIX = "replication-remote-repo-"
 const val REMOTE_REPOSITORY_TYPE = "replication-remote-repository"
@@ -122,6 +126,16 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         throw UnsupportedOperationException("Operation not permitted")
     }
 
+<<<<<<< HEAD
+=======
+    override fun finalizeSnapshot(shardGenerations: ShardGenerations?, repositoryStateId: Long, clusterMetadata: Metadata?,
+                                  snapshotInfo: SnapshotInfo?, repositoryMetaVersion: Version?,
+                                  stateTransformer: Function<ClusterState, ClusterState>?, repositoryUpdatePriority: Priority,
+                                  listener: ActionListener<RepositoryData>?) {
+        throw UnsupportedOperationException("Operation not permitted")
+    }
+    
+>>>>>>> 735b1f1 ( Fixing Identation)
     override fun deleteSnapshots(snapshotIds: MutableCollection<SnapshotId>?, repositoryStateId: Long,
                                  repositoryMetaVersion: Version?, listener: ActionListener<RepositoryData>?) {
         throw UnsupportedOperationException("Operation not permitted")
