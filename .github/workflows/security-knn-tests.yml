@@ -24,7 +24,7 @@ jobs:
     steps:
       # This step uses the checkout Github action: https://github.com/actions/checkout
       - name: Checkout Branch
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - id: plugin-availability-check
         name: "plugin check"
         run: |
@@ -71,7 +71,7 @@ jobs:
           java-version: 17
       # This step uses the checkout Github action: https://github.com/actions/checkout
       - name: Checkout Branch
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Build and run Replication tests
         run: |
           chown -R 1000:1000 `pwd`
@@ -116,7 +116,7 @@ jobs:
           java-version: 17
       # This step uses the checkout Github action: https://github.com/actions/checkout
       - name: Checkout Branch
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Build and run Replication tests
         run: |
           chown -R 1000:1000 `pwd`
