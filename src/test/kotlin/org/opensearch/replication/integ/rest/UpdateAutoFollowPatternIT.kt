@@ -376,7 +376,7 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
                 // Add replication start block
                 followerClient.updateReplicationStartBlockSetting(true)
                 createRandomIndex(leaderClient)
-                followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern)
+                followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern, ignoreIfExists=true)
                 sleep(95000) // wait for auto follow trigger in the worst case
                 // verify both index replication tasks and autofollow tasks
                 // Replication shouldn't have been started - (repeat-1) tasks as for current loop index shouldn't be
@@ -525,7 +525,11 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
 
     private fun assertValidPatternValidation(followerClient: RestHighLevelClient, pattern: String) {
         Assertions.assertThatCode {
-            followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, pattern)
+            try {
+                followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, pattern)
+            } finally {
+                followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
+            }
         }.doesNotThrowAnyException()
     }
 
