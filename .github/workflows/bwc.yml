@@ -21,7 +21,7 @@ jobs:
           java-version: 11
       # This step uses the checkout Github action: https://github.com/actions/checkout
       - name: Checkout Branch
-        uses: actions/checkout@v2
+        uses: actions/checkout@v4
       - name: Build and run Replication tests
         run: |
           echo "Running backwards compatibility tests ..."
