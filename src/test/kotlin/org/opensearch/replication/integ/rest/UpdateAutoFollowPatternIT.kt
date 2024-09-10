@@ -523,7 +523,11 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
 
     private fun assertValidPatternValidation(followerClient: RestHighLevelClient, pattern: String) {
         Assertions.assertThatCode {
-            followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, pattern)
+            try {
+                followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, pattern)
+            } finally {
+                followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
+            }
         }.doesNotThrowAnyException()
     }
 
