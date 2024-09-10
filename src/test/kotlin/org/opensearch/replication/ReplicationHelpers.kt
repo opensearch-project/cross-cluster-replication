@@ -20,6 +20,7 @@ import org.opensearch.action.support.master.AcknowledgedResponse
 import org.opensearch.client.Request
 import org.opensearch.client.RequestOptions
 import org.opensearch.client.Response
+import org.opensearch.client.ResponseException
 import org.opensearch.client.RestHighLevelClient
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.unit.TimeValue
@@ -325,7 +326,8 @@ fun RestHighLevelClient.waitForReplicationStop(index: String, waitFor : TimeValu
 fun RestHighLevelClient.updateAutoFollowPattern(connection: String, patternName: String, pattern: String,
                                                 settings: Settings = Settings.EMPTY,
                                                 useRoles: UseRoles = UseRoles(),
-                                                requestOptions: RequestOptions = RequestOptions.DEFAULT) {
+                                                requestOptions: RequestOptions = RequestOptions.DEFAULT,
+                                                ignoreIfExists: Boolean = false) {
     val lowLevelRequest = Request("POST", REST_AUTO_FOLLOW_PATTERN)
     if (settings == Settings.EMPTY) {
         lowLevelRequest.setJsonEntity("""{
@@ -350,9 +352,14 @@ fun RestHighLevelClient.updateAutoFollowPattern(connection: String, patternName:
                                      }""")
     }
     lowLevelRequest.setOptions(requestOptions)
-    val lowLevelResponse = lowLevelClient.performRequest(lowLevelRequest)
-    val response = getAckResponse(lowLevelResponse)
-    assertThat(response.isAcknowledged).isTrue()
+    try {
+        val lowLevelResponse = lowLevelClient.performRequest(lowLevelRequest)
+        val response = getAckResponse(lowLevelResponse)
+        assertThat(response.isAcknowledged).isTrue()
+    } catch (e: ResponseException) {
+        // Skip if ignoreIfExists is true and exception contains resource_already_exists_exception
+        if  ((ignoreIfExists == true && e.message?.contains("resource_already_exists_exception")!!) == false) throw e
+    }
 }
 
 fun RestHighLevelClient.AutoFollowStats() : Map<String, Any>  {
