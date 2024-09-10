@@ -78,7 +78,7 @@ jobs:
           ls -al src/test/resources/security/plugin
           su `id -un 1000` -c "whoami && java -version && ./gradlew --refresh-dependencies clean release -Dbuild.snapshot=true -Psecurity=true"
       - name: Upload failed logs
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: logs
@@ -122,7 +122,7 @@ jobs:
           chown -R 1000:1000 `pwd`
           su `id -un 1000` -c 'whoami && java -version && ./gradlew --refresh-dependencies clean release -Dbuild.snapshot=true -PnumNodes=1  -Dtests.class=org.opensearch.replication.BasicReplicationIT   -Dtests.method="test knn index replication"  -Pknn=true'
       - name: Upload failed logs
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: logs
