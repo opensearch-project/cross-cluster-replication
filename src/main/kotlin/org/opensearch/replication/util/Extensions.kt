@@ -115,6 +115,7 @@ suspend fun <Req: ActionRequest, Resp: ActionResponse> Client.suspendExecuteWith
     var retryException: Exception
     repeat(numberOfRetries - 1) { index ->
         try {
+            log.debug("Sending get changes request after ${currentBackoff / 1000} seconds.")
             return suspendExecute(replicationMetadata, action, req,
                     injectSecurityContext = injectSecurityContext, defaultContext = defaultContext)
         } catch (e: OpenSearchException) {

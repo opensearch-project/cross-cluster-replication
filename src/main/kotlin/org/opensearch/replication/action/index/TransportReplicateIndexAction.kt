@@ -85,10 +85,12 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
                 // Any checks on the settings is followed by setup checks to ensure all relevant changes are
                 // present across the plugins
                 // validate index metadata on the leader cluster
+                log.debug("Fetching leader cluster state for ${request.leaderIndex} index.")
                 val leaderClusterState = getLeaderClusterState(request.leaderAlias, request.leaderIndex)
                 ValidationUtil.validateLeaderIndexState(request.leaderAlias, request.leaderIndex, leaderClusterState)
 
                 val leaderSettings = getLeaderIndexSettings(request.leaderAlias, request.leaderIndex)
+                log.debug("Leader settings were fetched for ${request.leaderIndex} index.")
 
                 if (leaderSettings.keySet().contains(ReplicationPlugin.REPLICATED_INDEX_SETTING.key) and
                         !leaderSettings.get(ReplicationPlugin.REPLICATED_INDEX_SETTING.key).isNullOrBlank()) {
@@ -113,7 +115,9 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
                 // Setup checks are successful and trigger replication for the index
                 // permissions evaluation to trigger replication is based on the current security context set
                 val internalReq = ReplicateIndexClusterManagerNodeRequest(user, request)
+                log.debug("Starting replication index action on current master node")
                 client.suspendExecute(ReplicateIndexClusterManagerNodeAction.INSTANCE, internalReq)
+                log.debug("Response of start replication action is returned")
                 ReplicateIndexResponse(true)
             }
         }
