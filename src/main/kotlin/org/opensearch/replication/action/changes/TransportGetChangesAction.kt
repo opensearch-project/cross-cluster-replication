@@ -67,8 +67,10 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
 
     @Suppress("BlockingMethodInNonBlockingContext")
     override fun asyncShardOperation(request: GetChangesRequest, shardId: ShardId, listener: ActionListener<GetChangesResponse>) {
+        log.debug("calling asyncShardOperation method")
         GlobalScope.launch(threadPool.coroutineContext(REPLICATION_EXECUTOR_NAME_LEADER)) {
             // TODO: Figure out if we need to acquire a primary permit here
+            log.debug("$REPLICATION_EXECUTOR_NAME_LEADER coroutine has initiated")
             listener.completeWith {
                 var relativeStartNanos  = System.nanoTime()
                 remoteStatsService.stats[shardId] = remoteStatsService.stats.getOrDefault(shardId, RemoteShardMetric())
@@ -82,8 +84,9 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
                     // There are no new operations to sync. Do a long poll and wait for GlobalCheckpoint to advance. If
                     // the checkpoint doesn't advance by the timeout this throws an ESTimeoutException which the caller
                     // should catch and start a new poll.
+                    log.trace("Waiting for global checkpoint to advance from ${request.fromSeqNo} Sequence Number")
                     val gcp = indexShard.waitForGlobalCheckpoint(request.fromSeqNo, WAIT_FOR_NEW_OPS_TIMEOUT)
-
+                    log.trace("Waiting for global checkpoint to advance is finished for ${request.fromSeqNo} Sequence Number")
                     // At this point indexShard.lastKnownGlobalCheckpoint  has advanced but it may not yet have been synced
                     // to the translog, which means we can't return those changes. Return to the caller to retry.
                     // TODO: Figure out a better way to wait for the global checkpoint to be synced to the translog
