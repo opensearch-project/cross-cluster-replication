@@ -210,6 +210,7 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
             if (!response.isAcknowledged) {
                 throw ReplicationException("Failed to auto follow leader index $leaderIndex")
             }
+            log.debug("Auto follow has started replication from ${leaderAlias}:$leaderIndex -> $leaderIndex")
             successStart = true
         } catch (e: OpenSearchSecurityException) {
             // For permission related failures, Adding as part of failed indices as autofollow role doesn't have required permissions.

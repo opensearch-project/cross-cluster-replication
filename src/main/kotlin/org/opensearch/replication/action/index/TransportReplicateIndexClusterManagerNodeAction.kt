@@ -97,7 +97,9 @@ class TransportReplicateIndexClusterManagerNodeAction @Inject constructor(transp
                     throw OpenSearchStatusException("[FORBIDDEN] Replication START block is set", RestStatus.FORBIDDEN)
                 }
 
+                log.debug("Making request to get metadata of ${replicateIndexReq.leaderIndex} index on remote cluster")
                 val remoteMetadata = getRemoteIndexMetadata(replicateIndexReq.leaderAlias, replicateIndexReq.leaderIndex)
+                log.debug("Response returned of the request made to get metadata of ${replicateIndexReq.leaderIndex} index on remote cluster")
 
                 if (state.routingTable.hasIndex(replicateIndexReq.followerIndex)) {
                     throw IllegalArgumentException("Cant use same index again for replication. " +
@@ -115,6 +117,7 @@ class TransportReplicateIndexClusterManagerNodeAction @Inject constructor(transp
                         ReplicationOverallState.RUNNING, user, replicateIndexReq.useRoles?.getOrDefault(ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE, null),
                         replicateIndexReq.useRoles?.getOrDefault(ReplicateIndexRequest.LEADER_CLUSTER_ROLE, null), replicateIndexReq.settings)
 
+                log.debug("Starting index replication task in persistent task service with name: replication:index:${replicateIndexReq.followerIndex}")
                 val task = persistentTasksService.startTask("replication:index:${replicateIndexReq.followerIndex}",
                         IndexReplicationExecutor.TASK_NAME, params)
 
@@ -123,6 +126,7 @@ class TransportReplicateIndexClusterManagerNodeAction @Inject constructor(transp
                     listener.onResponse(ReplicateIndexResponse(false))
                 }
 
+                log.debug("Waiting for persistent task to move to following state")
                 // Now wait for the replication to start and the follower index to get created before returning
                 persistentTasksService.waitForTaskCondition(task.id, replicateIndexReq.timeout()) { t ->
                     val replicationState = (t.state as IndexReplicationState?)?.state
@@ -130,6 +134,7 @@ class TransportReplicateIndexClusterManagerNodeAction @Inject constructor(transp
                             (!replicateIndexReq.waitForRestore && replicationState == ReplicationState.RESTORING)
                 }
 
+                log.debug("Persistent task is moved to following replication state")
                 listener.onResponse(AcknowledgedResponse(true))
             } catch (e: Exception) {
                 log.error("Failed to trigger replication for ${replicateIndexReq.followerIndex} - ${e.stackTraceToString()}")

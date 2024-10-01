@@ -179,6 +179,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
             logDebug("Cluster metadata listener invoked on shard task...")
             if (event.metadataChanged()) {
                 val replicationStateParams = getReplicationStateParamsForIndex(clusterService, followerShardId.indexName)
+                logDebug("Replication State Params are fetched from cluster state")
                 if (replicationStateParams == null) {
                     if (PersistentTasksNodeService.Status(State.STARTED) == status)
                         cancelTask("Shard replication task received an interrupt.")
