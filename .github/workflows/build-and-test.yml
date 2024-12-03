@@ -36,7 +36,7 @@ jobs:
         run: |
           ./gradlew clean release -D"build.snapshot=true"
       - name: Upload failed logs
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v4
         if: failure()
         with:
           name: logs
