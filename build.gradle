@@ -53,7 +53,7 @@ buildscript {
         plugin_previous_version = opensearch_previous_version.replaceAll(/(\.\d)([^\d]*)$/, '$1.0$2')
 
         common_utils_version = System.getProperty("common_utils.version", opensearch_build)
-        kotlin_version = System.getProperty("kotlin.version", "1.8.21")
+        kotlin_version = System.getProperty("kotlin.version", "1.9.25")
 
         security_plugin_version = opensearch_build
         if (!isSnapshot) {
@@ -89,6 +89,10 @@ plugins {
 allprojects {
     group = "org.opensearch"
     version = "${opensearch_build}"
+    plugins.withId('org.jetbrains.kotlin.jvm') {
+        compileJava.sourceCompatibility = compileJava.targetCompatibility = JavaVersion.VERSION_21
+        compileTestJava.sourceCompatibility = compileTestJava.targetCompatibility = JavaVersion.VERSION_21
+    }
 }
 
 apply plugin: 'java'
@@ -165,14 +169,14 @@ repositories {
 
 compileKotlin {
     kotlinOptions {
-        jvmTarget = "11"
+        jvmTarget = "21"
         freeCompilerArgs = ['-Xjsr305=strict'] // Handle OpenSearch @Nullable annotation correctly
     }
 }
 
 compileTestKotlin {
     kotlinOptions {
-        jvmTarget = "11"
+        jvmTarget = "21"
         freeCompilerArgs = ['-Xjsr305=strict']
     }
 }
