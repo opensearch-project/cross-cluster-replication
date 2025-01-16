@@ -45,7 +45,7 @@ The replication machinery is implemented as an OpenSearch plugin that exposes AP
 The project in this package uses the [Gradle](https://docs.gradle.org/current/userguide/userguide.html) build system. Gradle comes with excellent documentation that should be your first stop when trying to figure out how to operate or modify the build.
 
 ### Building from the command line
-Set JAVA_HOME to JDK-11 or above  
+Set JAVA_HOME to JDK-21 or above  
 
 1. `./gradlew build` builds and tests project.
 2. `./gradlew clean release` cleans previous builds, creates new build and tests project.
