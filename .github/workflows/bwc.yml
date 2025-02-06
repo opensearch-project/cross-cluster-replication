@@ -12,7 +12,7 @@ jobs:
   build:
     # Job name
     name: Run BWC Test
-    runs-on: ubuntu-lates
+    runs-on: ubuntu-latest
     strategy:
       matrix:
         java: [21, 23]
