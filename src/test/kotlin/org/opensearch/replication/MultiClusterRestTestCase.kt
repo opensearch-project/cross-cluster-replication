@@ -96,7 +96,7 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
                 }
 
             })
-            val sslContext = SSLContext.getInstance("SSL")
+            val sslContext = SSLContext.getInstance("TLS")
             sslContext.init(null, trustCerts, java.security.SecureRandom())
 
             val builder = RestClient.builder(*httpHosts.toTypedArray()).setHttpClientConfigCallback { httpAsyncClientBuilder ->
