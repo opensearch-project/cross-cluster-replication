@@ -55,6 +55,9 @@ jobs:
     if: ${{ 'True' == needs.req.outputs.isSecurityPluginAvailable }}
     # Job name
     name: Build and Run Security tests
+    strategy:
+      matrix:
+        java: [21, 23]
     runs-on: ubuntu-latest
     container:
       # using the same image which is used by opensearch-build team to build the OpenSearch Distribution
@@ -67,10 +70,10 @@ jobs:
       - name: Run start commands
         run: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-start-command }}
       # This step uses the setup-java Github action: https://github.com/actions/setup-java
-      - name: Set Up JDK 21
+      - name: Set Up JDK ${{ matrix.java }}
         uses: actions/setup-java@v4
         with:
-          java-version: 21
+          java-version: ${{ matrix.java }}
           distribution: 'temurin'
       # This step uses the checkout Github action: https://github.com/actions/checkout
       - name: Checkout Branch
@@ -103,6 +106,9 @@ jobs:
     if: ${{ 'True' == needs.req.outputs.isKnnPluginAvailable }}
     # Job name
     name: Build and Run Knn tests
+    strategy:
+      matrix:
+        java: [21, 23]
     runs-on: ubuntu-latest
     container:
       # using the same image which is used by opensearch-build team to build the OpenSearch Distribution
@@ -115,10 +121,10 @@ jobs:
       - name: Run start commands
         run: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-start-command }}
       # This step uses the setup-java Github action: https://github.com/actions/setup-java
-      - name: Set Up JDK 21
+      - name: Set Up JDK ${{ matrix.java }}
         uses: actions/setup-java@v4
         with:
-          java-version: 21
+          java-version: ${{ matrix.java }}
           distribution: 'temurin'
       # This step uses the checkout Github action: https://github.com/actions/checkout
       - name: Checkout Branch
