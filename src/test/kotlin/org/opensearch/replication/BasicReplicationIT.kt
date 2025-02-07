@@ -25,7 +25,7 @@ import org.opensearch.client.RequestOptions
 import org.opensearch.client.indices.CreateIndexRequest
 import org.opensearch.common.xcontent.XContentType
 import org.opensearch.common.CheckedRunnable
-import org.opensearch.test.OpenSearchTestCase.assertBusy
+import static org.opensearch.test.OpenSearchTestCase.assertBusy
 import org.opensearch.client.indices.PutMappingRequest
 import org.junit.Assert
 import java.util.Locale
