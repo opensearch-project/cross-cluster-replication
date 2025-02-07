@@ -26,6 +26,10 @@ import org.opensearch.client.indices.CreateIndexRequest
 import org.opensearch.common.xcontent.XContentType
 import org.opensearch.common.CheckedRunnable
 import org.opensearch.test.OpenSearchTestCase.assertBusy
+import org.opensearch.action.admin.indices.settings.get.GetSettingsRequest
+import org.opensearch.action.admin.indices.settings.put.UpdateSettingsRequest
+import org.opensearch.index.IndexSettings
+import org.opensearch.common.settings.Settings
 import org.opensearch.client.indices.PutMappingRequest
 import org.junit.Assert
 import java.util.Locale
