@@ -94,7 +94,7 @@ class BasicReplicationIT : MultiClusterRestTestCase() {
         val leaderIndexName = randomAlphaOfLength(10).toLowerCase(Locale.ROOT)
         val followerIndexNameInitial = randomAlphaOfLength(10).toLowerCase(Locale.ROOT)
         val followerIndexName = randomAlphaOfLength(10).toLowerCase(Locale.ROOT)
-        val KNN_INDEX_MAPPING = "{\"properties\":{\"my_vector1\":{\"type\":\"knn_vector\",\"dimension\":2},\"my_vector2\":{\"type\":\"knn_vector\",\"dimension\":4}}}"
+        val KNN_INDEX_MAPPING = "{\"settings\":{\"index\":{\"knn\":true}},\"mappings\":{\"properties\":{\"my_vector1\":{\"type\":\"knn_vector\",\"dimension\":2},\"my_vector2\":{\"type\":\"knn_vector\",\"dimension\":4}}}}"
         // create knn-index on leader cluster
         try {
             val createIndexResponse = leaderClient.indices().create(
