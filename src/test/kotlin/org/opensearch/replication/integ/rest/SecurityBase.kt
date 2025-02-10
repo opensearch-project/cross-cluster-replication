@@ -18,6 +18,7 @@ import org.apache.http.nio.entity.NStringEntity
 import org.opensearch.client.Request
 import org.junit.AfterClass
 import org.junit.BeforeClass
+import org.opensearch.commons.replication.action.ReplicationActions.STOP_REPLICATION_ACTION_NAME
 import javax.swing.text.StyledEditorKit
 
 const val INTEG_TEST_PASSWORD = "ccr-integ-test@123"
@@ -76,7 +77,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
                             "indices:admin/plugins/replication/index/start",
                             "indices:admin/plugins/replication/index/pause",
                             "indices:admin/plugins/replication/index/resume",
-                            "indices:admin/plugins/replication/index/stop",
+                            "$STOP_REPLICATION_ACTION_NAME",
                             "indices:admin/plugins/replication/index/update",
                             "indices:admin/plugins/replication/index/status_check"
                         ]
@@ -108,7 +109,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
                             "indices:admin/plugins/replication/index/start",
                             "indices:admin/plugins/replication/index/pause",
                             "indices:admin/plugins/replication/index/resume",
-                            "indices:admin/plugins/replication/index/stop",
+                            "$STOP_REPLICATION_ACTION_NAME",
                             "indices:admin/plugins/replication/index/update",
                             "indices:admin/plugins/replication/index/status_check"
                         ]
@@ -121,7 +122,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
                             "indices:admin/plugins/replication/index/start",
                             "indices:admin/plugins/replication/index/pause",
                             "indices:admin/plugins/replication/index/resume",
-                            "indices:admin/plugins/replication/index/stop",
+                            "$STOP_REPLICATION_ACTION_NAME",
                             "indices:admin/plugins/replication/index/update",
                             "indices:admin/plugins/replication/index/status_check"
                         ]
@@ -153,7 +154,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
                             "indices:admin/plugins/replication/index/start",
                             "indices:admin/plugins/replication/index/pause",
                             "indices:admin/plugins/replication/index/resume",
-                            "indices:admin/plugins/replication/index/stop",
+                            "$STOP_REPLICATION_ACTION_NAME",
                             "indices:admin/plugins/replication/index/update",
                             "indices:admin/plugins/replication/index/status_check"
                         ]
@@ -185,7 +186,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
                             "indices:admin/plugins/replication/index/start",
                             "indices:admin/plugins/replication/index/pause",
                             "indices:admin/plugins/replication/index/resume",
-                            "indices:admin/plugins/replication/index/stop",
+                            "$STOP_REPLICATION_ACTION_NAME",
                             "indices:admin/plugins/replication/index/update",
                             "indices:admin/plugins/replication/index/status_check"
                         ]
@@ -259,7 +260,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
                             "indices:admin/plugins/replication/index/start",
                             "indices:admin/plugins/replication/index/pause",
                             "indices:admin/plugins/replication/index/resume",
-                            "indices:admin/plugins/replication/index/stop",
+                            "$STOP_REPLICATION_ACTION_NAME",
                             "indices:admin/plugins/replication/index/update",
                             "indices:admin/plugins/replication/index/status_check"
                         ]
