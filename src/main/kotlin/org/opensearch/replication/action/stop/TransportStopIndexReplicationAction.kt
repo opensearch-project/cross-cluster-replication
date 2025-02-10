@@ -63,12 +63,12 @@ import org.opensearch.transport.TransportService
 import java.io.IOException
 
 /*
- The classes StopIndexReplicationRequest and StopIndexReplicationAction have been moved from ccr to common-utils and
- are imported here through org.opensearch.commons.replication.
+ The classes StopIndexReplicationRequest and StopIndexReplicationAction have been moved from ccr to common-utils
+ and are imported here through org.opensearch.commons.replication.
  This helps in making these classes re-usable by other plugins like ism.
  PR details:
  [1] https://github.com/opensearch-project/common-utils/pull/789
- [2]
+ [2] https://github.com/opensearch-project/cross-cluster-replication/pull/1502
  */
 
 class TransportStopIndexReplicationAction @Inject constructor(transportService: TransportService,
