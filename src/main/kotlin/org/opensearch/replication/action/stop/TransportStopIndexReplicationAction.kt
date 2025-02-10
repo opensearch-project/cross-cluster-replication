@@ -11,6 +11,8 @@
 
 package org.opensearch.replication.action.stop
 
+import org.opensearch.commons.replication.action.ReplicationActions.STOP_REPLICATION_ACTION_NAME
+import org.opensearch.commons.replication.action.StopIndexReplicationRequest
 import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATED_INDEX_SETTING
 import org.opensearch.replication.action.index.block.IndexBlockUpdateType
 import org.opensearch.replication.action.index.block.UpdateIndexBlockAction
@@ -60,6 +62,15 @@ import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
 import java.io.IOException
 
+/*
+ The classes StopIndexReplicationRequest and StopIndexReplicationAction have been moved from ccr to common-utils and
+ are imported here through org.opensearch.commons.replication.
+ This helps in making these classes re-usable by other plugins like ism.
+ PR details:
+ [1] https://github.com/opensearch-project/common-utils/pull/789
+ [2]
+ */
+
 class TransportStopIndexReplicationAction @Inject constructor(transportService: TransportService,
                                                               clusterService: ClusterService,
                                                               threadPool: ThreadPool,
@@ -68,7 +79,7 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                                                               IndexNameExpressionResolver,
                                                               val client: Client,
                                                               val replicationMetadataManager: ReplicationMetadataManager) :
-    TransportMasterNodeAction<StopIndexReplicationRequest, AcknowledgedResponse> (StopIndexReplicationAction.NAME,
+    TransportMasterNodeAction<StopIndexReplicationRequest, AcknowledgedResponse> (STOP_REPLICATION_ACTION_NAME,
             transportService, clusterService, threadPool, actionFilters, ::StopIndexReplicationRequest,
             indexNameExpressionResolver), CoroutineScope by GlobalScope {
 

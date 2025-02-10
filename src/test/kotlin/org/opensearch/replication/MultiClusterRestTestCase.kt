@@ -46,6 +46,7 @@ import org.opensearch.core.xcontent.NamedXContentRegistry
 import org.opensearch.common.xcontent.XContentHelper
 import org.opensearch.common.xcontent.XContentType
 import org.opensearch.common.xcontent.json.JsonXContent
+import org.opensearch.commons.replication.action.ReplicationActions.STOP_REPLICATION_ACTION_NAME
 import org.opensearch.snapshots.SnapshotState
 import org.opensearch.tasks.TaskInfo
 import org.opensearch.test.OpenSearchTestCase
@@ -324,7 +325,7 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
                                 "indices:admin/plugins/replication/index/start",
                                 "indices:admin/plugins/replication/index/pause",
                                 "indices:admin/plugins/replication/index/resume",
-                                "indices:admin/plugins/replication/index/stop",
+                                "$STOP_REPLICATION_ACTION_NAME",
                                 "indices:admin/plugins/replication/index/update",
                                 "indices:admin/plugins/replication/index/status_check"
                             ]
