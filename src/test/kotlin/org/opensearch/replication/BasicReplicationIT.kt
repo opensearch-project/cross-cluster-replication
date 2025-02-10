@@ -26,6 +26,10 @@ import org.opensearch.client.indices.CreateIndexRequest
 import org.opensearch.common.xcontent.XContentType
 import org.opensearch.common.CheckedRunnable
 import org.opensearch.test.OpenSearchTestCase.assertBusy
+import org.opensearch.action.admin.indices.settings.get.GetSettingsRequest
+import org.opensearch.action.admin.indices.settings.put.UpdateSettingsRequest
+import org.opensearch.index.IndexSettings
+import org.opensearch.common.settings.Settings
 import org.opensearch.client.indices.PutMappingRequest
 import org.junit.Assert
 import java.util.Locale
@@ -94,11 +98,14 @@ class BasicReplicationIT : MultiClusterRestTestCase() {
         val leaderIndexName = randomAlphaOfLength(10).toLowerCase(Locale.ROOT)
         val followerIndexNameInitial = randomAlphaOfLength(10).toLowerCase(Locale.ROOT)
         val followerIndexName = randomAlphaOfLength(10).toLowerCase(Locale.ROOT)
+        val settings: Settings = Settings.builder()
+            .put("index.knn", true)
+            .build()
         val KNN_INDEX_MAPPING = "{\"properties\":{\"my_vector1\":{\"type\":\"knn_vector\",\"dimension\":2},\"my_vector2\":{\"type\":\"knn_vector\",\"dimension\":4}}}"
         // create knn-index on leader cluster
         try {
             val createIndexResponse = leaderClient.indices().create(
-                CreateIndexRequest(leaderIndexName)
+                CreateIndexRequest(leaderIndexName).settings(settings)
                     .mapping(KNN_INDEX_MAPPING, XContentType.JSON), RequestOptions.DEFAULT
             )
             assertThat(createIndexResponse.isAcknowledged).isTrue()
