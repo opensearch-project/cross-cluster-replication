@@ -27,7 +27,7 @@ import org.opensearch.action.ActionType
 import org.opensearch.action.index.IndexRequestBuilder
 import org.opensearch.action.index.IndexResponse
 import org.opensearch.action.support.TransportActions
-import org.opensearch.client.Client
+import org.opensearch.transport.client.Client
 import org.opensearch.common.util.concurrent.ThreadContext
 import org.opensearch.core.concurrency.OpenSearchRejectedExecutionException
 import org.opensearch.index.IndexNotFoundException

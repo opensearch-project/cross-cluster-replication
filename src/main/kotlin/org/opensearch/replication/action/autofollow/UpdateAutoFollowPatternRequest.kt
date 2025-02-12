@@ -16,7 +16,7 @@ import org.opensearch.replication.metadata.store.KEY_SETTINGS
 import org.opensearch.replication.util.ValidationUtil.validateName
 import org.opensearch.replication.util.ValidationUtil.validatePattern
 import org.opensearch.action.ActionRequestValidationException
-import org.opensearch.action.support.master.AcknowledgedRequest
+import org.opensearch.action.support.clustermanager.AcknowledgedRequest
 import org.opensearch.core.ParseField
 import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.core.common.io.stream.StreamOutput

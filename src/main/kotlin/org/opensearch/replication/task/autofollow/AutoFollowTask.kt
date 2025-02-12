@@ -27,7 +27,7 @@ import org.opensearch.OpenSearchException
 import org.opensearch.OpenSearchSecurityException
 import org.opensearch.action.admin.indices.get.GetIndexRequest
 import org.opensearch.action.support.IndicesOptions
-import org.opensearch.client.Client
+import org.opensearch.transport.client.Client
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.core.common.io.stream.StreamOutput

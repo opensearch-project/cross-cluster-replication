@@ -20,9 +20,9 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import org.opensearch.core.action.ActionListener
 import org.opensearch.action.support.ActionFilters
-import org.opensearch.action.support.master.AcknowledgedRequest
-import org.opensearch.action.support.master.AcknowledgedResponse
-import org.opensearch.action.support.master.TransportMasterNodeAction
+import org.opensearch.action.support.clustermanager.AcknowledgedRequest
+import org.opensearch.action.support.clustermanager.AcknowledgedResponse
+import org.opensearch.action.support.clustermanager.TransportClusterManagerNodeAction
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.ClusterStateTaskExecutor
 import org.opensearch.cluster.block.ClusterBlockException
@@ -39,7 +39,7 @@ class TransportUpdateReplicationStateDetails @Inject constructor(transportServic
                                                                  threadPool: ThreadPool,
                                                                  actionFilters: ActionFilters,
                                                                  indexNameExpressionResolver: IndexNameExpressionResolver) :
-        TransportMasterNodeAction<UpdateReplicationStateDetailsRequest, AcknowledgedResponse>(UpdateReplicationStateAction.NAME,
+    TransportClusterManagerNodeAction<UpdateReplicationStateDetailsRequest, AcknowledgedResponse>(UpdateReplicationStateAction.NAME,
                 transportService, clusterService, threadPool, actionFilters, ::UpdateReplicationStateDetailsRequest, indexNameExpressionResolver),
         CoroutineScope by GlobalScope {
 
@@ -47,7 +47,7 @@ class TransportUpdateReplicationStateDetails @Inject constructor(transportServic
         return state.blocks.globalBlockedException(ClusterBlockLevel.METADATA_WRITE)
     }
 
-    override fun masterOperation(request: UpdateReplicationStateDetailsRequest, state: ClusterState,
+    override fun clusterManagerOperation(request: UpdateReplicationStateDetailsRequest, state: ClusterState,
                                  listener: ActionListener<AcknowledgedResponse>) {
 
         launch(threadPool.coroutineContext(ThreadPool.Names.MANAGEMENT)) {

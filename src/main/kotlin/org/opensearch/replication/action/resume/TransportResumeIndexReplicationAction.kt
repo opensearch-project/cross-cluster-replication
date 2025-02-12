@@ -39,9 +39,9 @@ import org.opensearch.core.action.ActionListener
 import org.opensearch.action.admin.indices.settings.get.GetSettingsRequest
 import org.opensearch.action.support.ActionFilters
 import org.opensearch.action.support.IndicesOptions
-import org.opensearch.action.support.master.AcknowledgedResponse
-import org.opensearch.action.support.master.TransportMasterNodeAction
-import org.opensearch.client.Client
+import org.opensearch.action.support.clustermanager.AcknowledgedResponse
+import org.opensearch.action.support.clustermanager.TransportClusterManagerNodeAction
+import org.opensearch.transport.client.Client
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.block.ClusterBlockException
 import org.opensearch.cluster.block.ClusterBlockLevel
@@ -67,7 +67,7 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
                                                                 val client: Client,
                                                                 val replicationMetadataManager: ReplicationMetadataManager,
                                                                 private val environment: Environment) :
-    TransportMasterNodeAction<ResumeIndexReplicationRequest, AcknowledgedResponse> (ResumeIndexReplicationAction.NAME,
+    TransportClusterManagerNodeAction<ResumeIndexReplicationRequest, AcknowledgedResponse> (ResumeIndexReplicationAction.NAME,
             transportService, clusterService, threadPool, actionFilters, ::ResumeIndexReplicationRequest,
             indexNameExpressionResolver), CoroutineScope by GlobalScope {
 
@@ -80,7 +80,7 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
     }
 
     @Throws(Exception::class)
-    override fun masterOperation(request: ResumeIndexReplicationRequest, state: ClusterState,
+    override fun clusterManagerOperation(request: ResumeIndexReplicationRequest, state: ClusterState,
                                  listener: ActionListener<AcknowledgedResponse>) {
         launch(Dispatchers.Unconfined + threadPool.coroutineContext()) {
             listener.completeWith {

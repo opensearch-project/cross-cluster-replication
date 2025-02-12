@@ -22,9 +22,9 @@ import org.apache.logging.log4j.LogManager
 import org.opensearch.OpenSearchException
 import org.opensearch.core.action.ActionListener
 import org.opensearch.action.support.ActionFilters
-import org.opensearch.action.support.master.AcknowledgedResponse
-import org.opensearch.action.support.master.TransportMasterNodeAction
-import org.opensearch.client.Client
+import org.opensearch.action.support.clustermanager.AcknowledgedResponse
+import org.opensearch.action.support.clustermanager.TransportClusterManagerNodeAction
+import org.opensearch.transport.client.Client
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.block.ClusterBlockException
 import org.opensearch.cluster.block.ClusterBlockLevel
@@ -44,7 +44,7 @@ class TransportUpddateIndexBlockAction @Inject constructor(transportService: Tra
                                                            indexNameExpressionResolver:
                                                            IndexNameExpressionResolver,
                                                            val client: Client) :
-        TransportMasterNodeAction<UpdateIndexBlockRequest, AcknowledgedResponse>(UpdateIndexBlockAction.NAME,
+    TransportClusterManagerNodeAction<UpdateIndexBlockRequest, AcknowledgedResponse>(UpdateIndexBlockAction.NAME,
                 transportService, clusterService, threadPool, actionFilters, ::UpdateIndexBlockRequest,
                 indexNameExpressionResolver), CoroutineScope by GlobalScope {
 
@@ -57,7 +57,7 @@ class TransportUpddateIndexBlockAction @Inject constructor(transportService: Tra
     }
 
     @Throws(Exception::class)
-    override fun masterOperation(request: UpdateIndexBlockRequest?, state: ClusterState?, listener: ActionListener<AcknowledgedResponse>) {
+    override fun clusterManagerOperation(request: UpdateIndexBlockRequest?, state: ClusterState?, listener: ActionListener<AcknowledgedResponse>) {
         val followerIndexName = request!!.indexName
         log.debug("Adding index block for $followerIndexName")
         launch(threadPool.coroutineContext(ThreadPool.Names.MANAGEMENT)) {

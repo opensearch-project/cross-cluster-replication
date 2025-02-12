@@ -19,10 +19,10 @@ import org.opensearch.core.action.ActionListener
 import org.opensearch.action.ActionRequest
 import org.opensearch.core.action.ActionResponse
 import org.opensearch.action.ActionType
-import org.opensearch.action.support.master.AcknowledgedRequest
-import org.opensearch.action.support.master.MasterNodeRequest
-import org.opensearch.client.Client
-import org.opensearch.client.OpenSearchClient
+import org.opensearch.action.support.clustermanager.AcknowledgedRequest
+import org.opensearch.action.support.clustermanager.ClusterManagerNodeRequest
+import org.opensearch.transport.client.Client
+import org.opensearch.transport.client.OpenSearchClient
 import org.opensearch.cluster.*
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.Priority
@@ -251,7 +251,7 @@ fun ThreadPool.coroutineContext(replicationMetadata: ReplicationMetadata?, actio
 fun ThreadPool.coroutineContext(executorName: String) : CoroutineContext =
     executor(executorName).asCoroutineDispatcher() + coroutineContext()
 
-suspend fun <T : MasterNodeRequest<T>> submitClusterStateUpdateTask(request: AcknowledgedRequest<T>,
+suspend fun <T : ClusterManagerNodeRequest<T>> submitClusterStateUpdateTask(request: AcknowledgedRequest<T>,
                                                                     taskExecutor: ClusterStateTaskExecutor<AcknowledgedRequest<T>>,
                                                                     clusterService: ClusterService,
                                                                     source: String): ClusterState {

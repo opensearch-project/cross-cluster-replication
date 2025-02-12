@@ -13,14 +13,14 @@ package org.opensearch.replication.action.autofollow
 
 import org.opensearch.commons.authuser.User
 import org.opensearch.action.ActionRequestValidationException
-import org.opensearch.action.support.master.MasterNodeRequest
+import org.opensearch.action.support.clustermanager.ClusterManagerNodeRequest
 import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.core.common.io.stream.StreamOutput
 import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.ToXContentObject
 import org.opensearch.core.xcontent.XContentBuilder
 
-class AutoFollowClusterManagerNodeRequest: MasterNodeRequest<AutoFollowClusterManagerNodeRequest>, ToXContentObject {
+class AutoFollowClusterManagerNodeRequest: ClusterManagerNodeRequest<AutoFollowClusterManagerNodeRequest>, ToXContentObject {
     var user: User? = null
     var autofollowReq: UpdateAutoFollowPatternRequest
     var withSecurityContext: Boolean = false

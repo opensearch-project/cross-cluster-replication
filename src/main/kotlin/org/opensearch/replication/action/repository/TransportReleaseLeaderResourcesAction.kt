@@ -14,7 +14,7 @@ package org.opensearch.replication.action.repository
 import org.opensearch.replication.repository.RemoteClusterRestoreLeaderService
 import org.apache.logging.log4j.LogManager
 import org.opensearch.action.support.ActionFilters
-import org.opensearch.action.support.master.AcknowledgedResponse
+import org.opensearch.action.support.clustermanager.AcknowledgedResponse
 import org.opensearch.action.support.single.shard.TransportSingleShardAction
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.metadata.IndexNameExpressionResolver

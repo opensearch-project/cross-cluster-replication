@@ -12,7 +12,7 @@
 package org.opensearch.replication.action.resume
 
 import org.opensearch.action.ActionType
-import org.opensearch.action.support.master.AcknowledgedResponse
+import org.opensearch.action.support.clustermanager.AcknowledgedResponse
 
 class ResumeIndexReplicationAction private constructor(): ActionType<AcknowledgedResponse>(NAME, ::AcknowledgedResponse) {
     companion object {

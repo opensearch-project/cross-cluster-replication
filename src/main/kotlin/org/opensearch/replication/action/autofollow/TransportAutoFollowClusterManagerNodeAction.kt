@@ -30,9 +30,9 @@ import org.opensearch.ResourceAlreadyExistsException
 import org.opensearch.ResourceNotFoundException
 import org.opensearch.core.action.ActionListener
 import org.opensearch.action.support.ActionFilters
-import org.opensearch.action.support.master.AcknowledgedResponse
-import org.opensearch.action.support.master.TransportMasterNodeAction
-import org.opensearch.client.node.NodeClient
+import org.opensearch.action.support.clustermanager.AcknowledgedResponse
+import org.opensearch.action.support.clustermanager.TransportClusterManagerNodeAction
+import org.opensearch.transport.client.node.NodeClient
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.block.ClusterBlockException
 import org.opensearch.cluster.block.ClusterBlockLevel
@@ -49,7 +49,7 @@ class TransportAutoFollowClusterManagerNodeAction @Inject constructor(transportS
                                                               actionFilters: ActionFilters, indexNameExpressionResolver: IndexNameExpressionResolver,
                                                               private val client: NodeClient, private val metadataManager: ReplicationMetadataManager,
                                                               val indexScopedSettings: IndexScopedSettings) :
-        TransportMasterNodeAction<AutoFollowClusterManagerNodeRequest, AcknowledgedResponse>(
+    TransportClusterManagerNodeAction<AutoFollowClusterManagerNodeRequest, AcknowledgedResponse>(
         AutoFollowClusterManagerNodeAction.NAME, true, transportService, clusterService, threadPool, actionFilters,
         ::AutoFollowClusterManagerNodeRequest, indexNameExpressionResolver), CoroutineScope by GlobalScope {
 
@@ -62,7 +62,7 @@ class TransportAutoFollowClusterManagerNodeAction @Inject constructor(transportS
         return state.blocks().globalBlockedException(ClusterBlockLevel.METADATA_WRITE)
     }
 
-    override fun masterOperation(clusterManagerNodeReq: AutoFollowClusterManagerNodeRequest, state: ClusterState, listener: ActionListener<AcknowledgedResponse>) {
+    override fun clusterManagerOperation(clusterManagerNodeReq: AutoFollowClusterManagerNodeRequest, state: ClusterState, listener: ActionListener<AcknowledgedResponse>) {
         val request = clusterManagerNodeReq.autofollowReq
         var user = clusterManagerNodeReq.user
         launch(threadPool.coroutineContext()) {

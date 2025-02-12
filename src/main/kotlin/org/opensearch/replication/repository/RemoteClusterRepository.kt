@@ -37,7 +37,7 @@ import org.opensearch.action.ActionType
 import org.opensearch.action.admin.indices.stats.IndicesStatsAction
 import org.opensearch.action.admin.indices.stats.IndicesStatsRequest
 import org.opensearch.action.support.IndicesOptions
-import org.opensearch.client.Client
+import org.opensearch.transport.client.Client
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.ClusterStateUpdateTask
 import org.opensearch.cluster.metadata.IndexMetadata

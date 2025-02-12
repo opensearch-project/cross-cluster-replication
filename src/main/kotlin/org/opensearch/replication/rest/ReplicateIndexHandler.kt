@@ -13,7 +13,7 @@ package org.opensearch.replication.rest
 
 import org.opensearch.replication.action.index.ReplicateIndexAction
 import org.opensearch.replication.action.index.ReplicateIndexRequest
-import org.opensearch.client.node.NodeClient
+import org.opensearch.transport.client.node.NodeClient
 import org.opensearch.rest.BaseRestHandler
 import org.opensearch.rest.BaseRestHandler.RestChannelConsumer
 import org.opensearch.rest.RestChannel

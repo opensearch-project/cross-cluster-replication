@@ -32,7 +32,7 @@ import org.apache.logging.log4j.Logger
 import org.opensearch.OpenSearchException
 import org.opensearch.core.action.ActionListener
 import org.opensearch.core.action.ActionResponse
-import org.opensearch.client.Client
+import org.opensearch.transport.client.Client
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.core.common.io.stream.StreamOutput
 import org.opensearch.common.settings.Settings

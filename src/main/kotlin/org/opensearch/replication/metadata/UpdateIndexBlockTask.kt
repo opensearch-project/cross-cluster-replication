@@ -14,7 +14,7 @@ package org.opensearch.replication.metadata
 import org.opensearch.replication.action.index.block.IndexBlockUpdateType
 import org.opensearch.replication.action.index.block.UpdateIndexBlockRequest
 import org.opensearch.core.action.ActionListener
-import org.opensearch.action.support.master.AcknowledgedResponse
+import org.opensearch.action.support.clustermanager.AcknowledgedResponse
 import org.opensearch.cluster.AckedClusterStateUpdateTask
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.block.ClusterBlock

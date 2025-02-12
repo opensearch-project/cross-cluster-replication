@@ -13,7 +13,7 @@ package org.opensearch.replication.task.autofollow
 
 import org.opensearch.replication.ReplicationSettings
 import org.opensearch.replication.metadata.ReplicationMetadataManager
-import org.opensearch.client.Client
+import org.opensearch.transport.client.Client
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.persistent.AllocatedPersistentTask
 import org.opensearch.persistent.PersistentTaskState

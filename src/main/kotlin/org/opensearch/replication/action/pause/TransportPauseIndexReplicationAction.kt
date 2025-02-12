@@ -24,10 +24,9 @@ import org.opensearch.OpenSearchException
 import org.opensearch.ResourceAlreadyExistsException
 import org.opensearch.core.action.ActionListener
 import org.opensearch.action.support.ActionFilters
-import org.opensearch.action.support.master.AcknowledgedRequest
-import org.opensearch.action.support.master.AcknowledgedResponse
-import org.opensearch.action.support.master.TransportMasterNodeAction
-import org.opensearch.client.Client
+import org.opensearch.action.support.clustermanager.AcknowledgedResponse
+import org.opensearch.action.support.clustermanager.TransportClusterManagerNodeAction
+import org.opensearch.transport.client.Client
 import org.opensearch.cluster.AckedClusterStateUpdateTask
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.ClusterStateTaskExecutor
@@ -50,7 +49,7 @@ class TransportPauseIndexReplicationAction @Inject constructor(transportService:
                                                                IndexNameExpressionResolver,
                                                                val client: Client,
                                                                val replicationMetadataManager: ReplicationMetadataManager) :
-    TransportMasterNodeAction<PauseIndexReplicationRequest, AcknowledgedResponse> (PauseIndexReplicationAction.NAME,
+    TransportClusterManagerNodeAction<PauseIndexReplicationRequest, AcknowledgedResponse> (PauseIndexReplicationAction.NAME,
             transportService, clusterService, threadPool, actionFilters, ::PauseIndexReplicationRequest,
             indexNameExpressionResolver), CoroutineScope by GlobalScope {
 
@@ -63,7 +62,7 @@ class TransportPauseIndexReplicationAction @Inject constructor(transportService:
     }
 
     @Throws(Exception::class)
-    override fun masterOperation(request: PauseIndexReplicationRequest, state: ClusterState,
+    override fun clusterManagerOperation(request: PauseIndexReplicationRequest, state: ClusterState,
                                  listener: ActionListener<AcknowledgedResponse>) {
         launch(Dispatchers.Unconfined + threadPool.coroutineContext()) {
             listener.completeWith {

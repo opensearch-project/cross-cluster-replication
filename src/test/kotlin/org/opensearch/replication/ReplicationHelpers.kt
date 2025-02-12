@@ -16,7 +16,7 @@ import org.opensearch.replication.task.shard.ShardReplicationExecutor
 import org.assertj.core.api.Assertions.assertThat
 import org.opensearch.action.admin.cluster.health.ClusterHealthRequest
 import org.opensearch.action.admin.cluster.node.tasks.list.ListTasksRequest
-import org.opensearch.action.support.master.AcknowledgedResponse
+import org.opensearch.action.support.clustermanager.AcknowledgedResponse
 import org.opensearch.client.Request
 import org.opensearch.client.RequestOptions
 import org.opensearch.client.Response

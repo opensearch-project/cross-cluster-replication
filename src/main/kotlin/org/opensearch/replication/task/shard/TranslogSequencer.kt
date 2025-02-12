@@ -24,7 +24,7 @@ import kotlinx.coroutines.ObsoleteCoroutinesApi
 import kotlinx.coroutines.channels.actor
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
-import org.opensearch.client.Client
+import org.opensearch.transport.client.Client
 import org.opensearch.OpenSearchException
 import org.opensearch.action.support.TransportActions
 import org.opensearch.common.logging.Loggers

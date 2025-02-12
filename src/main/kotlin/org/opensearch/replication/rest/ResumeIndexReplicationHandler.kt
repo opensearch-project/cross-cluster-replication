@@ -14,7 +14,7 @@ package org.opensearch.replication.rest
 import org.opensearch.replication.action.resume.ResumeIndexReplicationAction
 import org.opensearch.replication.action.resume.ResumeIndexReplicationRequest
 import org.apache.logging.log4j.LogManager
-import org.opensearch.client.node.NodeClient
+import org.opensearch.transport.client.node.NodeClient
 import org.opensearch.rest.BaseRestHandler
 import org.opensearch.rest.RestChannel
 import org.opensearch.rest.RestHandler

@@ -30,7 +30,7 @@ import org.opensearch.action.admin.indices.settings.put.UpdateSettingsRequest
 import org.opensearch.action.support.ActionFilters
 import org.opensearch.action.support.IndicesOptions
 import org.opensearch.action.support.clustermanager.TransportClusterManagerNodeAction
-import org.opensearch.action.support.master.AcknowledgedResponse
+import org.opensearch.action.support.clustermanager.AcknowledgedResponse
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.ack.ClusterStateUpdateResponse
 import org.opensearch.cluster.ack.OpenIndexClusterStateUpdateResponse
@@ -106,7 +106,7 @@ class TransportUpdateMetadataAction @Inject constructor(
                                  listener: ActionListener<AcknowledgedResponse>) {
         val openIndexRequest = request.request as OpenIndexRequest
         val updateRequest = OpenIndexClusterStateUpdateRequest()
-                .ackTimeout(openIndexRequest.timeout()).masterNodeTimeout(openIndexRequest.masterNodeTimeout())
+                .ackTimeout(openIndexRequest.timeout()).clusterManagerNodeTimeout(openIndexRequest.clusterManagerNodeTimeout())
                 .indices(concreteIndices).waitForActiveShards(openIndexRequest.waitForActiveShards())
 
         indexStateService.openIndex(updateRequest, object : ActionListener<OpenIndexClusterStateUpdateResponse> {
@@ -126,7 +126,7 @@ class TransportUpdateMetadataAction @Inject constructor(
         val openIndexRequest = request.request as CloseIndexRequest
         val closeRequest = CloseIndexClusterStateUpdateRequest(task.id)
                 .ackTimeout(openIndexRequest.timeout())
-                .masterNodeTimeout(openIndexRequest.masterNodeTimeout())
+                .clusterManagerNodeTimeout(openIndexRequest.clusterManagerNodeTimeout())
                 .waitForActiveShards(openIndexRequest.waitForActiveShards())
                 .indices(concreteIndices)
 
@@ -186,7 +186,7 @@ class TransportUpdateMetadataAction @Inject constructor(
 
         val updateRequest =
             IndicesAliasesClusterStateUpdateRequest(Collections.unmodifiableList(finalActions))
-                .ackTimeout(request.timeout()).masterNodeTimeout(request.masterNodeTimeout())
+                .ackTimeout(request.timeout()).clusterManagerNodeTimeout(request.clusterManagerNodeTimeout())
 
         indexAliasService.indicesAliases(
             updateRequest,
@@ -211,7 +211,7 @@ class TransportUpdateMetadataAction @Inject constructor(
             .settings(updateSettingsRequest.settings())
             .setPreserveExisting(updateSettingsRequest.isPreserveExisting)
             .ackTimeout(request.timeout())
-            .masterNodeTimeout(request.masterNodeTimeout())
+            .clusterManagerNodeTimeout(request.clusterManagerNodeTimeout())
 
 
         updateSettingsService.updateSettings(clusterStateUpdateRequest,
@@ -250,7 +250,7 @@ class TransportUpdateMetadataAction @Inject constructor(
     ) {
         val mappingRequest = request.request as PutMappingRequest
         val updateRequest = PutMappingClusterStateUpdateRequest(mappingRequest.source())
-            .ackTimeout(mappingRequest.timeout()).masterNodeTimeout(mappingRequest.masterNodeTimeout())
+            .ackTimeout(mappingRequest.timeout()).clusterManagerNodeTimeout(mappingRequest.clusterManagerNodeTimeout())
             .indices(concreteIndices)
 
         metadataMappingService.putMapping(updateRequest,

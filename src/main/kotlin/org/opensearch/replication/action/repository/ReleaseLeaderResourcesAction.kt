@@ -12,7 +12,7 @@
 package org.opensearch.replication.action.repository
 
 import org.opensearch.action.ActionType
-import org.opensearch.action.support.master.AcknowledgedResponse
+import org.opensearch.action.support.clustermanager.AcknowledgedResponse
 
 class ReleaseLeaderResourcesAction private constructor() : ActionType<AcknowledgedResponse>(NAME, ::AcknowledgedResponse)  {
     companion object {

@@ -13,7 +13,7 @@ package org.opensearch.replication.action.replicationstatedetails
 
 import org.opensearch.replication.metadata.state.ReplicationStateParams
 import org.opensearch.action.ActionRequestValidationException
-import org.opensearch.action.support.master.AcknowledgedRequest
+import org.opensearch.action.support.clustermanager.AcknowledgedRequest
 import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.core.common.io.stream.StreamOutput
 
