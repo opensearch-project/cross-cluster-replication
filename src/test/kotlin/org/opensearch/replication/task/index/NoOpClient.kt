@@ -27,7 +27,7 @@ import org.opensearch.action.admin.indices.settings.get.GetSettingsResponse
 import org.opensearch.action.admin.indices.settings.put.UpdateSettingsAction
 import org.opensearch.action.get.GetAction
 import org.opensearch.action.get.GetResponse
-import org.opensearch.action.support.master.AcknowledgedResponse
+import org.opensearch.action.support.clustermanager.AcknowledgedResponse
 import org.opensearch.common.UUIDs
 import org.opensearch.core.common.bytes.BytesReference
 import org.opensearch.common.settings.Settings

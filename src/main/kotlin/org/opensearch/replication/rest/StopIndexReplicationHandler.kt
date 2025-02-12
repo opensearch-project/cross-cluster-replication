@@ -13,7 +13,7 @@ package org.opensearch.replication.rest
 
 import org.opensearch.replication.action.stop.StopIndexReplicationAction
 import org.opensearch.replication.action.stop.StopIndexReplicationRequest
-import org.opensearch.client.node.NodeClient
+import org.opensearch.transport.client.node.NodeClient
 import org.opensearch.rest.BaseRestHandler
 import org.opensearch.rest.RestChannel
 import org.opensearch.rest.RestHandler

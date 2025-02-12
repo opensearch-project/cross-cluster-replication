@@ -36,10 +36,10 @@ import org.opensearch.OpenSearchException
 import org.opensearch.core.action.ActionListener
 import org.opensearch.action.admin.indices.open.OpenIndexRequest
 import org.opensearch.action.support.ActionFilters
-import org.opensearch.action.support.master.AcknowledgedResponse
-import org.opensearch.action.support.master.TransportMasterNodeAction
-import org.opensearch.client.Client
-import org.opensearch.client.Requests
+import org.opensearch.action.support.clustermanager.AcknowledgedResponse
+import org.opensearch.action.support.clustermanager.TransportClusterManagerNodeAction
+import org.opensearch.transport.client.Client
+import org.opensearch.transport.client.Requests
 import org.opensearch.cluster.AckedClusterStateUpdateTask
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.RestoreInProgress
@@ -68,7 +68,7 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                                                               IndexNameExpressionResolver,
                                                               val client: Client,
                                                               val replicationMetadataManager: ReplicationMetadataManager) :
-    TransportMasterNodeAction<StopIndexReplicationRequest, AcknowledgedResponse> (StopIndexReplicationAction.NAME,
+    TransportClusterManagerNodeAction<StopIndexReplicationRequest, AcknowledgedResponse> (StopIndexReplicationAction.NAME,
             transportService, clusterService, threadPool, actionFilters, ::StopIndexReplicationRequest,
             indexNameExpressionResolver), CoroutineScope by GlobalScope {
 
@@ -81,7 +81,7 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
     }
 
     @Throws(Exception::class)
-    override fun masterOperation(request: StopIndexReplicationRequest, state: ClusterState,
+    override fun clusterManagerOperation(request: StopIndexReplicationRequest, state: ClusterState,
                                  listener: ActionListener<AcknowledgedResponse>) {
         launch(Dispatchers.Unconfined + threadPool.coroutineContext()) {
             try {

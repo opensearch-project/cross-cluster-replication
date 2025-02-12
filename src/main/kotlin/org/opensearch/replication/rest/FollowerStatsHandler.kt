@@ -1,7 +1,7 @@
 package org.opensearch.replication.rest
 
 import org.apache.logging.log4j.LogManager
-import org.opensearch.client.node.NodeClient
+import org.opensearch.transport.client.node.NodeClient
 import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.XContentBuilder
 import org.opensearch.common.xcontent.XContentFactory

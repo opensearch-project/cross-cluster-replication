@@ -58,8 +58,8 @@ import org.opensearch.action.admin.indices.settings.put.UpdateSettingsRequest
 import org.opensearch.action.admin.indices.mapping.get.GetMappingsRequest
 import org.opensearch.action.admin.indices.mapping.put.PutMappingRequest
 import org.opensearch.action.support.IndicesOptions
-import org.opensearch.client.Client
-import org.opensearch.client.Requests
+import org.opensearch.transport.client.Client
+import org.opensearch.transport.client.Requests
 import org.opensearch.cluster.ClusterChangedEvent
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.ClusterStateListener

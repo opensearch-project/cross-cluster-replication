@@ -17,7 +17,7 @@ import org.apache.logging.log4j.LogManager
 import org.opensearch.action.FailedNodeException
 import org.opensearch.action.support.ActionFilters
 import org.opensearch.action.support.nodes.TransportNodesAction
-import org.opensearch.client.node.NodeClient
+import org.opensearch.transport.client.node.NodeClient
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Inject
 import org.opensearch.core.common.io.stream.StreamInput

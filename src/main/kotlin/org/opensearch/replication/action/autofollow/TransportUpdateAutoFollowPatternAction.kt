@@ -27,8 +27,8 @@ import org.apache.logging.log4j.LogManager
 import org.opensearch.core.action.ActionListener
 import org.opensearch.action.support.ActionFilters
 import org.opensearch.action.support.HandledTransportAction
-import org.opensearch.action.support.master.AcknowledgedResponse
-import org.opensearch.client.Client
+import org.opensearch.action.support.clustermanager.AcknowledgedResponse
+import org.opensearch.transport.client.Client
 import org.opensearch.common.inject.Inject
 import org.opensearch.tasks.Task
 import org.opensearch.threadpool.ThreadPool

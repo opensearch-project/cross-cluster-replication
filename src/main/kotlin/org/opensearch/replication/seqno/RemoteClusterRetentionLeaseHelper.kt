@@ -14,7 +14,7 @@ package org.opensearch.replication.seqno
 import org.opensearch.replication.util.suspendExecute
 import org.apache.logging.log4j.LogManager
 import org.opensearch.action.support.IndicesOptions
-import org.opensearch.client.Client
+import org.opensearch.transport.client.Client
 import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.index.IndexNotFoundException

@@ -25,7 +25,7 @@ import org.apache.logging.log4j.Logger
 import org.opensearch.OpenSearchException
 import org.opensearch.ResourceNotFoundException
 import org.opensearch.action.DocWriteResponse
-import org.opensearch.client.Client
+import org.opensearch.transport.client.Client
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Singleton
 import org.opensearch.common.settings.Settings

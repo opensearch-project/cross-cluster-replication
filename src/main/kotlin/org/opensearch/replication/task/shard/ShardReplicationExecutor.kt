@@ -18,7 +18,7 @@ import org.opensearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_
 import org.opensearch.replication.metadata.state.getReplicationStateParamsForIndex
 import org.apache.logging.log4j.LogManager
 import org.opensearch.OpenSearchException
-import org.opensearch.client.Client
+import org.opensearch.transport.client.Client
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.persistent.AllocatedPersistentTask

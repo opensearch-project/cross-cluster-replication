@@ -24,7 +24,7 @@ import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.apache.logging.log4j.Logger
 import org.opensearch.core.action.ActionListener
-import org.opensearch.client.Client
+import org.opensearch.transport.client.Client
 import org.opensearch.cluster.node.DiscoveryNode
 import org.opensearch.core.common.unit.ByteSizeValue
 import org.opensearch.common.util.concurrent.ThreadContext

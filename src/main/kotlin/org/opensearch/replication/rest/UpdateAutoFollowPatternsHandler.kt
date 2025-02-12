@@ -14,7 +14,7 @@ package org.opensearch.replication.rest
 import org.opensearch.replication.action.autofollow.UpdateAutoFollowPatternAction
 import org.opensearch.replication.action.autofollow.UpdateAutoFollowPatternRequest
 import org.opensearch.OpenSearchStatusException
-import org.opensearch.client.node.NodeClient
+import org.opensearch.transport.client.node.NodeClient
 import org.opensearch.rest.BaseRestHandler
 import org.opensearch.rest.BaseRestHandler.RestChannelConsumer
 import org.opensearch.rest.RestHandler

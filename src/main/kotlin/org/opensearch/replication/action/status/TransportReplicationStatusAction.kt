@@ -23,7 +23,7 @@ import org.opensearch.ResourceNotFoundException
 import org.opensearch.core.action.ActionListener
 import org.opensearch.action.support.ActionFilters
 import org.opensearch.action.support.HandledTransportAction
-import org.opensearch.client.Client
+import org.opensearch.transport.client.Client
 import org.opensearch.common.inject.Inject
 import org.opensearch.tasks.Task
 import org.opensearch.threadpool.ThreadPool

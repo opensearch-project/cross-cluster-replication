@@ -13,7 +13,7 @@ package org.opensearch.replication.action.index
 
 import org.opensearch.commons.authuser.User
 import org.opensearch.action.ActionRequestValidationException
-import org.opensearch.action.support.master.MasterNodeRequest
+import org.opensearch.action.support.clustermanager.ClusterManagerNodeRequest
 import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.core.common.io.stream.StreamOutput
 import org.opensearch.core.xcontent.ToXContent
@@ -21,7 +21,7 @@ import org.opensearch.core.xcontent.ToXContentObject
 import org.opensearch.core.xcontent.XContentBuilder
 
 class ReplicateIndexClusterManagerNodeRequest:
-        MasterNodeRequest<ReplicateIndexClusterManagerNodeRequest>, ToXContentObject {
+    ClusterManagerNodeRequest<ReplicateIndexClusterManagerNodeRequest>, ToXContentObject {
 
     var user: User? = null
     var replicateIndexReq: ReplicateIndexRequest

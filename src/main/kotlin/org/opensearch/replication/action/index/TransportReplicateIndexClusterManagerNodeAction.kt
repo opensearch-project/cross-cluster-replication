@@ -30,9 +30,9 @@ import org.opensearch.OpenSearchStatusException
 import org.opensearch.core.action.ActionListener
 import org.opensearch.action.support.ActionFilters
 import org.opensearch.action.support.IndicesOptions
-import org.opensearch.action.support.master.AcknowledgedResponse
-import org.opensearch.action.support.master.TransportMasterNodeAction
-import org.opensearch.client.node.NodeClient
+import org.opensearch.action.support.clustermanager.AcknowledgedResponse
+import org.opensearch.action.support.clustermanager.TransportClusterManagerNodeAction
+import org.opensearch.transport.client.node.NodeClient
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.block.ClusterBlockException
 import org.opensearch.cluster.block.ClusterBlockLevel
@@ -62,7 +62,7 @@ class TransportReplicateIndexClusterManagerNodeAction @Inject constructor(transp
                                                                           private val nodeClient : NodeClient,
                                                                           private val repositoryService: RepositoriesService,
                                                                           private val replicationMetadataManager: ReplicationMetadataManager) :
-        TransportMasterNodeAction<ReplicateIndexClusterManagerNodeRequest, AcknowledgedResponse>(ReplicateIndexClusterManagerNodeAction.NAME,
+    TransportClusterManagerNodeAction<ReplicateIndexClusterManagerNodeRequest, AcknowledgedResponse>(ReplicateIndexClusterManagerNodeAction.NAME,
                 transportService, clusterService, threadPool, actionFilters, ::ReplicateIndexClusterManagerNodeRequest, indexNameExpressionResolver),
         CoroutineScope by GlobalScope {
 
@@ -80,7 +80,7 @@ class TransportReplicateIndexClusterManagerNodeAction @Inject constructor(transp
     }
 
     @Throws(Exception::class)
-    override fun masterOperation(request: ReplicateIndexClusterManagerNodeRequest, state: ClusterState,
+    override fun clusterManagerOperation(request: ReplicateIndexClusterManagerNodeRequest, state: ClusterState,
                                  listener: ActionListener<AcknowledgedResponse>) {
         val replicateIndexReq = request.replicateIndexReq
         val user = request.user

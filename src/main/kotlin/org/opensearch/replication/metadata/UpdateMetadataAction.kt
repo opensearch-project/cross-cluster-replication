@@ -12,7 +12,7 @@
 package org.opensearch.replication.metadata
 
 import org.opensearch.action.ActionType
-import org.opensearch.action.support.master.AcknowledgedResponse
+import org.opensearch.action.support.clustermanager.AcknowledgedResponse
 
 
 class UpdateMetadataAction private constructor(): ActionType<AcknowledgedResponse>(

@@ -33,7 +33,7 @@ import org.opensearch.action.resync.TransportResyncReplicationAction
 import org.opensearch.action.support.ActionFilters
 import org.opensearch.action.support.IndicesOptions
 import org.opensearch.action.support.replication.TransportWriteAction
-import org.opensearch.client.Client
+import org.opensearch.transport.client.Client
 import org.opensearch.cluster.ClusterStateObserver
 import org.opensearch.cluster.action.index.MappingUpdatedAction
 import org.opensearch.cluster.action.shard.ShardStateAction
