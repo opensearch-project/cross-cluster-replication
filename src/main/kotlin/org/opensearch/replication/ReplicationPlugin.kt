@@ -41,8 +41,8 @@ import org.opensearch.replication.action.status.ReplicationStatusAction
 import org.opensearch.replication.action.status.ShardsInfoAction
 import org.opensearch.replication.action.status.TranportShardsInfoAction
 import org.opensearch.replication.action.status.TransportReplicationStatusAction
-import org.opensearch.replication.action.stop.StopIndexReplicationAction
 import org.opensearch.replication.action.stop.TransportStopIndexReplicationAction
+import org.opensearch.replication.action.stop.TransportInternalStopIndexReplicationAction
 import org.opensearch.replication.action.update.TransportUpdateIndexReplicationAction
 import org.opensearch.replication.action.update.UpdateIndexReplicationAction
 import org.opensearch.replication.metadata.ReplicationMetadataManager
@@ -99,6 +99,8 @@ import org.opensearch.common.util.concurrent.OpenSearchExecutors
 import org.opensearch.core.xcontent.NamedXContentRegistry
 import org.opensearch.core.xcontent.XContentParser
 import org.opensearch.commons.utils.OpenForTesting
+import org.opensearch.commons.replication.action.ReplicationActions.INTERNAL_STOP_REPLICATION_ACTION_TYPE
+import org.opensearch.commons.replication.action.ReplicationActions.STOP_REPLICATION_ACTION_TYPE
 import org.opensearch.env.Environment
 import org.opensearch.env.NodeEnvironment
 import org.opensearch.index.IndexModule
@@ -233,7 +235,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             ActionHandler(GetFileChunkAction.INSTANCE, TransportGetFileChunkAction::class.java),
             ActionHandler(UpdateAutoFollowPatternAction.INSTANCE, TransportUpdateAutoFollowPatternAction::class.java),
             ActionHandler(AutoFollowClusterManagerNodeAction.INSTANCE, TransportAutoFollowClusterManagerNodeAction::class.java),
-            ActionHandler(StopIndexReplicationAction.INSTANCE, TransportStopIndexReplicationAction::class.java),
+            ActionHandler(STOP_REPLICATION_ACTION_TYPE, TransportStopIndexReplicationAction::class.java),
+            ActionHandler(INTERNAL_STOP_REPLICATION_ACTION_TYPE, TransportInternalStopIndexReplicationAction::class.java),
             ActionHandler(PauseIndexReplicationAction.INSTANCE, TransportPauseIndexReplicationAction::class.java),
             ActionHandler(ResumeIndexReplicationAction.INSTANCE, TransportResumeIndexReplicationAction::class.java),
             ActionHandler(UpdateIndexReplicationAction.INSTANCE, TransportUpdateIndexReplicationAction::class.java),
