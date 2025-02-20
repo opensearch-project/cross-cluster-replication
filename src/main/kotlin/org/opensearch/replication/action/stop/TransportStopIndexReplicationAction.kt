@@ -62,6 +62,15 @@ import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
 import java.io.IOException
 
+/*
+ The classes StopIndexReplicationRequest and StopIndexReplicationAction have been moved from ccr to common-utils
+ and are imported here through org.opensearch.commons.replication.
+ This helps in making these classes re-usable by other plugins like ism.
+ PR details:
+ [1] https://github.com/opensearch-project/common-utils/pull/667
+ [2] https://github.com/opensearch-project/cross-cluster-replication/pull/1391
+ */
+
 class TransportStopIndexReplicationAction @Inject constructor(transportService: TransportService,
                                                               clusterService: ClusterService,
                                                               threadPool: ThreadPool,
@@ -70,7 +79,7 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                                                               IndexNameExpressionResolver,
                                                               val client: Client,
                                                               val replicationMetadataManager: ReplicationMetadataManager) :
-    TransportClusterManagerNodeAction<StopIndexReplicationRequest, AcknowledgedResponse> (STOP_REPLICATION_NAME,
+    TransportClusterManagerNodeAction<StopIndexReplicationRequest, AcknowledgedResponse> (STOP_REPLICATION_ACTION_NAME,
             transportService, clusterService, threadPool, actionFilters, ::StopIndexReplicationRequest,
             indexNameExpressionResolver), CoroutineScope by GlobalScope {
 
