@@ -39,6 +39,7 @@ buildscript {
         buildVersionQualifier = System.getProperty("build.version_qualifier", "alpha1")
         // e.g. 2.0.0-rc1-SNAPSHOT -> 2.0.0.0-rc1-SNAPSHOT
         version_tokens = opensearch_version.tokenize('-')
+        opensearch_version_no_qualifier = version_tokens[0]
         opensearch_build = version_tokens[0] + '.0'
         if (buildVersionQualifier) {
             opensearch_build += "-${buildVersionQualifier}"
@@ -59,7 +60,12 @@ buildscript {
         if (!isSnapshot) {
             security_plugin_version = opensearch_build.replace("-SNAPSHOT","")
         }
-        knn_plugin_version = security_plugin_version
+
+        opensearch_no_snapshot = opensearch_version.replace("-SNAPSHOT","")
+        security_no_snapshot = opensearch_build.replace("-SNAPSHOT","")
+        knn_plugin_path = "build/dependencies/knn"
+        knn_plugin_download_url = 'https://ci.opensearch.org/ci/dbc/distribution-build-opensearch/' + opensearch_no_snapshot +
+                '/latest/linux/x64/tar/builds/opensearch/plugins/opensearch-knn-' + security_no_snapshot + '.zip'
 
     }
 
@@ -241,21 +247,20 @@ def securityPluginFile = new Callable<RegularFile>() {
 
 def knnEnabled = findProperty("knn") == "true"
 
-if(knnEnabled == true ){
-    dependencies{
-        opensearchPlugin "org.opensearch.plugin:opensearch-knn:${knn_plugin_version}@zip"
-    }
-}
-
 def knnPluginFile = new Callable<RegularFile>() {
     @Override
     RegularFile call() throws Exception {
         return new RegularFile() {
             @Override
             File getAsFile() {
-                    return configurations.opensearchPlugin.resolvedConfiguration.resolvedArtifacts
-                            .find { ResolvedArtifact f -> f.name.contains('opensearch-knn') }
-                            .file
+                if (new File("$project.rootDir/$knn_plugin_path").exists()) {
+                    project.delete(files("$project.rootDir/$knn_plugin_path"))
+                }
+                project.mkdir knn_plugin_path
+                ant.get(src: knn_plugin_download_url,
+                        dest: knn_plugin_path,
+                        httpusecaches: false)
+                return fileTree(knn_plugin_path).getSingleFile()
             }
         }
     }
@@ -382,6 +387,8 @@ testClusters {
         if(knnEnabled) {
             plugin(provider(knnPluginFile))
             testDistribution = "ARCHIVE"
+            systemProperty "java.library.path", "${buildDir}/testclusters/leaderCluster-0/distro/${opensearch_version_no_qualifier}-ARCHIVE/plugins/opensearch-knn/lib"
+            environment "LD_LIBRARY_PATH", "${buildDir}/testclusters/leaderCluster-0/distro/${opensearch_version_no_qualifier}-ARCHIVE/plugins/opensearch-knn/lib"
         }
         int debugPort = 5005
 
@@ -399,6 +406,8 @@ testClusters {
         if(knnEnabled) {
             plugin(provider(knnPluginFile))
             testDistribution = "ARCHIVE"
+            systemProperty "java.library.path", "${buildDir}/testclusters/followCluster-0/distro/${opensearch_version_no_qualifier}-ARCHIVE/plugins/opensearch-knn/lib"
+            environment "LD_LIBRARY_PATH", "${buildDir}/testclusters/followCluster-0/distro/${opensearch_version_no_qualifier}-ARCHIVE/plugins/opensearch-knn/lib"
         }
         int debugPort = 5010
         if (_numNodes > 1) numberOfNodes = _numNodes

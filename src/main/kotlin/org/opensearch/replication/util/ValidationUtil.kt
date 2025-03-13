@@ -14,6 +14,9 @@ package org.opensearch.replication.util
 import org.apache.logging.log4j.LogManager
 import org.opensearch.ResourceNotFoundException
 import org.opensearch.Version
+import org.opensearch.action.admin.cluster.node.info.NodeInfo
+import org.opensearch.action.admin.cluster.node.info.NodesInfoResponse
+import org.opensearch.action.admin.cluster.node.info.PluginsAndModules
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.cluster.metadata.MetadataCreateIndexService
@@ -26,12 +29,12 @@ import org.opensearch.index.IndexNotFoundException
 import org.opensearch.node.Node
 import org.opensearch.node.remotestore.RemoteStoreNodeAttribute
 import org.opensearch.node.remotestore.RemoteStoreNodeService
-import org.opensearch.replication.ReplicationPlugin.Companion.KNN_INDEX_SETTING
-import org.opensearch.replication.ReplicationPlugin.Companion.KNN_PLUGIN_PRESENT_SETTING
+import org.opensearch.plugins.PluginInfo
 import java.io.UnsupportedEncodingException
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.Locale
+import java.util.*
+import java.util.function.Predicate
 
 object ValidationUtil {
 
@@ -168,13 +171,15 @@ object ValidationUtil {
     /**
      * Throw exception if leader index is knn a knn is not installed
      */
-    fun checkKNNEligibility(leaderSettings: Settings, clusterService: ClusterService, leaderIndex: String) {
-        if(leaderSettings.getAsBoolean(KNN_INDEX_SETTING, false)) {
-            if(clusterService.clusterSettings.get(KNN_PLUGIN_PRESENT_SETTING) == null){
-                throw IllegalStateException("Cannot proceed with replication for k-NN enabled index ${leaderIndex} as knn plugin is not installed.")
-            }
+    fun checkKNNEligibility(nodesInfoResponse: NodesInfoResponse, leaderIndex: String) {
+        if(!(nodesInfoResponse.getNodes().stream().flatMap {
+                nodeInfo: NodeInfo ->
+            nodeInfo.getInfo(
+                PluginsAndModules::class.java
+            ).pluginInfos.stream()
+        }.anyMatch( { pluginInfo: PluginInfo -> pluginInfo.classname == "org.opensearch.knn.plugin.KNNPlugin" }))) {
+            throw IllegalStateException("Cannot proceed with replication for k-NN enabled index ${leaderIndex} as knn plugin is not installed.")
         }
-
     }
 
     fun isRemoteStoreEnabledCluster(clusterService: ClusterService): Boolean {
