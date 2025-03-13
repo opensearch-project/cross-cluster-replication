@@ -11,6 +11,33 @@
 
 package org.opensearch.replication.action.resume
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
+import org.apache.logging.log4j.LogManager
+import org.opensearch.ResourceAlreadyExistsException
+import org.opensearch.ResourceNotFoundException
+import org.opensearch.action.admin.cluster.node.info.NodeInfo
+import org.opensearch.action.admin.cluster.node.info.NodesInfoRequest
+import org.opensearch.action.admin.cluster.node.info.PluginsAndModules
+import org.opensearch.action.admin.indices.settings.get.GetSettingsRequest
+import org.opensearch.action.support.ActionFilters
+import org.opensearch.action.support.IndicesOptions
+import org.opensearch.action.support.clustermanager.AcknowledgedResponse
+import org.opensearch.action.support.clustermanager.TransportClusterManagerNodeAction
+import org.opensearch.cluster.ClusterState
+import org.opensearch.cluster.block.ClusterBlockException
+import org.opensearch.cluster.block.ClusterBlockLevel
+import org.opensearch.cluster.metadata.IndexMetadata
+import org.opensearch.cluster.metadata.IndexNameExpressionResolver
+import org.opensearch.cluster.service.ClusterService
+import org.opensearch.common.inject.Inject
+import org.opensearch.core.action.ActionListener
+import org.opensearch.core.common.io.stream.StreamInput
+import org.opensearch.core.index.shard.ShardId
+import org.opensearch.env.Environment
+import org.opensearch.index.IndexNotFoundException
 import org.opensearch.replication.action.index.ReplicateIndexResponse
 import org.opensearch.replication.metadata.ReplicationMetadataManager
 import org.opensearch.replication.metadata.ReplicationOverallState
@@ -21,42 +48,13 @@ import org.opensearch.replication.task.ReplicationState
 import org.opensearch.replication.task.index.IndexReplicationExecutor
 import org.opensearch.replication.task.index.IndexReplicationParams
 import org.opensearch.replication.task.index.IndexReplicationState
-import org.opensearch.replication.util.ValidationUtil
-import org.opensearch.replication.util.completeWith
-import org.opensearch.replication.util.coroutineContext
-import org.opensearch.replication.util.persistentTasksService
-import org.opensearch.replication.util.startTask
-import org.opensearch.replication.util.suspending
-import org.opensearch.replication.util.waitForTaskCondition
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.launch
-import org.apache.logging.log4j.LogManager
-import org.opensearch.ResourceAlreadyExistsException
-import org.opensearch.ResourceNotFoundException
-import org.opensearch.core.action.ActionListener
-import org.opensearch.action.admin.indices.settings.get.GetSettingsRequest
-import org.opensearch.action.support.ActionFilters
-import org.opensearch.action.support.IndicesOptions
-import org.opensearch.action.support.clustermanager.AcknowledgedResponse
-import org.opensearch.action.support.clustermanager.TransportClusterManagerNodeAction
-import org.opensearch.transport.client.Client
-import org.opensearch.cluster.ClusterState
-import org.opensearch.cluster.block.ClusterBlockException
-import org.opensearch.cluster.block.ClusterBlockLevel
-import org.opensearch.cluster.metadata.IndexMetadata
-import org.opensearch.cluster.metadata.IndexNameExpressionResolver
-import org.opensearch.cluster.service.ClusterService
-import org.opensearch.common.inject.Inject
-
-import org.opensearch.core.common.io.stream.StreamInput
-import org.opensearch.env.Environment
-import org.opensearch.index.IndexNotFoundException
-import org.opensearch.core.index.shard.ShardId
+import org.opensearch.replication.util.*
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
+import org.opensearch.transport.client.Client
 import java.io.IOException
+import java.util.function.Function
+import java.util.stream.Collectors
 
 
 class TransportResumeIndexReplicationAction @Inject constructor(transportService: TransportService,
@@ -100,10 +98,15 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
                     injectSecurityContext = true
                 )(getSettingsRequest)
 
+                var nodesInfoRequest = NodesInfoRequest().addMetric(NodesInfoRequest.Metric.PLUGINS.metricName())
+                val nodesInfoResponse = remoteClient.suspending(
+                    remoteClient.admin().cluster()::nodesInfo
+                )(nodesInfoRequest)
+
                 val leaderSettings = settingsResponse.indexToSettings.get(params.leaderIndex.name) ?: throw IndexNotFoundException(params.leaderIndex.name)
 
                 /// Not starting replication if leader index is knn as knn plugin is not installed on follower.
-                ValidationUtil.checkKNNEligibility(leaderSettings, clusterService, params.leaderIndex.name)
+                ValidationUtil.checkKNNEligibility(nodesInfoResponse, params.leaderIndex.name)
 
                 ValidationUtil.validateAnalyzerSettings(environment, leaderSettings, replMetdata.settings)
 
