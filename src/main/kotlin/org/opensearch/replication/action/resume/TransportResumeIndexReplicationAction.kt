@@ -98,15 +98,10 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
                     injectSecurityContext = true
                 )(getSettingsRequest)
 
-                var nodesInfoRequest = NodesInfoRequest().addMetric(NodesInfoRequest.Metric.PLUGINS.metricName())
-                val nodesInfoResponse = remoteClient.suspending(
-                    remoteClient.admin().cluster()::nodesInfo
-                )(nodesInfoRequest)
-
                 val leaderSettings = settingsResponse.indexToSettings.get(params.leaderIndex.name) ?: throw IndexNotFoundException(params.leaderIndex.name)
 
-                /// Not starting replication if leader index is knn as knn plugin is not installed on follower.
-                ValidationUtil.checkKNNEligibility(nodesInfoResponse, params.leaderIndex.name)
+                // Disabling knn checks as new api call will require us add roles in security index which will be a breaking call.
+//                ValidationUtil.checkKNNEligibility(nodesInfoResponse, params.leaderIndex.name)
 
                 ValidationUtil.validateAnalyzerSettings(environment, leaderSettings, replMetdata.settings)
 
