@@ -104,7 +104,7 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
                     throw IllegalArgumentException("Cannot Replicate an index where the setting ${IndexSettings.INDEX_SOFT_DELETES_SETTING.key} is disabled")
                 }
                 //Not starting replication if leader index is knn as knn plugin is not installed on follower.
-                ValidationUtil.checkKNNEligibility(getNodesInfoForPlugin(request.leaderAlias), request.leaderIndex)
+//                ValidationUtil.checkKNNEligibility(getNodesInfoForPlugin(request.leaderAlias), request.leaderIndex)
 
                 ValidationUtil.validateIndexSettings(
                     environment,
