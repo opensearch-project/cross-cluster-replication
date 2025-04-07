@@ -39,7 +39,7 @@ class RestoreContext(val restoreUUID: String,
             return currentIndexInput.clone()
         }
         store.performOp({
-            currentIndexInput = store.directory().openInput(fileName, IOContext.READONCE)
+            currentIndexInput = store.directory().openInput(fileName, IOContext.DEFAULT)
         })
 
         currentFiles[fileName] = currentIndexInput!!
