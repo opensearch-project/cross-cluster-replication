@@ -12,47 +12,47 @@
 package org.opensearch.replication.repository
 
 import org.apache.lucene.index.IndexCommit
-import org.opensearch.replication.util.performOp
 import org.apache.lucene.store.IOContext
 import org.apache.lucene.store.IndexInput
-import org.opensearch.OpenSearchException
 import org.opensearch.common.concurrent.GatedCloseable
-import org.opensearch.index.engine.Engine
 import org.opensearch.index.shard.IndexShard
 import org.opensearch.index.store.Store
 import java.io.Closeable
+import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.locks.ReentrantLock
+import kotlin.concurrent.withLock
 
-class RestoreContext(val restoreUUID: String,
-                     val shard: IndexShard,
-                     val indexCommitRef: GatedCloseable<IndexCommit>,
-                     val metadataSnapshot: Store.MetadataSnapshot,
-                     val replayOperationsFrom: Long): Closeable {
+class RestoreContext(
+    val restoreUUID: String,
+    val shard: IndexShard,
+    val indexCommitRef: GatedCloseable<IndexCommit>,
+    val metadataSnapshot: Store.MetadataSnapshot,
+    val replayOperationsFrom: Long,
+) : Closeable {
+
+    private val currentFiles = ConcurrentHashMap<String, IndexInput>(INITIAL_FILE_CACHE_CAPACITY)
+
+    private val fileLocks = ConcurrentHashMap<String, ReentrantLock>()
+
+    fun openInput(store: Store, fileName: String): IndexInput {
+        val lock = fileLocks.computeIfAbsent(fileName) { ReentrantLock() }
+
+        lock.withLock {
+            val baseInput = currentFiles.computeIfAbsent(fileName) {
+                store.directory().openInput(fileName, IOContext.DEFAULT)
+            }
+            return baseInput.clone()
+        }
+    }
+
+    override fun close() {
+        currentFiles.values.forEach { it.close() }
+        currentFiles.clear()
+        fileLocks.clear()
+        indexCommitRef.close()
+    }
 
     companion object {
         private const val INITIAL_FILE_CACHE_CAPACITY = 20
     }
-    private val currentFiles = LinkedHashMap<String, IndexInput>(INITIAL_FILE_CACHE_CAPACITY)
-
-    fun openInput(store: Store, fileName: String): IndexInput {
-        var currentIndexInput = currentFiles.getOrDefault(fileName, null)
-        if(currentIndexInput != null) {
-            return currentIndexInput.clone()
-        }
-        store.performOp({
-            currentIndexInput = store.directory().openInput(fileName, IOContext.DEFAULT)
-        })
-
-        currentFiles[fileName] = currentIndexInput!!
-        return currentIndexInput!!.clone()
-    }
-
-    override fun close() {
-        // Close all the open index input obj
-        currentFiles.entries.forEach {
-            it.value.close()
-        }
-        currentFiles.clear()
-        indexCommitRef.close()
-    }
-
 }
