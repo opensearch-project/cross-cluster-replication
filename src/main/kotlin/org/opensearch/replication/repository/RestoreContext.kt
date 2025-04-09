@@ -17,6 +17,7 @@ import org.apache.lucene.store.IndexInput
 import org.opensearch.common.concurrent.GatedCloseable
 import org.opensearch.index.shard.IndexShard
 import org.opensearch.index.store.Store
+import org.opensearch.replication.util.performOp
 import java.io.Closeable
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.locks.ReentrantLock
@@ -38,10 +39,15 @@ class RestoreContext(
         val lock = fileLocks.computeIfAbsent(fileName) { ReentrantLock() }
 
         lock.withLock {
-            val baseInput = currentFiles.computeIfAbsent(fileName) {
-                store.directory().openInput(fileName, IOContext.DEFAULT)
-            }
-            return baseInput.clone()
+            var baseInput: IndexInput? = null
+
+            store.performOp({
+                baseInput = currentFiles.computeIfAbsent(fileName) {
+                    store.directory().openInput(fileName, IOContext.DEFAULT)
+                }
+            })
+
+            return checkNotNull(baseInput) { "[RestoreContext] IndexInput file must not be null" }.clone()
         }
     }
 
