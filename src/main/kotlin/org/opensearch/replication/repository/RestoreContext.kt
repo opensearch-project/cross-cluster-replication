@@ -15,6 +15,7 @@ import org.apache.lucene.index.IndexCommit
 import org.apache.lucene.store.IOContext
 import org.apache.lucene.store.IndexInput
 import org.opensearch.common.concurrent.GatedCloseable
+import org.opensearch.commons.utils.OpenForTesting
 import org.opensearch.index.shard.IndexShard
 import org.opensearch.index.store.Store
 import org.opensearch.replication.util.performOp
@@ -23,7 +24,8 @@ import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.locks.ReentrantLock
 import kotlin.concurrent.withLock
 
-class RestoreContext(
+@OpenForTesting
+open class RestoreContext(
     val restoreUUID: String,
     val shard: IndexShard,
     val indexCommitRef: GatedCloseable<IndexCommit>,
@@ -41,14 +43,19 @@ class RestoreContext(
         lock.withLock {
             var baseInput: IndexInput? = null
 
-            store.performOp({
+            withStoreReference(store) {
                 baseInput = currentFiles.computeIfAbsent(fileName) {
                     store.directory().openInput(fileName, IOContext.DEFAULT)
                 }
-            })
+            }
 
             return checkNotNull(baseInput) { "[RestoreContext] IndexInput file must not be null" }.clone()
         }
+    }
+
+    // for testing
+    internal open fun withStoreReference(store: Store, block: () -> Unit) {
+        store.performOp(block)
     }
 
     override fun close() {
@@ -62,3 +69,4 @@ class RestoreContext(
         private const val INITIAL_FILE_CACHE_CAPACITY = 20
     }
 }
+
