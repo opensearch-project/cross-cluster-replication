@@ -45,14 +45,30 @@ class RestoreContextTests : OpenSearchTestCase() {
             }
         }
 
+        val threads = mutableListOf<Thread>()
+        val results = mutableListOf<IndexInput>()
+        val lock = Object()
+
         // when
-        val result1 = sut.openInput(mockStore, fileName)
-        val result2 = sut.openInput(mockStore, fileName)
+        repeat(10) {
+            val thread = Thread {
+                val input = sut.openInput(mockStore, fileName)
+                synchronized(lock) {
+                    results.add(input)
+                }
+            }
+            threads.add(thread)
+        }
+
+        threads.forEach { it.start() }
+        threads.forEach { it.join() }
 
         // then
-        assertSame(mockClonedInput, result1)
-        assertSame(mockClonedInput, result2)
+        assertEquals(threads.size, results.size)
+        results.forEach {
+            assertSame(mockClonedInput, it)
+        }
         verify(mockDirectory, times(1)).openInput(eq(fileName), any())
-        verify(mockBaseInput, times(2)).clone()
+        verify(mockBaseInput, times(threads.size)).clone()
     }
 }
