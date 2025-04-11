@@ -139,6 +139,7 @@ configurations.all {
 
 configurations {
     opensearchPlugin
+    agent
 }
 
 dependencies {
@@ -161,6 +162,10 @@ dependencies {
     testImplementation "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.6.0" // Moving away from kotlin_version
     testImplementation "org.jetbrains.kotlin:kotlin-test:${kotlin_version}"
     testImplementation "com.nhaarman.mockitokotlin2:mockito-kotlin:2.2.0"
+
+    agent "org.opensearch:opensearch-agent-bootstrap:${opensearch_version}"
+    agent "org.opensearch:opensearch-agent:${opensearch_version}"
+    agent "net.bytebuddy:byte-buddy:${versions.bytebuddy}"
 
     opensearchPlugin "org.opensearch.plugin:opensearch-security:${security_plugin_version}@zip"
 }
@@ -1010,4 +1015,14 @@ task updateVersion {
         // String tokenization to support -SNAPSHOT
         ant.replaceregexp(file:'build.gradle', match: '"opensearch.version", "\\d.*"', replace: '"opensearch.version", "' + newVersion.tokenize('-')[0] + '-SNAPSHOT"', flags:'g', byline:true)
     }
+}
+
+task prepareAgent(type: Copy) {
+  from(configurations.agent)
+  into "$buildDir/agent"
+}
+
+tasks.withType(Test) {
+  dependsOn prepareAgent
+  jvmArgs += ["-javaagent:" + project.layout.buildDirectory.file("agent/opensearch-agent-${opensearch_version}.jar").get()]
 }
