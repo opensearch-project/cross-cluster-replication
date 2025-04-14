@@ -25,11 +25,16 @@ jobs:
       # This step uses the checkout Github action: https://github.com/actions/checkout
       - name: Checkout Branch
         uses: actions/checkout@v4
+      - name: Set up JDK 21
+        uses: actions/setup-java@v4
+        with:
+          java-version: 21
+          distribution: 'temurin'
+          cache: gradle
       - id: plugin-availability-check
         name: "plugin check"
         run: |
-          opensearch_version=$(grep "System.getProperty(\"opensearch.version\", \"" build.gradle | grep '\([0-9]\|[.]\)\{5\}' -o)
-          opensearch_version=$opensearch_version".0-SNAPSHOT"
+          opensearch_version=$(./gradlew properties | grep -E '^version:' | awk '{print $2}')
           # we publish build artifacts to the below url 
           sec_plugin_url="https://aws.oss.sonatype.org/content/repositories/snapshots/org/opensearch/plugin/opensearch-security/"$opensearch_version"/"
           sec_st=$(curl -s -o /dev/null -w "%{http_code}" $sec_plugin_url)

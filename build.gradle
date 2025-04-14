@@ -110,7 +110,7 @@ apply plugin: 'opensearch.rest-test'
 apply plugin: 'org.jetbrains.kotlin.jvm'
 apply plugin: 'org.jetbrains.kotlin.plugin.allopen'
 apply plugin: 'opensearch.pluginzip'
-
+apply plugin: 'opensearch.java-agent'
 
 forbiddenApisTest.ignoreFailures = true
 
