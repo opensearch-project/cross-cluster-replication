@@ -63,9 +63,6 @@ buildscript {
 
         opensearch_no_snapshot = opensearch_version.replace("-SNAPSHOT","")
         security_no_snapshot = opensearch_build.replace("-SNAPSHOT","")
-        knn_plugin_path = "build/dependencies/knn"
-        knn_plugin_download_url = 'https://ci.opensearch.org/ci/dbc/distribution-build-opensearch/' + opensearch_no_snapshot +
-                '/latest/linux/x64/tar/builds/opensearch/plugins/opensearch-knn-' + security_no_snapshot + '.zip'
 
     }
 
@@ -163,6 +160,7 @@ dependencies {
     testImplementation "com.nhaarman.mockitokotlin2:mockito-kotlin:2.2.0"
 
     opensearchPlugin "org.opensearch.plugin:opensearch-security:${security_plugin_version}@zip"
+    opensearchPlugin "org.opensearch.plugin:opensearch-knn:${security_plugin_version}@zip"
 }
 
 repositories {
@@ -253,14 +251,9 @@ def knnPluginFile = new Callable<RegularFile>() {
         return new RegularFile() {
             @Override
             File getAsFile() {
-                if (new File("$project.rootDir/$knn_plugin_path").exists()) {
-                    project.delete(files("$project.rootDir/$knn_plugin_path"))
-                }
-                project.mkdir knn_plugin_path
-                ant.get(src: knn_plugin_download_url,
-                        dest: knn_plugin_path,
-                        httpusecaches: false)
-                return fileTree(knn_plugin_path).getSingleFile()
+                return configurations.opensearchPlugin.resolvedConfiguration.resolvedArtifacts
+                        .find { ResolvedArtifact f -> f.name.contains('opensearch-knn') }
+                        .file
             }
         }
     }
