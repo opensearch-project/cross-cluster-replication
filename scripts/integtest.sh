@@ -143,8 +143,8 @@ then
   # Get number of nodes, assuming both leader and follower have same number of nodes
   numNodes=$((${follower_port} - ${leader_port}))
   echo "numNodes: $numNodes"
-  echo './gradlew integTestRemote -Dleader.http_host='"$leader_endpoint:$leader_port"' -Dfollower.http_host='"$follower_endpoint:$follower_port"' -Dfollower.transport_host='"$follower_endpoint:$follower_transport"'  -Dleader.transport_host='"$leader_endpoint:$leader_transport"'  -Dsecurity_enabled='"$SECURITY_ENABLED"' -Duser='"$USERNAME"' -Dpassword='"$PASSWORD"' -PnumNodes='"$numNodes"' --console=plain'
-  ./gradlew integTestRemote -Dleader.http_host=$leader_endpoint:$leader_port -Dfollower.http_host=$follower_endpoint:$follower_port -Dfollower.transport_host=$follower_endpoint:$follower_transport  -Dleader.transport_host=$leader_endpoint:$leader_transport  -Dsecurity_enabled=$SECURITY_ENABLED -Duser=$USERNAME -Dpassword=$PASSWORD -PnumNodes=$numNodes --console=plain
+  echo './gradlew --no-daemon integTestRemote -Dleader.http_host='"$leader_endpoint:$leader_port"' -Dfollower.http_host='"$follower_endpoint:$follower_port"' -Dfollower.transport_host='"$follower_endpoint:$follower_transport"'  -Dleader.transport_host='"$leader_endpoint:$leader_transport"'  -Dsecurity_enabled='"$SECURITY_ENABLED"' -Duser='"$USERNAME"' -Dpassword='"$PASSWORD"' -PnumNodes='"$numNodes"' --console=plain'
+  ./gradlew --no-daemon integTestRemote -Dleader.http_host=$leader_endpoint:$leader_port -Dfollower.http_host=$follower_endpoint:$follower_port -Dfollower.transport_host=$follower_endpoint:$follower_transport  -Dleader.transport_host=$leader_endpoint:$leader_transport  -Dsecurity_enabled=$SECURITY_ENABLED -Duser=$USERNAME -Dpassword=$PASSWORD -PnumNodes=$numNodes --console=plain
 
 else
   # Single cluster

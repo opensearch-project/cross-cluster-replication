@@ -948,6 +948,7 @@ task integTestRemote (type: RestIntegTestTask) {
         systemProperty "tests.cluster.followCluster.total_nodes", "${-> numberOfNodes.toString()}"
         systemProperty "tests.cluster.leaderCluster.total_nodes", "${-> numberOfNodes.toString()}"
         systemProperty "build.dir", "${buildDir}"
+        systemProperty "tests.security.manager", "false"
 
     }
     filter {

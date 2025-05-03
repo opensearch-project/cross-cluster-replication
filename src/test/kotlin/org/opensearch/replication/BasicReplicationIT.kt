@@ -116,7 +116,8 @@ class BasicReplicationIT : MultiClusterRestTestCase() {
         followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore=true)
         // Create document
         var source = mapOf("my_vector1" to listOf(2.5,3.5) , "price" to 7.1)
-        var response = leaderClient.index(IndexRequest(leaderIndexName).id("1").source(source), RequestOptions.DEFAULT)
+        var jsonSource = "{\"my_vector1\":[2.5,3.5],\"price\":7.1}"
+        var response = leaderClient.index(IndexRequest(leaderIndexName).id("1").source(jsonSource, XContentType.JSON), RequestOptions.DEFAULT)
         assertThat(response.result).withFailMessage("Failed to create leader data").isEqualTo(Result.CREATED)
         assertBusy({
             val getResponse = followerClient.get(GetRequest(followerIndexName, "1"), RequestOptions.DEFAULT)
@@ -126,7 +127,8 @@ class BasicReplicationIT : MultiClusterRestTestCase() {
 
         // Update document
         source = mapOf("my_vector1" to listOf(3.5,4.5) , "price" to 12.9)
-        response = leaderClient.index(IndexRequest(leaderIndexName).id("1").source(source), RequestOptions.DEFAULT)
+        jsonSource = "{\"my_vector1\":[3.5,4.5],\"price\":12.9}"
+        response = leaderClient.index(IndexRequest(leaderIndexName).id("1").source(jsonSource, XContentType.JSON), RequestOptions.DEFAULT)
         assertThat(response.result).withFailMessage("Failed to update leader data").isEqualTo(Result.UPDATED)
         assertBusy({
             val getResponse = followerClient.get(GetRequest(followerIndexName, "1"), RequestOptions.DEFAULT)
@@ -138,7 +140,8 @@ class BasicReplicationIT : MultiClusterRestTestCase() {
             PutMappingRequest(leaderIndexName).source(KNN_INDEX_MAPPING1, XContentType.JSON) , RequestOptions.DEFAULT
         )
         source = mapOf("my_vector3" to listOf(3.1,4.5,5.7,8.9) , "price" to 17.9)
-        response = leaderClient.index(IndexRequest(leaderIndexName).id("2").source(source), RequestOptions.DEFAULT)
+        jsonSource = "{\"my_vector3\":[3.1,4.5,5.7,8.9],\"price\":17.9}"
+        response = leaderClient.index(IndexRequest(leaderIndexName).id("2").source(jsonSource, XContentType.JSON), RequestOptions.DEFAULT)
         assertThat(response.result).withFailMessage("Failed to update leader data").isEqualTo(Result.CREATED)
         assertBusy({
             val getResponse = followerClient.get(GetRequest(followerIndexName, "2"), RequestOptions.DEFAULT)
