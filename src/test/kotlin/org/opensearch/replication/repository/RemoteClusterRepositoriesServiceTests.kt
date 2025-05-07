@@ -1,3 +1,11 @@
+/*
+ * Copyright OpenSearch Contributors
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The OpenSearch Contributors require contributions made to
+ * this file be licensed under the Apache-2.0 license or a
+ * compatible open source license.
+ */
 package org.opensearch.replication.repository
 
 import com.nhaarman.mockitokotlin2.times
@@ -19,12 +27,12 @@ class RemoteClusterRepositoriesServiceTests : OpenSearchTestCase() {
         var clusterSetting = ClusterSettings(Settings.EMPTY, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS)
         var threadPool = TestThreadPool("ReplicationPluginTest")
         val discoveryNode = DiscoveryNode(
-                "node",
-                buildNewFakeTransportAddress(), emptyMap(),
-                DiscoveryNodeRole.BUILT_IN_ROLES,
-                Version.CURRENT
+            "node",
+            buildNewFakeTransportAddress(), emptyMap(),
+            DiscoveryNodeRole.BUILT_IN_ROLES,
+            Version.CURRENT,
         )
-        var clusterService  = ClusterServiceUtils.createClusterService(threadPool, discoveryNode, clusterSetting)
+        var clusterService = ClusterServiceUtils.createClusterService(threadPool, discoveryNode, clusterSetting)
         val repositoriesService = Mockito.mock(RepositoriesService::class.java)
         RemoteClusterRepositoriesService(Supplier { repositoriesService }, clusterService)
         clusterSetting.applySettings(Settings.builder().putList("cluster.remote.con-alias.seeds", "127.0.0.1:9300", "127.0.0.2:9300").build())
@@ -39,9 +47,9 @@ class RemoteClusterRepositoriesServiceTests : OpenSearchTestCase() {
             "node",
             buildNewFakeTransportAddress(), emptyMap(),
             DiscoveryNodeRole.BUILT_IN_ROLES,
-            Version.CURRENT
+            Version.CURRENT,
         )
-        var clusterService  = ClusterServiceUtils.createClusterService(threadPool, discoveryNode, clusterSetting)
+        var clusterService = ClusterServiceUtils.createClusterService(threadPool, discoveryNode, clusterSetting)
         val repositoriesService = Mockito.mock(RepositoriesService::class.java)
         RemoteClusterRepositoriesService(Supplier { repositoriesService }, clusterService)
         clusterSetting.applySettings(Settings.builder().putList("cluster.remote.con-alias.seeds", "127.0.0.1:9300", "127.0.0.2:9300").build())
@@ -55,12 +63,12 @@ class RemoteClusterRepositoriesServiceTests : OpenSearchTestCase() {
         var clusterSetting = ClusterSettings(Settings.EMPTY, ClusterSettings.BUILT_IN_CLUSTER_SETTINGS)
         var threadPool = TestThreadPool("ReplicationPluginTest")
         val discoveryNode = DiscoveryNode(
-                "node",
-                buildNewFakeTransportAddress(), emptyMap(),
-                DiscoveryNodeRole.BUILT_IN_ROLES,
-                Version.CURRENT
+            "node",
+            buildNewFakeTransportAddress(), emptyMap(),
+            DiscoveryNodeRole.BUILT_IN_ROLES,
+            Version.CURRENT,
         )
-        var clusterService  = ClusterServiceUtils.createClusterService(threadPool, discoveryNode, clusterSetting)
+        var clusterService = ClusterServiceUtils.createClusterService(threadPool, discoveryNode, clusterSetting)
         val repositoriesService = Mockito.mock(RepositoriesService::class.java)
         RemoteClusterRepositoriesService(Supplier { repositoriesService }, clusterService)
         clusterSetting.applySettings(Settings.builder().put("cluster.remote.con-alias.mode", "proxy").put("cluster.remote.con-alias.proxy_address", "127.0.0.1:100").build())
@@ -75,9 +83,9 @@ class RemoteClusterRepositoriesServiceTests : OpenSearchTestCase() {
             "node",
             buildNewFakeTransportAddress(), emptyMap(),
             DiscoveryNodeRole.BUILT_IN_ROLES,
-            Version.CURRENT
+            Version.CURRENT,
         )
-        var clusterService  = ClusterServiceUtils.createClusterService(threadPool, discoveryNode, clusterSetting)
+        var clusterService = ClusterServiceUtils.createClusterService(threadPool, discoveryNode, clusterSetting)
         val repositoriesService = Mockito.mock(RepositoriesService::class.java)
         RemoteClusterRepositoriesService(Supplier { repositoriesService }, clusterService)
         clusterSetting.applySettings(Settings.builder().put("cluster.remote.con-alias.mode", "proxy").put("cluster.remote.con-alias.proxy_address", "127.0.0.1:100").build())

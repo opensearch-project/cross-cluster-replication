@@ -1,25 +1,22 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
  * The OpenSearch Contributors require contributions made to
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
- *
- * Modifications Copyright OpenSearch Contributors. See
- * GitHub history for details.
  */
-
 package org.opensearch.replication.rest
 
 import org.opensearch.replication.action.index.ReplicateIndexAction
 import org.opensearch.replication.action.index.ReplicateIndexRequest
-import org.opensearch.transport.client.node.NodeClient
 import org.opensearch.rest.BaseRestHandler
 import org.opensearch.rest.BaseRestHandler.RestChannelConsumer
 import org.opensearch.rest.RestChannel
 import org.opensearch.rest.RestHandler
 import org.opensearch.rest.RestRequest
 import org.opensearch.rest.action.RestToXContentListener
+import org.opensearch.transport.client.node.NodeClient
 import java.io.IOException
 
 class ReplicateIndexHandler : BaseRestHandler() {
@@ -40,7 +37,8 @@ class ReplicateIndexHandler : BaseRestHandler() {
             followIndexRequest.waitForRestore = request.paramAsBoolean("wait_for_restore", false)
 
             return RestChannelConsumer {
-                channel: RestChannel? -> client.admin().cluster()
+                    channel: RestChannel? ->
+                client.admin().cluster()
                     .execute(ReplicateIndexAction.INSTANCE, followIndexRequest, RestToXContentListener(channel))
             }
         }

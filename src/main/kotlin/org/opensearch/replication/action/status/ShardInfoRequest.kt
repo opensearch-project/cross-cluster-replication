@@ -1,14 +1,11 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
  * The OpenSearch Contributors require contributions made to
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
- *
- * Modifications Copyright OpenSearch Contributors. See
- * GitHub history for details.
  */
-
 package org.opensearch.replication.action.status
 
 import org.opensearch.action.ActionRequestValidationException
@@ -20,7 +17,7 @@ import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.ToXContentObject
 import org.opensearch.core.xcontent.XContentBuilder
 
-class ShardInfoRequest : BroadcastRequest<ShardInfoRequest> , ToXContentObject {
+class ShardInfoRequest : BroadcastRequest<ShardInfoRequest>, ToXContentObject {
 
     var indexName: String
     var verbose: Boolean = false
@@ -29,21 +26,21 @@ class ShardInfoRequest : BroadcastRequest<ShardInfoRequest> , ToXContentObject {
         this.indexName = indexName
     }
 
-    constructor(indexName: String,verbose: Boolean) {
+    constructor(indexName: String, verbose: Boolean) {
         this.indexName = indexName
         this.verbose = verbose
     }
 
-    constructor(inp: StreamInput): super(inp) {
+    constructor(inp: StreamInput) : super(inp) {
         indexName = inp.readString()
     }
 
     override fun validate(): ActionRequestValidationException? {
         var validationException = ActionRequestValidationException()
-        if(indexName.isEmpty()) {
+        if (indexName.isEmpty()) {
             validationException.addValidationError("Index name must be specified to obtain replication status")
         }
-        return if(validationException.validationErrors().isEmpty()) return null else validationException
+        return if (validationException.validationErrors().isEmpty()) return null else validationException
     }
 
     override fun indices(): Array<String> {
@@ -65,5 +62,4 @@ class ShardInfoRequest : BroadcastRequest<ShardInfoRequest> , ToXContentObject {
         super.writeTo(out)
         out.writeString(indexName)
     }
-
 }

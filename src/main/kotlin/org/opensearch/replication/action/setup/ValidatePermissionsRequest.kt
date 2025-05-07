@@ -1,14 +1,11 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
  * The OpenSearch Contributors require contributions made to
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
- *
- * Modifications Copyright OpenSearch Contributors. See
- * GitHub history for details.
  */
-
 package org.opensearch.replication.action.setup
 
 import org.opensearch.action.ActionRequestValidationException
@@ -21,11 +18,10 @@ import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.ToXContentObject
 import org.opensearch.core.xcontent.XContentBuilder
 
-class ValidatePermissionsRequest: AcknowledgedRequest<ValidatePermissionsRequest>, IndicesRequest.Replaceable, ToXContentObject {
+class ValidatePermissionsRequest : AcknowledgedRequest<ValidatePermissionsRequest>, IndicesRequest.Replaceable, ToXContentObject {
     val cluster: String
     val index: String
     var clusterRole: String? = null
-
 
     constructor(leaderAlias: String, leaderIndex: String, leaderClusterRole: String?) {
         this.cluster = leaderAlias

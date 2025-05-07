@@ -1,12 +1,10 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
  * The OpenSearch Contributors require contributions made to
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
- *
- * Modifications Copyright OpenSearch Contributors. See
- * GitHub history for details.
  */
 package org.opensearch.index.translog
 
@@ -14,14 +12,14 @@ import org.apache.lucene.store.ByteArrayDataOutput
 import org.hamcrest.Matchers.equalTo
 import org.mockito.Mockito
 import org.opensearch.common.UUIDs
-import org.opensearch.core.common.bytes.BytesArray
 import org.opensearch.common.bytes.ReleasableBytesReference
 import org.opensearch.common.collect.Tuple
 import org.opensearch.common.util.BigArrays
 import org.opensearch.common.util.io.IOUtils
+import org.opensearch.core.common.bytes.BytesArray
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.index.seqno.RetentionLease
 import org.opensearch.index.seqno.RetentionLeases
-import org.opensearch.core.index.shard.ShardId
 import org.opensearch.test.OpenSearchTestCase
 import java.io.IOException
 import java.nio.channels.FileChannel
@@ -30,7 +28,6 @@ import java.nio.file.OpenOption
 import java.nio.file.Path
 import java.util.*
 import java.util.function.Supplier
-
 
 class ReplicationTranslogDeletionPolicyTests : OpenSearchTestCase() {
     private val TOTAL_OPS_IN_GEN = 10L
@@ -57,10 +54,10 @@ class ReplicationTranslogDeletionPolicyTests : OpenSearchTestCase() {
                     ReplicationTranslogDeletionPolicy.getMinTranslogGenByRetentionLease(
                         readersAndWriter.v1(),
                         it,
-                        retentionLeasesSupplier
+                        retentionLeasesSupplier,
                     )
                 },
-                equalTo(selectedGen)
+                equalTo(selectedGen),
             )
         } finally {
             IOUtils.close(readersAndWriter.v1())
@@ -92,26 +89,26 @@ class ReplicationTranslogDeletionPolicyTests : OpenSearchTestCase() {
                         Int.MAX_VALUE.toLong(),
                         Int.MAX_VALUE,
                         Int.MAX_VALUE.toLong(),
-                        retentionLeasesSupplier
+                        retentionLeasesSupplier,
                     )
                 },
-                equalTo(selectedGeneration)
+                equalTo(selectedGeneration),
             )
             assertThat(
                 TranslogDeletionPolicy.getMinTranslogGenByAge(
                     readersAndWriter.v1(),
                     readersAndWriter.v2(),
                     100L,
-                    System.currentTimeMillis()
+                    System.currentTimeMillis(),
                 ),
-                equalTo(readersAndWriter.v2()?.generation)
+                equalTo(readersAndWriter.v2()?.generation),
             )
 
             // Retention lease is part of higher gen
             retentionLeasesSupplier = createRetentionLeases(
                 now,
                 selectedGeneration * TOTAL_OPS_IN_GEN,
-                allGens.size * TOTAL_OPS_IN_GEN + TOTAL_OPS_IN_GEN - 1
+                allGens.size * TOTAL_OPS_IN_GEN + TOTAL_OPS_IN_GEN - 1,
             )
             assertThat(
                 readersAndWriter.v2()?.let {
@@ -122,10 +119,10 @@ class ReplicationTranslogDeletionPolicyTests : OpenSearchTestCase() {
                         Long.MIN_VALUE,
                         Int.MAX_VALUE,
                         Long.MAX_VALUE,
-                        retentionLeasesSupplier
+                        retentionLeasesSupplier,
                     )
                 },
-                equalTo(selectedGeneration)
+                equalTo(selectedGeneration),
             )
         } finally {
             IOUtils.close(readersAndWriter.v1())
@@ -166,7 +163,7 @@ class ReplicationTranslogDeletionPolicyTests : OpenSearchTestCase() {
                 { path: Path, options: Array<OpenOption> ->
                     FileChannel.open(
                         path,
-                        *options
+                        *options,
                     )
                 },
                 TranslogConfig.DEFAULT_BUFFER_SIZE,
@@ -178,7 +175,7 @@ class ReplicationTranslogDeletionPolicyTests : OpenSearchTestCase() {
                 TragicExceptionHolder(),
                 { },
                 BigArrays.NON_RECYCLING_INSTANCE,
-                false
+                false,
             )
             writer = Mockito.spy(writer)
             Mockito.doReturn(now - (numberOfReaders - gen + 1) * 1000).`when`(writer).lastModifiedTime

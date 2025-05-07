@@ -1,10 +1,18 @@
+/*
+ * Copyright OpenSearch Contributors
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The OpenSearch Contributors require contributions made to
+ * this file be licensed under the Apache-2.0 license or a
+ * compatible open source license.
+ */
 package org.opensearch.replication.rest
 
 import org.apache.logging.log4j.LogManager
-import org.opensearch.transport.client.node.NodeClient
+import org.opensearch.common.xcontent.XContentFactory
+import org.opensearch.core.rest.RestStatus
 import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.XContentBuilder
-import org.opensearch.common.xcontent.XContentFactory
 import org.opensearch.replication.action.stats.AutoFollowStatsAction
 import org.opensearch.replication.action.stats.AutoFollowStatsRequest
 import org.opensearch.replication.action.stats.AutoFollowStatsResponses
@@ -15,8 +23,8 @@ import org.opensearch.rest.RestChannel
 import org.opensearch.rest.RestHandler
 import org.opensearch.rest.RestRequest
 import org.opensearch.rest.RestResponse
-import org.opensearch.core.rest.RestStatus
 import org.opensearch.rest.action.RestResponseListener
+import org.opensearch.transport.client.node.NodeClient
 import java.io.IOException
 
 class AutoFollowStatsHandler : BaseRestHandler() {
@@ -37,14 +45,16 @@ class AutoFollowStatsHandler : BaseRestHandler() {
         val statsRequest = AutoFollowStatsRequest()
         return RestChannelConsumer { channel: RestChannel? ->
             client.admin().cluster()
-                    .execute(AutoFollowStatsAction.INSTANCE, statsRequest, object : RestResponseListener<AutoFollowStatsResponses>(channel) {
+                .execute(
+                    AutoFollowStatsAction.INSTANCE, statsRequest,
+                    object : RestResponseListener<AutoFollowStatsResponses>(channel) {
                         @Throws(Exception::class)
                         override fun buildResponse(nodesStatsResponses: AutoFollowStatsResponses): RestResponse? {
                             val builder: XContentBuilder = XContentFactory.jsonBuilder().prettyPrint()
                             return BytesRestResponse(RestStatus.OK, nodesStatsResponses.toXContent(builder, ToXContent.EMPTY_PARAMS))
                         }
-                    })
+                    },
+                )
         }
     }
 }
-

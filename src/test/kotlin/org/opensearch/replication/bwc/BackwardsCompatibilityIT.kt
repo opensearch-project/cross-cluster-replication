@@ -1,4 +1,12 @@
-package org.opensearch.replication.bwc;
+/*
+ * Copyright OpenSearch Contributors
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The OpenSearch Contributors require contributions made to
+ * this file be licensed under the Apache-2.0 license or a
+ * compatible open source license.
+ */
+package org.opensearch.replication.bwc
 
 import org.apache.hc.core5.http.io.entity.EntityUtils
 import org.assertj.core.api.Assertions
@@ -13,16 +21,13 @@ import org.opensearch.client.Request
 import org.opensearch.client.RequestOptions
 import org.opensearch.client.RestHighLevelClient
 import org.opensearch.client.indices.CreateIndexRequest
-import org.opensearch.replication.MultiClusterAnnotations
 import org.opensearch.replication.MultiClusterRestTestCase
 import org.opensearch.replication.StartReplicationRequest
 import org.opensearch.replication.startReplication
 import org.opensearch.test.OpenSearchTestCase.assertBusy
 import org.opensearch.test.rest.OpenSearchRestTestCase
-import java.util.Collections
 import java.util.concurrent.TimeUnit
 import java.util.stream.Collectors
-
 
 const val LEADER = "bwcLeader"
 const val FOLLOWER = "bwcFollower"
@@ -68,21 +73,26 @@ class BackwardsCompatibilityIT : MultiClusterRestTestCase() {
             TWO_THIRD_UPGRADED("twoThirdsUpgradedClusterTask"),
             ROLLING_UPGRADED("rollingUpgradeClusterTask"),
             FULL_CLUSTER_RESTART("fullRestartClusterTask"),
-            COMPLETE_SUITE("bwcTestSuite");
+            COMPLETE_SUITE("bwcTestSuite"),
+            ;
 
             companion object {
                 fun from(s: String): ClusterStatus? = values().find { it.value == s }
             }
         }
     }
+
     @Throws(Exception::class)
     fun testReplicationPlugin() {
-        when(ClusterStatus.from(System.getProperty("tests.bwcTask"))) {
+        when (ClusterStatus.from(System.getProperty("tests.bwcTask"))) {
             ClusterStatus.OLD -> setupReplication()
             ClusterStatus.ONE_THIRD_UPGRADED, ClusterStatus.TWO_THIRD_UPGRADED, ClusterStatus.ROLLING_UPGRADED,
-                ClusterStatus.FULL_CLUSTER_RESTART -> verifyReplication()
+            ClusterStatus.FULL_CLUSTER_RESTART,
+            -> verifyReplication()
             ClusterStatus.COMPLETE_SUITE -> {} // Do nothing as all tests have run already
-            else -> {throw AssertionError("${ClusterStatus.from(System.getProperty("tests.bwcTask"))} is not a valid option for ClusterStatus")}
+            else -> {
+                throw AssertionError("${ClusterStatus.from(System.getProperty("tests.bwcTask"))} is not a valid option for ClusterStatus")
+            }
         }
     }
 
@@ -102,7 +112,7 @@ class BackwardsCompatibilityIT : MultiClusterRestTestCase() {
             val createIndexResponse = leader.indices().create(CreateIndexRequest(LEADER_INDEX), RequestOptions.DEFAULT)
             Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
 
-            follower.startReplication(StartReplicationRequest(CONNECTION_NAME, LEADER_INDEX, FOLLOWER_INDEX), waitForRestore=true)
+            follower.startReplication(StartReplicationRequest(CONNECTION_NAME, LEADER_INDEX, FOLLOWER_INDEX), waitForRestore = true)
 
             val source = mapOf("name" to randomAlphaOfLength(20), "age" to randomInt().toString())
             var response = leader.index(IndexRequest(LEADER_INDEX).id("1").source(source), RequestOptions.DEFAULT)
@@ -145,12 +155,13 @@ class BackwardsCompatibilityIT : MultiClusterRestTestCase() {
                 Assertions.assertThat(getResponse.sourceAsMap).isEqualTo(source)
             }, 60, TimeUnit.SECONDS)
 
-            //Check for latest retention lease when full cluster restart is done
+            // Check for latest retention lease when full cluster restart is done
             if (ClusterStatus.from(System.getProperty("tests.bwcTask")) == ClusterStatus.FULL_CLUSTER_RESTART || ClusterStatus.from(
-                    System.getProperty("tests.bwcTask")) == ClusterStatus.ROLLING_UPGRADED) {
+                    System.getProperty("tests.bwcTask"),
+                ) == ClusterStatus.ROLLING_UPGRADED
+            ) {
                 validateNewRetentionLeaseId(follower, leader)
             }
-
         } catch (e: Exception) {
             logger.info("Exception while verifying the replication ${e.printStackTrace()}")
             throw e
@@ -159,23 +170,23 @@ class BackwardsCompatibilityIT : MultiClusterRestTestCase() {
 
     private fun validateNewRetentionLeaseId(
         follower: RestHighLevelClient,
-        leader: RestHighLevelClient
+        leader: RestHighLevelClient,
     ) {
-            assertBusy({
-                val followerClusterInfo: Map<String, Any> =
-                    OpenSearchRestTestCase.entityAsMap(follower.lowLevelClient.performRequest(Request("GET", "/")))
-                val clusterUUID = (followerClusterInfo["cluster_uuid"] as String)
-                val clusterName = (followerClusterInfo["cluster_name"] as String)
-                assert(clusterUUID.isNotEmpty())
-                assert(clusterName.isNotEmpty())
-                val expectedRetentionLeaseId =
-                    "replication" + ":" + clusterName + ":" + clusterUUID + ":[" + LEADER_INDEX + "]"
+        assertBusy({
+            val followerClusterInfo: Map<String, Any> =
+                OpenSearchRestTestCase.entityAsMap(follower.lowLevelClient.performRequest(Request("GET", "/")))
+            val clusterUUID = (followerClusterInfo["cluster_uuid"] as String)
+            val clusterName = (followerClusterInfo["cluster_name"] as String)
+            assert(clusterUUID.isNotEmpty())
+            assert(clusterName.isNotEmpty())
+            val expectedRetentionLeaseId =
+                "replication" + ":" + clusterName + ":" + clusterUUID + ":[" + LEADER_INDEX + "]"
 
-                val retentionLeaseinfo =
-                    leader.lowLevelClient.performRequest(Request("GET", "/$LEADER_INDEX/_stats/docs?level=shards"))
-                val retentionLeaseInfoString = EntityUtils.toString(retentionLeaseinfo.entity)
-                assertTrue(retentionLeaseInfoString.contains(expectedRetentionLeaseId))
-            }, 60, TimeUnit.SECONDS)
+            val retentionLeaseinfo =
+                leader.lowLevelClient.performRequest(Request("GET", "/$LEADER_INDEX/_stats/docs?level=shards"))
+            val retentionLeaseInfoString = EntityUtils.toString(retentionLeaseinfo.entity)
+            assertTrue(retentionLeaseInfoString.contains(expectedRetentionLeaseId))
+        }, 60, TimeUnit.SECONDS)
     }
 
     // Verifies that replication plugin is installed on all the nodes og the cluster.
@@ -184,7 +195,7 @@ class BackwardsCompatibilityIT : MultiClusterRestTestCase() {
         val restClient = getClientForCluster(clusterName)
         for (i in 0 until NUM_NODES) {
             val responseMap = getAsMap(restClient.lowLevelClient, "_nodes/$clusterName-$i/plugins")["nodes"]
-                    as Map<String, Map<String, Any>>?
+                as Map<String, Map<String, Any>>?
             Assert.assertTrue(responseMap!!.values.isNotEmpty())
             for (response in responseMap!!.values) {
                 val plugins = response["plugins"] as List<Map<String, Any>>?

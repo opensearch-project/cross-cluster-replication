@@ -1,14 +1,11 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
  * The OpenSearch Contributors require contributions made to
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
- *
- * Modifications Copyright OpenSearch Contributors. See
- * GitHub history for details.
  */
-
 package org.opensearch.replication.action.resume
 
 import org.opensearch.action.ActionRequestValidationException
@@ -17,9 +14,16 @@ import org.opensearch.action.support.IndicesOptions
 import org.opensearch.action.support.clustermanager.AcknowledgedRequest
 import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.core.common.io.stream.StreamOutput
-import org.opensearch.core.xcontent.*
+import org.opensearch.core.xcontent.ObjectParser
+import org.opensearch.core.xcontent.ToXContent
+import org.opensearch.core.xcontent.ToXContentObject
+import org.opensearch.core.xcontent.XContentBuilder
+import org.opensearch.core.xcontent.XContentParser
 
-class ResumeIndexReplicationRequest : AcknowledgedRequest<ResumeIndexReplicationRequest>, IndicesRequest.Replaceable, ToXContentObject {
+class ResumeIndexReplicationRequest :
+    AcknowledgedRequest<ResumeIndexReplicationRequest>,
+    IndicesRequest.Replaceable,
+    ToXContentObject {
 
     lateinit var indexName: String
 
@@ -30,7 +34,7 @@ class ResumeIndexReplicationRequest : AcknowledgedRequest<ResumeIndexReplication
     private constructor() {
     }
 
-    constructor(inp: StreamInput): super(inp) {
+    constructor(inp: StreamInput) : super(inp) {
         indexName = inp.readString()
     }
 
@@ -73,5 +77,4 @@ class ResumeIndexReplicationRequest : AcknowledgedRequest<ResumeIndexReplication
         super.writeTo(out)
         out.writeString(indexName)
     }
-
 }

@@ -1,30 +1,27 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
  * The OpenSearch Contributors require contributions made to
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
- *
- * Modifications Copyright OpenSearch Contributors. See
- * GitHub history for details.
  */
-
 package org.opensearch.replication.repository
 
-import org.opensearch.replication.action.repository.RemoteClusterRepositoryRequest
-import org.opensearch.replication.seqno.RemoteClusterRetentionLeaseHelper
-import org.opensearch.replication.util.performOp
 import org.opensearch.OpenSearchException
 import org.opensearch.action.support.single.shard.SingleShardRequest
-import org.opensearch.transport.client.node.NodeClient
-import org.opensearch.common.lifecycle.AbstractLifecycleComponent
 import org.opensearch.common.inject.Inject
 import org.opensearch.common.inject.Singleton
+import org.opensearch.common.lifecycle.AbstractLifecycleComponent
 import org.opensearch.common.lucene.store.InputStreamIndexInput
 import org.opensearch.common.util.io.IOUtils
 import org.opensearch.index.seqno.RetentionLeaseActions
 import org.opensearch.index.store.Store
 import org.opensearch.indices.IndicesService
+import org.opensearch.replication.action.repository.RemoteClusterRepositoryRequest
+import org.opensearch.replication.seqno.RemoteClusterRetentionLeaseHelper
+import org.opensearch.replication.util.performOp
+import org.opensearch.transport.client.node.NodeClient
 import java.io.Closeable
 import java.io.IOException
 
@@ -35,9 +32,11 @@ import java.io.IOException
  * to update the resources
  */
 @Singleton
-class RemoteClusterRestoreLeaderService @Inject constructor(private val indicesService: IndicesService,
-                                                            private val nodeClient : NodeClient) :
-        AbstractLifecycleComponent() {
+class RemoteClusterRestoreLeaderService @Inject constructor(
+    private val indicesService: IndicesService,
+    private val nodeClient: NodeClient,
+) :
+    AbstractLifecycleComponent() {
 
     // TODO: Listen for the index events and release relevant resources.
     private val onGoingRestores: MutableMap<String, RestoreContext> = mutableMapOf()
@@ -55,9 +54,11 @@ class RemoteClusterRestoreLeaderService @Inject constructor(private val indicesS
     }
 
     @Synchronized
-    fun <T : SingleShardRequest<T>?> addLeaderClusterRestore(restoreUUID: String,
-                                                             request: RemoteClusterRepositoryRequest<T>): RestoreContext {
-        return onGoingRestores.getOrPut(restoreUUID) { constructRestoreContext(restoreUUID, request)}
+    fun <T : SingleShardRequest<T>?> addLeaderClusterRestore(
+        restoreUUID: String,
+        request: RemoteClusterRepositoryRequest<T>,
+    ): RestoreContext {
+        return onGoingRestores.getOrPut(restoreUUID) { constructRestoreContext(restoreUUID, request) }
     }
 
     private fun getLeaderClusterRestore(restoreUUID: String): RestoreContext {
@@ -65,12 +66,14 @@ class RemoteClusterRestoreLeaderService @Inject constructor(private val indicesS
     }
 
     @Synchronized
-    fun <T : SingleShardRequest<T>?> openInputStream(restoreUUID: String,
-                                                     request: RemoteClusterRepositoryRequest<T>,
-                                                     fileName: String,
-                                                     length: Long): InputStreamIndexInput {
+    fun <T : SingleShardRequest<T>?> openInputStream(
+        restoreUUID: String,
+        request: RemoteClusterRepositoryRequest<T>,
+        fileName: String,
+        length: Long,
+    ): InputStreamIndexInput {
         val leaderIndexShard = indicesService.getShardOrNull(request.leaderShardId)
-                ?: throw OpenSearchException("Shard [$request.leaderShardId] missing")
+            ?: throw OpenSearchException("Shard [$request.leaderShardId] missing")
         val store = leaderIndexShard.store()
         val restoreContext = getLeaderClusterRestore(restoreUUID)
         val indexInput = restoreContext.openInput(store, fileName)
@@ -83,12 +86,15 @@ class RemoteClusterRestoreLeaderService @Inject constructor(private val indicesS
         }
     }
 
-    private fun <T : SingleShardRequest<T>?> constructRestoreContext(restoreUUID: String,
-                                        request: RemoteClusterRepositoryRequest<T>): RestoreContext {
+    private fun <T : SingleShardRequest<T>?> constructRestoreContext(
+        restoreUUID: String,
+        request: RemoteClusterRepositoryRequest<T>,
+    ): RestoreContext {
         val leaderIndexShard = indicesService.getShardOrNull(request.leaderShardId)
-                ?: throw OpenSearchException("Shard [$request.leaderShardId] missing")
+            ?: throw OpenSearchException("Shard [$request.leaderShardId] missing")
         // Passing nodeclient of the leader to acquire the retention lease on leader shard
         val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(request.followerCluster, nodeClient)
+
         /**
          * ODFE Replication supported for >= ES 7.8. History of operations directly from
          * lucene index. With the retention lock set - safe commit should have all the history
@@ -114,8 +120,10 @@ class RemoteClusterRestoreLeaderService @Inject constructor(private val indicesS
         var fromSeqNo = RetentionLeaseActions.RETAIN_ALL
 
         // Adds the retention lease for fromSeqNo for the next stage of the replication.
-        retentionLeaseHelper.addRetentionLease(request.leaderShardId, fromSeqNo, request.followerShardId,
-                RemoteClusterRepository.REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC)
+        retentionLeaseHelper.addRetentionLease(
+            request.leaderShardId, fromSeqNo, request.followerShardId,
+            RemoteClusterRepository.REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC,
+        )
 
         /**
          * At this point, it should be safe to release retention lock as the retention lease
@@ -124,8 +132,10 @@ class RemoteClusterRestoreLeaderService @Inject constructor(private val indicesS
          */
         retentionLock.close()
 
-        var restoreContext = RestoreContext(restoreUUID, leaderIndexShard,
-                indexCommitRef, metadataSnapshot, fromSeqNo)
+        var restoreContext = RestoreContext(
+            restoreUUID, leaderIndexShard,
+            indexCommitRef, metadataSnapshot, fromSeqNo,
+        )
         onGoingRestores[restoreUUID] = restoreContext
 
         closableResources.add(restoreContext)

@@ -1,3 +1,11 @@
+/*
+ * Copyright OpenSearch Contributors
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The OpenSearch Contributors require contributions made to
+ * this file be licensed under the Apache-2.0 license or a
+ * compatible open source license.
+ */
 package org.opensearch.replication.task.shard
 
 import org.assertj.core.api.Assertions
@@ -14,10 +22,9 @@ import org.opensearch.replication.LEADER
 import org.opensearch.replication.MultiClusterAnnotations
 import org.opensearch.replication.MultiClusterRestTestCase
 import org.opensearch.replication.StartReplicationRequest
-import org.opensearch.replication.`validate status syncing response`
 import org.opensearch.replication.replicationStatus
 import org.opensearch.replication.startReplication
-import org.opensearch.replication.stopReplication
+import org.opensearch.replication.`validate status syncing response`
 import java.util.Locale
 import java.util.concurrent.TimeUnit
 
@@ -26,9 +33,9 @@ const val FOLL = "followCluster"
 
 @MultiClusterAnnotations.ClusterConfigurations(
     MultiClusterAnnotations.ClusterConfiguration(clusterName = LEADER),
-    MultiClusterAnnotations.ClusterConfiguration(clusterName = FOLL)
+    MultiClusterAnnotations.ClusterConfiguration(clusterName = FOLL),
 )
-class TransportReplayChangesActionIT  : MultiClusterRestTestCase() {
+class TransportReplayChangesActionIT : MultiClusterRestTestCase() {
     fun `test strict dynamic mapping update`() {
         val follower = getClientForCluster(FOLL)
         val leader = getClientForCluster(LEADER)
@@ -45,13 +52,13 @@ class TransportReplayChangesActionIT  : MultiClusterRestTestCase() {
         var putMappingRequest = PutMappingRequest(leaderIndex)
         putMappingRequest.source(
             "{\"dynamic\":\"strict\",\"properties\":{\"name\":{\"type\":\"text\"}}}",
-            XContentType.JSON
+            XContentType.JSON,
         )
         leader.indices().putMapping(putMappingRequest, RequestOptions.DEFAULT)
         // Start replication
         follower.startReplication(
             StartReplicationRequest("source", leaderIndex, followerIndex),
-            waitForRestore = true
+            waitForRestore = true,
         )
         assertBusy {
             val getResponse = follower.get(GetRequest(followerIndex, "1"), RequestOptions.DEFAULT)
@@ -62,22 +69,25 @@ class TransportReplayChangesActionIT  : MultiClusterRestTestCase() {
         putMappingRequest = PutMappingRequest(leaderIndex)
         putMappingRequest.source(
             "{\"dynamic\":\"strict\",\"properties\":{\"name\":{\"type\":\"text\"},\"place\":{\"type\":\"text\"}}}",
-            XContentType.JSON
+            XContentType.JSON,
         )
         leader.indices().putMapping(putMappingRequest, RequestOptions.DEFAULT)
         // Ingest a doc on the leader
         val doc2 = mapOf("name" to randomAlphaOfLength(5), "place" to randomAlphaOfLength(5))
         leader.index(IndexRequest(leaderIndex).id("2").source(doc2), RequestOptions.DEFAULT)
         // Verify that replication is working as expected.
-        assertBusy ({
-            Assert.assertEquals(leader.count(CountRequest(leaderIndex), RequestOptions.DEFAULT).toString(),
-                follower.count(CountRequest(followerIndex), RequestOptions.DEFAULT).toString())
-            `validate status syncing response`(follower.replicationStatus(followerIndex))
-            val getResponse = follower.get(GetRequest(followerIndex, "2"), RequestOptions.DEFAULT)
-            Assertions.assertThat(getResponse.isExists).isTrue()
-            Assertions.assertThat(getResponse.sourceAsMap).isEqualTo(doc2)
-        },
-            30, TimeUnit.SECONDS
+        assertBusy(
+            {
+                Assert.assertEquals(
+                    leader.count(CountRequest(leaderIndex), RequestOptions.DEFAULT).toString(),
+                    follower.count(CountRequest(followerIndex), RequestOptions.DEFAULT).toString(),
+                )
+                `validate status syncing response`(follower.replicationStatus(followerIndex))
+                val getResponse = follower.get(GetRequest(followerIndex, "2"), RequestOptions.DEFAULT)
+                Assertions.assertThat(getResponse.isExists).isTrue()
+                Assertions.assertThat(getResponse.sourceAsMap).isEqualTo(doc2)
+            },
+            30, TimeUnit.SECONDS,
         )
     }
 }

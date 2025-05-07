@@ -1,14 +1,11 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
  * The OpenSearch Contributors require contributions made to
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
- *
- * Modifications Copyright OpenSearch Contributors. See
- * GitHub history for details.
  */
-
 package org.opensearch.replication.action.stats
 
 import kotlinx.coroutines.CoroutineScope
@@ -17,7 +14,6 @@ import org.apache.logging.log4j.LogManager
 import org.opensearch.action.FailedNodeException
 import org.opensearch.action.support.ActionFilters
 import org.opensearch.action.support.nodes.TransportNodesAction
-import org.opensearch.transport.client.node.NodeClient
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Inject
 import org.opensearch.core.common.io.stream.StreamInput
@@ -26,24 +22,30 @@ import org.opensearch.replication.seqno.RemoteClusterStats
 import org.opensearch.replication.task.shard.FollowerClusterStats
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
+import org.opensearch.transport.client.node.NodeClient
 
-class TransportFollowerStatsAction @Inject constructor(transportService: TransportService,
-                                                       clusterService: ClusterService,
-                                                       threadPool: ThreadPool,
-                                                       actionFilters: ActionFilters,
-                                                       private val remoteStats: RemoteClusterStats,
-                                                       private val client: NodeClient,
-                                                       private val followerStats: FollowerClusterStats) :
-        TransportNodesAction<FollowerStatsRequest, FollowerStatsResponse, NodeStatsRequest, FollowerNodeStatsResponse>(FollowerStatsAction.NAME,
-             threadPool, clusterService, transportService,  actionFilters, ::FollowerStatsRequest,  ::NodeStatsRequest, ThreadPool.Names.MANAGEMENT,
-                FollowerNodeStatsResponse::class.java), CoroutineScope by GlobalScope {
+class TransportFollowerStatsAction @Inject constructor(
+    transportService: TransportService,
+    clusterService: ClusterService,
+    threadPool: ThreadPool,
+    actionFilters: ActionFilters,
+    private val remoteStats: RemoteClusterStats,
+    private val client: NodeClient,
+    private val followerStats: FollowerClusterStats,
+) :
+    TransportNodesAction<FollowerStatsRequest, FollowerStatsResponse, NodeStatsRequest, FollowerNodeStatsResponse>(
+        FollowerStatsAction.NAME,
+        threadPool, clusterService, transportService, actionFilters, ::FollowerStatsRequest, ::NodeStatsRequest, ThreadPool.Names.MANAGEMENT,
+        FollowerNodeStatsResponse::class.java,
+    ),
+    CoroutineScope by GlobalScope {
 
     companion object {
         private val log = LogManager.getLogger(TransportFollowerStatsAction::class.java)
     }
 
     override fun newNodeRequest(request: FollowerStatsRequest): NodeStatsRequest {
-       return NodeStatsRequest()
+        return NodeStatsRequest()
     }
 
     override fun newNodeResponse(input: StreamInput): FollowerNodeStatsResponse {
@@ -56,6 +58,6 @@ class TransportFollowerStatsAction @Inject constructor(transportService: Transpo
     }
 
     override fun nodeOperation(nodeStatRequest: NodeStatsRequest?): FollowerNodeStatsResponse {
-       return FollowerNodeStatsResponse(this.clusterService.localNode(), followerStats.stats)
+        return FollowerNodeStatsResponse(this.clusterService.localNode(), followerStats.stats)
     }
 }

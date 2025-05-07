@@ -1,31 +1,34 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
  * The OpenSearch Contributors require contributions made to
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
- *
- * Modifications Copyright OpenSearch Contributors. See
- * GitHub history for details.
  */
-
 package org.opensearch.replication.action.update
-import org.opensearch.replication.metadata.store.KEY_SETTINGS
 import org.opensearch.action.ActionRequestValidationException
 import org.opensearch.action.IndicesRequest
 import org.opensearch.action.support.IndicesOptions
 import org.opensearch.action.support.clustermanager.AcknowledgedRequest
+import org.opensearch.common.settings.Settings
+import org.opensearch.common.settings.Settings.readSettingsFromStream
 import org.opensearch.core.ParseField
 import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.core.common.io.stream.StreamOutput
-import org.opensearch.common.settings.Settings
-import org.opensearch.common.settings.Settings.readSettingsFromStream
-import org.opensearch.core.xcontent.*
+import org.opensearch.core.xcontent.ObjectParser
+import org.opensearch.core.xcontent.ToXContent
+import org.opensearch.core.xcontent.ToXContentObject
+import org.opensearch.core.xcontent.XContentBuilder
+import org.opensearch.core.xcontent.XContentParser
+import org.opensearch.replication.metadata.store.KEY_SETTINGS
 import java.io.IOException
 import java.util.*
 
-
-class UpdateIndexReplicationRequest : AcknowledgedRequest<UpdateIndexReplicationRequest>, IndicesRequest.Replaceable, ToXContentObject {
+class UpdateIndexReplicationRequest :
+    AcknowledgedRequest<UpdateIndexReplicationRequest>,
+    IndicesRequest.Replaceable,
+    ToXContentObject {
 
     lateinit var indexName: String
     lateinit var settings: Settings
@@ -35,7 +38,7 @@ class UpdateIndexReplicationRequest : AcknowledgedRequest<UpdateIndexReplication
         this.settings = settings
     }
 
-    constructor(inp: StreamInput): super(inp) {
+    constructor(inp: StreamInput) : super(inp) {
         indexName = inp.readString()
         settings = readSettingsFromStream(inp)
     }
@@ -56,7 +59,7 @@ class UpdateIndexReplicationRequest : AcknowledgedRequest<UpdateIndexReplication
             throw IOException("Not supported for $this")
         }
     }
-    
+
     override fun validate(): ActionRequestValidationException? {
         return null
     }
@@ -79,7 +82,7 @@ class UpdateIndexReplicationRequest : AcknowledgedRequest<UpdateIndexReplication
         builder.endObject()
 
         builder.startObject(KEY_SETTINGS)
-        settings.toXContent(builder, ToXContent.MapParams(Collections.singletonMap("flat_settings", "true")));
+        settings.toXContent(builder, ToXContent.MapParams(Collections.singletonMap("flat_settings", "true")))
         builder.endObject()
 
         return builder
@@ -88,6 +91,6 @@ class UpdateIndexReplicationRequest : AcknowledgedRequest<UpdateIndexReplication
     override fun writeTo(out: StreamOutput) {
         super.writeTo(out)
         out.writeString(indexName)
-        Settings.writeSettingsToStream(settings, out);
+        Settings.writeSettingsToStream(settings, out)
     }
 }

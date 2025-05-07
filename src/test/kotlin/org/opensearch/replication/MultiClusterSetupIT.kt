@@ -1,23 +1,20 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
  * The OpenSearch Contributors require contributions made to
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
- *
- * Modifications Copyright OpenSearch Contributors. See
- * GitHub history for details.
  */
-
 package org.opensearch.replication
 
-import org.opensearch.replication.MultiClusterAnnotations.ClusterConfiguration
 import org.apache.hc.core5.http.io.entity.EntityUtils
 import org.opensearch.client.Request
+import org.opensearch.replication.MultiClusterAnnotations.ClusterConfiguration
 
 @MultiClusterAnnotations.ClusterConfigurations(
     ClusterConfiguration(clusterName = "leaderCluster"),
-    ClusterConfiguration(clusterName = "followCluster")
+    ClusterConfiguration(clusterName = "followCluster"),
 )
 class MultiClusterSetupIT : MultiClusterRestTestCase() {
 
@@ -27,8 +24,10 @@ class MultiClusterSetupIT : MultiClusterRestTestCase() {
         val nodes = installedPlugins["nodes"] as Map<String, Map<String, Any>>?
         for (node in nodes!!.values) {
             val nodePlugins = node["plugins"] as List<Map<String, Any>>?
-            assertTrue("Cross cluster plugin wasn't installed on node: " + node["name"],
-                       isReplicationPluginInstalledOnNode(nodePlugins))
+            assertTrue(
+                "Cross cluster plugin wasn't installed on node: " + node["name"],
+                isReplicationPluginInstalledOnNode(nodePlugins),
+            )
         }
     }
 
@@ -38,8 +37,10 @@ class MultiClusterSetupIT : MultiClusterRestTestCase() {
         val nodes = installedPlugins["nodes"] as Map<String, Map<String, Any>>?
         for (node in nodes!!.values) {
             val nodePlugins = node["plugins"] as List<Map<String, Any>>?
-            assertTrue("Cross cluster plugin wasn't installed on node: " + node["name"],
-                       isReplicationPluginInstalledOnNode(nodePlugins))
+            assertTrue(
+                "Cross cluster plugin wasn't installed on node: " + node["name"],
+                isReplicationPluginInstalledOnNode(nodePlugins),
+            )
         }
     }
 

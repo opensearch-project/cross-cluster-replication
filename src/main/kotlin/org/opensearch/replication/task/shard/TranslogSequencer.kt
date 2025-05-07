@@ -1,43 +1,39 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
  * The OpenSearch Contributors require contributions made to
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
- *
- * Modifications Copyright OpenSearch Contributors. See
- * GitHub history for details.
  */
-
 package org.opensearch.replication.task.shard
 
-import org.opensearch.replication.MappingNotAvailableException
-import org.opensearch.replication.ReplicationException
-import org.opensearch.replication.action.changes.GetChangesResponse
-import org.opensearch.replication.action.replay.ReplayChangesAction
-import org.opensearch.replication.action.replay.ReplayChangesRequest
-import org.opensearch.replication.metadata.store.ReplicationMetadata
-import org.opensearch.replication.util.suspendExecuteWithRetries
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.ObsoleteCoroutinesApi
 import kotlinx.coroutines.channels.actor
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Semaphore
-import org.opensearch.transport.client.Client
 import org.opensearch.OpenSearchException
 import org.opensearch.action.support.TransportActions
 import org.opensearch.common.logging.Loggers
-import org.opensearch.index.IndexNotFoundException
 import org.opensearch.core.index.shard.ShardId
-import org.opensearch.index.translog.Translog
-import org.opensearch.replication.util.indicesService
+import org.opensearch.core.rest.RestStatus
 import org.opensearch.core.tasks.TaskId
+import org.opensearch.index.IndexNotFoundException
+import org.opensearch.index.translog.Translog
+import org.opensearch.replication.MappingNotAvailableException
+import org.opensearch.replication.ReplicationException
+import org.opensearch.replication.action.changes.GetChangesResponse
+import org.opensearch.replication.action.replay.ReplayChangesAction
+import org.opensearch.replication.action.replay.ReplayChangesRequest
+import org.opensearch.replication.metadata.store.ReplicationMetadata
+import org.opensearch.replication.util.indicesService
+import org.opensearch.replication.util.suspendExecuteWithRetries
+import org.opensearch.transport.client.Client
 import java.util.ArrayList
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.TimeUnit
-import org.opensearch.core.rest.RestStatus
-
 
 /**
  * A TranslogSequencer allows multiple producers of [Translog.Operation]s to write them in sequence number order to an
@@ -51,11 +47,18 @@ import org.opensearch.core.rest.RestStatus
  * this API and a new one is being worked on to which we can migrate when needed.
  */
 @ObsoleteCoroutinesApi
-class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: ReplicationMetadata,
-                        private val followerShardId: ShardId,
-                        private val leaderAlias: String, private val leaderIndexName: String,
-                        private val parentTaskId: TaskId, private val client: Client, initialSeqNo: Long,
-                        private val followerClusterStats: FollowerClusterStats, writersPerShard : Int) {
+class TranslogSequencer(
+    scope: CoroutineScope,
+    private val replicationMetadata: ReplicationMetadata,
+    private val followerShardId: ShardId,
+    private val leaderAlias: String,
+    private val leaderIndexName: String,
+    private val parentTaskId: TaskId,
+    private val client: Client,
+    initialSeqNo: Long,
+    private val followerClusterStats: FollowerClusterStats,
+    writersPerShard: Int,
+) {
 
     private val unAppliedChanges = ConcurrentHashMap<Long, GetChangesResponse>()
     private val log = Loggers.getLogger(javaClass, followerShardId)!!
@@ -70,15 +73,17 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
         // raise the same exception.  See [SendChannel.close] method for details.
         val rateLimiter = Semaphore(writersPerShard)
         var highWatermark = initialSeqNo
-        for (m in channel) {            
+        for (m in channel) {
             while (unAppliedChanges.containsKey(highWatermark + 1)) {
                 val next = unAppliedChanges.remove(highWatermark + 1)!!
-                val replayRequest = ReplayChangesRequest(followerShardId, next.changes, next.maxSeqNoOfUpdatesOrDeletes,
-                                                         leaderAlias, leaderIndexName)
+                val replayRequest = ReplayChangesRequest(
+                    followerShardId, next.changes, next.maxSeqNoOfUpdatesOrDeletes,
+                    leaderAlias, leaderIndexName,
+                )
                 replayRequest.parentTask = parentTaskId
                 rateLimiter.acquire()
                 launch {
-                    var relativeStartNanos  = System.nanoTime()
+                    var relativeStartNanos = System.nanoTime()
                     val retryOnExceptions = ArrayList<Class<*>>()
                     retryOnExceptions.add(MappingNotAvailableException::class.java)
                     var tryReplay = true
@@ -91,38 +96,40 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
                                     ReplayChangesAction.INSTANCE,
                                     replayRequest,
                                     log = log,
-                                    retryOn = retryOnExceptions
+                                    retryOn = retryOnExceptions,
                                 )
                                 if (replayResponse.shardInfo.failed > 0) {
                                     replayResponse.shardInfo.failures.forEachIndexed { i, failure ->
                                         log.error("Failed replaying changes. Failure:$i:$failure}")
                                     }
                                     followerClusterStats.stats[followerShardId]!!.opsWriteFailures.addAndGet(
-                                        replayResponse.shardInfo.failed.toLong()
+                                        replayResponse.shardInfo.failed.toLong(),
                                     )
                                     throw ReplicationException(
                                         "failed to replay changes",
-                                        replayResponse.shardInfo.failures
+                                        replayResponse.shardInfo.failures,
                                     )
                                 }
 
                                 val tookInNanos = System.nanoTime() - relativeStartNanos
                                 followerClusterStats.stats[followerShardId]!!.totalWriteTime.addAndGet(
-                                    TimeUnit.NANOSECONDS.toMillis(tookInNanos)
+                                    TimeUnit.NANOSECONDS.toMillis(tookInNanos),
                                 )
                                 followerClusterStats.stats[followerShardId]!!.opsWritten.addAndGet(
-                                    replayRequest.changes.size.toLong()
+                                    replayRequest.changes.size.toLong(),
                                 )
                                 followerClusterStats.stats[followerShardId]!!.followerCheckpoint = indexShard.localCheckpoint
                             } catch (e: OpenSearchException) {
-                                if (e !is IndexNotFoundException && (retryOnExceptions.contains(e.javaClass)
-                                            || TransportActions.isShardNotAvailableException(e)
+                                if (e !is IndexNotFoundException && (
+                                        retryOnExceptions.contains(e.javaClass) ||
+                                            TransportActions.isShardNotAvailableException(e) ||
                                             // This waits for the dependencies to load and retry. Helps during boot-up
-                                            || e.status().status >= 500
-                                            || e.status() == RestStatus.TOO_MANY_REQUESTS)) {
-                                                tryReplay = true
-                                    }
-                                    else {
+                                            e.status().status >= 500 ||
+                                            e.status() == RestStatus.TOO_MANY_REQUESTS
+                                        )
+                                ) {
+                                    tryReplay = true
+                                } else {
                                     log.error("Got non-retriable Exception:${e.message} with status:${e.status()}")
                                     throw e
                                 }
@@ -143,8 +150,7 @@ class TranslogSequencer(scope: CoroutineScope, private val replicationMetadata: 
         completed.await()
     }
 
-
-    suspend fun send(changes : GetChangesResponse) {
+    suspend fun send(changes: GetChangesResponse) {
         unAppliedChanges[changes.fromSeqNo] = changes
         sequencer.send(Unit)
     }

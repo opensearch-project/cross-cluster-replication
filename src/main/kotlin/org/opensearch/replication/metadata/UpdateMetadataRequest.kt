@@ -1,14 +1,11 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
  * The OpenSearch Contributors require contributions made to
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
- *
- * Modifications Copyright OpenSearch Contributors. See
- * GitHub history for details.
  */
-
 package org.opensearch.replication.metadata
 
 import org.opensearch.action.ActionRequestValidationException
@@ -33,10 +30,14 @@ class UpdateMetadataRequest : AcknowledgedRequest<UpdateMetadataRequest> {
     }
 
     enum class Type {
-        MAPPING, SETTING, ALIAS, OPEN, CLOSE
+        MAPPING,
+        SETTING,
+        ALIAS,
+        OPEN,
+        CLOSE,
     }
 
-    constructor(inp: StreamInput): super(inp) {
+    constructor(inp: StreamInput) : super(inp) {
         indexName = inp.readString()
         type = inp.readEnum(Type::class.java)
         request = when (type) {

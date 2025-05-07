@@ -1,3 +1,11 @@
+/*
+ * Copyright OpenSearch Contributors
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The OpenSearch Contributors require contributions made to
+ * this file be licensed under the Apache-2.0 license or a
+ * compatible open source license.
+ */
 package org.opensearch.replication.repository
 
 import com.nhaarman.mockitokotlin2.doReturn
@@ -8,7 +16,8 @@ import org.apache.lucene.store.Directory
 import org.apache.lucene.store.IndexInput
 import org.mockito.ArgumentMatchers.any
 import org.mockito.ArgumentMatchers.eq
-import org.mockito.Mockito.*
+import org.mockito.Mockito.times
+import org.mockito.Mockito.verify
 import org.opensearch.common.concurrent.GatedCloseable
 import org.opensearch.index.shard.IndexShard
 import org.opensearch.index.store.Store
