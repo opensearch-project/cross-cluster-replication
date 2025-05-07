@@ -1,24 +1,30 @@
+/*
+ * Copyright OpenSearch Contributors
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The OpenSearch Contributors require contributions made to
+ * this file be licensed under the Apache-2.0 license or a
+ * compatible open source license.
+ */
 package org.opensearch.replication.integ.rest
 
-import org.opensearch.replication.MultiClusterRestTestCase
-import org.opensearch.replication.MultiClusterAnnotations
-import org.opensearch.replication.StartReplicationRequest
-import org.opensearch.replication.startReplication
-import org.opensearch.replication.REROUTE_TESTS_NOT_ELIGIBLE_FOR_SINGLE_NODE_CLUSTER
 import org.assertj.core.api.Assertions
-import org.opensearch.client.RequestOptions
-import org.opensearch.client.indices.CreateIndexRequest
 import org.junit.Assert
 import org.junit.Assume
 import org.junit.Before
+import org.opensearch.client.RequestOptions
+import org.opensearch.client.indices.CreateIndexRequest
+import org.opensearch.replication.MultiClusterAnnotations
+import org.opensearch.replication.MultiClusterRestTestCase
+import org.opensearch.replication.REROUTE_TESTS_NOT_ELIGIBLE_FOR_SINGLE_NODE_CLUSTER
+import org.opensearch.replication.StartReplicationRequest
+import org.opensearch.replication.startReplication
 import java.util.concurrent.TimeUnit
 
-
 @MultiClusterAnnotations.ClusterConfigurations(
-        MultiClusterAnnotations.ClusterConfiguration(clusterName = LEADER),
-        MultiClusterAnnotations.ClusterConfiguration(clusterName = FOLLOWER)
+    MultiClusterAnnotations.ClusterConfiguration(clusterName = LEADER),
+    MultiClusterAnnotations.ClusterConfiguration(clusterName = FOLLOWER),
 )
-
 class ClusterRerouteFollowerIT : MultiClusterRestTestCase() {
     private val leaderIndexName = "leader_index"
     private val followerIndexName = "follower_index"
@@ -36,9 +42,9 @@ class ClusterRerouteFollowerIT : MultiClusterRestTestCase() {
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
         followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
-        insertDocToIndex(LEADER, "1", "dummy data 1",leaderIndexName)
-        //Querying ES cluster throws random exceptions like ClusterManagerNotDiscovered or ShardsFailed etc, so catching them and retrying
-        assertBusy ({
+        insertDocToIndex(LEADER, "1", "dummy data 1", leaderIndexName)
+        // Querying ES cluster throws random exceptions like ClusterManagerNotDiscovered or ShardsFailed etc, so catching them and retrying
+        assertBusy({
             try {
                 Assertions.assertThat(docs(FOLLOWER, followerIndexName)).contains("dummy data 1")
             } catch (ex: Exception) {
@@ -46,15 +52,15 @@ class ClusterRerouteFollowerIT : MultiClusterRestTestCase() {
             }
         }, 1, TimeUnit.MINUTES)
         val nodes = getNodesInCluster(FOLLOWER)
-        val primaryNode = getPrimaryNodeForShard(FOLLOWER,followerIndexName, "0")
-        val unassignedNode = nodes.filter{!it.equals(primaryNode)}.stream().findFirst().get()
+        val primaryNode = getPrimaryNodeForShard(FOLLOWER, followerIndexName, "0")
+        val unassignedNode = nodes.filter { !it.equals(primaryNode) }.stream().findFirst().get()
         rerouteShard(FOLLOWER, "0", followerIndexName, primaryNode, unassignedNode)
-        assertBusy ({
-            Assertions.assertThat(getPrimaryNodeForShard(FOLLOWER,followerIndexName, "0")).isEqualTo(unassignedNode)
+        assertBusy({
+            Assertions.assertThat(getPrimaryNodeForShard(FOLLOWER, followerIndexName, "0")).isEqualTo(unassignedNode)
         }, 1, TimeUnit.MINUTES)
-        logger.info("rereouted shard is " + getPrimaryNodeForShard(FOLLOWER,followerIndexName, "0"))
-        insertDocToIndex(LEADER, "2", "dummy data 2",leaderIndexName)
-        assertBusy ({
+        logger.info("rereouted shard is " + getPrimaryNodeForShard(FOLLOWER, followerIndexName, "0"))
+        insertDocToIndex(LEADER, "2", "dummy data 2", leaderIndexName)
+        assertBusy({
             try {
                 Assertions.assertThat(docs(FOLLOWER, followerIndexName)).contains("dummy data 2")
             } catch (ex: Exception) {

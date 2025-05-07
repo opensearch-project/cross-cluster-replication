@@ -1,28 +1,25 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
  * The OpenSearch Contributors require contributions made to
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
- *
- * Modifications Copyright OpenSearch Contributors. See
- * GitHub history for details.
  */
-
 package org.opensearch.replication.task.index
 
-import org.opensearch.replication.task.ReplicationState
-import org.opensearch.replication.task.shard.ShardReplicationParams
 import org.opensearch.core.ParseField
 import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.core.common.io.stream.StreamOutput
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.core.xcontent.ObjectParser
 import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.XContentBuilder
 import org.opensearch.core.xcontent.XContentParser
-import org.opensearch.core.index.shard.ShardId
 import org.opensearch.persistent.PersistentTaskState
 import org.opensearch.persistent.PersistentTasksCustomMetadata.PersistentTask
+import org.opensearch.replication.task.ReplicationState
+import org.opensearch.replication.task.shard.ShardReplicationParams
 import java.io.IOException
 import java.lang.IllegalArgumentException
 
@@ -32,7 +29,7 @@ sealed class IndexReplicationState : PersistentTaskState {
     companion object {
         const val NAME = IndexReplicationExecutor.TASK_NAME
 
-        fun reader(inp : StreamInput) : IndexReplicationState {
+        fun reader(inp: StreamInput): IndexReplicationState {
             val state = inp.readEnum(ReplicationState::class.java)!!
             return when (state) {
                 ReplicationState.INIT -> InitialState
@@ -82,7 +79,7 @@ sealed class IndexReplicationState : PersistentTaskState {
 
         fun build(): IndexReplicationState {
             // Issue details - https://github.com/opensearch-project/cross-cluster-replication/issues/223
-            state = if(!this::state.isInitialized) {
+            state = if (!this::state.isInitialized) {
                 ReplicationState.MONITORING.name
             } else {
                 state
@@ -129,8 +126,8 @@ object MonitoringState : IndexReplicationState(ReplicationState.MONITORING)
 /**
  * State when index task is in failed state.
  */
-data class FailedState(val failedShards: Map<ShardId, PersistentTask<ShardReplicationParams>>, val errorMsg: String)
-    : IndexReplicationState(ReplicationState.FAILED) {
+data class FailedState(val failedShards: Map<ShardId, PersistentTask<ShardReplicationParams>>, val errorMsg: String) :
+    IndexReplicationState(ReplicationState.FAILED) {
     constructor(inp: StreamInput) : this(inp.readMap(::ShardId, ::PersistentTask), "")
 
     override fun writeTo(out: StreamOutput) {
@@ -140,18 +137,18 @@ data class FailedState(val failedShards: Map<ShardId, PersistentTask<ShardReplic
 
     override fun toXContent(builder: XContentBuilder, params: ToXContent.Params?): XContentBuilder {
         return builder.startObject()
-                .field("error_message", errorMsg)
-                .field("failed_shard_replication_tasks").map(failedShards.mapKeys { it.key.toString() })
-                .field("state", state)
-                .endObject()
+            .field("error_message", errorMsg)
+            .field("failed_shard_replication_tasks").map(failedShards.mapKeys { it.key.toString() })
+            .field("state", state)
+            .endObject()
     }
 }
 
 /**
  * State when index is being actively replicated.
  */
-data class FollowingState(val shardReplicationTasks: Map<ShardId, PersistentTask<ShardReplicationParams>>)
-    : IndexReplicationState(ReplicationState.FOLLOWING) {
+data class FollowingState(val shardReplicationTasks: Map<ShardId, PersistentTask<ShardReplicationParams>>) :
+    IndexReplicationState(ReplicationState.FOLLOWING) {
 
     constructor(inp: StreamInput) : this(inp.readMap(::ShardId, ::PersistentTask))
 

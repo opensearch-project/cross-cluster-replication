@@ -49,7 +49,7 @@ As with other types of contributions, the first step is to [open an issue on Git
 
 ## Becoming a maintainer
 You can become a maintainer by actively contributing to any project, and being nominated by an existing maintainer.
-Refer to [this](https://github.com/opensearch-project/.github/blob/main/RESPONSIBILITIES.md#becoming-a-maintainer) for the nomination process.  
+Refer to [this](https://github.com/opensearch-project/.github/blob/main/RESPONSIBILITIES.md#becoming-a-maintainer) for the nomination process.
 
 ## Developer Certificate of Origin
 
@@ -104,7 +104,7 @@ We run BWC test suite on all the changes to ensure that we do not break backward
 Run this command to trigger the complete bwc testsuite`./gradlew bwcTestSuite`
 
 Test suite covers following 3 scenarios:
-1. Mixed cluster: We create 3 node leader and follower cluster and upgrade one node on both clusters. After the upgrade, we verify that the ongoing replication keeps working as expected. Run this individual test using ``./gradlew mixedClusterTask``     
+1. Mixed cluster: We create 3 node leader and follower cluster and upgrade one node on both clusters. After the upgrade, we verify that the ongoing replication keeps working as expected. Run this individual test using ``./gradlew mixedClusterTask``
 2. Rolling upgrade: We create 3 node leader and follower cluster and upgrade all nodes one by one. After the upgrade, we verify that the ongoing replication keeps working as expected. Run this individual test using ``./gradlew rollingUpgradeClusterTask``
 3. Full cluster restart: We create 3 node leader and follower cluster and upgrade all nodes simultaneously. After the upgrade, we verify that the ongoing replication keeps working as expected. Run this individual test using ``./gradlew fullRestartClusterTask``
 
@@ -147,10 +147,10 @@ merged to main, the workflow will create a backport PR to the `1.x` branch.
 
 ## Security tests
 
-To run security tests locally, 
+To run security tests locally,
 ```
 git clone https://github.com/opensearch-project/security.git
-cd security 
+cd security
 ./gradlew clean build -Dbuild.snapshot=false -x test
 # REPLICATION_DIR - root dir of cross-cluster-replication repo
 cp build/distributions/opensearch-security-1.3.0.0.zip $REPLICATION_DIR/src/test/resources/security/plugin/opensearch-security.zip
@@ -158,7 +158,7 @@ cp build/distributions/opensearch-security-1.3.0.0.zip $REPLICATION_DIR/src/test
 ```
 
 ## Performance tests
- 
+
 To run Performance tests locally,
 ```
 bin/run_perf_test.sh --bundle-manifest path_to_OS_bundle_manifest --config config_path --without-security

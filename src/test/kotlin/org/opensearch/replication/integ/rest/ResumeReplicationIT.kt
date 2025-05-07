@@ -1,32 +1,17 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
  * The OpenSearch Contributors require contributions made to
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
- *
- * Modifications Copyright OpenSearch Contributors. See
- * GitHub history for details.
  */
-
 package org.opensearch.replication.integ.rest
 
-import org.opensearch.replication.MultiClusterAnnotations
-import org.opensearch.replication.MultiClusterRestTestCase
-import org.opensearch.replication.StartReplicationRequest
-import org.opensearch.replication.`validate aggregated paused status response`
-import org.opensearch.replication.`validate not paused status aggregated response`
-import org.opensearch.replication.`validate not paused status response`
-import org.opensearch.replication.`validate paused status response`
-import org.opensearch.replication.`validate status syncing aggregated response`
-import org.opensearch.replication.`validate status syncing response`
-import org.opensearch.replication.pauseReplication
-import org.opensearch.replication.replicationStatus
-import org.opensearch.replication.resumeReplication
-import org.opensearch.replication.startReplication
-import org.opensearch.replication.stopReplication
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.junit.Assert
+import org.junit.Assume
 import org.opensearch.action.DocWriteResponse
 import org.opensearch.action.admin.indices.delete.DeleteIndexRequest
 import org.opensearch.action.admin.indices.open.OpenIndexRequest
@@ -39,17 +24,28 @@ import org.opensearch.client.indices.CreateIndexRequest
 import org.opensearch.client.indices.GetMappingsRequest
 import org.opensearch.common.io.PathUtils
 import org.opensearch.common.settings.Settings
-import org.junit.Assert
-import org.junit.Assume
+import org.opensearch.replication.ANALYZERS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS
+import org.opensearch.replication.MultiClusterAnnotations
+import org.opensearch.replication.MultiClusterRestTestCase
+import org.opensearch.replication.StartReplicationRequest
+import org.opensearch.replication.pauseReplication
+import org.opensearch.replication.replicationStatus
+import org.opensearch.replication.resumeReplication
+import org.opensearch.replication.startReplication
+import org.opensearch.replication.`validate aggregated paused status response`
+import org.opensearch.replication.`validate not paused status aggregated response`
+import org.opensearch.replication.`validate not paused status response`
+import org.opensearch.replication.`validate paused status response`
+import org.opensearch.replication.`validate status syncing aggregated response`
+import org.opensearch.replication.`validate status syncing response`
 import java.nio.file.Files
 import java.util.concurrent.TimeUnit
-import org.opensearch.replication.ANALYZERS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS
 
 @MultiClusterAnnotations.ClusterConfigurations(
-        MultiClusterAnnotations.ClusterConfiguration(clusterName = LEADER),
-        MultiClusterAnnotations.ClusterConfiguration(clusterName = FOLLOWER)
+    MultiClusterAnnotations.ClusterConfiguration(clusterName = LEADER),
+    MultiClusterAnnotations.ClusterConfiguration(clusterName = FOLLOWER),
 )
-class ResumeReplicationIT: MultiClusterRestTestCase() {
+class ResumeReplicationIT : MultiClusterRestTestCase() {
     private val leaderIndexName = "leader_index"
     private val followerIndexName = "resumed_index"
     private val leaderClusterPath = "testclusters/leaderCluster-0"
@@ -70,11 +66,10 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
         followerClient.pauseReplication(followerIndexName)
         var statusResp = followerClient.replicationStatus(followerIndexName)
         `validate paused status response`(statusResp)
-        statusResp = followerClient.replicationStatus(followerIndexName,false)
+        statusResp = followerClient.replicationStatus(followerIndexName, false)
         `validate aggregated paused status response`(statusResp)
         followerClient.resumeReplication(followerIndexName)
     }
-
 
     fun `test resume without pause `() {
         val followerClient = getClientForCluster(FOLLOWER)
@@ -86,15 +81,15 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
         assertThatThrownBy {
             var statusResp = followerClient.replicationStatus(followerIndexName)
             `validate status syncing response`(statusResp)
-            statusResp = followerClient.replicationStatus(followerIndexName,false)
+            statusResp = followerClient.replicationStatus(followerIndexName, false)
             `validate status syncing aggregated response`(statusResp)
             followerClient.resumeReplication(followerIndexName)
             statusResp = followerClient.replicationStatus(followerIndexName)
             `validate not paused status response`(statusResp)
-            statusResp = followerClient.replicationStatus(followerIndexName,false)
+            statusResp = followerClient.replicationStatus(followerIndexName, false)
             `validate not paused status aggregated response`(statusResp)
         }.isInstanceOf(ResponseException::class.java)
-                .hasMessageContaining("Replication on Index ${followerIndexName} is already running")
+            .hasMessageContaining("Replication on Index $followerIndexName is already running")
     }
 
     fun `test resume without retention lease`() {
@@ -113,7 +108,7 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
         assertThatThrownBy {
             followerClient.resumeReplication(followerIndexName)
         }.isInstanceOf(ResponseException::class.java)
-                .hasMessageContaining("Retention lease doesn't exist. Replication can't be resumed for $followerIndexName")
+            .hasMessageContaining("Retention lease doesn't exist. Replication can't be resumed for $followerIndexName")
     }
 
     fun `test pause and resume replication amid leader index close and open`() {
@@ -128,20 +123,20 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
         and verify the same
          */
         followerClient.pauseReplication(followerIndexName)
-        leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
-        leaderClient.indices().open(OpenIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
+        leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        leaderClient.indices().open(OpenIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
         followerClient.resumeReplication(followerIndexName)
-        //Update mapping post resume assert
-        val sourceMap : MutableMap<String, String> = HashMap()
+        // Update mapping post resume assert
+        val sourceMap: MutableMap<String, String> = HashMap()
         sourceMap["x"] = "y"
         val indexResponse = leaderClient.index(IndexRequest(leaderIndexName).id("2").source(sourceMap), RequestOptions.DEFAULT)
         assertThat(indexResponse.result).isIn(DocWriteResponse.Result.CREATED, DocWriteResponse.Result.UPDATED)
-        assertBusy ({
+        assertBusy({
             Assert.assertEquals(
-                    leaderClient.indices().getMapping(GetMappingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
-                            .mappings()[leaderIndexName],
-                    followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
-                            .mappings()[followerIndexName]
+                leaderClient.indices().getMapping(GetMappingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
+                    .mappings()[leaderIndexName],
+                followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
+                    .mappings()[followerIndexName],
             )
         }, 60, TimeUnit.SECONDS)
     }
@@ -157,15 +152,14 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
         and verify the same
          */
         followerClient.pauseReplication(followerIndexName)
-        leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
+        leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
         assertThatThrownBy {
             followerClient.resumeReplication(followerIndexName)
         }.isInstanceOf(ResponseException::class.java)
-                .hasMessageContaining("closed")
+            .hasMessageContaining("closed")
     }
 
     fun `test that replication fails to resume when custom analyser is not present in follower`() {
-
         Assume.assumeFalse(ANALYZERS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS, checkifIntegTestRemote())
 
         val synonyms = javaClass.getResourceAsStream("/analyzers/synonyms.txt")
@@ -180,7 +174,7 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
             createConnectionBetweenClusters(FOLLOWER, LEADER)
             followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
             followerClient.pauseReplication(followerIndexName)
-            leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
+            leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
             val settings: Settings = Settings.builder().loadFromStream(synonymsJson, javaClass.getResourceAsStream(synonymsJson), false)
                 .build()
             try {
@@ -188,7 +182,7 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
             } catch (e: Exception) {
                 assumeNoException("Ignored test as analyzer setting could not be added", e)
             }
-            leaderClient.indices().open(OpenIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
+            leaderClient.indices().open(OpenIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
             assertThatThrownBy {
                 followerClient.resumeReplication(followerIndexName)
             }.isInstanceOf(ResponseException::class.java).hasMessageContaining("resource_not_found_exception")
@@ -200,7 +194,6 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
     }
 
     fun `test that replication resumes when custom analyser is present in follower`() {
-
         Assume.assumeFalse(ANALYZERS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS, checkifIntegTestRemote())
 
         val synonyms = javaClass.getResourceAsStream("/analyzers/synonyms.txt")
@@ -218,7 +211,7 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
             createConnectionBetweenClusters(FOLLOWER, LEADER)
             followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
             followerClient.pauseReplication(followerIndexName)
-            leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
+            leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
             Files.copy(synonyms, followerSynonymPath)
             val settings: Settings = Settings.builder().loadFromStream(synonymsJson, javaClass.getResourceAsStream(synonymsJson), false)
                 .build()
@@ -227,7 +220,7 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
             } catch (e: Exception) {
                 assumeNoException("Ignored test as analyzer setting could not be added", e)
             }
-            leaderClient.indices().open(OpenIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
+            leaderClient.indices().open(OpenIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
             followerClient.resumeReplication(followerIndexName)
             var statusResp = followerClient.replicationStatus(followerIndexName)
             `validate status syncing response`(statusResp)
@@ -242,7 +235,6 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
     }
 
     fun `test that replication resumes when custom analyser is overridden and present in follower`() {
-
         Assume.assumeFalse(ANALYZERS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS, checkifIntegTestRemote())
 
         val synonyms = javaClass.getResourceAsStream("/analyzers/synonyms.txt")
@@ -271,7 +263,7 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
                 .build()
             followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName, overriddenSettings), waitForRestore = true)
             followerClient.pauseReplication(followerIndexName)
-            leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
+            leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
             Files.copy(synonyms, newSynonymPath)
             settings = Settings.builder()
                 .put("index.analysis.filter.my_filter.synonyms_path", "synonyms_new.txt")
@@ -281,7 +273,7 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
             } catch (e: Exception) {
                 assumeNoException("Ignored test as analyzer setting could not be added", e)
             }
-            leaderClient.indices().open(OpenIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
+            leaderClient.indices().open(OpenIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
             followerClient.resumeReplication(followerIndexName)
             var statusResp = followerClient.replicationStatus(followerIndexName)
             `validate status syncing response`(statusResp)

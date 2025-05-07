@@ -1,14 +1,11 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
  * The OpenSearch Contributors require contributions made to
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
- *
- * Modifications Copyright OpenSearch Contributors. See
- * GitHub history for details.
  */
-
 package org.opensearch.replication.action.stats
 
 import org.opensearch.core.common.io.stream.StreamInput
@@ -18,7 +15,7 @@ import java.io.IOException
 
 class NodeStatsRequest : TransportRequest {
 
-    constructor(inp :StreamInput) : super(inp)
+    constructor(inp: StreamInput) : super(inp)
 
     constructor() : super()
 
@@ -27,4 +24,3 @@ class NodeStatsRequest : TransportRequest {
         super.writeTo(out)
     }
 }
-

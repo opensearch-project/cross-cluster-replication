@@ -1,21 +1,17 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
  * The OpenSearch Contributors require contributions made to
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
- *
- * Modifications Copyright OpenSearch Contributors. See
- * GitHub history for details.
  */
-
 package org.opensearch.replication.action.changes
 
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import org.apache.logging.log4j.LogManager
 import org.opensearch.OpenSearchTimeoutException
-import org.opensearch.core.action.ActionListener
 import org.opensearch.action.support.ActionFilters
 import org.opensearch.action.support.single.shard.TransportSingleShardAction
 import org.opensearch.cluster.ClusterState
@@ -23,34 +19,43 @@ import org.opensearch.cluster.metadata.IndexNameExpressionResolver
 import org.opensearch.cluster.routing.ShardsIterator
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Inject
+import org.opensearch.common.unit.TimeValue
+import org.opensearch.core.action.ActionListener
 import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.core.common.io.stream.Writeable
-import org.opensearch.common.unit.TimeValue
 import org.opensearch.core.index.shard.ShardId
 import org.opensearch.index.shard.IndexShard
 import org.opensearch.index.translog.Translog
 import org.opensearch.indices.IndicesService
-import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING
 import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATION_EXECUTOR_NAME_LEADER
+import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING
 import org.opensearch.replication.seqno.RemoteClusterStats
 import org.opensearch.replication.seqno.RemoteClusterTranslogService
 import org.opensearch.replication.seqno.RemoteShardMetric
-import org.opensearch.replication.util.*
+import org.opensearch.replication.util.ValidationUtil
+import org.opensearch.replication.util.completeWith
+import org.opensearch.replication.util.coroutineContext
+import org.opensearch.replication.util.waitForGlobalCheckpoint
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportActionProxy
 import org.opensearch.transport.TransportService
 import java.util.concurrent.TimeUnit
 import kotlin.math.min
 
-class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clusterService: ClusterService,
-                                                    transportService: TransportService, actionFilters: ActionFilters,
-                                                    indexNameExpressionResolver: IndexNameExpressionResolver,
-                                                    private val indicesService: IndicesService,
-                                                    private val translogService: RemoteClusterTranslogService,
-                                                    private val remoteStatsService: RemoteClusterStats) :
+class TransportGetChangesAction @Inject constructor(
+    threadPool: ThreadPool,
+    clusterService: ClusterService,
+    transportService: TransportService,
+    actionFilters: ActionFilters,
+    indexNameExpressionResolver: IndexNameExpressionResolver,
+    private val indicesService: IndicesService,
+    private val translogService: RemoteClusterTranslogService,
+    private val remoteStatsService: RemoteClusterStats,
+) :
     TransportSingleShardAction<GetChangesRequest, GetChangesResponse>(
         GetChangesAction.NAME, threadPool, clusterService, transportService, actionFilters,
-        indexNameExpressionResolver, ::GetChangesRequest, REPLICATION_EXECUTOR_NAME_LEADER) {
+        indexNameExpressionResolver, ::GetChangesRequest, REPLICATION_EXECUTOR_NAME_LEADER,
+    ) {
 
     init {
         TransportActionProxy.registerProxyAction(transportService, GetChangesAction.NAME, ::GetChangesResponse)
@@ -72,7 +77,7 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
             // TODO: Figure out if we need to acquire a primary permit here
             log.debug("$REPLICATION_EXECUTOR_NAME_LEADER coroutine has initiated")
             listener.completeWith {
-                var relativeStartNanos  = System.nanoTime()
+                var relativeStartNanos = System.nanoTime()
                 remoteStatsService.stats[shardId] = remoteStatsService.stats.getOrDefault(shardId, RemoteShardMetric())
                 val indexMetric = remoteStatsService.stats[shardId]!!
 
@@ -96,26 +101,28 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
                     }
                 }
 
-                relativeStartNanos  = System.nanoTime()
+                relativeStartNanos = System.nanoTime()
                 // At this point lastSyncedGlobalCheckpoint is at least fromSeqNo
                 val toSeqNo = min(lastGlobalCheckpoint(indexShard, isRemoteEnabledOrMigrating), request.toSeqNo)
 
                 var ops: List<Translog.Operation> = listOf()
                 var fetchFromTranslog = isTranslogPruningByRetentionLeaseEnabled(shardId) && isRemoteEnabledOrMigrating == false
-                if(fetchFromTranslog) {
+                if (fetchFromTranslog) {
                     try {
                         ops = translogService.getHistoryOfOperations(indexShard, request.fromSeqNo, toSeqNo)
                     } catch (e: Exception) {
-                        log.debug("Fetching changes from translog for ${request.shardId} " +
-                                "- from:${request.fromSeqNo}, to:$toSeqNo failed with exception - ${e.stackTraceToString()}")
+                        log.debug(
+                            "Fetching changes from translog for ${request.shardId} " +
+                                "- from:${request.fromSeqNo}, to:$toSeqNo failed with exception - ${e.stackTraceToString()}",
+                        )
                         fetchFromTranslog = false
                     }
                 }
 
                 // Translog fetch is disabled or not found
-                if(!fetchFromTranslog) {
+                if (!fetchFromTranslog) {
                     log.debug("Fetching changes from lucene for ${request.shardId} - from:${request.fromSeqNo}, to:$toSeqNo")
-                    relativeStartNanos  = System.nanoTime()
+                    relativeStartNanos = System.nanoTime()
                     indexShard.newChangesSnapshot("odr", request.fromSeqNo, toSeqNo, true, true).use { snapshot ->
                         ops = ArrayList(snapshot.totalOperations())
                         var op = snapshot.next()
@@ -138,7 +145,7 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
                 indexMetric.tlogSize.set(indexShard.translogStats().translogSizeInBytes)
                 indexMetric.ops.addAndGet(ops.size.toLong())
 
-                ops.stream().forEach{op -> indexMetric.bytesRead.addAndGet(op.estimateSize()) }
+                ops.stream().forEach { op -> indexMetric.bytesRead.addAndGet(op.estimateSize()) }
                 GetChangesResponse(ops, request.fromSeqNo, indexShard.maxSeqNoOfUpdatesOrDeletes, lastGlobalCheckpoint(indexShard, isRemoteEnabledOrMigrating))
             }
         }
@@ -155,11 +162,10 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
         }
     }
 
-
     private fun isTranslogPruningByRetentionLeaseEnabled(shardId: ShardId): Boolean {
         val enabled = clusterService.state().metadata.indices.get(shardId.indexName)
-                ?.settings?.getAsBoolean(REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING.key, false)
-        if(enabled != null) {
+            ?.settings?.getAsBoolean(REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING.key, false)
+        if (enabled != null) {
             return enabled
         }
         return false
@@ -176,7 +182,10 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
     override fun shards(state: ClusterState, request: InternalRequest): ShardsIterator {
         val shardIt = state.routingTable().shardRoutingTable(request.request().shardId)
         // Random active shards
-        return if (ValidationUtil.isRemoteEnabledOrMigrating(clusterService)) shardIt.primaryShardIt()
-        else shardIt.activeInitializingShardsRandomIt()
+        return if (ValidationUtil.isRemoteEnabledOrMigrating(clusterService)) {
+            shardIt.primaryShardIt()
+        } else {
+            shardIt.activeInitializingShardsRandomIt()
+        }
     }
 }

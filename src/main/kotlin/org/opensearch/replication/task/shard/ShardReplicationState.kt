@@ -1,17 +1,13 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
  * The OpenSearch Contributors require contributions made to
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
- *
- * Modifications Copyright OpenSearch Contributors. See
- * GitHub history for details.
  */
-
 package org.opensearch.replication.task.shard
 
-import org.opensearch.replication.task.ReplicationState
 import org.opensearch.OpenSearchException
 import org.opensearch.core.ParseField
 import org.opensearch.core.common.io.stream.StreamInput
@@ -21,6 +17,7 @@ import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.XContentBuilder
 import org.opensearch.core.xcontent.XContentParser
 import org.opensearch.persistent.PersistentTaskState
+import org.opensearch.replication.task.ReplicationState
 import java.io.IOException
 import java.lang.IllegalArgumentException
 import java.lang.IllegalStateException
@@ -30,9 +27,9 @@ sealed class ShardReplicationState : PersistentTaskState {
     var state: ReplicationState
     companion object {
         const val NAME = ShardReplicationExecutor.TASK_NAME
-        fun reader(inp : StreamInput): ShardReplicationState {
+        fun reader(inp: StreamInput): ShardReplicationState {
             val state = inp.readEnum(ReplicationState::class.java)!!
-            return when(state) {
+            return when (state) {
                 ReplicationState.INIT -> throw IllegalStateException("INIT - Illegal state for shard replication task")
                 ReplicationState.RESTORING -> throw IllegalStateException("RESTORING - Illegal state for shard replication task")
                 ReplicationState.INIT_FOLLOW -> throw IllegalStateException("INIT_FOLLOW - Illegal state for shard replication task")
@@ -68,8 +65,8 @@ sealed class ShardReplicationState : PersistentTaskState {
 
     override fun toXContent(builder: XContentBuilder, params: ToXContent.Params?): XContentBuilder {
         return builder.startObject()
-                .field("state", state)
-                .endObject()
+            .field("state", state)
+            .endObject()
     }
 
     class Builder {
@@ -80,7 +77,7 @@ sealed class ShardReplicationState : PersistentTaskState {
         }
         fun build(): ShardReplicationState {
             // Issue details - https://github.com/opensearch-project/cross-cluster-replication/issues/223
-            state = if(!this::state.isInitialized) {
+            state = if (!this::state.isInitialized) {
                 ReplicationState.FOLLOWING.name
             } else {
                 state
@@ -98,15 +95,14 @@ sealed class ShardReplicationState : PersistentTaskState {
     }
 }
 
-
 object FollowingState : ShardReplicationState(ReplicationState.FOLLOWING)
 object CompletedState : ShardReplicationState(ReplicationState.COMPLETED)
 
 /**
  * State when shard task is in failed state.
  */
-data class FailedState(val exception: OpenSearchException?)
-    : ShardReplicationState(ReplicationState.FAILED) {
+data class FailedState(val exception: OpenSearchException?) :
+    ShardReplicationState(ReplicationState.FAILED) {
     constructor(inp: StreamInput) : this(inp.readException<OpenSearchException>())
 
     override fun writeTo(out: StreamOutput) {
@@ -123,4 +119,3 @@ data class FailedState(val exception: OpenSearchException?)
         return builder.endObject()
     }
 }
-

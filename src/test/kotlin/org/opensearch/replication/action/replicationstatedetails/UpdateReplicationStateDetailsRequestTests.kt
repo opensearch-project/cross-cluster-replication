@@ -1,10 +1,18 @@
+/*
+ * Copyright OpenSearch Contributors
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The OpenSearch Contributors require contributions made to
+ * this file be licensed under the Apache-2.0 license or a
+ * compatible open source license.
+ */
 package org.opensearch.replication.action.replicationstatedetails
 
 import org.assertj.core.api.Assertions
 import org.opensearch.common.io.stream.BytesStreamOutput
 import org.opensearch.test.OpenSearchTestCase
 
-class UpdateReplicationStateDetailsRequestTests: OpenSearchTestCase() {
+class UpdateReplicationStateDetailsRequestTests : OpenSearchTestCase() {
     companion object {
         const val INDEX = "index"
     }

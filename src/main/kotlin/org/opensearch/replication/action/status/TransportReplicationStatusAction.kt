@@ -1,47 +1,48 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
  * The OpenSearch Contributors require contributions made to
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
- *
- * Modifications Copyright OpenSearch Contributors. See
- * GitHub history for details.
  */
-
 package org.opensearch.replication.action.status
 
-
-import org.opensearch.replication.ReplicationException
-import org.opensearch.replication.metadata.ReplicationMetadataManager
-import org.opensearch.replication.util.*
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import org.apache.logging.log4j.LogManager
 import org.opensearch.ResourceNotFoundException
-import org.opensearch.core.action.ActionListener
 import org.opensearch.action.support.ActionFilters
 import org.opensearch.action.support.HandledTransportAction
-import org.opensearch.transport.client.Client
 import org.opensearch.common.inject.Inject
+import org.opensearch.core.action.ActionListener
+import org.opensearch.replication.ReplicationException
+import org.opensearch.replication.metadata.ReplicationMetadataManager
+import org.opensearch.replication.util.completeWith
+import org.opensearch.replication.util.coroutineContext
+import org.opensearch.replication.util.suspendExecute
 import org.opensearch.tasks.Task
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
+import org.opensearch.transport.client.Client
 
-class TransportReplicationStatusAction @Inject constructor(transportService: TransportService,
-                                                           val threadPool: ThreadPool,
-                                                           actionFilters: ActionFilters,
-                                                           private val client : Client,
-                                                           private val replicationMetadataManager: ReplicationMetadataManager) :
-        HandledTransportAction<ShardInfoRequest, ReplicationStatusResponse>(ReplicationStatusAction.NAME,
-                transportService, actionFilters, ::ShardInfoRequest),
-        CoroutineScope by GlobalScope {
+class TransportReplicationStatusAction @Inject constructor(
+    transportService: TransportService,
+    val threadPool: ThreadPool,
+    actionFilters: ActionFilters,
+    private val client: Client,
+    private val replicationMetadataManager: ReplicationMetadataManager,
+) :
+    HandledTransportAction<ShardInfoRequest, ReplicationStatusResponse>(
+        ReplicationStatusAction.NAME,
+        transportService, actionFilters, ::ShardInfoRequest,
+    ),
+    CoroutineScope by GlobalScope {
 
     companion object {
         private val log = LogManager.getLogger(TransportReplicationStatusAction::class.java)
     }
-
 
     override fun doExecute(task: Task, request: ShardInfoRequest, listener: ActionListener<ReplicationStatusResponse>) {
         launch(threadPool.coroutineContext()) {
@@ -51,7 +52,7 @@ class TransportReplicationStatusAction @Inject constructor(transportService: Tra
                     var status = if (metadata.overallState.isNullOrEmpty()) "STOPPED" else metadata.overallState
                     var reason = metadata.reason
                     if (!status.equals("RUNNING")) {
-                        var replicationStatusResponse= ReplicationStatusResponse(status)
+                        var replicationStatusResponse = ReplicationStatusResponse(status)
                         replicationStatusResponse.connectionAlias = metadata.connectionName
                         replicationStatusResponse.followerIndexName = metadata.followerContext.resource
                         replicationStatusResponse.leaderIndexName = metadata.leaderContext.resource
@@ -59,14 +60,18 @@ class TransportReplicationStatusAction @Inject constructor(transportService: Tra
                         replicationStatusResponse.reason = reason
                         return@completeWith replicationStatusResponse
                     }
-                    var followerResponse = client.suspendExecute(ShardsInfoAction.INSTANCE,
-                            ShardInfoRequest(metadata.followerContext.resource),true)
+                    var followerResponse = client.suspendExecute(
+                        ShardsInfoAction.INSTANCE,
+                        ShardInfoRequest(metadata.followerContext.resource), true,
+                    )
                     val remoteClient = client.getRemoteClusterClient(metadata.connectionName)
-                    var leaderResponse = remoteClient.suspendExecute(ShardsInfoAction.INSTANCE,
-                            ShardInfoRequest(metadata.leaderContext.resource),true)
+                    var leaderResponse = remoteClient.suspendExecute(
+                        ShardsInfoAction.INSTANCE,
+                        ShardInfoRequest(metadata.leaderContext.resource), true,
+                    )
 
                     if (followerResponse.shardInfoResponse.size > 0) {
-                        status =  followerResponse.shardInfoResponse.get(0).status 
+                        status = followerResponse.shardInfoResponse.get(0).status
                     }
                     if (!status.equals(ShardInfoResponse.BOOTSTRAPPING)) {
                         var shardResponses = followerResponse.shardInfoResponse
@@ -76,8 +81,11 @@ class TransportReplicationStatusAction @Inject constructor(transportService: Tra
                                 val remoteCheckPoint = it.replayDetails.remoteCheckpoint
                                 shardResponses.listIterator().forEach {
                                     if (it.isReplayDetailsInitialized()) {
-                                        if (leaderShardName.equals(it.shardId.toString()
-                                                        .replace(metadata.followerContext.resource, metadata.leaderContext.resource))) {
+                                        if (leaderShardName.equals(
+                                                it.shardId.toString()
+                                                    .replace(metadata.followerContext.resource, metadata.leaderContext.resource),
+                                            )
+                                        ) {
                                             it.replayDetails.remoteCheckpoint = remoteCheckPoint
                                         }
                                     }
@@ -96,11 +104,11 @@ class TransportReplicationStatusAction @Inject constructor(transportService: Tra
                         followerResponse.isVerbose = false
                     }
                     followerResponse
-                } catch (e : ResourceNotFoundException) {
-                    log.error("got ResourceNotFoundException while querying for status ",e)
+                } catch (e: ResourceNotFoundException) {
+                    log.error("got ResourceNotFoundException while querying for status ", e)
                     ReplicationStatusResponse("REPLICATION NOT IN PROGRESS")
-                } catch(e : Exception) {
-                    log.error("got Exception while querying for status ",e)
+                } catch (e: Exception) {
+                    log.error("got Exception while querying for status ", e)
                     throw org.opensearch.replication.ReplicationException("failed to fetch replication status")
                 }
             }
@@ -122,7 +130,6 @@ class TransportReplicationStatusAction @Inject constructor(transportService: Tra
         var startTime: Long = Long.MAX_VALUE
         var time: Long = 0
         var numberOfShardsiInRestore: Int = 0
-
 
         followerResponse.shardInfoResponse.forEach {
             if (it.isReplayDetailsInitialized()) {
@@ -148,9 +155,7 @@ class TransportReplicationStatusAction @Inject constructor(transportService: Tra
             followerResponse.aggregatedReplayDetails = ReplayDetails(aggregatedRemoteCheckpoint, aggregatedLocalCheckpoint, aggregatedSeqNo)
         }
         if (anyShardInRestore) {
-            followerResponse.aggregatedRestoreDetails = RestoreDetails(aggregateTotalBytes, aggregateRecoveredBytes, aggregateRecovereyPercentage
-                    , aggregateTotalFiles, aggregateRecoveredFiles, aggregateFileRecovereyPercentage, startTime, time)
+            followerResponse.aggregatedRestoreDetails = RestoreDetails(aggregateTotalBytes, aggregateRecoveredBytes, aggregateRecovereyPercentage, aggregateTotalFiles, aggregateRecoveredFiles, aggregateFileRecovereyPercentage, startTime, time)
         }
     }
 }
-

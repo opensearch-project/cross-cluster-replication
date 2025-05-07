@@ -1,26 +1,21 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
  * The OpenSearch Contributors require contributions made to
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
- *
- * Modifications Copyright OpenSearch Contributors. See
- * GitHub history for details.
  */
-
 package org.opensearch.replication.action.changes
 
 import org.opensearch.action.ActionRequestValidationException
 import org.opensearch.action.support.single.shard.SingleShardRequest
-import org.opensearch.cluster.node.DiscoveryNode
 import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.core.common.io.stream.StreamOutput
 import org.opensearch.core.index.shard.ShardId
-import org.opensearch.transport.RemoteClusterAwareRequest
 
 class GetChangesRequest : SingleShardRequest<GetChangesRequest> {
-    val shardId : ShardId
+    val shardId: ShardId
     val fromSeqNo: Long
     val toSeqNo: Long
 
@@ -30,7 +25,7 @@ class GetChangesRequest : SingleShardRequest<GetChangesRequest> {
         this.toSeqNo = toSeqNo
     }
 
-    constructor(input : StreamInput) : super(input) {
+    constructor(input: StreamInput) : super(input) {
         this.shardId = ShardId(input)
         this.fromSeqNo = input.readLong()
         this.toSeqNo = input.readVLong()

@@ -21,7 +21,7 @@
     - [License](#license)
 
 
-Cross-Cluster Replication Plugin enables users to replicate data across two opensearch clusters which enables a number of use cases such as 
+Cross-Cluster Replication Plugin enables users to replicate data across two opensearch clusters which enables a number of use cases such as
 
 - **Disaster Recovery (DR) or High Availability (HA):** For production systems with high availability requirements, cross-cluster replication provides the safety-net of being able to failover to an alternate cluster in case of failure or outages on the primary cluster.
 - **Reduced Query Latency:** For critical business needs, responding to the customer query in the shortest time is critical. Replicating data to a cluster that is closest to the user can drastically reduce the query latency. Applications can redirect the customer query to the nearest data center where data has been replicated.
@@ -32,9 +32,9 @@ Following are the tenets that guided our design:
 
 - **Secure**: Cross-cluster replication should offer strong security controls for all flows and APIs.
 - **Correctness**: There must be no difference between the intended contents of the follower index and the leader index.
-- **Performance**: Replication should not impact indexing rate of the leader cluster. 
+- **Performance**: Replication should not impact indexing rate of the leader cluster.
 - **Lag**: The replication lag between the leader and the follower cluster should be under a few seconds.
-- **Resource usage**: Replication should use minimal resources. 
+- **Resource usage**: Replication should use minimal resources.
 
 
 The replication machinery is implemented as an OpenSearch plugin that exposes APIs to control replication, spawns background persistent tasks to asynchronously replicate indices and utilizes snapshot repository abstraction to facilitate bootstrap. Replication relies on cross cluster connection setup from the follower cluster to the leader cluster for connectivity. Once replication is initiated on an index, a background persistent task per primary shard on the follower cluster continuously polls corresponding shards from the leader index and applies the changes on to the follower shard. The replication plugin offers seamless integration with the OpenSearch Security plugin for secure data transfer and access control.
@@ -45,7 +45,7 @@ The replication machinery is implemented as an OpenSearch plugin that exposes AP
 The project in this package uses the [Gradle](https://docs.gradle.org/current/userguide/userguide.html) build system. Gradle comes with excellent documentation that should be your first stop when trying to figure out how to operate or modify the build.
 
 ### Building from the command line
-Set JAVA_HOME to JDK-21 or above  
+Set JAVA_HOME to JDK-21 or above
 
 1. `./gradlew build` builds and tests project.
 2. `./gradlew clean release` cleans previous builds, creates new build and tests project.
@@ -146,7 +146,7 @@ curl -XPOST "http://${FOLLOWER}/_plugins/_replication/follower-01/_stop?pretty" 
 -H 'Content-type: application/json' -d'{}'
 
 # You can confirm data isn't replicated any more by making modifications to
-# leader-01 index on $LEADER cluster 
+# leader-01 index on $LEADER cluster
 ```
 
 For much detailed instructions/examples please refer to [HANDBOOK](HANDBOOK.md).

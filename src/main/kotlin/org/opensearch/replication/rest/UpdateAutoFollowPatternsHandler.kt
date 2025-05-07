@@ -1,26 +1,23 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
  * The OpenSearch Contributors require contributions made to
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
- *
- * Modifications Copyright OpenSearch Contributors. See
- * GitHub history for details.
  */
-
 package org.opensearch.replication.rest
 
+import org.opensearch.OpenSearchStatusException
+import org.opensearch.core.rest.RestStatus
 import org.opensearch.replication.action.autofollow.UpdateAutoFollowPatternAction
 import org.opensearch.replication.action.autofollow.UpdateAutoFollowPatternRequest
-import org.opensearch.OpenSearchStatusException
-import org.opensearch.transport.client.node.NodeClient
 import org.opensearch.rest.BaseRestHandler
 import org.opensearch.rest.BaseRestHandler.RestChannelConsumer
 import org.opensearch.rest.RestHandler
 import org.opensearch.rest.RestRequest
-import org.opensearch.core.rest.RestStatus
 import org.opensearch.rest.action.RestToXContentListener
+import org.opensearch.transport.client.node.NodeClient
 
 class UpdateAutoFollowPatternsHandler : BaseRestHandler() {
 
@@ -29,8 +26,10 @@ class UpdateAutoFollowPatternsHandler : BaseRestHandler() {
     }
 
     override fun routes(): List<RestHandler.Route> {
-        return listOf(RestHandler.Route(RestRequest.Method.POST, PATH),
-            RestHandler.Route(RestRequest.Method.DELETE, PATH))
+        return listOf(
+            RestHandler.Route(RestRequest.Method.POST, PATH),
+            RestHandler.Route(RestRequest.Method.DELETE, PATH),
+        )
     }
 
     override fun getName() = "plugins_replication_autofollow_update"

@@ -1,14 +1,11 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
  * The OpenSearch Contributors require contributions made to
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
- *
- * Modifications Copyright OpenSearch Contributors. See
- * GitHub history for details.
  */
-
 package org.opensearch.replication.action.replay
 
 import org.opensearch.action.support.replication.ReplicatedWriteRequest
@@ -24,11 +21,13 @@ class ReplayChangesRequest : ReplicatedWriteRequest<ReplayChangesRequest> {
     val changes: List<Translog.Operation>
     val maxSeqNoOfUpdatesOrDeletes: Long
 
-    constructor(shardId: ShardId,
-                changes: List<Translog.Operation>,
-                maxSeqNoOfUpdatesOrDeletes: Long,
-                leaderAlias: String,
-                leaderIndex: String) : super(shardId) {
+    constructor(
+        shardId: ShardId,
+        changes: List<Translog.Operation>,
+        maxSeqNoOfUpdatesOrDeletes: Long,
+        leaderAlias: String,
+        leaderIndex: String,
+    ) : super(shardId) {
         this.changes = changes
         this.maxSeqNoOfUpdatesOrDeletes = maxSeqNoOfUpdatesOrDeletes
         this.leaderAlias = leaderAlias

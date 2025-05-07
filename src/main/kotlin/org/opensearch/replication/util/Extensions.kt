@@ -1,47 +1,41 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
  * The OpenSearch Contributors require contributions made to
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
- *
- * Modifications Copyright OpenSearch Contributors. See
- * GitHub history for details.
  */
-
 package org.opensearch.replication.util
 
-import org.opensearch.replication.repository.RemoteClusterRepository
-import org.opensearch.replication.metadata.store.ReplicationContext
-import org.opensearch.replication.metadata.store.ReplicationMetadata
-import org.opensearch.commons.authuser.User
 import kotlinx.coroutines.delay
 import org.apache.logging.log4j.Logger
 import org.opensearch.OpenSearchException
-import org.opensearch.OpenSearchSecurityException
-import org.opensearch.ResourceNotFoundException
-import org.opensearch.core.action.ActionListener
 import org.opensearch.action.ActionRequest
-import org.opensearch.core.action.ActionResponse
 import org.opensearch.action.ActionType
 import org.opensearch.action.index.IndexRequestBuilder
 import org.opensearch.action.index.IndexResponse
 import org.opensearch.action.support.TransportActions
-import org.opensearch.transport.client.Client
 import org.opensearch.common.util.concurrent.ThreadContext
+import org.opensearch.commons.authuser.User
+import org.opensearch.core.action.ActionListener
+import org.opensearch.core.action.ActionResponse
 import org.opensearch.core.concurrency.OpenSearchRejectedExecutionException
-import org.opensearch.index.IndexNotFoundException
 import org.opensearch.core.index.shard.ShardId
+import org.opensearch.core.rest.RestStatus
+import org.opensearch.index.IndexNotFoundException
 import org.opensearch.index.store.Store
 import org.opensearch.indices.recovery.RecoveryState
 import org.opensearch.replication.ReplicationException
-import org.opensearch.replication.util.stackTraceToString
+import org.opensearch.replication.metadata.store.ReplicationContext
+import org.opensearch.replication.metadata.store.ReplicationMetadata
+import org.opensearch.replication.repository.RemoteClusterRepository
 import org.opensearch.repositories.IndexId
-import org.opensearch.core.rest.RestStatus
 import org.opensearch.snapshots.SnapshotId
 import org.opensearch.transport.ConnectTransportException
 import org.opensearch.transport.NodeDisconnectedException
 import org.opensearch.transport.NodeNotConnectedException
+import org.opensearch.transport.client.Client
 import java.io.PrintWriter
 import java.io.StringWriter
 import java.lang.Exception
@@ -59,8 +53,12 @@ fun Store.performOp(tryBlock: () -> Unit, finalBlock: () -> Unit = {}) {
     }
 }
 
-fun <T: ActionResponse>Client.execute(replMetadata: ReplicationMetadata, actionType: ActionType<T>,
-                                      actionRequest: ActionRequest, timeout: Long): T {
+fun <T : ActionResponse> Client.execute(
+    replMetadata: ReplicationMetadata,
+    actionType: ActionType<T>,
+    actionRequest: ActionRequest,
+    timeout: Long,
+): T {
     var storedContext: ThreadContext.StoredContext? = null
     try {
         storedContext = threadPool().threadContext.stashContext()
@@ -71,7 +69,7 @@ fun <T: ActionResponse>Client.execute(replMetadata: ReplicationMetadata, actionT
     }
 }
 
-fun <T>Client.executeBlockUnderSecurityContext(replContext: ReplicationContext, block: () -> T): T {
+fun <T> Client.executeBlockUnderSecurityContext(replContext: ReplicationContext, block: () -> T): T {
     var storedContext: ThreadContext.StoredContext? = null
     try {
         storedContext = threadPool().threadContext.stashContext()
@@ -86,6 +84,7 @@ fun <T>Client.executeBlockUnderSecurityContext(replContext: ReplicationContext, 
 fun IndexRequestBuilder.execute(id: String, listener: ActionListener<IndexResponse>) {
     execute(listener)
 }
+
 /**
  * Retries a given block of code.
  * Only specified error are retried
@@ -98,57 +97,64 @@ fun IndexRequestBuilder.execute(id: String, listener: ActionListener<IndexRespon
  * @param retryOn - javaClass name of OpenSearch exceptions that should be retried along with default retryable exceptions
  * @param block - the block of code to retry. This should be a suspend function.
  */
-suspend fun <Req: ActionRequest, Resp: ActionResponse> Client.suspendExecuteWithRetries(
-        replicationMetadata: ReplicationMetadata?,
-        action: ActionType<Resp>,
-        req: Req,
-        numberOfRetries: Int = 5,
-        backoff: Long = 10000,        // 10 seconds
-        maxTimeOut: Long = 600000,    // 10 minutes
-        factor: Double = 2.0,
-        log: Logger,
-        retryOn: ArrayList<Class<*>> = ArrayList(),
-        injectSecurityContext: Boolean = false,
-        defaultContext: Boolean = false): Resp {
+suspend fun <Req : ActionRequest, Resp : ActionResponse> Client.suspendExecuteWithRetries(
+    replicationMetadata: ReplicationMetadata?,
+    action: ActionType<Resp>,
+    req: Req,
+    numberOfRetries: Int = 5,
+    backoff: Long = 10000, // 10 seconds
+    maxTimeOut: Long = 600000, // 10 minutes
+    factor: Double = 2.0,
+    log: Logger,
+    retryOn: ArrayList<Class<*>> = ArrayList(),
+    injectSecurityContext: Boolean = false,
+    defaultContext: Boolean = false,
+): Resp {
     var currentBackoff = backoff
     retryOn.addAll(defaultRetryableExceptions())
     var retryException: Exception
     repeat(numberOfRetries - 1) { index ->
         try {
             log.debug("Sending get changes request after ${currentBackoff / 1000} seconds.")
-            return suspendExecute(replicationMetadata, action, req,
-                    injectSecurityContext = injectSecurityContext, defaultContext = defaultContext)
+            return suspendExecute(
+                replicationMetadata, action, req,
+                injectSecurityContext = injectSecurityContext, defaultContext = defaultContext,
+            )
         } catch (e: OpenSearchException) {
             // Not retrying for IndexNotFoundException as it is not a transient failure
             // TODO Remove this check for IndexNotFoundException: https://github.com/opensearch-project/cross-cluster-replication/issues/78
-            if (e !is IndexNotFoundException && (retryOn.contains(e.javaClass)
-                            || TransportActions.isShardNotAvailableException(e)
-                            // This waits for the dependencies to load and retry. Helps during boot-up
-                            || e.status().status >= 500
-                            || e.status() == RestStatus.TOO_MANY_REQUESTS)) {
-                retryException = e;
+            if (e !is IndexNotFoundException && (
+                    retryOn.contains(e.javaClass) ||
+                        TransportActions.isShardNotAvailableException(e) ||
+                        // This waits for the dependencies to load and retry. Helps during boot-up
+                        e.status().status >= 500 ||
+                        e.status() == RestStatus.TOO_MANY_REQUESTS
+                    )
+            ) {
+                retryException = e
             } else {
                 throw e
             }
         } catch (e: OpenSearchRejectedExecutionException) {
-            if(index < numberOfRetries-2) {
-                retryException = e;
-            }
-            else {
+            if (index < numberOfRetries - 2) {
+                retryException = e
+            } else {
                 throw ReplicationException(e, RestStatus.TOO_MANY_REQUESTS)
             }
         }
         log.warn(
             "Encountered a failure(can be ignored) while getting changes:  OpenSearchTimeoutException. Retrying in ${currentBackoff / 1000} seconds" +
-                    "."
+                ".",
         )
         delay(currentBackoff)
         currentBackoff = (currentBackoff * factor).toLong().coerceAtMost(maxTimeOut)
-
     }
-    return suspendExecute(replicationMetadata, action, req,
-            injectSecurityContext = injectSecurityContext, defaultContext = defaultContext) // last attempt
+    return suspendExecute(
+        replicationMetadata, action, req,
+        injectSecurityContext = injectSecurityContext, defaultContext = defaultContext,
+    ) // last attempt
 }
+
 /**
  * Restore shard from leader cluster with retries.
  * Only specified error are retried
@@ -161,15 +167,19 @@ suspend fun <Req: ActionRequest, Resp: ActionResponse> Client.suspendExecuteWith
  * @param retryOn - javaClass name of OpenSearch exceptions that should be retried along with default retryable exceptions
  */
 suspend fun RemoteClusterRepository.restoreShardWithRetries(
-        store: Store, snapshotId: SnapshotId, indexId: IndexId, snapshotShardId: ShardId,
-        recoveryState: RecoveryState, listener: ActionListener<Void>,
-        function: suspend (Store, SnapshotId, IndexId, ShardId, RecoveryState, ActionListener<Void>) -> Unit,
-        numberOfRetries: Int = 5,
-        backoff: Long = 10000,        // 10 seconds
-        maxTimeOut: Long = 600000,    // 10 minutes
-        factor: Double = 2.0,
-        log: Logger,
-        retryOn: ArrayList<Class<*>> = ArrayList()
+    store: Store,
+    snapshotId: SnapshotId,
+    indexId: IndexId,
+    snapshotShardId: ShardId,
+    recoveryState: RecoveryState,
+    listener: ActionListener<Void>,
+    function: suspend (Store, SnapshotId, IndexId, ShardId, RecoveryState, ActionListener<Void>) -> Unit,
+    numberOfRetries: Int = 5,
+    backoff: Long = 10000, // 10 seconds
+    maxTimeOut: Long = 600000, // 10 minutes
+    factor: Double = 2.0,
+    log: Logger,
+    retryOn: ArrayList<Class<*>> = ArrayList(),
 ) {
     var currentBackoff = backoff
     var retryCount = 1 // we retry 4 times after first exception. In total we are running callable function 5 times.
@@ -203,19 +213,21 @@ private fun defaultRetryableExceptions(): ArrayList<Class<*>> {
 
 fun User.overrideFgacRole(fgacRole: String?): User? {
     var roles = emptyList<String>()
-    if(fgacRole != null) {
+    if (fgacRole != null) {
         roles = listOf(fgacRole)
     }
-    return User(this.name, this.backendRoles, roles,
-            this.customAttNames, this.requestedTenant)
+    return User(
+        this.name, this.backendRoles, roles,
+        this.customAttNames, this.requestedTenant,
+    )
 }
 
 fun User.toInjectedUser(): String? {
-    return "${SecurityContext.REPLICATION_PLUGIN_USER}|${backendRoles.joinToString(separator=",")}"
+    return "${SecurityContext.REPLICATION_PLUGIN_USER}|${backendRoles.joinToString(separator = ",")}"
 }
 
 fun User.toInjectedRoles(): String? {
-    return "${SecurityContext.REPLICATION_PLUGIN_USER}|${roles.joinToString(separator=",")}"
+    return "${SecurityContext.REPLICATION_PLUGIN_USER}|${roles.joinToString(separator = ",")}"
 }
 
 fun Throwable.stackTraceToString(): String {

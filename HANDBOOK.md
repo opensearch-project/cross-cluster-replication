@@ -174,7 +174,7 @@ Content-Type: application/json
 
 ```
 
-**Example** 
+**Example**
 ```bash
 curl -k -u testuser:testuser -XPUT \
 "https://${FOLLOWER}/_plugins/_replication/follower-01/_start?pretty" \
@@ -214,7 +214,7 @@ curl -k -u testuser:testuser -XPOST \
 -H 'Content-type: application/json' -d'{}'
 
 # You can confirm data isn't replicated any more by making modifications to
-# leader-01 index on $LEADER cluster 
+# leader-01 index on $LEADER cluster
 ```
 
 ## Start replication via Autofollow pattern
@@ -275,7 +275,7 @@ curl -k -u testuser:testuser -XDELETE \
 Stats for all AutoFollow tasks running on the follower cluster can be checked using `autofollow_stats`.
 
 ```bash
-curl -k -u admin:admin -XGET "https://${FOLLOWER}/_plugins/_replication/autofollow_stats" 
+curl -k -u admin:admin -XGET "https://${FOLLOWER}/_plugins/_replication/autofollow_stats"
 {
 "num_success_start_replication" : 16,
   "num_failed_start_replication" : 0,
@@ -304,7 +304,7 @@ curl -k -u admin:admin -XGET "https://${FOLLOWER}/_plugins/_replication/autofoll
 Until a status API is added, you can check ongoing replication via the tasks API.
 
 ```bash
-curl -k -u admin:admin -XGET "https://${FOLLOWER}/_cat/tasks?v&actions=*replication*&detailed" 
+curl -k -u admin:admin -XGET "https://${FOLLOWER}/_cat/tasks?v&actions=*replication*&detailed"
 
 action                                task_id                    parent_task_id type       start_time    timestamp running_time ip          node           description
 cluster:indices/admin/replication[c]  ltIs84uTRLOYnOr8Giu0VQ:118 cluster:1      persistent 1613651479438 12:31:19  17.7s        172.18.0.20 odfe-follower1 replication:leader-cluster:[leader-01/g3d9ddwZQHeuvEGEouQxDQ] -> follower-01
@@ -395,4 +395,3 @@ curl -k -u admin:admin -XGET "https://${FOLLOWER}/.tasks/_search?pretty"
   }
 }
 ```
-

@@ -1,31 +1,27 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
  * The OpenSearch Contributors require contributions made to
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
- *
- * Modifications Copyright OpenSearch Contributors. See
- * GitHub history for details.
  */
-
 package org.opensearch.replication.task.shard
 
 import org.opensearch.Version
+import org.opensearch.common.xcontent.XContentType
 import org.opensearch.core.ParseField
 import org.opensearch.core.common.Strings
 import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.core.common.io.stream.StreamOutput
+import org.opensearch.core.index.Index
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.core.xcontent.ObjectParser
 import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.XContentBuilder
 import org.opensearch.core.xcontent.XContentParser
-import org.opensearch.common.xcontent.XContentType
-import org.opensearch.core.index.shard.ShardId
 import org.opensearch.persistent.PersistentTaskParams
 import java.io.IOException
-import org.opensearch.core.index.Index
-
 
 class ShardReplicationParams : PersistentTaskParams {
 
@@ -39,7 +35,7 @@ class ShardReplicationParams : PersistentTaskParams {
         this.followerShardId = followerShardId
     }
 
-    constructor(inp : StreamInput) : this(inp.readString(), ShardId(inp), ShardId(inp))
+    constructor(inp: StreamInput) : this(inp.readString(), ShardId(inp), ShardId(inp))
 
     companion object {
         const val NAME = ShardReplicationExecutor.TASK_NAME
@@ -116,9 +112,17 @@ class ShardReplicationParams : PersistentTaskParams {
         fun build(): ShardReplicationParams {
             val leaderShardIdObj = ShardId.fromString(leaderShardId)
             val followerShardIdObj = ShardId.fromString(followerShardId)
-            return ShardReplicationParams(leaderAlias, ShardId(Index(leaderShardIdObj.indexName, leaderIndexUUID),
-                    leaderShardIdObj.id), ShardId(Index(followerShardIdObj.indexName, followerIndexUUID),
-                    followerShardIdObj.id))
+            return ShardReplicationParams(
+                leaderAlias,
+                ShardId(
+                    Index(leaderShardIdObj.indexName, leaderIndexUUID),
+                    leaderShardIdObj.id,
+                ),
+                ShardId(
+                    Index(followerShardIdObj.indexName, followerIndexUUID),
+                    followerShardIdObj.id,
+                ),
+            )
         }
     }
 }

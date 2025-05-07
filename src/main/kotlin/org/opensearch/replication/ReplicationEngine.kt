@@ -1,14 +1,11 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
  * The OpenSearch Contributors require contributions made to
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
- *
- * Modifications Copyright OpenSearch Contributors. See
- * GitHub history for details.
  */
-
 package org.opensearch.replication
 
 import org.opensearch.index.engine.EngineConfig
@@ -24,7 +21,7 @@ class ReplicationEngine(config: EngineConfig) : InternalEngine(config) {
     }
 
     override fun generateSeqNoForOperationOnPrimary(operation: Operation): Long {
-        check(operation.seqNo() != SequenceNumbers.UNASSIGNED_SEQ_NO) { "Expected valid sequence number for replicate op but was unassigned"}
+        check(operation.seqNo() != SequenceNumbers.UNASSIGNED_SEQ_NO) { "Expected valid sequence number for replicate op but was unassigned" }
         return operation.seqNo()
     }
 

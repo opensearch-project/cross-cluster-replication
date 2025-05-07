@@ -1,3 +1,11 @@
+/*
+ * Copyright OpenSearch Contributors
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The OpenSearch Contributors require contributions made to
+ * this file be licensed under the Apache-2.0 license or a
+ * compatible open source license.
+ */
 package org.opensearch.replication.util
 
 import org.junit.Assert
@@ -7,7 +15,7 @@ import org.opensearch.common.util.concurrent.ThreadContext
 import org.opensearch.commons.authuser.User
 import org.opensearch.test.OpenSearchTestCase
 
-class SecurityContextTests: OpenSearchTestCase() {
+class SecurityContextTests : OpenSearchTestCase() {
 
     companion object {
         var threadContext: ThreadContext? = null

@@ -1,14 +1,11 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
  * The OpenSearch Contributors require contributions made to
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
- *
- * Modifications Copyright OpenSearch Contributors. See
- * GitHub history for details.
  */
-
 package org.opensearch.replication.metadata.state
 
 import org.opensearch.Version
@@ -41,7 +38,7 @@ data class ReplicationStateMetadata(val replicationDetails: Map<FollowIndexName,
 
         val EMPTY = ReplicationStateMetadata(mapOf())
 
-        val replicationDetailsSerializer = object: NonDiffableValueSerializer<String, ReplicationStateParams>() {
+        val replicationDetailsSerializer = object : NonDiffableValueSerializer<String, ReplicationStateParams>() {
             override fun write(value: ReplicationStateParams, out: StreamOutput) {
                 out.writeMap(value, StreamOutput::writeString, StreamOutput::writeString)
             }
@@ -58,24 +55,25 @@ data class ReplicationStateMetadata(val replicationDetails: Map<FollowIndexName,
                 parser.nextToken()
             }
             var token = parser.currentToken()
-            require(token == XContentParser.Token.START_OBJECT) { "expected start object but got a $token"}
+            require(token == XContentParser.Token.START_OBJECT) { "expected start object but got a $token" }
 
             var currentField: String? = null
             while (parser.nextToken().also { token = it } !== XContentParser.Token.END_OBJECT) {
-                if(token == XContentParser.Token.FIELD_NAME) {
+                if (token == XContentParser.Token.FIELD_NAME) {
                     currentField = parser.currentName()
                 } else if (REPLICATION_DETAILS_KEY == currentField) {
                     val onGoingReplicationDetails = HashMap<String, ReplicationStateParams>()
-                    while(parser.nextToken().also { token = it } != XContentParser.Token.END_OBJECT) {
+                    while (parser.nextToken().also { token = it } != XContentParser.Token.END_OBJECT) {
                         if (token == XContentParser.Token.FIELD_NAME) {
                             currentField = parser.currentName()
-                        }
-                        else if(token == XContentParser.Token.START_OBJECT) {
+                        } else if (token == XContentParser.Token.START_OBJECT) {
                             var replicationDetails = parser.mapStrings()
                             onGoingReplicationDetails[currentField!!] = replicationDetails
                         } else {
-                            throw IllegalArgumentException("Unexpected token during parsing " +
-                                    "replication_metadata[$REPLICATION_DETAILS_KEY] - $token")
+                            throw IllegalArgumentException(
+                                "Unexpected token during parsing " +
+                                    "replication_metadata[$REPLICATION_DETAILS_KEY] - $token",
+                            )
                         }
                     }
                     builder.replicationDetails(onGoingReplicationDetails)
@@ -98,7 +96,7 @@ data class ReplicationStateMetadata(val replicationDetails: Map<FollowIndexName,
         }
     }
 
-    constructor(inp: StreamInput) : this(inp.readMap(StreamInput::readString) {i -> replicationDetailsSerializer.read(i, "")})
+    constructor(inp: StreamInput) : this(inp.readMap(StreamInput::readString) { i -> replicationDetailsSerializer.read(i, "") })
 
     override fun writeTo(out: StreamOutput) {
         out.writeMap(replicationDetails, StreamOutput::writeString) { o, v -> replicationDetailsSerializer.write(v, o) }
@@ -120,26 +118,26 @@ data class ReplicationStateMetadata(val replicationDetails: Map<FollowIndexName,
 
     override fun context(): EnumSet<Metadata.XContentContext> = Metadata.ALL_CONTEXTS
 
-    fun addReplicationStateParams(followIndexName: String, replicationParams: ReplicationStateParams)
-            : ReplicationStateMetadata {
+    fun addReplicationStateParams(followIndexName: String, replicationParams: ReplicationStateParams): ReplicationStateMetadata {
         val currentStateParamsForIndex = replicationDetails.getOrDefault(followIndexName, emptyMap())
         val newStateParamsForIndex = currentStateParamsForIndex.plus(replicationParams)
         val newReplicationDetails = replicationDetails.plus(followIndexName to newStateParamsForIndex)
         return copy(replicationDetails = newReplicationDetails)
     }
 
-    fun removeReplicationStateParams(followIndexName: String) :
-            ReplicationStateMetadata {
+    fun removeReplicationStateParams(followIndexName: String): ReplicationStateMetadata {
         replicationDetails[followIndexName] ?: return this
         return copy(replicationDetails = replicationDetails.minus(followIndexName))
     }
 
     class Diff : NamedDiff<Metadata.Custom> {
-        private val replicationDetails : ESDiff<Map<FollowIndexName, ReplicationStateParams>>
+        private val replicationDetails: ESDiff<Map<FollowIndexName, ReplicationStateParams>>
 
         constructor(previous: ReplicationStateMetadata, current: ReplicationStateMetadata) {
-            replicationDetails = DiffableUtils.diff(previous.replicationDetails, current.replicationDetails,
-                                                    getStringKeySerializer(), replicationDetailsSerializer)
+            replicationDetails = DiffableUtils.diff(
+                previous.replicationDetails, current.replicationDetails,
+                getStringKeySerializer(), replicationDetailsSerializer,
+            )
         }
 
         constructor(inp: StreamInput) {
@@ -161,8 +159,10 @@ data class ReplicationStateMetadata(val replicationDetails: Map<FollowIndexName,
 
 const val REPLICATION_LAST_KNOWN_OVERALL_STATE = "REPLICATION_LAST_KNOWN_OVERALL_STATE"
 
-fun getReplicationStateParamsForIndex(clusterService: ClusterService,
-                                      followerIndex: String) : ReplicationStateParams? {
+fun getReplicationStateParamsForIndex(
+    clusterService: ClusterService,
+    followerIndex: String,
+): ReplicationStateParams? {
     return clusterService.state().metadata.custom<ReplicationStateMetadata>(ReplicationStateMetadata.NAME)
-            ?.replicationDetails?.get(followerIndex)
+        ?.replicationDetails?.get(followerIndex)
 }

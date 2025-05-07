@@ -1,25 +1,13 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
  * The OpenSearch Contributors require contributions made to
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
- *
- * Modifications Copyright OpenSearch Contributors. See
- * GitHub history for details.
  */
-
 package org.opensearch.replication.integ.rest
 
-import org.opensearch.replication.IndexUtil
-import org.opensearch.replication.MultiClusterAnnotations
-import org.opensearch.replication.MultiClusterRestTestCase
-import org.opensearch.replication.StartReplicationRequest
-import org.opensearch.replication.startReplication
-import org.opensearch.replication.stopReplication
-import org.opensearch.replication.replicationStatus
-import org.opensearch.replication.getShardReplicationTasks
-import org.opensearch.replication.`validate status syncing response`
 import org.apache.hc.core5.http.io.entity.EntityUtils
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -41,19 +29,27 @@ import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.unit.TimeValue
 import org.opensearch.index.mapper.MapperService
+import org.opensearch.replication.IndexUtil
+import org.opensearch.replication.MultiClusterAnnotations
+import org.opensearch.replication.MultiClusterRestTestCase
 import org.opensearch.replication.SNAPSHOTS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS
+import org.opensearch.replication.StartReplicationRequest
+import org.opensearch.replication.getShardReplicationTasks
+import org.opensearch.replication.replicationStatus
+import org.opensearch.replication.startReplication
+import org.opensearch.replication.stopReplication
+import org.opensearch.replication.`validate status syncing response`
 import java.util.Random
 import java.util.concurrent.TimeUnit
-
 
 const val LEADER = "leaderCluster"
 const val FOLLOWER = "followCluster"
 
 @MultiClusterAnnotations.ClusterConfigurations(
-        MultiClusterAnnotations.ClusterConfiguration(clusterName = LEADER),
-        MultiClusterAnnotations.ClusterConfiguration(clusterName = FOLLOWER)
+    MultiClusterAnnotations.ClusterConfiguration(clusterName = LEADER),
+    MultiClusterAnnotations.ClusterConfiguration(clusterName = FOLLOWER),
 )
-class StopReplicationIT: MultiClusterRestTestCase() {
+class StopReplicationIT : MultiClusterRestTestCase() {
     private val leaderIndexName = "leader_index"
     private val followerIndexName = "follower_index"
 
@@ -74,56 +70,71 @@ class StopReplicationIT: MultiClusterRestTestCase() {
         // Since, we were still in FOLLOWING phase when stop was called, the index
         // in follower index should not have been deleted in follower cluster
         assertBusy {
-            assertThat(followerClient.indices()
-                    .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
-                    .isEqualTo(true)
+            assertThat(
+                followerClient.indices()
+                    .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT),
+            )
+                .isEqualTo(true)
         }
     }
 
     @AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/176")
     fun `test stop replication in restoring state with multiple shards`() {
         val settings = Settings.builder()
-                .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 20)
-                .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0)
-                .put(MapperService.INDEX_MAPPING_TOTAL_FIELDS_LIMIT_SETTING.key, Long.MAX_VALUE)
-                .build()
+            .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 20)
+            .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0)
+            .put(MapperService.INDEX_MAPPING_TOTAL_FIELDS_LIMIT_SETTING.key, Long.MAX_VALUE)
+            .build()
         testStopReplicationInRestoringState(settings, 5000, 1000, 1000)
     }
 
-    private fun testStopReplicationInRestoringState(settings: Settings,
-                                                    nFields: Int,
-                                                    fieldLength: Int,
-                                                    stepSize: Int) {
-        logger.info("""Testing stop replication in restoring state with params: 
+    private fun testStopReplicationInRestoringState(
+        settings: Settings,
+        nFields: Int,
+        fieldLength: Int,
+        stepSize: Int,
+    ) {
+        logger.info(
+            """Testing stop replication in restoring state with params:
             | shards:$settings[IndexMetadata.SETTING_NUMBER_OF_SHARDS]
             | nFields:$nFields
             | fieldLength:$fieldLength
-            | stepSize:$stepSize 
-            | """.trimMargin())
+            | stepSize:$stepSize
+            |
+            """.trimMargin(),
+        )
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
         createConnectionBetweenClusters(FOLLOWER, LEADER)
 
-        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName).settings(settings),
-                RequestOptions.DEFAULT)
+        val createIndexResponse = leaderClient.indices().create(
+            CreateIndexRequest(leaderIndexName).settings(settings),
+            RequestOptions.DEFAULT,
+        )
         assertThat(createIndexResponse.isAcknowledged).isTrue()
         // Put a large amount of data into the index
         IndexUtil.fillIndex(leaderClient, leaderIndexName, nFields, fieldLength, stepSize)
         assertBusy {
-            assertThat(leaderClient.indices()
-                    .exists(GetIndexRequest(leaderIndexName), RequestOptions.DEFAULT))
+            assertThat(
+                leaderClient.indices()
+                    .exists(GetIndexRequest(leaderIndexName), RequestOptions.DEFAULT),
+            )
         }
-        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
-                TimeValue.timeValueSeconds(10),
-                false)
-        //Given the size of index, the replication should be in RESTORING phase at this point
+        followerClient.startReplication(
+            StartReplicationRequest("source", leaderIndexName, followerIndexName),
+            TimeValue.timeValueSeconds(10),
+            false,
+        )
+        // Given the size of index, the replication should be in RESTORING phase at this point
         followerClient.stopReplication(followerIndexName)
         // Since, we were still in RESTORING phase when stop was called, the index
         // in follower index should have been deleted in follower cluster
         assertBusy {
-            assertThat(followerClient.indices()
-                    .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
-                    .isEqualTo(false)
+            assertThat(
+                followerClient.indices()
+                    .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT),
+            )
+                .isEqualTo(false)
         }
     }
 
@@ -136,9 +147,9 @@ class StopReplicationIT: MultiClusterRestTestCase() {
     @AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/176")
     fun `test stop replication in restoring state while shards are starting`() {
         val settings = Settings.builder()
-                .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 50)
-                .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0)
-                .build()
+            .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 50)
+            .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0)
+            .build()
         testStopReplicationInRestoringState(settings, 5, 10, 5)
     }
 
@@ -153,27 +164,34 @@ class StopReplicationIT: MultiClusterRestTestCase() {
         leaderClient.index(IndexRequest(leaderIndexName).id("1").source(sourceMap), RequestOptions.DEFAULT)
         // Need to set waitForRestore=true as the cluster blocks are added only
         // after restore is completed.
-        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
-                waitForRestore = true)
+        followerClient.startReplication(
+            StartReplicationRequest("source", leaderIndexName, followerIndexName),
+            waitForRestore = true,
+        )
         // Need to wait till index blocks appear into state
-        assertBusy ({
+        assertBusy({
             val clusterBlocksResponse = followerClient.lowLevelClient.performRequest(Request("GET", "/_cluster/state/blocks"))
             val clusterResponseString = EntityUtils.toString(clusterBlocksResponse.entity)
             assertThat(clusterResponseString.contains("cross-cluster-replication"))
-                    .withFailMessage("Cant find replication block afer starting replication")
-                    .isTrue()
+                .withFailMessage("Cant find replication block afer starting replication")
+                .isTrue()
         }, 10, TimeUnit.SECONDS)
 
         assertThatThrownBy {
-            followerClient.index(IndexRequest(followerIndexName).id("blocked").source(sourceMap), RequestOptions
-                .DEFAULT)
+            followerClient.index(
+                IndexRequest(followerIndexName).id("blocked").source(sourceMap),
+                RequestOptions
+                    .DEFAULT,
+            )
         }.isInstanceOf(OpenSearchStatusException::class.java)
-                .hasMessage("OpenSearch exception [type=cluster_block_exception, reason=index [$followerIndexName] " +
-                        "blocked by: [FORBIDDEN/1000/index read-only(cross-cluster-replication)];]")
+            .hasMessage(
+                "OpenSearch exception [type=cluster_block_exception, reason=index [$followerIndexName] " +
+                    "blocked by: [FORBIDDEN/1000/index read-only(cross-cluster-replication)];]",
+            )
 
-        //Stop replication and verify that index is not blocked any more
+        // Stop replication and verify that index is not blocked any more
         followerClient.stopReplication(followerIndexName)
-        //Following line shouldn't throw any exception
+        // Following line shouldn't throw any exception
         followerClient.index(IndexRequest(followerIndexName).id("2").source(sourceMap), RequestOptions.DEFAULT)
     }
 
@@ -182,7 +200,7 @@ class StopReplicationIT: MultiClusterRestTestCase() {
         assertThatThrownBy {
             followerClient.stopReplication("no_index")
         }.isInstanceOf(ResponseException::class.java)
-                .hasMessageContaining("No replication in progress for index:no_index")
+            .hasMessageContaining("No replication in progress for index:no_index")
     }
 
     fun `test stop replication when leader cluster is unavailable`() {
@@ -191,10 +209,12 @@ class StopReplicationIT: MultiClusterRestTestCase() {
         createConnectionBetweenClusters(FOLLOWER, LEADER)
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
-        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
-            waitForRestore = true)
+        followerClient.startReplication(
+            StartReplicationRequest("source", leaderIndexName, followerIndexName),
+            waitForRestore = true,
+        )
         // Need to wait till index blocks appear into state
-        assertBusy ({
+        assertBusy({
             val clusterBlocksResponse = followerClient.lowLevelClient.performRequest(Request("GET", "/_cluster/state/blocks"))
             val clusterResponseString = EntityUtils.toString(clusterBlocksResponse.entity)
             assertThat(clusterResponseString.contains("cross-cluster-replication"))
@@ -221,20 +241,22 @@ class StopReplicationIT: MultiClusterRestTestCase() {
         createConnectionBetweenClusters(FOLLOWER, LEADER, "source")
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
-        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
-                waitForRestore = true)
+        followerClient.startReplication(
+            StartReplicationRequest("source", leaderIndexName, followerIndexName),
+            waitForRestore = true,
+        )
         // Need to wait till index blocks appear into state
-        assertBusy ({
+        assertBusy({
             val clusterBlocksResponse = followerClient.lowLevelClient.performRequest(Request("GET", "/_cluster/state/blocks"))
             val clusterResponseString = EntityUtils.toString(clusterBlocksResponse.entity)
             assertThat(clusterResponseString.contains("cross-cluster-replication"))
-                    .withFailMessage("Cant find replication block after starting replication")
-                    .isTrue()
+                .withFailMessage("Cant find replication block after starting replication")
+                .isTrue()
         }, 10, TimeUnit.SECONDS)
         // Remove leader cluster from settings
         val settings: Settings = Settings.builder()
-                .putNull("cluster.remote.source.seeds")
-                .build()
+            .putNull("cluster.remote.source.seeds")
+            .build()
         val updateSettingsRequest = ClusterUpdateSettingsRequest()
         updateSettingsRequest.persistentSettings(settings)
         followerClient.cluster().putSettings(updateSettingsRequest, RequestOptions.DEFAULT)
@@ -244,9 +266,8 @@ class StopReplicationIT: MultiClusterRestTestCase() {
     }
 
     fun `test stop replication with stale replication settings at leader cluster`() {
-
         Assume.assumeFalse(SNAPSHOTS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS, checkifIntegTestRemote())
-        
+
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
         createConnectionBetweenClusters(FOLLOWER, LEADER, "source")
@@ -254,9 +275,9 @@ class StopReplicationIT: MultiClusterRestTestCase() {
         assertThat(createIndexResponse.isAcknowledged).isTrue()
         val snapshotSuffix = Random().nextInt(1000).toString()
         followerClient.startReplication(
-                StartReplicationRequest("source", leaderIndexName, followerIndexName),
-                TimeValue.timeValueSeconds(10),
-                true
+            StartReplicationRequest("source", leaderIndexName, followerIndexName),
+            TimeValue.timeValueSeconds(10),
+            true,
         )
         assertBusy({
             var statusResp = followerClient.replicationStatus(followerIndexName)
@@ -268,8 +289,13 @@ class StopReplicationIT: MultiClusterRestTestCase() {
         createSnapshotRequest.waitForCompletion(true)
         followerClient.snapshot().create(createSnapshotRequest, RequestOptions.DEFAULT)
         assertBusy {
-            var snapshotStatusResponse = followerClient.snapshot().status(SnapshotsStatusRequest(TestCluster.FS_SNAPSHOT_REPO,
-                    arrayOf("test-$snapshotSuffix")), RequestOptions.DEFAULT)
+            var snapshotStatusResponse = followerClient.snapshot().status(
+                SnapshotsStatusRequest(
+                    TestCluster.FS_SNAPSHOT_REPO,
+                    arrayOf("test-$snapshotSuffix"),
+                ),
+                RequestOptions.DEFAULT,
+            )
             for (snapshotStatus in snapshotStatusResponse.snapshots) {
                 Assert.assertEquals(SnapshotsInProgress.State.SUCCESS, snapshotStatus.state)
             }
@@ -286,13 +312,13 @@ class StopReplicationIT: MultiClusterRestTestCase() {
         }
         // Invoke stop on the new leader cluster index
         assertThatThrownBy { leaderClient.stopReplication("restored-$followerIndexName") }
-                .isInstanceOf(ResponseException::class.java)
-                .hasMessageContaining("Metadata for restored-$followerIndexName doesn't exist")
+            .isInstanceOf(ResponseException::class.java)
+            .hasMessageContaining("Metadata for restored-$followerIndexName doesn't exist")
         // Start replication on the new leader index
         followerClient.startReplication(
-                StartReplicationRequest("source", "restored-$followerIndexName", "restored-$followerIndexName"),
-                TimeValue.timeValueSeconds(10),
-                true, true
+            StartReplicationRequest("source", "restored-$followerIndexName", "restored-$followerIndexName"),
+            TimeValue.timeValueSeconds(10),
+            true, true,
         )
         assertBusy({
             var statusResp = followerClient.replicationStatus("restored-$followerIndexName")

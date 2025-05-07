@@ -35,7 +35,7 @@ jobs:
         name: "plugin check"
         run: |
           opensearch_version=$(./gradlew properties | grep -E '^version:' | awk '{print $2}')
-          # we publish build artifacts to the below url 
+          # we publish build artifacts to the below url
           sec_plugin_url="https://aws.oss.sonatype.org/content/repositories/snapshots/org/opensearch/plugin/opensearch-security/"$opensearch_version"/"
           sec_st=$(curl -s -o /dev/null -w "%{http_code}" $sec_plugin_url)
           if [ "$sec_st" = "200" ]; then
@@ -53,7 +53,7 @@ jobs:
           else
             echo "isKnnPluginAvailable=False" >> $GITHUB_OUTPUT
             cat $GITHUB_OUTPUT
-          fi  
+          fi
 
   build-linux:
     needs: [req, Get-CI-Image-Tag]
@@ -107,7 +107,7 @@ jobs:
         uses: codecov/codecov-action@v1.2.1
 
   knn-build-linux:
-    needs: [req, Get-CI-Image-Tag] 
+    needs: [req, Get-CI-Image-Tag]
     if: ${{ 'True' == needs.req.outputs.isKnnPluginAvailable }}
     # Job name
     name: Build and Run Knn tests

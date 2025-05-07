@@ -1,27 +1,24 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
  * The OpenSearch Contributors require contributions made to
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
- *
- * Modifications Copyright OpenSearch Contributors. See
- * GitHub history for details.
  */
-
 package org.opensearch.replication.task.index
 
 import org.opensearch.Version
+import org.opensearch.common.xcontent.XContentType
 import org.opensearch.core.ParseField
 import org.opensearch.core.common.Strings
 import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.core.common.io.stream.StreamOutput
+import org.opensearch.core.index.Index
 import org.opensearch.core.xcontent.ObjectParser
 import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.XContentBuilder
 import org.opensearch.core.xcontent.XContentParser
-import org.opensearch.common.xcontent.XContentType
-import org.opensearch.core.index.Index
 import org.opensearch.persistent.PersistentTaskParams
 import java.io.IOException
 
@@ -37,9 +34,11 @@ class IndexReplicationParams : PersistentTaskParams {
         private val PARSER = ObjectParser<IndexReplicationParams, Void>(NAME, true) { IndexReplicationParams() }
         init {
             PARSER.declareString(IndexReplicationParams::leaderAlias::set, ParseField("leader_alias"))
-            PARSER.declareObject(IndexReplicationParams::leaderIndex::set,
-                    { parser: XContentParser, _ -> Index.fromXContent(parser) },
-                    ParseField("leader_index"))
+            PARSER.declareObject(
+                IndexReplicationParams::leaderIndex::set,
+                { parser: XContentParser, _ -> Index.fromXContent(parser) },
+                ParseField("leader_index"),
+            )
             PARSER.declareString(IndexReplicationParams::followerIndexName::set, ParseField("follower_index"))
         }
 

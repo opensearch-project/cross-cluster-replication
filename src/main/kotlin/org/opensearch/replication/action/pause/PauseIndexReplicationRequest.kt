@@ -1,17 +1,13 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
  * The OpenSearch Contributors require contributions made to
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
- *
- * Modifications Copyright OpenSearch Contributors. See
- * GitHub history for details.
  */
-
 package org.opensearch.replication.action.pause
 
-import org.opensearch.replication.metadata.ReplicationMetadataManager
 import org.opensearch.action.ActionRequestValidationException
 import org.opensearch.action.IndicesRequest
 import org.opensearch.action.support.IndicesOptions
@@ -24,6 +20,7 @@ import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.ToXContentObject
 import org.opensearch.core.xcontent.XContentBuilder
 import org.opensearch.core.xcontent.XContentParser
+import org.opensearch.replication.metadata.ReplicationMetadataManager
 
 class PauseIndexReplicationRequest : AcknowledgedRequest<PauseIndexReplicationRequest>, IndicesRequest.Replaceable, ToXContentObject {
 
@@ -38,7 +35,7 @@ class PauseIndexReplicationRequest : AcknowledgedRequest<PauseIndexReplicationRe
     private constructor() {
     }
 
-    constructor(inp: StreamInput): super(inp) {
+    constructor(inp: StreamInput) : super(inp) {
         indexName = inp.readString()
         reason = inp.readString()
     }
@@ -87,5 +84,4 @@ class PauseIndexReplicationRequest : AcknowledgedRequest<PauseIndexReplicationRe
         out.writeString(indexName)
         out.writeString(reason)
     }
-
 }

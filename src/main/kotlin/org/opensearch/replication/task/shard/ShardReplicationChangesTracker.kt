@@ -1,22 +1,19 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
  * The OpenSearch Contributors require contributions made to
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
- *
- * Modifications Copyright OpenSearch Contributors. See
- * GitHub history for details.
  */
-
 package org.opensearch.replication.task.shard
 
-import org.opensearch.replication.ReplicationSettings
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.opensearch.common.logging.Loggers
 import org.opensearch.index.shard.IndexShard
+import org.opensearch.replication.ReplicationSettings
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.collections.ArrayList
@@ -50,7 +47,7 @@ class ShardReplicationChangesTracker(indexShard: IndexShard, private val replica
      * 4. If we've already fetched all the operations from leader, there would be one and only one
      *    reader polling on leader per shard.
      */
-    suspend fun requestBatchToFetch():Pair<Long, Long> {
+    suspend fun requestBatchToFetch(): Pair<Long, Long> {
         mutex.withLock {
             logDebug("Waiting to get batch. requested: ${seqNoAlreadyRequested.get()}, leader: ${observedSeqNoAtLeader.get()}")
 
@@ -84,7 +81,7 @@ class ShardReplicationChangesTracker(indexShard: IndexShard, private val replica
         if (success) {
             // we shouldn't ever be getting more operations than requested.
             assert(toSeqNoRequested >= toSeqNoReceived) { "${Thread.currentThread().getName()} Got more operations in the batch than requested" }
-            logDebug("Updating the batch fetched. ${fromSeqNoRequested}-${toSeqNoReceived}/${toSeqNoRequested}, seqNoAtLeader:$seqNoAtLeader")
+            logDebug("Updating the batch fetched. $fromSeqNoRequested-$toSeqNoReceived/$toSeqNoRequested, seqNoAtLeader:$seqNoAtLeader")
 
             // If we didn't get the complete batch that we had requested.
             if (toSeqNoRequested > toSeqNoReceived) {
@@ -93,7 +90,7 @@ class ShardReplicationChangesTracker(indexShard: IndexShard, private val replica
                     seqNoAlreadyRequested.updateAndGet { toSeqNoReceived }
                 } else {
                     // Else, add to the missing operations to missing batch
-                    logDebug("Didn't get the complete batch. Adding the missing operations ${toSeqNoReceived + 1}-${toSeqNoRequested}")
+                    logDebug("Didn't get the complete batch. Adding the missing operations ${toSeqNoReceived + 1}-$toSeqNoRequested")
                     missingBatches.add(Pair(toSeqNoReceived + 1, toSeqNoRequested))
                 }
             }

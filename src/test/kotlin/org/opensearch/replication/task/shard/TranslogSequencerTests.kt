@@ -1,14 +1,11 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
  * The OpenSearch Contributors require contributions made to
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
- *
- * Modifications Copyright OpenSearch Contributors. See
- * GitHub history for details.
  */
-
 package org.opensearch.replication.task.shard
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -16,15 +13,16 @@ import kotlinx.coroutines.ObsoleteCoroutinesApi
 import kotlinx.coroutines.test.runBlockingTest
 import org.assertj.core.api.Assertions.assertThat
 import org.mockito.Mockito
-import org.opensearch.core.action.ActionListener
 import org.opensearch.action.ActionRequest
-import org.opensearch.core.action.ActionResponse
 import org.opensearch.action.ActionType
 import org.opensearch.action.support.replication.ReplicationResponse.ShardInfo
 import org.opensearch.common.settings.Settings
+import org.opensearch.core.action.ActionListener
+import org.opensearch.core.action.ActionResponse
+import org.opensearch.core.index.shard.ShardId
+import org.opensearch.core.tasks.TaskId.EMPTY_TASK_ID
 import org.opensearch.index.IndexService
 import org.opensearch.index.shard.IndexShard
-import org.opensearch.core.index.shard.ShardId
 import org.opensearch.index.translog.Translog
 import org.opensearch.indices.IndicesService
 import org.opensearch.replication.action.changes.GetChangesResponse
@@ -36,11 +34,9 @@ import org.opensearch.replication.metadata.store.ReplicationContext
 import org.opensearch.replication.metadata.store.ReplicationMetadata
 import org.opensearch.replication.metadata.store.ReplicationStoreMetadataType
 import org.opensearch.replication.util.indicesService
-import org.opensearch.core.tasks.TaskId.EMPTY_TASK_ID
 import org.opensearch.test.OpenSearchTestCase
 import org.opensearch.test.client.NoOpClient
 import java.util.Locale
-
 
 @ObsoleteCoroutinesApi
 class TranslogSequencerTests : OpenSearchTestCase() {
@@ -48,9 +44,11 @@ class TranslogSequencerTests : OpenSearchTestCase() {
     class RequestCapturingClient : NoOpClient(TranslogSequencerTests::class.java.simpleName) {
         val requestsReceived = mutableListOf<ReplayChangesRequest>()
 
-        override fun <Req : ActionRequest, Resp : ActionResponse> doExecute(action: ActionType<Resp>,
-                                                                            request: Req,
-                                                                            listener: ActionListener<Resp>) {
+        override fun <Req : ActionRequest, Resp : ActionResponse> doExecute(
+            action: ActionType<Resp>,
+            request: Req,
+            listener: ActionListener<Resp>,
+        ) {
             if (action === ReplayChangesAction.INSTANCE) {
                 requestsReceived.add(request as ReplayChangesRequest)
                 val resp = ReplayChangesResponse()
@@ -67,12 +65,13 @@ class TranslogSequencerTests : OpenSearchTestCase() {
         }
     }
 
-
     val leaderAlias = "leaderAlias"
     val leaderIndex = "leaderIndex"
     val followerShardId = ShardId("follower", "follower_uuid", 0)
-    val replicationMetadata = ReplicationMetadata(leaderAlias, ReplicationStoreMetadataType.INDEX.name, ReplicationOverallState.RUNNING.name, "test user",
-            ReplicationContext(followerShardId.indexName, null), ReplicationContext(leaderIndex, null), Settings.EMPTY)
+    val replicationMetadata = ReplicationMetadata(
+        leaderAlias, ReplicationStoreMetadataType.INDEX.name, ReplicationOverallState.RUNNING.name, "test user",
+        ReplicationContext(followerShardId.indexName, null), ReplicationContext(leaderIndex, null), Settings.EMPTY,
+    )
     val client = RequestCapturingClient()
     init {
         closeAfterSuite(client)
@@ -86,15 +85,17 @@ class TranslogSequencerTests : OpenSearchTestCase() {
     @ExperimentalCoroutinesApi
     fun `test sequencer out of order`() = runBlockingTest {
         val stats = FollowerClusterStats()
-        stats.stats[followerShardId]  = FollowerShardMetric()
+        stats.stats[followerShardId] = FollowerShardMetric()
         val startSeqNo = randomNonNegativeLong()
         indicesService = Mockito.mock(IndicesService::class.java)
         val followerIndexService = Mockito.mock(IndexService::class.java)
         val indexShard = Mockito.mock(IndexShard::class.java)
         Mockito.`when`(indicesService.indexServiceSafe(followerShardId.index)).thenReturn(followerIndexService)
         Mockito.`when`(followerIndexService.getShard(followerShardId.id)).thenReturn(indexShard)
-        val sequencer = TranslogSequencer(this, replicationMetadata, followerShardId, leaderAlias, leaderIndex, EMPTY_TASK_ID,
-                                          client, startSeqNo, stats, 2)
+        val sequencer = TranslogSequencer(
+            this, replicationMetadata, followerShardId, leaderAlias, leaderIndex, EMPTY_TASK_ID,
+            client, startSeqNo, stats, 2,
+        )
 
         // Send requests out of order (shuffled seqNo) and await for them to be processed.
         var batchSeqNo = startSeqNo
@@ -110,17 +111,19 @@ class TranslogSequencerTests : OpenSearchTestCase() {
 
         // Now verify that there was one replay request for every batch of changes that was sent
         assertThat(client.requestsReceived.size).isEqualTo(batches.size)
-        batches.zip(client.requestsReceived).forEach {  (batch, req) ->
+        batches.zip(client.requestsReceived).forEach { (batch, req) ->
             assertThat(batch.changes.first().seqNo()).isEqualTo(req.changes.first().seqNo())
         }
     }
 
-    fun randomChangesResponse(startSeqNo: Long) : Pair<GetChangesResponse, Long> {
+    fun randomChangesResponse(startSeqNo: Long): Pair<GetChangesResponse, Long> {
         var seqNo = startSeqNo
         val changes = randomList(1, randomIntBetween(1, 512)) {
             seqNo = seqNo.inc()
-            Translog.Index(randomAlphaOfLength(10).toLowerCase(Locale.ROOT), seqNo,
-                           1L, "{}".toByteArray(Charsets.UTF_8))
+            Translog.Index(
+                randomAlphaOfLength(10).toLowerCase(Locale.ROOT), seqNo,
+                1L, "{}".toByteArray(Charsets.UTF_8),
+            )
         }
         return Pair(GetChangesResponse(changes, startSeqNo.inc(), startSeqNo, -1), seqNo)
     }

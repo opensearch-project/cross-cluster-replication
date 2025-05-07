@@ -1,14 +1,11 @@
 /*
+ * Copyright OpenSearch Contributors
  * SPDX-License-Identifier: Apache-2.0
  *
  * The OpenSearch Contributors require contributions made to
  * this file be licensed under the Apache-2.0 license or a
  * compatible open source license.
- *
- * Modifications Copyright OpenSearch Contributors. See
- * GitHub history for details.
  */
-
 package org.opensearch.replication.action.stats
 
 import org.opensearch.action.ActionType
@@ -35,8 +32,7 @@ class AutoFollowStatsAction : ActionType<AutoFollowStatsResponses>(NAME, reader)
     override fun getResponseReader(): Writeable.Reader<AutoFollowStatsResponses> = reader
 }
 
-
-class AutoFollowStatsResponse : Writeable , ToXContentObject {
+class AutoFollowStatsResponse : Writeable, ToXContentObject {
     val stat: AutoFollowStat
 
     constructor(inp: StreamInput) {
@@ -57,15 +53,15 @@ class AutoFollowStatsResponse : Writeable , ToXContentObject {
     }
 }
 
-
 class AutoFollowStatsResponses : BaseTasksResponse, ToXContentObject {
     val statsResponses: List<AutoFollowStatsResponse>
     var aggResponse = AutoFollowStat("", "")
 
     constructor(
-            autoFollowStatsResponse: List<AutoFollowStatsResponse>,
-            nodeFailures: List<FailedNodeException>,
-            taskFailures: List<TaskOperationFailure>) : super(taskFailures, nodeFailures) {
+        autoFollowStatsResponse: List<AutoFollowStatsResponse>,
+        nodeFailures: List<FailedNodeException>,
+        taskFailures: List<TaskOperationFailure>,
+    ) : super(taskFailures, nodeFailures) {
         statsResponses = autoFollowStatsResponse
         for (resp in statsResponses) {
             aggResponse.failedLeaderCall += resp.stat.failedLeaderCall
@@ -94,15 +90,12 @@ class AutoFollowStatsResponses : BaseTasksResponse, ToXContentObject {
         builder.field("num_failed_start_replication", aggResponse.failCount)
         builder.field("num_failed_leader_calls", aggResponse.failedLeaderCall)
         builder.field("failed_indices", aggResponse.failedIndices)
-        builder.startArray("autofollow_stats");
+        builder.startArray("autofollow_stats")
         for (response in statsResponses) {
             response.toXContent(builder, EMPTY_PARAMS)
         }
-        builder.endArray(   )
+        builder.endArray()
         builder.endObject()
         return builder
     }
-
 }
-
-

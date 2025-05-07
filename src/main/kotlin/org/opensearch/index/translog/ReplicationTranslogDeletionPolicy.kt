@@ -1,3 +1,11 @@
+/*
+ * Copyright OpenSearch Contributors
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The OpenSearch Contributors require contributions made to
+ * this file be licensed under the Apache-2.0 license or a
+ * compatible open source license.
+ */
 package org.opensearch.index.translog
 
 import org.opensearch.core.common.unit.ByteSizeValue
@@ -10,16 +18,16 @@ import java.util.function.Supplier
 
 class ReplicationTranslogDeletionPolicy(
     indexSettings: IndexSettings,
-    private val retentionLeasesSupplier: Supplier<RetentionLeases>
+    private val retentionLeasesSupplier: Supplier<RetentionLeases>,
 ) : TranslogDeletionPolicy() {
     @Volatile
     private var translogPruningEnabled: Boolean =
-            indexSettings.isSoftDeleteEnabled
-                    && ReplicationPlugin.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING.get(indexSettings.settings)
+        indexSettings.isSoftDeleteEnabled &&
+            ReplicationPlugin.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING.get(indexSettings.settings)
 
     @Volatile
     private var replicationRetentionSizeInBytes: Long =
-            ReplicationPlugin.REPLICATION_INDEX_TRANSLOG_RETENTION_SIZE.get(indexSettings.settings).bytes
+        ReplicationPlugin.REPLICATION_INDEX_TRANSLOG_RETENTION_SIZE.get(indexSettings.settings).bytes
 
     @Volatile
     private var retentionSizeInBytes: Long = indexSettings.translogRetentionSize.bytes
@@ -32,16 +40,16 @@ class ReplicationTranslogDeletionPolicy(
 
     init {
         indexSettings.scopedSettings.addSettingsUpdateConsumer(
-            ReplicationPlugin.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING
+            ReplicationPlugin.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING,
         ) { value: Boolean -> translogPruningEnabled = if (indexSettings.isSoftDeleteEnabled) value else false }
 
         indexSettings.scopedSettings.addSettingsUpdateConsumer(
-            ReplicationPlugin.REPLICATION_INDEX_TRANSLOG_RETENTION_SIZE
+            ReplicationPlugin.REPLICATION_INDEX_TRANSLOG_RETENTION_SIZE,
         ) { value: ByteSizeValue -> replicationRetentionSizeInBytes = value.bytes }
 
         indexSettings.scopedSettings.addSettingsUpdateConsumer(
-                IndexSettings.INDEX_TRANSLOG_RETENTION_SIZE_SETTING
-        ) { value: ByteSizeValue -> retentionSizeInBytes = if(indexSettings.isSoftDeleteEnabled) -1 else value.bytes }
+            IndexSettings.INDEX_TRANSLOG_RETENTION_SIZE_SETTING,
+        ) { value: ByteSizeValue -> retentionSizeInBytes = if (indexSettings.isSoftDeleteEnabled) -1 else value.bytes }
     }
 
     fun getRetentionSizeInBytes(): Long {
@@ -77,23 +85,28 @@ class ReplicationTranslogDeletionPolicy(
     @Synchronized
     @Throws(IOException::class)
     override fun minTranslogGenRequired(readers: List<TranslogReader>, writer: TranslogWriter): Long {
-        return minTranslogGenRequired(readers,
-                writer,
-                getIndexTranslogPruningEnabled(),
-                getRetentionSizeInBytes(),
-                retentionAgeInMillis,
-                retentionTotalFiles,
-                minTranslogGenRequiredByLocks,
-                retentionLeasesSupplier
+        return minTranslogGenRequired(
+            readers,
+            writer,
+            getIndexTranslogPruningEnabled(),
+            getRetentionSizeInBytes(),
+            retentionAgeInMillis,
+            retentionTotalFiles,
+            minTranslogGenRequiredByLocks,
+            retentionLeasesSupplier,
         )
     }
 
     companion object {
         fun minTranslogGenRequired(
-            readers: List<TranslogReader>, writer: TranslogWriter,
-            translogPruningEnabled: Boolean, retentionSizeInBytes: Long,
-            retentionAgeInMillis: Long, retentionTotalFiles: Int,
-            minTranslogGenRequiredByLocks: Long, retentionLeasesSupplier: Supplier<RetentionLeases>
+            readers: List<TranslogReader>,
+            writer: TranslogWriter,
+            translogPruningEnabled: Boolean,
+            retentionSizeInBytes: Long,
+            retentionAgeInMillis: Long,
+            retentionTotalFiles: Int,
+            minTranslogGenRequiredByLocks: Long,
+            retentionLeasesSupplier: Supplier<RetentionLeases>,
         ): Long {
             val minBySize: Long = getMinTranslogGenBySize(readers, writer, retentionSizeInBytes)
             var minByRetentionLeasesAndSize = Long.MAX_VALUE
@@ -119,26 +132,27 @@ class ReplicationTranslogDeletionPolicy(
         }
 
         fun getMinTranslogGenByRetentionLease(
-            readers: List<TranslogReader>, writer: TranslogWriter,
-            retentionLeasesSupplier: Supplier<RetentionLeases>
+            readers: List<TranslogReader>,
+            writer: TranslogWriter,
+            retentionLeasesSupplier: Supplier<RetentionLeases>,
         ): Long {
-            var minGen: Long = writer.getGeneration();
+            var minGen: Long = writer.getGeneration()
             val minimumRetainingSequenceNumber: Long = retentionLeasesSupplier.get()
                 .leases()
                 .stream()
                 .mapToLong(RetentionLease::retainingSequenceNumber)
                 .min()
-                .orElse(Long.MAX_VALUE);
+                .orElse(Long.MAX_VALUE)
 
             for (i in readers.size - 1 downTo 0) {
                 val reader: TranslogReader = readers[i]
                 if (reader.minSeqNo <= minimumRetainingSequenceNumber &&
                     reader.maxSeqNo >= minimumRetainingSequenceNumber
                 ) {
-                    minGen = minGen.coerceAtMost(reader.getGeneration());
+                    minGen = minGen.coerceAtMost(reader.getGeneration())
                 }
             }
-            return minGen;
+            return minGen
         }
     }
 }
