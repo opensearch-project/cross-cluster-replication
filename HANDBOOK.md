@@ -100,57 +100,6 @@ curl -k -u admin:admin -XPUT "https://${FOLLOWER}/_cluster/settings?pretty" \
 "
 ```
 
-## Security
-
-### Required permissions on follower cluster
-
-```
-# Index Level Permissions
-
-indices:admin/close
-indices:admin/close[s]
-indices:admin/create
-indices:admin/mapping/put
-indices:admin/open
-indices:admin/plugins/replication/index/start
-indices:admin/plugins/replication/index/stop
-indices:data/read/plugins/replication/file_metadata
-indices:data/write/index
-indices:data/write/plugins/replication/changes
-indices:data/write/replication
-indices:monitor/stats
-
-# Cluster Level Permissions
-
-cluster:monitor/state
-cluster:admin/snapshot/restore
-cluster:admin/plugins/replication/autofollow/update
-```
-
-### Required permissions on leader cluster
-
-```
-# Index Level Permissions
-indices:data/read/plugins/replication/file_chunk
-indices:data/read/plugins/replication/file_metadata
-indices:admin/plugins/replication/resources/release
-indices:data/read/plugins/replication/changes
-indices:admin/mappings/get
-indices:monitor/stats
-
-# Cluster Level Permissions
-cluster:monitor/state
-```
-
-### Populate it on test clusters
-
-You can run the [example script](https://github.com/opensearch-project/cross-cluster-replication/tree/main/examples/sample/setup_permissions.sh) to setup the required permissions on the test clusters.
-
-```bash
-sh ./setup_permissions.sh "${LEADER}"
-sh ./setup_permissions.sh "${FOLLOWER}"
-```
-
 ## Start replication
 
 This API is used to initiate replication of an index from the leader cluster onto the follower cluster. The API is invoked on the follower and the desired remote index from leader cluster is provided as parameters.
