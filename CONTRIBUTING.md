@@ -31,7 +31,7 @@ Ugh! Bugs!
 
 A bug is when software behaves in a way that you didn't expect and the developer didn't intend. To help us understand what's going on, we first want to make sure you're working from the latest version.
 
-Once you've confirmed that the bug still exists in the latest version, you'll want to check to make sure it's not something we already know about on the [open issues GitHub page](issues).
+Once you've confirmed that the bug still exists in the latest version, you'll want to check to make sure it's not something we already know about on the [open issues GitHub page](https://github.com/opensearch-project/cross-cluster-replication/issues).
 
 If you've upgraded to the latest version and you can't find it in our open issues list, then you'll need to tell us how to reproduce it Provide as much information as you can. You may think that the problem lies with your query, when actually it depends on how your data is indexed. The easier it is for us to recreate your problem, the faster it is likely to be fixed.
 
@@ -45,7 +45,7 @@ If you would like to contribute to the documentation, please do so in the [docum
 
 ### Contributing Code
 
-As with other types of contributions, the first step is to [open an issue on GitHub](issues/new/choose). Opening an issue before you make changes makes sure that someone else isn't already working on that particular problem. It also lets us all work together to find the right approach before you spend a bunch of time on a PR. So again, when in doubt, open an issue.
+As with other types of contributions, the first step is to [open an issue on GitHub](https://github.com/opensearch-project/cross-cluster-replication/issues/new/choose). Opening an issue before you make changes makes sure that someone else isn't already working on that particular problem. It also lets us all work together to find the right approach before you spend a bunch of time on a PR. So again, when in doubt, open an issue.
 
 ## Becoming a maintainer
 You can become a maintainer by actively contributing to any project, and being nominated by an existing maintainer.
