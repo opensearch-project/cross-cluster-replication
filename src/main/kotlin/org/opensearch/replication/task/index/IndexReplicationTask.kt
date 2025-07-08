@@ -228,7 +228,8 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                                 is FailedState -> {
                                     // Try pausing or stopping if we get Failed state based on settings.
                                     // This returns failed state if pause or stop failed
-                                    if (clusterService.clusterSettings.get(ReplicationPlugin.REPLICATION_REPLICATE_INDEX_DELETION)) {
+                                    if (clusterService.clusterSettings.get(ReplicationPlugin.REPLICATION_REPLICATE_INDEX_DELETION)
+                                        && clusterService.state().metadata.index(leaderIndex) == null) {
                                         stopReplication(state)
                                     } else {
                                         pauseReplication(state)
@@ -774,7 +775,8 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
 
             // Deleting the follower index if replication is stopped because of leader index deletion
             if (clusterService.clusterSettings.get(ReplicationPlugin.REPLICATION_REPLICATE_INDEX_DELETION)
-                && currentTaskState.state == ReplicationState.COMPLETED)  {
+                && currentTaskState.state == ReplicationState.COMPLETED
+                && clusterService.state().metadata.index(leaderIndex) == null)  {
                 deleteIndex()
             }
         }
