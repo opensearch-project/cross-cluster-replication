@@ -138,6 +138,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
     override val log = Loggers.getLogger(javaClass, Index(params.followerIndexName, ClusterState.UNKNOWN_UUID))
     private val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), clusterService.state().metadata.clusterUUID(), remoteClient)
     private var shouldCallEvalMonitoring = true
+    private var isLeaderIndexDeleted = false
     private var updateSettingsContinuousFailCount = 0
     private var updateAliasContinousFailCount = 0
 
@@ -227,10 +228,14 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                                 }
                                 is FailedState -> {
                                     // Try pausing or stopping if we get Failed state based on settings.
+                                    // If index deletion replication is turned on in the settings and leader index is
+                                    // not available then stop the replication, otherwise pause the replication.
                                     // This returns failed state if pause or stop failed
-                                    if (clusterService.clusterSettings.get(ReplicationPlugin.REPLICATION_REPLICATE_INDEX_DELETION)
-                                        && clusterService.state().metadata.index(leaderIndex) == null) {
-                                        stopReplication(state)
+                                   if (clusterService.clusterSettings.get(ReplicationPlugin.REPLICATION_REPLICATE_INDEX_DELETION)
+                                       && state.errorMsg.contains("org.opensearch.index.IndexNotFoundException - \"no such index ["
+                                               + leaderIndex.name + "]\"")) {
+                                       isLeaderIndexDeleted = true
+                                       stopReplication(state)
                                     } else {
                                         pauseReplication(state)
                                     }
@@ -694,7 +699,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
 
     private suspend fun stopReplication(state: FailedState): IndexReplicationState {
         try {
-            log.info("Going to initiate stop of $followerIndexName due to deletion of leader index")
+            log.info("Going to initiate stop of index $followerIndexName due to deletion of corresponding leader index ${leaderIndex.name}")
             val stopReplicationResponse = client.suspendExecute(
                 replicationMetadata,
                 INTERNAL_STOP_REPLICATION_ACTION_TYPE, StopIndexReplicationRequest(followerIndexName),
@@ -718,7 +723,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
 
     private suspend fun deleteIndex() {
         try {
-            log.info("Deleting the index $followerIndexName due to deletion of leader index")
+            log.info("Going to initiate deletion of index $followerIndexName due to deletion of corresponding leader index ${leaderIndex.name}")
             val deleteIndexResponse = client.suspendExecute(
                 replicationMetadata,
                 DeleteIndexAction.INSTANCE, DeleteIndexRequest(followerIndexName),
@@ -775,8 +780,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
 
             // Deleting the follower index if replication is stopped because of leader index deletion
             if (clusterService.clusterSettings.get(ReplicationPlugin.REPLICATION_REPLICATE_INDEX_DELETION)
-                && currentTaskState.state == ReplicationState.COMPLETED
-                && clusterService.state().metadata.index(leaderIndex) == null)  {
+                && currentTaskState.state == ReplicationState.COMPLETED && isLeaderIndexDeleted)  {
                 deleteIndex()
             }
         }
