@@ -231,7 +231,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                                     // If index deletion replication is turned on in the settings and leader index is
                                     // not available then stop the replication, otherwise pause the replication.
                                     // This returns failed state if pause or stop failed
-                                   if (clusterService.clusterSettings.get(ReplicationPlugin.REPLICATION_REPLICATE_INDEX_DELETION)
+                                   if (replicationSettings.replicateIndexDeletion
                                        && state.errorMsg.contains("org.opensearch.index.IndexNotFoundException - \"no such index ["
                                                + leaderIndex.name + "]\"")) {
                                        isLeaderIndexDeleted = true
