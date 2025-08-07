@@ -33,6 +33,7 @@ open class ReplicationSettings(clusterService: ClusterService) {
     @Volatile var leaseRenewalMaxFailureDuration: TimeValue = clusterService.clusterSettings.get(ReplicationPlugin.REPLICATION_RETENTION_LEASE_MAX_FAILURE_DURATION)
     @Volatile var followerBlockStart: Boolean = clusterService.clusterSettings.get(ReplicationPlugin.REPLICATION_FOLLOWER_BLOCK_START)
     @Volatile var autofollowConcurrentJobsTriggerSize: Int = clusterService.clusterSettings.get(ReplicationPlugin.REPLICATION_AUTOFOLLOW_CONCURRENT_REPLICATION_JOBS_TRIGGER_SIZE)
+    @Volatile var replicateIndexDeletion: Boolean = clusterService.clusterSettings.get(ReplicationPlugin.REPLICATION_REPLICATE_INDEX_DELETION)
 
     init {
         listenForUpdates(clusterService.clusterSettings)
@@ -51,5 +52,6 @@ open class ReplicationSettings(clusterService: ClusterService) {
         clusterSettings.addSettingsUpdateConsumer(ReplicationPlugin.REPLICATION_METADATA_SYNC_INTERVAL) { metadataSyncInterval = it }
         clusterSettings.addSettingsUpdateConsumer(ReplicationPlugin.REPLICATION_FOLLOWER_BLOCK_START) { followerBlockStart = it }
         clusterSettings.addSettingsUpdateConsumer(ReplicationPlugin.REPLICATION_AUTOFOLLOW_CONCURRENT_REPLICATION_JOBS_TRIGGER_SIZE) { autofollowConcurrentJobsTriggerSize = it }
+        clusterSettings.addSettingsUpdateConsumer(ReplicationPlugin.REPLICATION_REPLICATE_INDEX_DELETION) { replicateIndexDeletion = it }
     }
 }

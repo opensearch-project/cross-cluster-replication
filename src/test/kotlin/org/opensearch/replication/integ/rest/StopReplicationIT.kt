@@ -30,6 +30,7 @@ import org.opensearch.action.admin.cluster.settings.ClusterUpdateSettingsRequest
 import org.opensearch.action.admin.cluster.snapshots.create.CreateSnapshotRequest
 import org.opensearch.action.admin.cluster.snapshots.restore.RestoreSnapshotRequest
 import org.opensearch.action.admin.cluster.snapshots.status.SnapshotsStatusRequest
+import org.opensearch.action.admin.indices.delete.DeleteIndexRequest
 import org.opensearch.action.index.IndexRequest
 import org.opensearch.client.Request
 import org.opensearch.client.RequestOptions
@@ -241,6 +242,40 @@ class StopReplicationIT: MultiClusterRestTestCase() {
         followerClient.stopReplication(followerIndexName)
         val sourceMap = mapOf("name" to randomAlphaOfLength(5))
         followerClient.index(IndexRequest(followerIndexName).id("2").source(sourceMap), RequestOptions.DEFAULT)
+    }
+
+    fun `test delete follower index when leader index is unavailable`() {
+        val followerIndexName2 = "follower_index2"
+        val leaderIndexName2 = "leader_index2"
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+
+        // Enabling the replication of delete index
+        val settings = Settings.builder()
+            .put("plugins.replication.replicate.delete_index", true)
+            .build()
+        val request = ClusterUpdateSettingsRequest()
+        request.transientSettings(settings)
+        followerClient.cluster().putSettings(request, RequestOptions.DEFAULT)
+
+        createConnectionBetweenClusters(FOLLOWER, LEADER, "source")
+        val createIndex1Response = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndex1Response.isAcknowledged).isTrue()
+        val createIndex2Response = leaderClient.indices().create(CreateIndexRequest(leaderIndexName2), RequestOptions.DEFAULT)
+        assertThat(createIndex2Response.isAcknowledged).isTrue()
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
+            waitForRestore = true)
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName2, followerIndexName2),
+            waitForRestore = true)
+
+        val deleteResponse = leaderClient.indices().delete(DeleteIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(deleteResponse.isAcknowledged)
+
+        // Make sure follower index got deleted after it is deleted from the leader, and it didn't affect any other indexes
+        assertBusy({
+            Assert.assertFalse(followerClient.indices().exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
+        }, 30, TimeUnit.SECONDS)
+        Assert.assertTrue(followerClient.indices().exists(GetIndexRequest(followerIndexName2), RequestOptions.DEFAULT))
     }
 
     fun `test stop replication with stale replication settings at leader cluster`() {
