@@ -116,6 +116,10 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         throw UnsupportedOperationException("Operation not permitted")
     }
 
+    override fun getLowPriorityRemoteDownloadThrottleTimeInNanos(): Long {
+        throw UnsupportedOperationException("Operation not permitted")
+    }
+
     override fun finalizeSnapshot(shardGenerations: ShardGenerations?, repositoryStateId: Long, clusterMetadata: Metadata?,
                                   snapshotInfo: SnapshotInfo?, repositoryMetaVersion: Version?,
                                   stateTransformer: Function<ClusterState, ClusterState>?,
