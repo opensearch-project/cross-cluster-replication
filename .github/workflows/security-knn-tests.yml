@@ -36,7 +36,7 @@ jobs:
         run: |
           opensearch_version=$(./gradlew properties | grep -E '^version:' | awk '{print $2}')
           # we publish build artifacts to the below url 
-          sec_plugin_url="https://aws.oss.sonatype.org/content/repositories/snapshots/org/opensearch/plugin/opensearch-security/"$opensearch_version"/"
+          sec_plugin_url="https://central.sonatype.com/service/rest/repository/browse/maven-snapshots/org/opensearch/plugin/opensearch-security/"$opensearch_version"/"
           sec_st=$(curl -s -o /dev/null -w "%{http_code}" $sec_plugin_url)
           if [ "$sec_st" = "200" ]; then
             echo "isSecurityPluginAvailable=True" >> $GITHUB_OUTPUT
@@ -45,7 +45,7 @@ jobs:
             echo "isSecurityPluginAvailable=False" >> $GITHUB_OUTPUT
             cat $GITHUB_OUTPUT
           fi
-          knn_plugin_url="https://aws.oss.sonatype.org/content/repositories/snapshots/org/opensearch/plugin/opensearch-knn/"$opensearch_version"/"
+          knn_plugin_url="https://central.sonatype.com/service/rest/repository/browse/maven-snapshots/org/opensearch/plugin/opensearch-knn/"$opensearch_version"/"
           knn_st=$(curl -s -o /dev/null -w "%{http_code}" $knn_plugin_url)
           if [ "$knn_st" = "200" ]; then
             echo "isKnnPluginAvailable=True" >> $GITHUB_OUTPUT
@@ -62,7 +62,7 @@ jobs:
     name: Build and Run Security tests
     strategy:
       matrix:
-        java: [21, 23]
+        java: [21, 24]
     runs-on: ubuntu-latest
     container:
       # using the same image which is used by opensearch-build team to build the OpenSearch Distribution
@@ -113,7 +113,7 @@ jobs:
     name: Build and Run Knn tests
     strategy:
       matrix:
-        java: [21, 23]
+        java: [21, 24]
     runs-on: ubuntu-latest
     container:
       # using the same image which is used by opensearch-build team to build the OpenSearch Distribution
