@@ -237,4 +237,47 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
             `validate status syncing response`(statusResp)
         }, 30, TimeUnit.SECONDS)
     }
+
+    fun `test auto pause of index replication when leader index is unavailable and disabled the property replicate delete_index explicitly`() {
+        val followerIndexName1 = "auto_pause_index"
+        val leaderIndexName1 = "leader1"
+        val followerIndexName2 = "no_auto_pause_index"
+        val leaderIndexName2 = "leader2"
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+
+        // Disabling the replication of delete index explicitly
+        val settings = Settings.builder()
+            .put("plugins.replication.replicate.delete_index", false)
+            .build()
+        val request = ClusterUpdateSettingsRequest()
+        request.transientSettings(settings)
+        followerClient.cluster().putSettings(request, RequestOptions.DEFAULT)
+
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+        var createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName1), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName2), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        // For followerIndexName1
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName1,
+            followerIndexName1), waitForRestore = true)
+        // For followerIndexName2
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName2,
+            followerIndexName2), waitForRestore = true)
+        val deleteResponse = leaderClient.indices().delete(DeleteIndexRequest(leaderIndexName1), RequestOptions.DEFAULT)
+        assertThat(deleteResponse.isAcknowledged)
+        // followerIndexName1 -> autopause
+        assertBusy({
+            var statusResp = followerClient.replicationStatus(followerIndexName1)
+            assertThat(statusResp.containsKey("status"))
+            assertThat(statusResp.containsKey("reason"))
+            `validate paused status response due to leader index deleted`(statusResp)
+        }, 30, TimeUnit.SECONDS)
+        // followerIndexName2 -> Syncing state
+        assertBusy({
+            var statusResp = followerClient.replicationStatus(followerIndexName2)
+            `validate status syncing response`(statusResp)
+        }, 30, TimeUnit.SECONDS)
+    }
 }
