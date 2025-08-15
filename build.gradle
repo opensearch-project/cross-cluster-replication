@@ -465,6 +465,7 @@ int endJmxPort = startJmxPort
 integTest {
     useCluster testClusters.leaderCluster
     useCluster testClusters.followCluster
+    systemProperty 'testclusters.dir', project.layout.buildDirectory.get().file("testclusters").asFile.absolutePath
     systemProperty "password", "admin" // setting it to `admin` explicitly since its a custom security setup
 
     if(knnEnabled){
