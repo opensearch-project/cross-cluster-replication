@@ -207,7 +207,7 @@ fun User.overrideFgacRole(fgacRole: String?): User? {
         roles = listOf(fgacRole)
     }
     return User(this.name, this.backendRoles, roles,
-            this.customAttNames, this.requestedTenant)
+            mapOf<String, String>(), this.requestedTenant)
 }
 
 fun User.toInjectedUser(): String? {
