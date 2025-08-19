@@ -42,7 +42,7 @@ class SecurityContext {
         const val OPENDISTRO_SECURITY_INJECTED_ROLES_VALIDATION = "opendistro_security_injected_roles_validation"
         const val REPLICATION_PLUGIN_USER = "ccr_user"
 
-        val ADMIN_USER = User(REPLICATION_PLUGIN_USER, null, listOf("all_access"), null)
+        val ADMIN_USER = User(REPLICATION_PLUGIN_USER, null, listOf("all_access"), mapOf<String, String>())
 
         val ALL_TRANSIENTS = listOf(ConfigConstants.OPENSEARCH_SECURITY_INJECTED_ROLES,
                 ConfigConstants.INJECTED_USER, OPENDISTRO_SECURITY_USER)
