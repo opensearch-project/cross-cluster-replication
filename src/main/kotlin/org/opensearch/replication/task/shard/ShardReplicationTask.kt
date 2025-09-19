@@ -257,7 +257,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
 
                         // Handle 2GB limit exception specifically
                         if (e is IllegalArgumentException &&
-                            e.message?.equals("ReleasableBytesStreamOutput cannot hold more than 2GB of data") == true) {
+                            e.message?.contains("ReleasableBytesStreamOutput cannot hold more than") == true) {
                             logError("Hit 2GB limit with current batch size ${changeTracker.batchSizeSettings().getEffectiveBatchSize()}. Reducing batch size.")
                             changeTracker.reduceBatchSize()
                             logError("Reduced batch size to ${changeTracker.batchSizeSettings().getEffectiveBatchSize()}. Retrying immediately.")

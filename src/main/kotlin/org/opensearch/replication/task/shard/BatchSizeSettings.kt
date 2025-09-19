@@ -13,6 +13,7 @@ package org.opensearch.replication.task.shard
 
 import org.opensearch.index.IndexSettings
 import org.opensearch.replication.ReplicationPlugin
+import org.opensearch.replication.ReplicationPlugin.Companion.MIN_OPS_BATCH_SIZE
 import org.opensearch.replication.ReplicationSettings
 
 /**
@@ -51,7 +52,6 @@ class BatchSizeSettings(
     // For dynamic batch size adjustment (2GB fix)
     @Volatile
     private var dynamicBatchSize: Int? = null
-    private val minBatchSize = 16
 
     /**
      * Get effective batch size considering dynamic adjustments
@@ -65,7 +65,7 @@ class BatchSizeSettings(
      */
     fun reduceBatchSize() {
         val currentSize = getEffectiveBatchSize()
-        dynamicBatchSize = maxOf(currentSize / 2, minBatchSize)
+        dynamicBatchSize = maxOf(currentSize / 2, MIN_OPS_BATCH_SIZE)
     }
 
     /**

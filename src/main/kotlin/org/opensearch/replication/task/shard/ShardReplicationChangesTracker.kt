@@ -87,7 +87,7 @@ class ShardReplicationChangesTracker(indexShard: IndexShard, private val replica
      */
     fun reduceBatchSize() {
         batchSizeSettings.reduceBatchSize()
-        logDebug("Batch size reduced to ${batchSizeSettings.getEffectiveBatchSize()}")
+        logInfo("Batch size reduced to ${batchSizeSettings.getEffectiveBatchSize()}")
     }
 
     /**
@@ -95,7 +95,7 @@ class ShardReplicationChangesTracker(indexShard: IndexShard, private val replica
      */
     fun resetBatchSize() {
         batchSizeSettings.resetBatchSize()
-        logDebug("Batch size reset to ${batchSizeSettings.getEffectiveBatchSize()}")
+        logInfo("Batch size reset to ${batchSizeSettings.getEffectiveBatchSize()}")
     }
 
     /**
@@ -146,5 +146,9 @@ class ShardReplicationChangesTracker(indexShard: IndexShard, private val replica
 
     private fun logDebug(msg: String) {
         log.debug("${Thread.currentThread().name}: $msg")
+    }
+
+    private fun logInfo(msg: String) {
+        log.info("${Thread.currentThread().name}: $msg")
     }
 }
