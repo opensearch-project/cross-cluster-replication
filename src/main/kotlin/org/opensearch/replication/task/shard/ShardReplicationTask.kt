@@ -11,20 +11,6 @@
 
 package org.opensearch.replication.task.shard
 
-import org.opensearch.replication.ReplicationSettings
-import org.opensearch.replication.action.changes.GetChangesAction
-import org.opensearch.replication.action.changes.GetChangesRequest
-import org.opensearch.replication.action.changes.GetChangesResponse
-import org.opensearch.replication.metadata.ReplicationMetadataManager
-import org.opensearch.replication.metadata.ReplicationOverallState
-import org.opensearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
-import org.opensearch.replication.metadata.state.getReplicationStateParamsForIndex
-import org.opensearch.replication.seqno.RemoteClusterRetentionLeaseHelper
-import org.opensearch.replication.task.CrossClusterReplicationTask
-import org.opensearch.replication.task.ReplicationState
-import org.opensearch.replication.util.indicesService
-import org.opensearch.replication.util.stackTraceToString
-import org.opensearch.replication.util.suspendExecuteWithRetries
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -39,21 +25,34 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
 import org.opensearch.OpenSearchException
 import org.opensearch.OpenSearchTimeoutException
-import org.opensearch.transport.client.Client
 import org.opensearch.cluster.ClusterChangedEvent
 import org.opensearch.cluster.ClusterStateListener
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.logging.Loggers
-import org.opensearch.index.seqno.RetentionLeaseActions
-import org.opensearch.index.seqno.RetentionLeaseInvalidRetainingSeqNoException
-import org.opensearch.index.seqno.RetentionLeaseNotFoundException
 import org.opensearch.core.index.shard.ShardId
-import org.opensearch.persistent.PersistentTaskState
-import org.opensearch.persistent.PersistentTasksNodeService
 import org.opensearch.core.rest.RestStatus
 import org.opensearch.core.tasks.TaskId
+import org.opensearch.index.seqno.RetentionLeaseInvalidRetainingSeqNoException
+import org.opensearch.index.seqno.RetentionLeaseNotFoundException
+import org.opensearch.persistent.PersistentTaskState
+import org.opensearch.persistent.PersistentTasksNodeService
+import org.opensearch.replication.ReplicationSettings
+import org.opensearch.replication.action.changes.GetChangesAction
+import org.opensearch.replication.action.changes.GetChangesRequest
+import org.opensearch.replication.action.changes.GetChangesResponse
+import org.opensearch.replication.metadata.ReplicationMetadataManager
+import org.opensearch.replication.metadata.ReplicationOverallState
+import org.opensearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
+import org.opensearch.replication.metadata.state.getReplicationStateParamsForIndex
+import org.opensearch.replication.seqno.RemoteClusterRetentionLeaseHelper
+import org.opensearch.replication.task.CrossClusterReplicationTask
+import org.opensearch.replication.task.ReplicationState
+import org.opensearch.replication.util.indicesService
+import org.opensearch.replication.util.stackTraceToString
+import org.opensearch.replication.util.suspendExecuteWithRetries
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.NodeNotConnectedException
+import org.opensearch.transport.client.Client
 import java.time.Duration
 
 
@@ -255,6 +254,18 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                     } catch (e: Exception) {
                         followerClusterStats.stats[followerShardId]!!.opsReadFailures.addAndGet(1)
                         logInfo("Unable to get changes from seqNo: $fromSeqNo. ${e.stackTraceToString()}")
+
+                        // Handle 2GB limit exception specifically
+                        if (e is IllegalArgumentException &&
+                            e.message?.contains("ReleasableBytesStreamOutput cannot hold more than") == true) {
+                            logError("Hit 2GB limit with current batch size ${changeTracker.batchSizeSettings().getEffectiveBatchSize()}. Reducing batch size.")
+                            changeTracker.reduceBatchSize()
+                            logError("Reduced batch size to ${changeTracker.batchSizeSettings().getEffectiveBatchSize()}. Retrying immediately.")
+                            changeTracker.updateBatchFetched(false, fromSeqNo, toSeqNo, fromSeqNo - 1, -1)
+                            // No delay for 2GB limit - retry immediately with smaller batch
+                            return@launch
+                        }
+
                         changeTracker.updateBatchFetched(false, fromSeqNo, toSeqNo, fromSeqNo - 1,-1)
                         // Propagate 4xx exceptions up the chain and halt replication as they are irrecoverable
                         val range4xx = 400.rangeTo(499)

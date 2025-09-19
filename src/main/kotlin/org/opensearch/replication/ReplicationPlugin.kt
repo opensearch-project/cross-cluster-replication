@@ -167,10 +167,15 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
         const val KNN_PLUGIN_PRESENT_SETTING = "knn.plugin.enabled"
         const val REPLICATION_EXECUTOR_NAME_LEADER = "replication_leader"
         const val REPLICATION_EXECUTOR_NAME_FOLLOWER = "replication_follower"
+        const val MIN_OPS_BATCH_SIZE = 16
         val REPLICATED_INDEX_SETTING: Setting<String> = Setting.simpleString("index.plugins.replication.follower.leader_index",
             Setting.Property.InternalIndex, Setting.Property.IndexScope)
-        val REPLICATION_FOLLOWER_OPS_BATCH_SIZE: Setting<Int> = Setting.intSetting("plugins.replication.follower.index.ops_batch_size", 50000, 16,
+        // Cluster-level batch size setting
+        val REPLICATION_FOLLOWER_OPS_BATCH_SIZE: Setting<Int> = Setting.intSetting("plugins.replication.follower.index.ops_batch_size", 50000, MIN_OPS_BATCH_SIZE,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
+        // Index-level batch size setting
+        val REPLICATION_FOLLOWER_OPS_BATCH_SIZE_INDEX: Setting<Int> = Setting.intSetting("index.plugins.replication.follower.ops_batch_size", 50000, MIN_OPS_BATCH_SIZE,
+            Setting.Property.Dynamic, Setting.Property.IndexScope)
         val REPLICATION_LEADER_THREADPOOL_SIZE: Setting<Int> = Setting.intSetting("plugins.replication.leader.thread_pool.size", 0, 0,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
         val REPLICATION_LEADER_THREADPOOL_QUEUE_SIZE: Setting<Int> = Setting.intSetting("plugins.replication.leader.thread_pool.queue_size", 1000, 0,
@@ -358,7 +363,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
     }
 
     override fun getSettings(): List<Setting<*>> {
-        return listOf(REPLICATED_INDEX_SETTING, REPLICATION_FOLLOWER_OPS_BATCH_SIZE, REPLICATION_LEADER_THREADPOOL_SIZE,
+        return listOf(REPLICATED_INDEX_SETTING, REPLICATION_FOLLOWER_OPS_BATCH_SIZE, REPLICATION_FOLLOWER_OPS_BATCH_SIZE_INDEX, REPLICATION_LEADER_THREADPOOL_SIZE,
             REPLICATION_LEADER_THREADPOOL_QUEUE_SIZE, REPLICATION_FOLLOWER_CONCURRENT_READERS_PER_SHARD,
             REPLICATION_FOLLOWER_RECOVERY_CHUNK_SIZE, REPLICATION_FOLLOWER_RECOVERY_PARALLEL_CHUNKS,
             REPLICATION_PARALLEL_READ_POLL_INTERVAL, REPLICATION_AUTOFOLLOW_REMOTE_INDICES_POLL_INTERVAL,
