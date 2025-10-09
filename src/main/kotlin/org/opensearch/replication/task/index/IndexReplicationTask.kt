@@ -232,8 +232,6 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                                     // If index deletion replication is turned on in the settings and leader index is
                                     // not available then stop the replication, otherwise pause the replication.
                                     // This returns failed state if pause or stop failed
-                                    System.out.printf("Replication failed for index $followerIndexName with error: ${state.errorMsg}")
-                                    System.out.printf("replicationSettings.replicateIndexDeletion: ${replicationSettings.replicateIndexDeletion}")
                                    if (replicationSettings.replicateIndexDeletion
                                        && state.errorMsg.contains("org.opensearch.index.IndexNotFoundException - \"no such index ["
                                                + leaderIndex.name + "]\"")) {
