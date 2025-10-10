@@ -110,6 +110,7 @@ import org.opensearch.commons.replication.action.StopIndexReplicationRequest
 import org.opensearch.replication.ReplicationPlugin
 import kotlin.streams.toList
 import org.opensearch.cluster.DiffableUtils
+import org.opensearch.common.util.concurrent.ThreadContext
 
 open class IndexReplicationTask(id: Long, type: String, action: String, description: String,
                            parentTask: TaskId,
@@ -349,7 +350,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         // Shard & Index Tasks has Close listeners
         //All ops are idempotent .
 
-        //Only called once if task starts in MONITORING STATE 
+        //Only called once if task starts in MONITORING STATE
         if (!shouldCallEvalMonitoring) {
             return MonitoringState
         }
@@ -698,13 +699,11 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
     }
 
     private suspend fun stopReplication(state: FailedState): IndexReplicationState {
+        var storedContext: ThreadContext.StoredContext? = null
         try {
+            storedContext = client.threadPool().threadContext.stashContext()
             log.info("Going to initiate stop of index $followerIndexName due to deletion of corresponding leader index ${leaderIndex.name}")
-            val stopReplicationResponse = client.suspendExecute(
-                replicationMetadata,
-                INTERNAL_STOP_REPLICATION_ACTION_TYPE, StopIndexReplicationRequest(followerIndexName),
-                defaultContext = true
-            )
+            val stopReplicationResponse = client.execute(INTERNAL_STOP_REPLICATION_ACTION_TYPE, StopIndexReplicationRequest(followerIndexName)).actionGet()
             if (!stopReplicationResponse.isAcknowledged) {
                 throw ReplicationException(
                     "Failed to gracefully stop replication after deletion of leader index. " +
@@ -717,6 +716,8 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
             log.error("Encountered exception while stopping $followerIndexName", e)
             return FailedState(state.failedShards,
                 "Stop failed with \"${e.message}\". Original failure for initiating stop - ${state.errorMsg}")
+        } finally {
+            storedContext?.close()
         }
         return CompletedState
     }
