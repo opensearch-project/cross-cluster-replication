@@ -36,8 +36,8 @@ jobs:
         run: |
           opensearch_version=$(./gradlew properties | grep -E '^version:' | awk '{print $2}')
           # we publish build artifacts to the below url 
-          sec_plugin_url="https://central.sonatype.com/service/rest/repository/browse/maven-snapshots/org/opensearch/plugin/opensearch-security/"$opensearch_version"/"
-          sec_st=$(curl -s -o /dev/null -w "%{http_code}" $sec_plugin_url)
+          sec_plugin_url="https://central.sonatype.com/service/rest/repository/browse/maven-snapshots/org/opensearch/plugin/opensearch-security/${opensearch_version}/"
+          sec_st=$(curl -L -s -o /dev/null -w "%{http_code}" $sec_plugin_url)
           if [ "$sec_st" = "200" ]; then
             echo "isSecurityPluginAvailable=True" >> $GITHUB_OUTPUT
             cat $GITHUB_OUTPUT
@@ -45,8 +45,8 @@ jobs:
             echo "isSecurityPluginAvailable=False" >> $GITHUB_OUTPUT
             cat $GITHUB_OUTPUT
           fi
-          knn_plugin_url="https://central.sonatype.com/service/rest/repository/browse/maven-snapshots/org/opensearch/plugin/opensearch-knn/"$opensearch_version"/"
-          knn_st=$(curl -s -o /dev/null -w "%{http_code}" $knn_plugin_url)
+          knn_plugin_url="https://central.sonatype.com/service/rest/repository/browse/maven-snapshots/org/opensearch/plugin/opensearch-knn/${opensearch_version}/"
+          knn_st=$(curl -L -s -o /dev/null -w "%{http_code}" $knn_plugin_url)
           if [ "$knn_st" = "200" ]; then
             echo "isKnnPluginAvailable=True" >> $GITHUB_OUTPUT
             cat $GITHUB_OUTPUT

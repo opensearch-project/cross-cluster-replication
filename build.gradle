@@ -385,7 +385,7 @@ testClusters {
         if(securityEnabled) {
             plugin(provider(securityPluginFile))
         }
-        testDistribution = "INTEG_TEST"
+        testDistribution = "ARCHIVE"
         if(knnEnabled) {
             plugin(provider(knnPluginFile))
             testDistribution = "ARCHIVE"
@@ -400,7 +400,7 @@ testClusters {
         if(_numNodes == 1) jvmArgs "${-> getDebugJvmArgs(debugPort++)}"
     }
     followCluster {
-        testDistribution = "INTEG_TEST"
+        testDistribution = "ARCHIVE"
         plugin(project.tasks.bundlePlugin.archiveFile)
         if(securityEnabled) {
             plugin(provider(securityPluginFile))
@@ -701,11 +701,8 @@ clusters.each { name ->
             }
             // Currently fetching the ARCHIVE distribution fails on mac as it tries to fetch the Mac specific "DARWIN" distribution
             // for Opensearch which is not publish yet. Changing this to INTEG_TEST to make it work on mac.
-            if (System.getProperty("os.name").startsWith("Mac")) {
-                testDistribution = "INTEG_TEST"
-            } else {
-                testDistribution = "ARCHIVE"
-            }
+
+            testDistribution = "ARCHIVE"
 
             if (_numNodes != 3) numberOfNodes = 3
             setting 'path.repo', repo.absolutePath
