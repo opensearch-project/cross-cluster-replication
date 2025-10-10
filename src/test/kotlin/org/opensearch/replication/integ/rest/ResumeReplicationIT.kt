@@ -44,6 +44,8 @@ import org.junit.Assume
 import java.nio.file.Files
 import java.util.concurrent.TimeUnit
 import org.opensearch.replication.ANALYZERS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS
+import org.junit.BeforeClass
+import org.junit.AfterClass
 
 @MultiClusterAnnotations.ClusterConfigurations(
         MultiClusterAnnotations.ClusterConfiguration(clusterName = LEADER),
@@ -56,6 +58,42 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
     private val followerClusterPath = "testclusters/followCluster-0"
     private val buildDir = System.getProperty("build.dir")
     private val synonymsJson = "/analyzers/synonym_setting.json"
+
+    companion object {
+        private val allSynonymPaths = mutableListOf<java.nio.file.Path>()
+        private val buildDir = System.getProperty("build.dir")
+
+        @BeforeClass
+        @JvmStatic
+        fun setupSynonymFiles() {
+            val testClustersDir = PathUtils.get(buildDir, "testclusters")
+
+            Files.walk(testClustersDir, 1)
+                .filter { Files.isDirectory(it) && (it.fileName.toString().startsWith("leaderCluster") || it.fileName.toString().startsWith("followCluster")) }
+                .forEach { clusterDir ->
+                    val configDir = clusterDir.resolve("config")
+                    if (Files.exists(configDir)) {
+                        // Copy all required synonym files
+                        listOf("synonyms.txt", "synonyms_new.txt", "synonyms_follower.txt").forEach { filename ->
+                            val targetPath = configDir.resolve(filename)
+                            ResumeReplicationIT::class.java.getResourceAsStream("/analyzers/synonyms.txt")?.use { synonymStream ->
+                                Files.copy(synonymStream, targetPath)
+                                allSynonymPaths.add(targetPath)
+                            }
+                        }
+                    }
+                }
+        }
+
+        @AfterClass
+        @JvmStatic
+        fun cleanupSynonymFiles() {
+            allSynonymPaths.forEach { if (Files.exists(it)) Files.delete(it) }
+            allSynonymPaths.clear()
+        }
+    }
+
+
 
     fun `test pause and resume replication in following state and empty index`() {
         val followerClient = getClientForCluster(FOLLOWER)
@@ -245,56 +283,36 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
 
         Assume.assumeFalse(ANALYZERS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS, checkifIntegTestRemote())
 
-        val synonyms = javaClass.getResourceAsStream("/analyzers/synonyms.txt")
-        val config = PathUtils.get(buildDir, leaderClusterPath, "config")
-        val synonymPath = config.resolve("synonyms.txt")
-        val newSynonymPath = config.resolve("synonyms_new.txt")
-        val followerConfig = PathUtils.get(buildDir, followerClusterPath, "config")
         val followerSynonymFilename = "synonyms_follower.txt"
-        val followerSynonymPath = followerConfig.resolve(followerSynonymFilename)
         val leaderClient = getClientForCluster(LEADER)
         val followerClient = getClientForCluster(FOLLOWER)
+        
+        var settings: Settings = Settings.builder().loadFromStream(synonymsJson, javaClass.getResourceAsStream(synonymsJson), false)
+            .build()
         try {
-            Files.copy(synonyms, synonymPath)
-            Files.copy(synonyms, followerSynonymPath)
-            var settings: Settings = Settings.builder().loadFromStream(synonymsJson, javaClass.getResourceAsStream(synonymsJson), false)
-                .build()
-            try {
-                val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName).settings(settings), RequestOptions.DEFAULT)
-                assertThat(createIndexResponse.isAcknowledged).isTrue()
-            } catch (e: Exception) {
-                assumeNoException("Ignored test as analyzer setting could not be added", e)
-            }
-            createConnectionBetweenClusters(FOLLOWER, LEADER)
-            val overriddenSettings: Settings = Settings.builder()
-                .put("index.analysis.filter.my_filter.synonyms_path", followerSynonymFilename)
-                .build()
-            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName, overriddenSettings), waitForRestore = true)
-            followerClient.pauseReplication(followerIndexName)
-            leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
-            Files.copy(synonyms, newSynonymPath)
-            settings = Settings.builder()
-                .put("index.analysis.filter.my_filter.synonyms_path", "synonyms_new.txt")
-                .build()
-            try {
-                leaderClient.indices().putSettings(UpdateSettingsRequest(leaderIndexName).settings(settings), RequestOptions.DEFAULT)
-            } catch (e: Exception) {
-                assumeNoException("Ignored test as analyzer setting could not be added", e)
-            }
-            leaderClient.indices().open(OpenIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
-            followerClient.resumeReplication(followerIndexName)
-            var statusResp = followerClient.replicationStatus(followerIndexName)
-            `validate status syncing response`(statusResp)
-        } finally {
-            if (Files.exists(synonymPath)) {
-                Files.delete(synonymPath)
-            }
-            if (Files.exists(followerSynonymPath)) {
-                Files.delete(followerSynonymPath)
-            }
-            if (Files.exists(newSynonymPath)) {
-                Files.delete(newSynonymPath)
-            }
+            val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName).settings(settings), RequestOptions.DEFAULT)
+            assertThat(createIndexResponse.isAcknowledged).isTrue()
+        } catch (e: Exception) {
+            assumeNoException("Ignored test as analyzer setting could not be added", e)
         }
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+        val overriddenSettings: Settings = Settings.builder()
+            .put("index.analysis.filter.my_filter.synonyms_path", followerSynonymFilename)
+            .build()
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName, overriddenSettings), waitForRestore = true)
+        followerClient.pauseReplication(followerIndexName)
+        leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
+        settings = Settings.builder()
+            .put("index.analysis.filter.my_filter.synonyms_path", "synonyms_new.txt")
+            .build()
+        try {
+            leaderClient.indices().putSettings(UpdateSettingsRequest(leaderIndexName).settings(settings), RequestOptions.DEFAULT)
+        } catch (e: Exception) {
+            assumeNoException("Ignored test as analyzer setting could not be added", e)
+        }
+        leaderClient.indices().open(OpenIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
+        followerClient.resumeReplication(followerIndexName)
+        var statusResp = followerClient.replicationStatus(followerIndexName)
+        `validate status syncing response`(statusResp)
     }
 }
