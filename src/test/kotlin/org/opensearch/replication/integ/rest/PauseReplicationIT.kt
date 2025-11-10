@@ -280,4 +280,34 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
             `validate status syncing response`(statusResp)
         }, 30, TimeUnit.SECONDS)
     }
+
+    fun `test pause replication without request body`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        val followerIndexName = "pause_index_no_body"
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+        
+        // Create index on leader
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        
+        // Start replication
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
+        
+        // Pause replication without sending any request body
+        val lowLevelPauseRequest = Request("POST", "/_plugins/_replication/${followerIndexName}/_pause")
+        // Not setting any entity - testing empty request body
+        val lowLevelPauseResponse = followerClient.lowLevelClient.performRequest(lowLevelPauseRequest)
+        assertThat(lowLevelPauseResponse.statusLine.statusCode).isEqualTo(200)
+        
+        // Verify that the replication is paused with default reason
+        assertBusy {
+            val statusResp = followerClient.replicationStatus(followerIndexName)
+            assertThat(statusResp.getValue("status")).isEqualTo("PAUSED")
+            assertThat(statusResp.getValue("reason")).isEqualTo(org.opensearch.replication.metadata.ReplicationMetadataManager.CUSTOMER_INITIATED_ACTION)
+        }
+        
+        // Clean up
+        followerClient.resumeReplication(followerIndexName)
+    }
 }
