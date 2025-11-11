@@ -13,6 +13,7 @@ package org.opensearch.replication.rest
 
 import org.opensearch.replication.action.pause.PauseIndexReplicationAction
 import org.opensearch.replication.action.pause.PauseIndexReplicationRequest
+import org.opensearch.replication.metadata.ReplicationMetadataManager
 import org.apache.logging.log4j.LogManager
 import org.opensearch.transport.client.node.NodeClient
 import org.opensearch.rest.BaseRestHandler
@@ -38,13 +39,17 @@ class PauseIndexReplicationHandler : BaseRestHandler() {
 
     @Throws(IOException::class)
     override fun prepareRequest(request: RestRequest, client: NodeClient): RestChannelConsumer {
-        request.contentOrSourceParamParser().use { parser ->
-            val followIndex = request.param("index")
-            val pauseReplicationRequest = PauseIndexReplicationRequest.fromXContent(parser, followIndex)
-            return RestChannelConsumer { channel: RestChannel? ->
-                client.admin().cluster()
-                        .execute(PauseIndexReplicationAction.INSTANCE, pauseReplicationRequest, RestToXContentListener(channel))
+        val followIndex = request.param("index")
+        val pauseReplicationRequest = if (request.hasContent() || request.hasParam("source")) {
+            request.contentOrSourceParamParser().use { parser ->
+                PauseIndexReplicationRequest.fromXContent(parser, followIndex)
             }
+        } else {
+            PauseIndexReplicationRequest(followIndex, ReplicationMetadataManager.CUSTOMER_INITIATED_ACTION)
+        }
+        return RestChannelConsumer { channel: RestChannel? ->
+            client.admin().cluster()
+                    .execute(PauseIndexReplicationAction.INSTANCE, pauseReplicationRequest, RestToXContentListener(channel))
         }
     }
 }
