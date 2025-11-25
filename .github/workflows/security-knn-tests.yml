@@ -62,7 +62,7 @@ jobs:
     name: Build and Run Security tests
     strategy:
       matrix:
-        java: [21, 24]
+        java: [21, 25]
     runs-on: ubuntu-latest
     container:
       # using the same image which is used by opensearch-build team to build the OpenSearch Distribution
@@ -113,7 +113,7 @@ jobs:
     name: Build and Run Knn tests
     strategy:
       matrix:
-        java: [21, 24]
+        java: [21, 25]
     runs-on: ubuntu-latest
     container:
       # using the same image which is used by opensearch-build team to build the OpenSearch Distribution
