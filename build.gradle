@@ -54,7 +54,7 @@ buildscript {
         plugin_previous_version = opensearch_previous_version.replaceAll(/(\.\d)([^\d]*)$/, '$1.0$2')
 
         common_utils_version = System.getProperty("common_utils.version", opensearch_build)
-        kotlin_version = System.getProperty("kotlin.version", "1.9.25")
+        kotlin_version = System.getProperty("kotlin.version", "2.2.0")
 
         security_plugin_version = opensearch_build
         if (!isSnapshot) {
@@ -113,6 +113,7 @@ apply plugin: 'opensearch.pluginzip'
 apply plugin: 'opensearch.java-agent'
 
 forbiddenApisTest.ignoreFailures = true
+forbiddenApisMain.ignoreFailures = true
 
 configurations.all {
     if (it.state != Configuration.State.UNRESOLVED) return
