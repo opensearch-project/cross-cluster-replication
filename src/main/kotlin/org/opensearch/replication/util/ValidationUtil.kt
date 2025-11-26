@@ -78,7 +78,7 @@ object ValidationUtil {
      * Validate the name against the rules that we have for index name.
      */
     fun validateName(name: String, validationException: ValidationException) {
-        if (name.toLowerCase(Locale.ROOT) != name)
+        if (name.lowercase(Locale.ROOT) != name)
             validationException.addValidationError("Value $name must be lowercase")
 
         if (!Strings.validFileName(name))

@@ -465,7 +465,7 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
     }
 
     fun createRandomIndex(client: RestHighLevelClient): String {
-        val indexName = indexPrefix + randomAlphaOfLength(6).toLowerCase(Locale.ROOT)
+        val indexName = indexPrefix + randomAlphaOfLength(6).lowercase(Locale.ROOT)
         val createIndexResponse = client.indices().create(CreateIndexRequest(indexName), RequestOptions.DEFAULT)
         Assertions.assertThat(createIndexResponse.isAcknowledged).isTrue()
         assertBusy {

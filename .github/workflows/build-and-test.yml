@@ -18,7 +18,7 @@ jobs:
   build-test-linux:
     strategy:
       matrix:
-        java: [21, 24]
+        java: [21, 25]
 
     name: Build CCR Plugin on Linux using Container Image
     runs-on: ubuntu-latest

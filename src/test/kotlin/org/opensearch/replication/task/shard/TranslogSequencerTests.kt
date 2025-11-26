@@ -119,7 +119,7 @@ class TranslogSequencerTests : OpenSearchTestCase() {
         var seqNo = startSeqNo
         val changes = randomList(1, randomIntBetween(1, 512)) {
             seqNo = seqNo.inc()
-            Translog.Index(randomAlphaOfLength(10).toLowerCase(Locale.ROOT), seqNo,
+            Translog.Index(randomAlphaOfLength(10).lowercase(Locale.ROOT), seqNo,
                            1L, "{}".toByteArray(Charsets.UTF_8))
         }
         return Pair(GetChangesResponse(changes, startSeqNo.inc(), startSeqNo, -1), seqNo)
