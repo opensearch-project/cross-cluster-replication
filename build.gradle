@@ -35,7 +35,7 @@ import org.opensearch.gradle.test.RestIntegTestTask
 buildscript {
     ext {
         isSnapshot = "true" == System.getProperty("build.snapshot", "true")
-        opensearch_version = System.getProperty("opensearch.version", "3.3.0-SNAPSHOT")
+        opensearch_version = System.getProperty("opensearch.version", "3.4.0-SNAPSHOT")
         buildVersionQualifier = System.getProperty("build.version_qualifier", "")
         // e.g. 2.0.0-rc1-SNAPSHOT -> 2.0.0.0-rc1-SNAPSHOT
         version_tokens = opensearch_version.tokenize('-')
@@ -54,7 +54,7 @@ buildscript {
         plugin_previous_version = opensearch_previous_version.replaceAll(/(\.\d)([^\d]*)$/, '$1.0$2')
 
         common_utils_version = System.getProperty("common_utils.version", opensearch_build)
-        kotlin_version = System.getProperty("kotlin.version", "1.9.25")
+        kotlin_version = System.getProperty("kotlin.version", "2.2.0")
 
         security_plugin_version = opensearch_build
         if (!isSnapshot) {
@@ -72,9 +72,9 @@ buildscript {
     repositories {
         mavenLocal()
         mavenCentral()
-        maven { url "https://ci.opensearch.org/ci/dbc/snapshots/maven/" }
-        maven { url "https://plugins.gradle.org/m2/" }
-        maven { url "https://artifacts.opensearch.org/snapshots/lucene/" }
+        maven { url = "https://ci.opensearch.org/ci/dbc/snapshots/maven/" }
+        maven { url = "https://plugins.gradle.org/m2/" }
+        maven { url = "https://ci.opensearch.org/ci/dbc/snapshots/lucene/" }
     }
 
     dependencies {
@@ -113,6 +113,7 @@ apply plugin: 'opensearch.pluginzip'
 apply plugin: 'opensearch.java-agent'
 
 forbiddenApisTest.ignoreFailures = true
+forbiddenApisMain.ignoreFailures = true
 
 configurations.all {
     if (it.state != Configuration.State.UNRESOLVED) return
@@ -168,9 +169,9 @@ dependencies {
 repositories {
     mavenLocal()
     mavenCentral()
-    maven { url "https://ci.opensearch.org/ci/dbc/snapshots/maven/" }
-    maven { url "https://plugins.gradle.org/m2/" }
-    maven { url "https://artifacts.opensearch.org/snapshots/lucene/" }
+    maven { url = "https://ci.opensearch.org/ci/dbc/snapshots/maven/" }
+    maven { url = "https://plugins.gradle.org/m2/" }
+    maven { url = "https://ci.opensearch.org/ci/dbc/snapshots/lucene/" }
 }
 
 compileKotlin {

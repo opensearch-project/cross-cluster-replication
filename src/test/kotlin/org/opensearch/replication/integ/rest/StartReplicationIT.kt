@@ -887,8 +887,8 @@ class StartReplicationIT: MultiClusterRestTestCase() {
     fun `test follower stats`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
-        val followerIndexName2 = randomAlphaOfLength(10).toLowerCase(Locale.ROOT)+"follower"
-        val followerIndexName3 = randomAlphaOfLength(10).toLowerCase(Locale.ROOT)+"follower"
+        val followerIndexName2 = randomAlphaOfLength(10).lowercase(Locale.ROOT)+"follower"
+        val followerIndexName3 = randomAlphaOfLength(10).lowercase(Locale.ROOT)+"follower"
         createConnectionBetweenClusters(FOLLOWER, LEADER)
         val createIndexResponse = leaderClient.indices().create(
                 CreateIndexRequest(leaderIndexName),
