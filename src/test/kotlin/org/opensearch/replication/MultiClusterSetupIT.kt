@@ -11,24 +11,25 @@
 
 package org.opensearch.replication
 
-import org.opensearch.replication.MultiClusterAnnotations.ClusterConfiguration
 import org.apache.hc.core5.http.io.entity.EntityUtils
 import org.opensearch.client.Request
+import org.opensearch.replication.MultiClusterAnnotations.ClusterConfiguration
 
 @MultiClusterAnnotations.ClusterConfigurations(
     ClusterConfiguration(clusterName = "leaderCluster"),
-    ClusterConfiguration(clusterName = "followCluster")
+    ClusterConfiguration(clusterName = "followCluster"),
 )
 class MultiClusterSetupIT : MultiClusterRestTestCase() {
-
     fun testRepPluginLoadedOnLeaderCluster() {
         val restClientForLeader = getNamedCluster("leaderCluster").lowLevelClient
         val installedPlugins = getAsMap(restClientForLeader, "_nodes/plugins")
         val nodes = installedPlugins["nodes"] as Map<String, Map<String, Any>>?
         for (node in nodes!!.values) {
             val nodePlugins = node["plugins"] as List<Map<String, Any>>?
-            assertTrue("Cross cluster plugin wasn't installed on node: " + node["name"],
-                       isReplicationPluginInstalledOnNode(nodePlugins))
+            assertTrue(
+                "Cross cluster plugin wasn't installed on node: " + node["name"],
+                isReplicationPluginInstalledOnNode(nodePlugins),
+            )
         }
     }
 
@@ -38,8 +39,10 @@ class MultiClusterSetupIT : MultiClusterRestTestCase() {
         val nodes = installedPlugins["nodes"] as Map<String, Map<String, Any>>?
         for (node in nodes!!.values) {
             val nodePlugins = node["plugins"] as List<Map<String, Any>>?
-            assertTrue("Cross cluster plugin wasn't installed on node: " + node["name"],
-                       isReplicationPluginInstalledOnNode(nodePlugins))
+            assertTrue(
+                "Cross cluster plugin wasn't installed on node: " + node["name"],
+                isReplicationPluginInstalledOnNode(nodePlugins),
+            )
         }
     }
 

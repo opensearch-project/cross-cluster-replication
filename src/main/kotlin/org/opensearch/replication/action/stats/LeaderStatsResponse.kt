@@ -11,24 +11,25 @@
 
 package org.opensearch.replication.action.stats
 
-
 import org.apache.logging.log4j.LogManager
 import org.opensearch.action.FailedNodeException
 import org.opensearch.action.support.nodes.BaseNodesResponse
 import org.opensearch.cluster.ClusterName
+import org.opensearch.common.xcontent.XContentFactory
 import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.core.common.io.stream.StreamOutput
 import org.opensearch.core.xcontent.ToXContent.EMPTY_PARAMS
 import org.opensearch.core.xcontent.ToXContent.Params
 import org.opensearch.core.xcontent.ToXContentObject
 import org.opensearch.core.xcontent.XContentBuilder
-import org.opensearch.common.xcontent.XContentFactory
 import org.opensearch.replication.seqno.RemoteShardMetric
 import org.opensearch.replication.seqno.RemoteShardMetric.RemoteStats
 import java.io.IOException
 
-class LeaderStatsResponse : BaseNodesResponse<LeaderNodeStatsResponse?>, ToXContentObject {
-    var remoteStats :MutableMap<String, RemoteStats> = mutableMapOf()
+class LeaderStatsResponse :
+    BaseNodesResponse<LeaderNodeStatsResponse?>,
+    ToXContentObject {
+    var remoteStats: MutableMap<String, RemoteStats> = mutableMapOf()
     var stats = RemoteShardMetric.RemoteStatsFrag()
 
     companion object {
@@ -39,8 +40,15 @@ class LeaderStatsResponse : BaseNodesResponse<LeaderNodeStatsResponse?>, ToXCont
         remoteStats = inp.readMap(StreamInput::readString, ::RemoteStats)
     }
 
-
-    constructor(clusterName: ClusterName?, leaderNodeRespons: List<LeaderNodeStatsResponse>?, failures: List<FailedNodeException?>?) : super(clusterName, leaderNodeRespons, failures) {
+    constructor(
+        clusterName: ClusterName?,
+        leaderNodeRespons: List<LeaderNodeStatsResponse>?,
+        failures: List<FailedNodeException?>?,
+    ) : super(
+        clusterName,
+        leaderNodeRespons,
+        failures,
+    ) {
         if (leaderNodeRespons != null) {
             for (response in leaderNodeRespons) {
                 for (entry in response.remoteStats) {
@@ -53,17 +61,21 @@ class LeaderStatsResponse : BaseNodesResponse<LeaderNodeStatsResponse?>, ToXCont
     }
 
     @Throws(IOException::class)
-    override fun readNodesFrom(inp: StreamInput): List<LeaderNodeStatsResponse> {
-        return inp.readList { LeaderNodeStatsResponse(inp) }
-        }
+    override fun readNodesFrom(inp: StreamInput): List<LeaderNodeStatsResponse> = inp.readList { LeaderNodeStatsResponse(inp) }
 
     @Throws(IOException::class)
-     override fun writeNodesTo(out: StreamOutput, leaderNodeRespons: List<LeaderNodeStatsResponse?>?) {
+    override fun writeNodesTo(
+        out: StreamOutput,
+        leaderNodeRespons: List<LeaderNodeStatsResponse?>?,
+    ) {
         out.writeList(leaderNodeRespons)
     }
 
     @Throws(IOException::class)
-    override fun toXContent(builder: XContentBuilder, params: Params?): XContentBuilder {
+    override fun toXContent(
+        builder: XContentBuilder,
+        params: Params?,
+    ): XContentBuilder {
         builder.startObject()
         builder.field("num_replicated_indices", remoteStats.size)
         stats.toXContent(builder, params)
@@ -78,4 +90,3 @@ class LeaderStatsResponse : BaseNodesResponse<LeaderNodeStatsResponse?>, ToXCont
         return builder.toString()
     }
 }
-

@@ -30,7 +30,6 @@ import org.opensearch.threadpool.TestThreadPool
 import java.util.concurrent.TimeUnit
 
 class BatchSizeSettingsTests : OpenSearchTestCase() {
-
     private lateinit var clusterService: ClusterService
     private lateinit var replicationSettings: ReplicationSettings
     private lateinit var threadPool: TestThreadPool
@@ -38,36 +37,37 @@ class BatchSizeSettingsTests : OpenSearchTestCase() {
     @Before
     fun setup() {
         threadPool = TestThreadPool("BatchSizeSettingsTest")
-        
+
         // Create cluster settings with all replication plugin settings registered
-        val clusterSettings = ClusterSettings(
-            Settings.EMPTY,
-            setOf(
-                ReplicationPlugin.REPLICATION_FOLLOWER_CONCURRENT_READERS_PER_SHARD,
-                ReplicationPlugin.REPLICATION_FOLLOWER_CONCURRENT_WRITERS_PER_SHARD,
-                ReplicationPlugin.REPLICATION_FOLLOWER_OPS_BATCH_SIZE,
-                ReplicationPlugin.REPLICATION_PARALLEL_READ_POLL_INTERVAL,
-                ReplicationPlugin.REPLICATION_AUTOFOLLOW_REMOTE_INDICES_POLL_INTERVAL,
-                ReplicationPlugin.REPLICATION_AUTOFOLLOW_REMOTE_INDICES_RETRY_POLL_INTERVAL,
-                ReplicationPlugin.REPLICATION_METADATA_SYNC_INTERVAL,
-                ReplicationPlugin.REPLICATION_RETENTION_LEASE_MAX_FAILURE_DURATION,
-                ReplicationPlugin.REPLICATION_FOLLOWER_BLOCK_START,
-                ReplicationPlugin.REPLICATION_AUTOFOLLOW_CONCURRENT_REPLICATION_JOBS_TRIGGER_SIZE,
-                ReplicationPlugin.REPLICATION_REPLICATE_INDEX_DELETION,
-                ReplicationPlugin.REPLICATION_FOLLOWER_RECOVERY_CHUNK_SIZE,
-                ReplicationPlugin.REPLICATION_FOLLOWER_RECOVERY_PARALLEL_CHUNKS
+        val clusterSettings =
+            ClusterSettings(
+                Settings.EMPTY,
+                setOf(
+                    ReplicationPlugin.REPLICATION_FOLLOWER_CONCURRENT_READERS_PER_SHARD,
+                    ReplicationPlugin.REPLICATION_FOLLOWER_CONCURRENT_WRITERS_PER_SHARD,
+                    ReplicationPlugin.REPLICATION_FOLLOWER_OPS_BATCH_SIZE,
+                    ReplicationPlugin.REPLICATION_PARALLEL_READ_POLL_INTERVAL,
+                    ReplicationPlugin.REPLICATION_AUTOFOLLOW_REMOTE_INDICES_POLL_INTERVAL,
+                    ReplicationPlugin.REPLICATION_AUTOFOLLOW_REMOTE_INDICES_RETRY_POLL_INTERVAL,
+                    ReplicationPlugin.REPLICATION_METADATA_SYNC_INTERVAL,
+                    ReplicationPlugin.REPLICATION_RETENTION_LEASE_MAX_FAILURE_DURATION,
+                    ReplicationPlugin.REPLICATION_FOLLOWER_BLOCK_START,
+                    ReplicationPlugin.REPLICATION_AUTOFOLLOW_CONCURRENT_REPLICATION_JOBS_TRIGGER_SIZE,
+                    ReplicationPlugin.REPLICATION_REPLICATE_INDEX_DELETION,
+                    ReplicationPlugin.REPLICATION_FOLLOWER_RECOVERY_CHUNK_SIZE,
+                    ReplicationPlugin.REPLICATION_FOLLOWER_RECOVERY_PARALLEL_CHUNKS,
+                ),
             )
-        )
-        
+
         // Create cluster state and cluster service with the proper settings
         val clusterState = ClusterState.builder(ClusterName.DEFAULT).build()
         clusterService = ClusterServiceUtils.createClusterService(clusterState, threadPool)
-        
+
         // Replace the cluster settings in the cluster service
         val clusterServiceField = clusterService.javaClass.getDeclaredField("clusterSettings")
         clusterServiceField.isAccessible = true
         clusterServiceField.set(clusterService, clusterSettings)
-        
+
         replicationSettings = ReplicationSettings(clusterService)
     }
 
@@ -86,10 +86,12 @@ class BatchSizeSettingsTests : OpenSearchTestCase() {
     @Test
     fun `test index level setting takes precedence`() {
         // Create index settings with index-level batch size
-        val settings = Settings.builder()
-            .put(ReplicationPlugin.REPLICATION_FOLLOWER_OPS_BATCH_SIZE_INDEX.key, 25000)
-            .put(ReplicationPlugin.REPLICATION_FOLLOWER_OPS_BATCH_SIZE.key, 50000)
-            .build()
+        val settings =
+            Settings
+                .builder()
+                .put(ReplicationPlugin.REPLICATION_FOLLOWER_OPS_BATCH_SIZE_INDEX.key, 25000)
+                .put(ReplicationPlugin.REPLICATION_FOLLOWER_OPS_BATCH_SIZE.key, 50000)
+                .build()
         val indexSettings = createIndexSettings(settings)
         val batchSizeSettings = BatchSizeSettings(indexSettings, replicationSettings)
 
@@ -142,10 +144,10 @@ class BatchSizeSettingsTests : OpenSearchTestCase() {
         val batchSizeSettings = BatchSizeSettings(indexSettings, replicationSettings)
 
         val originalSize = batchSizeSettings.getEffectiveBatchSize()
-        
+
         // Reset without reducing first
         batchSizeSettings.resetBatchSize()
-        
+
         // Should remain unchanged
         assertEquals(originalSize, batchSizeSettings.getEffectiveBatchSize())
         assertFalse(batchSizeSettings.isDynamicallyReduced())
@@ -154,10 +156,12 @@ class BatchSizeSettingsTests : OpenSearchTestCase() {
     @Test
     fun `test index level setting with dynamic reduction`() {
         // Create index settings with custom batch size
-        val settings = Settings.builder()
-            .put(ReplicationPlugin.REPLICATION_FOLLOWER_OPS_BATCH_SIZE_INDEX.key, 10000)
-            .put(ReplicationPlugin.REPLICATION_FOLLOWER_OPS_BATCH_SIZE.key, 50000)
-            .build()
+        val settings =
+            Settings
+                .builder()
+                .put(ReplicationPlugin.REPLICATION_FOLLOWER_OPS_BATCH_SIZE_INDEX.key, 10000)
+                .put(ReplicationPlugin.REPLICATION_FOLLOWER_OPS_BATCH_SIZE.key, 50000)
+                .build()
         val indexSettings = createIndexSettings(settings)
         val batchSizeSettings = BatchSizeSettings(indexSettings, replicationSettings)
 
@@ -178,22 +182,24 @@ class BatchSizeSettingsTests : OpenSearchTestCase() {
     @Test
     fun `test batch size reduction with very small initial size`() {
         // Test with small initial batch size
-        val settings = Settings.builder()
-            .put(ReplicationPlugin.REPLICATION_FOLLOWER_OPS_BATCH_SIZE_INDEX.key, 32)
-            .build()
+        val settings =
+            Settings
+                .builder()
+                .put(ReplicationPlugin.REPLICATION_FOLLOWER_OPS_BATCH_SIZE_INDEX.key, 32)
+                .build()
         val indexSettings = createIndexSettings(settings)
         val batchSizeSettings = BatchSizeSettings(indexSettings, replicationSettings)
 
         assertEquals(32, batchSizeSettings.getEffectiveBatchSize())
-        
+
         // First reduction: 32 -> 16 (minimum)
         batchSizeSettings.reduceBatchSize()
         assertEquals(16, batchSizeSettings.getEffectiveBatchSize())
-        
+
         // Second reduction: should stay at minimum (16)
         batchSizeSettings.reduceBatchSize()
         assertEquals(16, batchSizeSettings.getEffectiveBatchSize())
-        
+
         // Reset should go back to original
         batchSizeSettings.resetBatchSize()
         assertEquals(32, batchSizeSettings.getEffectiveBatchSize())
@@ -202,27 +208,29 @@ class BatchSizeSettingsTests : OpenSearchTestCase() {
     @Test
     fun `test batch size reduction with large initial size`() {
         // Test with large initial batch size
-        val settings = Settings.builder()
-            .put(ReplicationPlugin.REPLICATION_FOLLOWER_OPS_BATCH_SIZE_INDEX.key, 100000)
-            .build()
+        val settings =
+            Settings
+                .builder()
+                .put(ReplicationPlugin.REPLICATION_FOLLOWER_OPS_BATCH_SIZE_INDEX.key, 100000)
+                .build()
         val indexSettings = createIndexSettings(settings)
         val batchSizeSettings = BatchSizeSettings(indexSettings, replicationSettings)
 
         assertEquals(100000, batchSizeSettings.getEffectiveBatchSize())
-        
+
         // Progressive reductions
         batchSizeSettings.reduceBatchSize() // 100000 -> 50000
         assertEquals(50000, batchSizeSettings.getEffectiveBatchSize())
-        
+
         batchSizeSettings.reduceBatchSize() // 50000 -> 25000
         assertEquals(25000, batchSizeSettings.getEffectiveBatchSize())
-        
+
         batchSizeSettings.reduceBatchSize() // 25000 -> 12500
         assertEquals(12500, batchSizeSettings.getEffectiveBatchSize())
-        
+
         batchSizeSettings.reduceBatchSize() // 12500 -> 6250
         assertEquals(6250, batchSizeSettings.getEffectiveBatchSize())
-        
+
         // Reset should go back to original large size
         batchSizeSettings.resetBatchSize()
         assertEquals(100000, batchSizeSettings.getEffectiveBatchSize())
@@ -237,22 +245,23 @@ class BatchSizeSettingsTests : OpenSearchTestCase() {
         // Test thread safety of batch size operations
         val threads = mutableListOf<Thread>()
         val results = mutableListOf<Int>()
-        
+
         // Create multiple threads that reduce batch size
         repeat(5) { i ->
-            val thread = Thread {
-                batchSizeSettings.reduceBatchSize()
-                results.add(batchSizeSettings.getEffectiveBatchSize())
-            }
+            val thread =
+                Thread {
+                    batchSizeSettings.reduceBatchSize()
+                    results.add(batchSizeSettings.getEffectiveBatchSize())
+                }
             threads.add(thread)
         }
-        
+
         // Start all threads
         threads.forEach { it.start() }
-        
+
         // Wait for all threads to complete
         threads.forEach { it.join() }
-        
+
         // Verify that batch size was reduced and all results are valid
         assertTrue(batchSizeSettings.isDynamicallyReduced())
         assertTrue(batchSizeSettings.getEffectiveBatchSize() < 50000)
@@ -268,13 +277,13 @@ class BatchSizeSettingsTests : OpenSearchTestCase() {
         // Initial state
         assertFalse(batchSizeSettings.isDynamicallyReduced())
         assertEquals(batchSizeSettings.getBatchSize(), batchSizeSettings.getEffectiveBatchSize())
-        
+
         // After reduction
         batchSizeSettings.reduceBatchSize()
         assertTrue(batchSizeSettings.isDynamicallyReduced())
         assertNotEquals(batchSizeSettings.getBatchSize(), batchSizeSettings.getEffectiveBatchSize())
         assertTrue(batchSizeSettings.getEffectiveBatchSize() < batchSizeSettings.getBatchSize())
-        
+
         // After reset
         batchSizeSettings.resetBatchSize()
         assertFalse(batchSizeSettings.isDynamicallyReduced())
@@ -286,20 +295,22 @@ class BatchSizeSettingsTests : OpenSearchTestCase() {
         // Test cluster-level source
         val clusterOnlySettings = createIndexSettings(Settings.EMPTY)
         val clusterBatchSettings = BatchSizeSettings(clusterOnlySettings, replicationSettings)
-        
+
         assertEquals("cluster-level", clusterBatchSettings.getBatchSizeSource())
         assertFalse(clusterBatchSettings.hasIndexLevelSetting())
-        
+
         // Test index-level source
-        val indexSettings = Settings.builder()
-            .put(ReplicationPlugin.REPLICATION_FOLLOWER_OPS_BATCH_SIZE_INDEX.key, 30000)
-            .build()
+        val indexSettings =
+            Settings
+                .builder()
+                .put(ReplicationPlugin.REPLICATION_FOLLOWER_OPS_BATCH_SIZE_INDEX.key, 30000)
+                .build()
         val indexOnlySettings = createIndexSettings(indexSettings)
         val indexBatchSettings = BatchSizeSettings(indexOnlySettings, replicationSettings)
-        
+
         assertEquals("index-level", indexBatchSettings.getBatchSizeSource())
         assertTrue(indexBatchSettings.hasIndexLevelSetting())
-        
+
         // Source should remain consistent even after dynamic changes
         indexBatchSettings.reduceBatchSize()
         assertEquals("index-level", indexBatchSettings.getBatchSizeSource())
@@ -309,27 +320,29 @@ class BatchSizeSettingsTests : OpenSearchTestCase() {
     @Test
     fun `test edge case with minimum batch size`() {
         // Test behavior when starting at minimum
-        val settings = Settings.builder()
-            .put(ReplicationPlugin.REPLICATION_FOLLOWER_OPS_BATCH_SIZE_INDEX.key, 16) // Minimum
-            .build()
+        val settings =
+            Settings
+                .builder()
+                .put(ReplicationPlugin.REPLICATION_FOLLOWER_OPS_BATCH_SIZE_INDEX.key, 16) // Minimum
+                .build()
         val indexSettings = createIndexSettings(settings)
         val batchSizeSettings = BatchSizeSettings(indexSettings, replicationSettings)
 
         assertEquals(16, batchSizeSettings.getEffectiveBatchSize())
         assertFalse(batchSizeSettings.isDynamicallyReduced())
-        
+
         // Reduction should still work but stay at minimum
         batchSizeSettings.reduceBatchSize()
         assertEquals(16, batchSizeSettings.getEffectiveBatchSize())
         assertTrue(batchSizeSettings.isDynamicallyReduced())
-        
+
         // Multiple reductions should stay at minimum
         repeat(5) {
             batchSizeSettings.reduceBatchSize()
             assertEquals(16, batchSizeSettings.getEffectiveBatchSize())
             assertTrue(batchSizeSettings.isDynamicallyReduced())
         }
-        
+
         // Reset should work normally
         batchSizeSettings.resetBatchSize()
         assertEquals(16, batchSizeSettings.getEffectiveBatchSize())
@@ -342,16 +355,16 @@ class BatchSizeSettingsTests : OpenSearchTestCase() {
         val batchSizeSettings = BatchSizeSettings(indexSettings, replicationSettings)
 
         val originalSize = batchSizeSettings.getEffectiveBatchSize()
-        
+
         // Reduce batch size
         batchSizeSettings.reduceBatchSize()
         assertTrue(batchSizeSettings.isDynamicallyReduced())
-        
+
         // Multiple reset calls should be safe
         batchSizeSettings.resetBatchSize()
         assertFalse(batchSizeSettings.isDynamicallyReduced())
         assertEquals(originalSize, batchSizeSettings.getEffectiveBatchSize())
-        
+
         // Additional reset calls should be no-op
         batchSizeSettings.resetBatchSize()
         batchSizeSettings.resetBatchSize()
@@ -362,35 +375,37 @@ class BatchSizeSettingsTests : OpenSearchTestCase() {
     @Test
     fun `test batch size reduction sequence for 2GB handling simulation`() {
         // Simulate the exact scenario from 2GB exception handling
-        val settings = Settings.builder()
-            .put(ReplicationPlugin.REPLICATION_FOLLOWER_OPS_BATCH_SIZE_INDEX.key, 1000)
-            .build()
+        val settings =
+            Settings
+                .builder()
+                .put(ReplicationPlugin.REPLICATION_FOLLOWER_OPS_BATCH_SIZE_INDEX.key, 1000)
+                .build()
         val indexSettings = createIndexSettings(settings)
         val batchSizeSettings = BatchSizeSettings(indexSettings, replicationSettings)
 
         // Initial state
         assertEquals(1000, batchSizeSettings.getEffectiveBatchSize())
         assertEquals("index-level", batchSizeSettings.getBatchSizeSource())
-        
+
         // Simulate multiple 2GB exceptions requiring progressive reduction
         val reductionSequence = mutableListOf<Int>()
-        
+
         // First 2GB exception
         batchSizeSettings.reduceBatchSize()
         reductionSequence.add(batchSizeSettings.getEffectiveBatchSize())
-        
+
         // Second 2GB exception
         batchSizeSettings.reduceBatchSize()
         reductionSequence.add(batchSizeSettings.getEffectiveBatchSize())
-        
+
         // Third 2GB exception
         batchSizeSettings.reduceBatchSize()
         reductionSequence.add(batchSizeSettings.getEffectiveBatchSize())
-        
+
         // Verify reduction sequence: 1000 -> 500 -> 250 -> 125
         assertEquals(listOf(500, 250, 125), reductionSequence)
         assertTrue(batchSizeSettings.isDynamicallyReduced())
-        
+
         // Simulate successful operation - reset batch size
         batchSizeSettings.resetBatchSize()
         assertEquals(1000, batchSizeSettings.getEffectiveBatchSize())
@@ -398,14 +413,18 @@ class BatchSizeSettingsTests : OpenSearchTestCase() {
     }
 
     private fun createIndexSettings(settings: Settings): IndexSettings {
-        val indexMetadata = org.opensearch.cluster.metadata.IndexMetadata.builder("test-index")
-            .settings(Settings.builder()
-                .put(settings)
-                .put("index.version.created", Version.CURRENT)
-                .put("index.number_of_shards", 1)
-                .put("index.number_of_replicas", 0)
-                .build())
-            .build()
+        val indexMetadata =
+            org.opensearch.cluster.metadata.IndexMetadata
+                .builder("test-index")
+                .settings(
+                    Settings
+                        .builder()
+                        .put(settings)
+                        .put("index.version.created", Version.CURRENT)
+                        .put("index.number_of_shards", 1)
+                        .put("index.number_of_replicas", 0)
+                        .build(),
+                ).build()
         return IndexSettings(indexMetadata, Settings.EMPTY)
     }
 
@@ -417,7 +436,7 @@ class BatchSizeSettingsTests : OpenSearchTestCase() {
         } catch (e: Exception) {
             logger.warn("Exception during cluster service cleanup", e)
         }
-        
+
         try {
             // Shutdown thread pool gracefully
             threadPool.shutdown()

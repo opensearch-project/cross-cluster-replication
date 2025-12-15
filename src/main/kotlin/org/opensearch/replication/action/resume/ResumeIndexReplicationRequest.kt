@@ -19,8 +19,10 @@ import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.core.common.io.stream.StreamOutput
 import org.opensearch.core.xcontent.*
 
-class ResumeIndexReplicationRequest : AcknowledgedRequest<ResumeIndexReplicationRequest>, IndicesRequest.Replaceable, ToXContentObject {
-
+class ResumeIndexReplicationRequest :
+    AcknowledgedRequest<ResumeIndexReplicationRequest>,
+    IndicesRequest.Replaceable,
+    ToXContentObject {
     lateinit var indexName: String
 
     constructor(indexName: String) {
@@ -30,39 +32,38 @@ class ResumeIndexReplicationRequest : AcknowledgedRequest<ResumeIndexReplication
     private constructor() {
     }
 
-    constructor(inp: StreamInput): super(inp) {
+    constructor(inp: StreamInput) : super(inp) {
         indexName = inp.readString()
     }
 
     companion object {
-        private val PARSER = ObjectParser<ResumeIndexReplicationRequest, Void>("ResumeReplicationRequestParser") {
-            ResumeIndexReplicationRequest()
+        private val PARSER =
+            ObjectParser<ResumeIndexReplicationRequest, Void>("ResumeReplicationRequestParser") {
+                ResumeIndexReplicationRequest()
+            }
+
+        fun fromXContent(
+            parser: XContentParser,
+            followerIndex: String,
+        ): ResumeIndexReplicationRequest {
+            val resumeIndexReplicationRequest = PARSER.parse(parser, null)
+            resumeIndexReplicationRequest.indexName = followerIndex
+            return resumeIndexReplicationRequest
         }
-
-        fun fromXContent(parser: XContentParser, followerIndex: String): ResumeIndexReplicationRequest {
-            val ResumeIndexReplicationRequest = PARSER.parse(parser, null)
-            ResumeIndexReplicationRequest.indexName = followerIndex
-            return ResumeIndexReplicationRequest
-        }
     }
 
-    override fun validate(): ActionRequestValidationException? {
-        return null
-    }
+    override fun validate(): ActionRequestValidationException? = null
 
-    override fun indices(vararg indices: String?): IndicesRequest {
-        return this
-    }
+    override fun indices(vararg indices: String?): IndicesRequest = this
 
-    override fun indices(): Array<String> {
-        return arrayOf(indexName)
-    }
+    override fun indices(): Array<String> = arrayOf(indexName)
 
-    override fun indicesOptions(): IndicesOptions {
-        return IndicesOptions.strictSingleIndexNoExpandForbidClosed()
-    }
+    override fun indicesOptions(): IndicesOptions = IndicesOptions.strictSingleIndexNoExpandForbidClosed()
 
-    override fun toXContent(builder: XContentBuilder, params: ToXContent.Params): XContentBuilder {
+    override fun toXContent(
+        builder: XContentBuilder,
+        params: ToXContent.Params,
+    ): XContentBuilder {
         builder.startObject()
         builder.field("indexName", indexName)
         builder.endObject()
@@ -73,5 +74,4 @@ class ResumeIndexReplicationRequest : AcknowledgedRequest<ResumeIndexReplication
         super.writeTo(out)
         out.writeString(indexName)
     }
-
 }

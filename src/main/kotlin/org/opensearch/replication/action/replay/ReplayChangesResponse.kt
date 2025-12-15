@@ -15,15 +15,14 @@ import org.opensearch.action.support.WriteResponse
 import org.opensearch.action.support.replication.ReplicationResponse
 import org.opensearch.core.common.io.stream.StreamInput
 
-class ReplayChangesResponse : ReplicationResponse, WriteResponse {
-
+class ReplayChangesResponse :
+    ReplicationResponse,
+    WriteResponse {
     constructor(inp: StreamInput) : super(inp)
 
-    constructor(): super()
+    constructor() : super()
 
     override fun setForcedRefresh(forcedRefresh: Boolean) {
-        //no-op
+        // no-op
     }
-
-
 }

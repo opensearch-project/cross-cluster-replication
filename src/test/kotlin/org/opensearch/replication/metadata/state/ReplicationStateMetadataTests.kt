@@ -11,20 +11,22 @@
 
 package org.opensearch.replication.metadata.state
 
-import org.opensearch.replication.metadata.ReplicationOverallState
 import org.assertj.core.api.Assertions.assertThat
 import org.opensearch.common.io.stream.BytesStreamOutput
+import org.opensearch.replication.metadata.ReplicationOverallState
 import org.opensearch.test.OpenSearchTestCase
 import org.opensearch.test.XContentTestUtils
+import kotlin.test.Test
 
 class ReplicationStateMetadataTests : OpenSearchTestCase() {
-
     companion object {
         const val INDEX = "index"
     }
 
+    @Test
     fun `test serialization`() {
-        val expected = ReplicationStateMetadata.EMPTY
+        val expected =
+            ReplicationStateMetadata.EMPTY
                 .addReplicationStateParams(INDEX, mapOf(Pair(REPLICATION_LAST_KNOWN_OVERALL_STATE, ReplicationOverallState.RUNNING.name)))
         val output = BytesStreamOutput()
         expected.writeTo(output)
@@ -32,8 +34,10 @@ class ReplicationStateMetadataTests : OpenSearchTestCase() {
         assertEquals(expected, deserialized)
     }
 
+    @Test
     fun `test json serialization`() {
-        val expected = ReplicationStateMetadata.EMPTY
+        val expected =
+            ReplicationStateMetadata.EMPTY
                 .addReplicationStateParams(INDEX, mapOf(Pair(REPLICATION_LAST_KNOWN_OVERALL_STATE, ReplicationOverallState.RUNNING.name)))
         val actual = XContentTestUtils.convertToMap(expected)
         assertThat(actual).containsKey("replication_details")

@@ -17,7 +17,6 @@ import org.apache.logging.log4j.LogManager
 import org.opensearch.action.FailedNodeException
 import org.opensearch.action.support.ActionFilters
 import org.opensearch.action.support.nodes.TransportNodesAction
-import org.opensearch.transport.client.node.NodeClient
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Inject
 import org.opensearch.core.common.io.stream.StreamInput
@@ -26,36 +25,47 @@ import org.opensearch.replication.seqno.RemoteClusterStats
 import org.opensearch.replication.task.shard.FollowerClusterStats
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
+import org.opensearch.transport.client.node.NodeClient
 
-class TransportFollowerStatsAction @Inject constructor(transportService: TransportService,
-                                                       clusterService: ClusterService,
-                                                       threadPool: ThreadPool,
-                                                       actionFilters: ActionFilters,
-                                                       private val remoteStats: RemoteClusterStats,
-                                                       private val client: NodeClient,
-                                                       private val followerStats: FollowerClusterStats) :
-        TransportNodesAction<FollowerStatsRequest, FollowerStatsResponse, NodeStatsRequest, FollowerNodeStatsResponse>(FollowerStatsAction.NAME,
-             threadPool, clusterService, transportService,  actionFilters, ::FollowerStatsRequest,  ::NodeStatsRequest, ThreadPool.Names.MANAGEMENT,
-                FollowerNodeStatsResponse::class.java), CoroutineScope by GlobalScope {
+class TransportFollowerStatsAction
+    @Inject
+    constructor(
+        transportService: TransportService,
+        clusterService: ClusterService,
+        threadPool: ThreadPool,
+        actionFilters: ActionFilters,
+        private val remoteStats: RemoteClusterStats,
+        private val client: NodeClient,
+        private val followerStats: FollowerClusterStats,
+    ) : TransportNodesAction<FollowerStatsRequest, FollowerStatsResponse, NodeStatsRequest, FollowerNodeStatsResponse>(
+            FollowerStatsAction.NAME,
+            threadPool,
+            clusterService,
+            transportService,
+            actionFilters,
+            ::FollowerStatsRequest,
+            ::NodeStatsRequest,
+            ThreadPool.Names.MANAGEMENT,
+            FollowerNodeStatsResponse::class.java,
+        ),
+        CoroutineScope by GlobalScope {
+        companion object {
+            private val log = LogManager.getLogger(TransportFollowerStatsAction::class.java)
+        }
 
-    companion object {
-        private val log = LogManager.getLogger(TransportFollowerStatsAction::class.java)
+        override fun newNodeRequest(request: FollowerStatsRequest): NodeStatsRequest = NodeStatsRequest()
+
+        override fun newNodeResponse(input: StreamInput): FollowerNodeStatsResponse = FollowerNodeStatsResponse(input)
+
+        override fun newResponse(
+            request: FollowerStatsRequest?,
+            responses: MutableList<FollowerNodeStatsResponse>?,
+            failures: MutableList<FailedNodeException>?,
+        ): FollowerStatsResponse {
+            val metadata = clusterService.state().metadata().custom(ReplicationStateMetadata.NAME) ?: ReplicationStateMetadata.EMPTY
+            return FollowerStatsResponse(clusterService.clusterName, responses, failures, metadata)
+        }
+
+        override fun nodeOperation(nodeStatRequest: NodeStatsRequest?): FollowerNodeStatsResponse =
+            FollowerNodeStatsResponse(this.clusterService.localNode(), followerStats.stats)
     }
-
-    override fun newNodeRequest(request: FollowerStatsRequest): NodeStatsRequest {
-       return NodeStatsRequest()
-    }
-
-    override fun newNodeResponse(input: StreamInput): FollowerNodeStatsResponse {
-        return FollowerNodeStatsResponse(input)
-    }
-
-    override fun newResponse(request: FollowerStatsRequest?, responses: MutableList<FollowerNodeStatsResponse>?, failures: MutableList<FailedNodeException>?): FollowerStatsResponse {
-        val metadata = clusterService.state().metadata().custom(ReplicationStateMetadata.NAME) ?: ReplicationStateMetadata.EMPTY
-        return FollowerStatsResponse(clusterService.clusterName, responses, failures, metadata)
-    }
-
-    override fun nodeOperation(nodeStatRequest: NodeStatsRequest?): FollowerNodeStatsResponse {
-       return FollowerNodeStatsResponse(this.clusterService.localNode(), followerStats.stats)
-    }
-}

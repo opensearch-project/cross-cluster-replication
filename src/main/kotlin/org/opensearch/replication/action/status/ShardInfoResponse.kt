@@ -16,14 +16,15 @@ import org.opensearch.action.support.broadcast.BroadcastShardResponse
 import org.opensearch.core.ParseField
 import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.core.common.io.stream.StreamOutput
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.ToXContentObject
 import org.opensearch.core.xcontent.XContentBuilder
-import org.opensearch.core.index.shard.ShardId
 import java.io.IOException
 
-class ShardInfoResponse : BroadcastShardResponse, ToXContentObject {
-
+class ShardInfoResponse :
+    BroadcastShardResponse,
+    ToXContentObject {
     val status: String
     lateinit var replayDetails: ReplayDetails
     lateinit var restoreDetails: RestoreDetails
@@ -35,23 +36,25 @@ class ShardInfoResponse : BroadcastShardResponse, ToXContentObject {
 
     constructor(si: StreamInput) : super(si) {
         this.status = si.readString()
-        if (status.equals(SYNCING))
+        if (status.equals(SYNCING)) {
             this.replayDetails = ReplayDetails(si)
-        if (status.equals(BOOTSTRAPPING))
+        }
+        if (status.equals(BOOTSTRAPPING)) {
             this.restoreDetails = RestoreDetails(si)
+        }
     }
 
-    constructor(shardId: ShardId, status :String, restoreDetailsShard : RestoreDetails) : super(shardId) {
+    constructor(shardId: ShardId, status: String, restoreDetailsShard: RestoreDetails) : super(shardId) {
         this.status = status
         this.restoreDetails = restoreDetailsShard
     }
 
-    constructor(shardId: ShardId, status :String, replayDetailsShard : ReplayDetails) : super(shardId) {
+    constructor(shardId: ShardId, status: String, replayDetailsShard: ReplayDetails) : super(shardId) {
         this.status = status
         this.replayDetails = replayDetailsShard
     }
 
-    constructor(shardId: ShardId, status :String, replayDetailsShard : ReplayDetails, restoreDetailsShard : RestoreDetails) : super(shardId) {
+    constructor(shardId: ShardId, status: String, replayDetailsShard: ReplayDetails, restoreDetailsShard: RestoreDetails) : super(shardId) {
         this.status = status
         this.replayDetails = replayDetailsShard
         this.restoreDetails = restoreDetailsShard
@@ -61,61 +64,78 @@ class ShardInfoResponse : BroadcastShardResponse, ToXContentObject {
     override fun writeTo(out: StreamOutput) {
         super.writeTo(out)
         out.writeString(status)
-        if (::replayDetails.isInitialized)
+        if (::replayDetails.isInitialized) {
             replayDetails.writeTo(out)
-        if (::restoreDetails.isInitialized)
+        }
+        if (::restoreDetails.isInitialized) {
             restoreDetails.writeTo(out)
+        }
     }
 
+    @Suppress("ktlint:standard:property-naming")
     private val SHARDID = ParseField("shard_id")
+
+    @Suppress("ktlint:standard:property-naming")
     private val REPLAYDETAILS = ParseField("syncing_task_details")
+
+    @Suppress("ktlint:standard:property-naming")
     private val RESTOREDETAILS = ParseField("bootstrap_task_details")
 
-
     @Throws(IOException::class)
-    override fun toXContent(builder: XContentBuilder, params: ToXContent.Params?): XContentBuilder? {
+    override fun toXContent(
+        builder: XContentBuilder,
+        params: ToXContent.Params?,
+    ): XContentBuilder? {
         builder.startObject()
         builder.field(SHARDID.preferredName, shardId)
-        if (::replayDetails.isInitialized)
+        if (::replayDetails.isInitialized) {
             builder.field(REPLAYDETAILS.preferredName, replayDetails)
-        if (::restoreDetails.isInitialized)
+        }
+        if (::restoreDetails.isInitialized) {
             builder.field(RESTOREDETAILS.preferredName, restoreDetails)
+        }
         builder.endObject()
         return builder
     }
 
-    fun isReplayDetailsInitialized(): Boolean {
-        return ::replayDetails.isInitialized
-    }
-    fun isRestoreDetailsInitialized(): Boolean {
-        return ::restoreDetails.isInitialized
-    }
+    fun isReplayDetailsInitialized(): Boolean = ::replayDetails.isInitialized
+
+    fun isRestoreDetailsInitialized(): Boolean = ::restoreDetails.isInitialized
 }
 
-class RestoreDetails :  BroadcastResponse, ToXContentObject {
-
-    var totalBytes : Long
-    var recoveredBytes : Long
-    var recovereyPercentage : Float
-    var totalFiles : Int
-    var recoveredFiles : Int
-    var fileRecovereyPercentage : Float
-    var startTime : Long
-    var time : Long
+class RestoreDetails :
+    BroadcastResponse,
+    ToXContentObject {
+    var totalBytes: Long
+    var recoveredBytes: Long
+    var recovereyPercentage: Float
+    var totalFiles: Int
+    var recoveredFiles: Int
+    var fileRecovereyPercentage: Float
+    var startTime: Long
+    var time: Long
 
     constructor(si: StreamInput) {
         this.totalBytes = si.readLong()
         this.recoveredBytes = si.readLong()
         this.recovereyPercentage = si.readFloat()
-        this.totalFiles =  si.readInt()
-        this.recoveredFiles =  si.readInt()
+        this.totalFiles = si.readInt()
+        this.recoveredFiles = si.readInt()
         this.fileRecovereyPercentage = si.readFloat()
         this.startTime = si.readLong()
         this.time = si.readLong()
     }
 
-    constructor(totalBytes : Long, recoveredBytes : Long, recovereyPercentage : Float, totalFiles : Int,
-                recoveredFiles : Int, fileRecovereyPercentage : Float, startTime : Long, time : Long)  {
+    constructor(
+        totalBytes: Long,
+        recoveredBytes: Long,
+        recovereyPercentage: Float,
+        totalFiles: Int,
+        recoveredFiles: Int,
+        fileRecovereyPercentage: Float,
+        startTime: Long,
+        time: Long,
+    ) {
         this.totalBytes = totalBytes
         this.recoveredBytes = recoveredBytes
         this.recovereyPercentage = recovereyPercentage
@@ -126,13 +146,28 @@ class RestoreDetails :  BroadcastResponse, ToXContentObject {
         this.time = time
     }
 
+    @Suppress("ktlint:standard:property-naming")
     private val TOTALBYTES = ParseField("bytes_total")
+
+    @Suppress("ktlint:standard:property-naming")
     private val BYTESRECOVERED = ParseField("bytes_recovered")
+
+    @Suppress("ktlint:standard:property-naming")
     private val BYTESRECOVEREDPERCENTAGE = ParseField("bytes_percent")
+
+    @Suppress("ktlint:standard:property-naming")
     private val TOTALFILES = ParseField("files_total")
+
+    @Suppress("ktlint:standard:property-naming")
     private val FILESRECOVERED = ParseField("files_recovered")
+
+    @Suppress("ktlint:standard:property-naming")
     private val FILESRECOVEREDPERCENTAGE = ParseField("files_percent")
+
+    @Suppress("ktlint:standard:property-naming")
     private val STARTTIME = ParseField("start_time")
+
+    @Suppress("ktlint:standard:property-naming")
     private val RUNNINGTIME = ParseField("running_time")
 
     override fun writeTo(out: StreamOutput) {
@@ -146,13 +181,16 @@ class RestoreDetails :  BroadcastResponse, ToXContentObject {
         out.writeLong(time)
     }
 
-    override fun toXContent(builder: XContentBuilder?, params: ToXContent.Params?): XContentBuilder {
+    override fun toXContent(
+        builder: XContentBuilder?,
+        params: ToXContent.Params?,
+    ): XContentBuilder {
         builder!!.startObject()
         builder.field(TOTALBYTES.preferredName, totalBytes)
         builder.field(BYTESRECOVERED.preferredName, recoveredBytes)
         builder.field(BYTESRECOVEREDPERCENTAGE.preferredName, recovereyPercentage)
         builder.field(TOTALFILES.preferredName, totalFiles)
-        builder.field(FILESRECOVERED.preferredName,recoveredFiles)
+        builder.field(FILESRECOVERED.preferredName, recoveredFiles)
         builder.field(FILESRECOVEREDPERCENTAGE.preferredName, fileRecovereyPercentage)
         builder.field(STARTTIME.preferredName, startTime)
         builder.field(RUNNINGTIME.preferredName, time)
@@ -160,14 +198,13 @@ class RestoreDetails :  BroadcastResponse, ToXContentObject {
         return builder
     }
 
-    override fun toString(): String {
-        return "RestoreDetails(totalBytes=$totalBytes, recoveredBytes=$recoveredBytes, recovereyPercentage=$recovereyPercentage, totalFiles=$totalFiles, recoveredFiles=$recoveredFiles, fileRecovereyPercentage=$fileRecovereyPercentage, startTime=$startTime, time=$time, TOTALBYTES=$TOTALBYTES, BYTESRECOVERED=$BYTESRECOVERED, BYTESRECOVEREDPERCENTAGE=$BYTESRECOVEREDPERCENTAGE, TOTALFILES=$TOTALFILES, FILESRECOVERED=$FILESRECOVERED, FILESRECOVEREDPERCENTAGE=$FILESRECOVEREDPERCENTAGE, STARTTIME=$STARTTIME, RUNNINGTIME=$RUNNINGTIME)"
-    }
-
+    override fun toString(): String =
+        "RestoreDetails(totalBytes=$totalBytes, recoveredBytes=$recoveredBytes, recovereyPercentage=$recovereyPercentage, totalFiles=$totalFiles, recoveredFiles=$recoveredFiles, fileRecovereyPercentage=$fileRecovereyPercentage, startTime=$startTime, time=$time, TOTALBYTES=$TOTALBYTES, BYTESRECOVERED=$BYTESRECOVERED, BYTESRECOVEREDPERCENTAGE=$BYTESRECOVEREDPERCENTAGE, TOTALFILES=$TOTALFILES, FILESRECOVERED=$FILESRECOVERED, FILESRECOVEREDPERCENTAGE=$FILESRECOVEREDPERCENTAGE, STARTTIME=$STARTTIME, RUNNINGTIME=$RUNNINGTIME)"
 }
 
-class ReplayDetails:  BroadcastResponse, ToXContentObject {
-
+class ReplayDetails :
+    BroadcastResponse,
+    ToXContentObject {
     var remoteCheckpoint: Long = -1
     var localCheckpoint: Long
     var seqNo: Long
@@ -178,28 +215,30 @@ class ReplayDetails:  BroadcastResponse, ToXContentObject {
         this.seqNo = si.readLong()
     }
 
-    constructor(remoteCheckpoint: Long,localCheckpoint : Long,
-                seqNo : Long)  {
+    constructor(
+        remoteCheckpoint: Long,
+        localCheckpoint: Long,
+        seqNo: Long,
+    ) {
         this.remoteCheckpoint = remoteCheckpoint
         this.localCheckpoint = localCheckpoint
         this.seqNo = seqNo
     }
 
+    @Suppress("ktlint:standard:property-naming")
     private val REMOTECHECKPOINT = ParseField("leader_checkpoint")
+
+    @Suppress("ktlint:standard:property-naming")
     private val LOCALCHECKPOINT = ParseField("follower_checkpoint")
+
+    @Suppress("ktlint:standard:property-naming")
     private val SEQUENCENUMBER = ParseField("seq_no")
 
-    fun remoteCheckpoint(): Long {
-        return remoteCheckpoint
-    }
+    fun remoteCheckpoint(): Long = remoteCheckpoint
 
-    fun localCheckpoint(): Long {
-        return localCheckpoint
-    }
+    fun localCheckpoint(): Long = localCheckpoint
 
-    fun seqNo(): Long {
-        return seqNo
-    }
+    fun seqNo(): Long = seqNo
 
     override fun writeTo(out: StreamOutput) {
         out.writeLong(remoteCheckpoint)
@@ -207,7 +246,10 @@ class ReplayDetails:  BroadcastResponse, ToXContentObject {
         out.writeLong(localCheckpoint)
     }
 
-    override fun toXContent(builder: XContentBuilder?, params: ToXContent.Params?): XContentBuilder {
+    override fun toXContent(
+        builder: XContentBuilder?,
+        params: ToXContent.Params?,
+    ): XContentBuilder {
         builder!!.startObject()
         builder.field(REMOTECHECKPOINT.preferredName, remoteCheckpoint())
         builder.field(LOCALCHECKPOINT.preferredName, localCheckpoint())
@@ -216,9 +258,6 @@ class ReplayDetails:  BroadcastResponse, ToXContentObject {
         return builder
     }
 
-    override fun toString(): String {
-        return "ReplayDetails(remoteCheckpoint=$remoteCheckpoint, localCheckpoint=$localCheckpoint, seqNo=$seqNo, REMOTECHECKPOINT=$REMOTECHECKPOINT, LOCALCHECKPOINT=$LOCALCHECKPOINT, SEQUENCENUMBER=$SEQUENCENUMBER)"
-    }
-
-
+    override fun toString(): String =
+        "ReplayDetails(remoteCheckpoint=$remoteCheckpoint, localCheckpoint=$localCheckpoint, seqNo=$seqNo, REMOTECHECKPOINT=$REMOTECHECKPOINT, LOCALCHECKPOINT=$LOCALCHECKPOINT, SEQUENCENUMBER=$SEQUENCENUMBER)"
 }

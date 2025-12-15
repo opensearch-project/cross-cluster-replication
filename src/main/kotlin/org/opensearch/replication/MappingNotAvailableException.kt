@@ -9,13 +9,12 @@
  * GitHub history for details.
  */
 
-package org.opensearch.replication;
+package org.opensearch.replication
 
 import org.opensearch.OpenSearchException
 
-public class MappingNotAvailableException: OpenSearchException {
-
+public class MappingNotAvailableException : OpenSearchException {
     constructor(message: String, vararg args: Any) : super(message, *args)
 
-    constructor(message: String, cause: Throwable, vararg args: Any) : super(message,  cause, *args)
+    constructor(message: String, cause: Throwable, vararg args: Any) : super(message, cause, *args)
 }

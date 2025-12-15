@@ -20,8 +20,9 @@ import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.ToXContentObject
 import org.opensearch.core.xcontent.XContentBuilder
 
-class ShardInfoRequest : BroadcastRequest<ShardInfoRequest> , ToXContentObject {
-
+class ShardInfoRequest :
+    BroadcastRequest<ShardInfoRequest>,
+    ToXContentObject {
     var indexName: String
     var verbose: Boolean = false
 
@@ -29,32 +30,31 @@ class ShardInfoRequest : BroadcastRequest<ShardInfoRequest> , ToXContentObject {
         this.indexName = indexName
     }
 
-    constructor(indexName: String,verbose: Boolean) {
+    constructor(indexName: String, verbose: Boolean) {
         this.indexName = indexName
         this.verbose = verbose
     }
 
-    constructor(inp: StreamInput): super(inp) {
+    constructor(inp: StreamInput) : super(inp) {
         indexName = inp.readString()
     }
 
     override fun validate(): ActionRequestValidationException? {
         var validationException = ActionRequestValidationException()
-        if(indexName.isEmpty()) {
+        if (indexName.isEmpty()) {
             validationException.addValidationError("Index name must be specified to obtain replication status")
         }
-        return if(validationException.validationErrors().isEmpty()) return null else validationException
+        return if (validationException.validationErrors().isEmpty()) return null else validationException
     }
 
-    override fun indices(): Array<String> {
-        return arrayOf(indexName)
-    }
+    override fun indices(): Array<String> = arrayOf(indexName)
 
-    override fun indicesOptions(): IndicesOptions {
-        return IndicesOptions.strictSingleIndexNoExpandForbidClosed()
-    }
+    override fun indicesOptions(): IndicesOptions = IndicesOptions.strictSingleIndexNoExpandForbidClosed()
 
-    override fun toXContent(builder: XContentBuilder, params: ToXContent.Params): XContentBuilder {
+    override fun toXContent(
+        builder: XContentBuilder,
+        params: ToXContent.Params,
+    ): XContentBuilder {
         builder.startObject()
         builder.field("indexName", indexName)
         builder.endObject()
@@ -65,5 +65,4 @@ class ShardInfoRequest : BroadcastRequest<ShardInfoRequest> , ToXContentObject {
         super.writeTo(out)
         out.writeString(indexName)
     }
-
 }

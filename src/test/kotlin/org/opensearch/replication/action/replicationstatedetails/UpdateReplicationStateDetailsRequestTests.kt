@@ -3,12 +3,14 @@ package org.opensearch.replication.action.replicationstatedetails
 import org.assertj.core.api.Assertions
 import org.opensearch.common.io.stream.BytesStreamOutput
 import org.opensearch.test.OpenSearchTestCase
+import kotlin.test.Test
 
-class UpdateReplicationStateDetailsRequestTests: OpenSearchTestCase() {
+class UpdateReplicationStateDetailsRequestTests : OpenSearchTestCase() {
     companion object {
         const val INDEX = "index"
     }
 
+    @Test
     fun `test serialization update type add`() {
         val state = mapOf(Pair("k1", "v1"), Pair("k2", "v2"))
         val request = UpdateReplicationStateDetailsRequest(INDEX, state, UpdateReplicationStateDetailsRequest.UpdateType.ADD)
@@ -24,6 +26,7 @@ class UpdateReplicationStateDetailsRequestTests: OpenSearchTestCase() {
         Assertions.assertThat("v2".equals(deserialized.replicationStateParams["k2"]))
     }
 
+    @Test
     fun `test serialization update type delete`() {
         val state = mapOf(Pair("k1", "v1"), Pair("k2", "v2"))
         val request = UpdateReplicationStateDetailsRequest(INDEX, state, UpdateReplicationStateDetailsRequest.UpdateType.REMOVE)

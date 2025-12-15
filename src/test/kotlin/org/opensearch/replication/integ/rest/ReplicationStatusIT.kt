@@ -18,19 +18,18 @@ import org.opensearch.client.ResponseException
 import org.opensearch.client.indices.CreateIndexRequest
 import org.opensearch.replication.MultiClusterAnnotations
 import org.opensearch.replication.MultiClusterRestTestCase
-import org.opensearch.replication.startReplication
-import org.opensearch.replication.stopReplication
 import org.opensearch.replication.StartReplicationRequest
 import org.opensearch.replication.replicationStatus
+import org.opensearch.replication.startReplication
+import org.opensearch.replication.stopReplication
 import org.opensearch.replication.`validate status syncing response`
 import java.util.concurrent.TimeUnit
 
 @MultiClusterAnnotations.ClusterConfigurations(
     MultiClusterAnnotations.ClusterConfiguration(clusterName = LEADER),
-    MultiClusterAnnotations.ClusterConfiguration(clusterName = FOLLOWER)
+    MultiClusterAnnotations.ClusterConfiguration(clusterName = FOLLOWER),
 )
-class ReplicationStatusIT: MultiClusterRestTestCase() {
-
+class ReplicationStatusIT : MultiClusterRestTestCase() {
     fun `test replication status with valid params`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
