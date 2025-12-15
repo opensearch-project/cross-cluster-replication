@@ -13,7 +13,7 @@ package org.opensearch.replication.task.shard
 
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.ObsoleteCoroutinesApi
-import kotlinx.coroutines.test.runBlockingTest
+import kotlinx.coroutines.test.runTest
 import org.assertj.core.api.Assertions.assertThat
 import org.mockito.Mockito
 import org.opensearch.action.ActionRequest
@@ -95,7 +95,7 @@ class TranslogSequencerTests : OpenSearchTestCase() {
     @ExperimentalCoroutinesApi
     @Test
     fun `test sequencer out of order`() =
-        runBlockingTest {
+        runTest {
             val stats = FollowerClusterStats()
             stats.stats[followerShardId] = FollowerShardMetric()
             val startSeqNo = randomNonNegativeLong()
