@@ -540,7 +540,6 @@ integTest {
     }
 
     systemProperty "build.dir", "${buildDir}"
-    systemProperty "java.security.policy", "file://${projectDir}/src/test/resources/plugin-security.policy"
     finalizedBy jacocoTestReport
 }
 
@@ -742,7 +741,6 @@ List<Provider<RegularFile>> replPluginProvider = [
             }
         }
         systemProperty "build.dir", "${buildDir}"
-        systemProperty "java.security.policy", "file://${projectDir}/src/test/resources/plugin-security.policy"
         nonInputProperties.systemProperty('tests.cluster_suffix', i)
         nonInputProperties.systemProperty('tests.bwcTask', "oldVersionClusterTask")
         filter {
