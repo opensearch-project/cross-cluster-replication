@@ -387,7 +387,6 @@ testClusters {
         testDistribution = "INTEG_TEST"
         if(knnEnabled) {
             plugin(provider(knnPluginFile))
-            testDistribution = "ARCHIVE"
             systemProperty "java.library.path", "${buildDir}/testclusters/leaderCluster-0/distro/${opensearch_version_no_qualifier}-ARCHIVE/plugins/opensearch-knn/lib"
             environment "LD_LIBRARY_PATH", "${buildDir}/testclusters/leaderCluster-0/distro/${opensearch_version_no_qualifier}-ARCHIVE/plugins/opensearch-knn/lib"
         }
@@ -406,7 +405,6 @@ testClusters {
         }
         if(knnEnabled) {
             plugin(provider(knnPluginFile))
-            testDistribution = "ARCHIVE"
             systemProperty "java.library.path", "${buildDir}/testclusters/followCluster-0/distro/${opensearch_version_no_qualifier}-ARCHIVE/plugins/opensearch-knn/lib"
             environment "LD_LIBRARY_PATH", "${buildDir}/testclusters/followCluster-0/distro/${opensearch_version_no_qualifier}-ARCHIVE/plugins/opensearch-knn/lib"
         }
@@ -698,13 +696,7 @@ clusters.each { name ->
                 plugin(provider(securityPluginOld))
                 cliSetup("opensearch-security/install_demo_configuration.sh", "-y")
             }
-            // Currently fetching the ARCHIVE distribution fails on mac as it tries to fetch the Mac specific "DARWIN" distribution
-            // for Opensearch which is not publish yet. Changing this to INTEG_TEST to make it work on mac.
-            if (System.getProperty("os.name").startsWith("Mac")) {
-                testDistribution = "INTEG_TEST"
-            } else {
-                testDistribution = "ARCHIVE"
-            }
+            testDistribution = "INTEG_TEST"
 
             if (_numNodes != 3) numberOfNodes = 3
             setting 'path.repo', repo.absolutePath
