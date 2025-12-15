@@ -13,7 +13,7 @@ package org.opensearch.replication.action.index
 
 import org.opensearch.action.ActionType
 
-class ReplicateIndexAction private constructor(): ActionType<ReplicateIndexResponse>(NAME, ::ReplicateIndexResponse) {
+class ReplicateIndexAction private constructor() : ActionType<ReplicateIndexResponse>(NAME, ::ReplicateIndexResponse) {
     companion object {
         const val NAME = "indices:admin/plugins/replication/index/start"
         val INSTANCE: ReplicateIndexAction = ReplicateIndexAction()

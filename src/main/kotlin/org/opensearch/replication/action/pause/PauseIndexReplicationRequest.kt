@@ -11,7 +11,6 @@
 
 package org.opensearch.replication.action.pause
 
-import org.opensearch.replication.metadata.ReplicationMetadataManager
 import org.opensearch.action.ActionRequestValidationException
 import org.opensearch.action.IndicesRequest
 import org.opensearch.action.support.IndicesOptions
@@ -24,9 +23,12 @@ import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.ToXContentObject
 import org.opensearch.core.xcontent.XContentBuilder
 import org.opensearch.core.xcontent.XContentParser
+import org.opensearch.replication.metadata.ReplicationMetadataManager
 
-class PauseIndexReplicationRequest : AcknowledgedRequest<PauseIndexReplicationRequest>, IndicesRequest.Replaceable, ToXContentObject {
-
+class PauseIndexReplicationRequest :
+    AcknowledgedRequest<PauseIndexReplicationRequest>,
+    IndicesRequest.Replaceable,
+    ToXContentObject {
     lateinit var indexName: String
     var reason = ReplicationMetadataManager.CUSTOMER_INITIATED_ACTION
 
@@ -38,44 +40,43 @@ class PauseIndexReplicationRequest : AcknowledgedRequest<PauseIndexReplicationRe
     private constructor() {
     }
 
-    constructor(inp: StreamInput): super(inp) {
+    constructor(inp: StreamInput) : super(inp) {
         indexName = inp.readString()
         reason = inp.readString()
     }
 
     companion object {
-        private val PARSER = ObjectParser<PauseIndexReplicationRequest, Void>("PauseReplicationRequestParser") {
-            PauseIndexReplicationRequest()
-        }
+        private val PARSER =
+            ObjectParser<PauseIndexReplicationRequest, Void>("PauseReplicationRequestParser") {
+                PauseIndexReplicationRequest()
+            }
 
         init {
             PARSER.declareString(PauseIndexReplicationRequest::reason::set, ParseField("reason"))
         }
 
-        fun fromXContent(parser: XContentParser, followerIndex: String): PauseIndexReplicationRequest {
-            val PauseIndexReplicationRequest = PARSER.parse(parser, null)
-            PauseIndexReplicationRequest.indexName = followerIndex
-            return PauseIndexReplicationRequest
+        fun fromXContent(
+            parser: XContentParser,
+            followerIndex: String,
+        ): PauseIndexReplicationRequest {
+            val pauseIndexReplicationRequest = PARSER.parse(parser, null)
+            pauseIndexReplicationRequest.indexName = followerIndex
+            return pauseIndexReplicationRequest
         }
     }
 
-    override fun validate(): ActionRequestValidationException? {
-        return null
-    }
+    override fun validate(): ActionRequestValidationException? = null
 
-    override fun indices(vararg indices: String?): IndicesRequest {
-        return this
-    }
+    override fun indices(vararg indices: String?): IndicesRequest = this
 
-    override fun indices(): Array<String> {
-        return arrayOf(indexName)
-    }
+    override fun indices(): Array<String> = arrayOf(indexName)
 
-    override fun indicesOptions(): IndicesOptions {
-        return IndicesOptions.strictSingleIndexNoExpandForbidClosed()
-    }
+    override fun indicesOptions(): IndicesOptions = IndicesOptions.strictSingleIndexNoExpandForbidClosed()
 
-    override fun toXContent(builder: XContentBuilder, params: ToXContent.Params): XContentBuilder {
+    override fun toXContent(
+        builder: XContentBuilder,
+        params: ToXContent.Params,
+    ): XContentBuilder {
         builder.startObject()
         builder.field("indexName", indexName)
         builder.endObject()
@@ -87,5 +88,4 @@ class PauseIndexReplicationRequest : AcknowledgedRequest<PauseIndexReplicationRe
         out.writeString(indexName)
         out.writeString(reason)
     }
-
 }

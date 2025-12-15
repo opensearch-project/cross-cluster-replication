@@ -35,8 +35,9 @@ class AutoFollowStatsAction : ActionType<AutoFollowStatsResponses>(NAME, reader)
     override fun getResponseReader(): Writeable.Reader<AutoFollowStatsResponses> = reader
 }
 
-
-class AutoFollowStatsResponse : Writeable , ToXContentObject {
+class AutoFollowStatsResponse :
+    Writeable,
+    ToXContentObject {
     val stat: AutoFollowStat
 
     constructor(inp: StreamInput) {
@@ -52,20 +53,23 @@ class AutoFollowStatsResponse : Writeable , ToXContentObject {
         stat.writeTo(out)
     }
 
-    override fun toXContent(builder: XContentBuilder, params: ToXContent.Params): XContentBuilder {
-        return stat.toXContent(builder, params)
-    }
+    override fun toXContent(
+        builder: XContentBuilder,
+        params: ToXContent.Params,
+    ): XContentBuilder = stat.toXContent(builder, params)
 }
 
-
-class AutoFollowStatsResponses : BaseTasksResponse, ToXContentObject {
+class AutoFollowStatsResponses :
+    BaseTasksResponse,
+    ToXContentObject {
     val statsResponses: List<AutoFollowStatsResponse>
     var aggResponse = AutoFollowStat("", "")
 
     constructor(
-            autoFollowStatsResponse: List<AutoFollowStatsResponse>,
-            nodeFailures: List<FailedNodeException>,
-            taskFailures: List<TaskOperationFailure>) : super(taskFailures, nodeFailures) {
+        autoFollowStatsResponse: List<AutoFollowStatsResponse>,
+        nodeFailures: List<FailedNodeException>,
+        taskFailures: List<TaskOperationFailure>,
+    ) : super(taskFailures, nodeFailures) {
         statsResponses = autoFollowStatsResponse
         for (resp in statsResponses) {
             aggResponse.failedLeaderCall += resp.stat.failedLeaderCall
@@ -88,21 +92,21 @@ class AutoFollowStatsResponses : BaseTasksResponse, ToXContentObject {
     }
 
     @Throws(IOException::class)
-    override fun toXContent(builder: XContentBuilder, params: ToXContent.Params?): XContentBuilder {
+    override fun toXContent(
+        builder: XContentBuilder,
+        params: ToXContent.Params?,
+    ): XContentBuilder {
         builder.startObject()
         builder.field("num_success_start_replication", aggResponse.successCount)
         builder.field("num_failed_start_replication", aggResponse.failCount)
         builder.field("num_failed_leader_calls", aggResponse.failedLeaderCall)
         builder.field("failed_indices", aggResponse.failedIndices)
-        builder.startArray("autofollow_stats");
+        builder.startArray("autofollow_stats")
         for (response in statsResponses) {
             response.toXContent(builder, EMPTY_PARAMS)
         }
-        builder.endArray(   )
+        builder.endArray()
         builder.endObject()
         return builder
     }
-
 }
-
-

@@ -23,19 +23,16 @@ import java.io.IOException
  * A request to get  replication autofollow stats.
  */
 class AutoFollowStatsRequest : BaseTasksRequest<AutoFollowStatsRequest> {
-
     constructor(inp: StreamInput) : super(inp)
 
-    constructor():super()
+    constructor() : super()
 
     @Throws(IOException::class)
     override fun writeTo(out: StreamOutput) {
         super.writeTo(out)
     }
 
-    override fun validate(): ActionRequestValidationException? {
-        return null
-    }
+    override fun validate(): ActionRequestValidationException? = null
 
     override fun match(task: Task?): Boolean {
         if (task is AutoFollowTask) {
@@ -43,6 +40,4 @@ class AutoFollowStatsRequest : BaseTasksRequest<AutoFollowStatsRequest> {
         }
         return false
     }
-
 }
-

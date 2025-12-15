@@ -11,9 +11,9 @@ import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.cluster.metadata.Metadata
 import org.opensearch.cluster.routing.*
 import org.opensearch.common.unit.TimeValue
-import org.opensearch.core.xcontent.NamedXContentRegistry
 import org.opensearch.core.index.Index
 import org.opensearch.core.index.shard.ShardId
+import org.opensearch.core.xcontent.NamedXContentRegistry
 import org.opensearch.replication.ReplicationSettings
 import org.opensearch.replication.metadata.ReplicationMetadataManager
 import org.opensearch.replication.metadata.store.ReplicationMetadataStore
@@ -25,8 +25,7 @@ import java.util.ArrayList
 import java.util.concurrent.TimeUnit
 
 @ThreadLeakScope(ThreadLeakScope.Scope.NONE)
-class ShardReplicationExecutorTests: OpenSearchTestCase() {
-
+class ShardReplicationExecutorTests : OpenSearchTestCase() {
     companion object {
         var followerIndex = "follower-index"
         var remoteCluster = "remote-cluster"
@@ -40,28 +39,32 @@ class ShardReplicationExecutorTests: OpenSearchTestCase() {
     @Before
     fun setup() {
         val spyClient = Mockito.spy(NoOpClient("testName"))
-        val replicationMetadataManager = ReplicationMetadataManager(clusterService, spyClient,
-            ReplicationMetadataStore(spyClient, clusterService, NamedXContentRegistry.EMPTY)
-        )
+        val replicationMetadataManager =
+            ReplicationMetadataManager(
+                clusterService,
+                spyClient,
+                ReplicationMetadataStore(spyClient, clusterService, NamedXContentRegistry.EMPTY),
+            )
         val followerStats = FollowerClusterStats()
         val followerShardId = ShardId("follower", "follower_uuid", 0)
-        followerStats.stats[followerShardId]  = FollowerShardMetric()
+        followerStats.stats[followerShardId] = FollowerShardMetric()
 
         val replicationSettings = Mockito.mock(ReplicationSettings::class.java)
         replicationSettings.metadataSyncInterval = TimeValue(100, TimeUnit.MILLISECONDS)
-        shardReplicationExecutor = ShardReplicationExecutor(
-            "test_executor",
-            clusterService,
-            threadPool,
-            spyClient,
-            replicationMetadataManager,
-            replicationSettings,
-            followerStats
-        )
+        shardReplicationExecutor =
+            ShardReplicationExecutor(
+                "test_executor",
+                clusterService,
+                threadPool,
+                spyClient,
+                replicationMetadataManager,
+                replicationSettings,
+                followerStats,
+            )
     }
 
     @Test
-    fun `getAssignment should not throw exception when no shard is present` () {
+    fun `getAssignment should not throw exception when no shard is present`() {
         val sId = ShardId(Index(followerIndex, "_na_"), 0)
         val params = ShardReplicationParams(remoteCluster, sId, sId)
         val clusterState = createClusterState(null, null)
@@ -76,15 +79,16 @@ class ShardReplicationExecutorTests: OpenSearchTestCase() {
     }
 
     @Test
-    fun `getAssignment should return null if shard is present but is not active` () {
+    fun `getAssignment should return null if shard is present but is not active`() {
         val sId = ShardId(Index(followerIndex, "_na_"), 0)
         val params = ShardReplicationParams(remoteCluster, sId, sId)
-        val unassignedShard = ShardRouting.newUnassigned(
-            sId,
-            true,
-            RecoverySource.EmptyStoreRecoverySource.INSTANCE,
-            UnassignedInfo(UnassignedInfo.Reason.INDEX_CREATED, null)
-        )
+        val unassignedShard =
+            ShardRouting.newUnassigned(
+                sId,
+                true,
+                RecoverySource.EmptyStoreRecoverySource.INSTANCE,
+                UnassignedInfo(UnassignedInfo.Reason.INDEX_CREATED, null),
+            )
         val clusterState = createClusterState(sId, unassignedShard)
 
         try {
@@ -97,16 +101,17 @@ class ShardReplicationExecutorTests: OpenSearchTestCase() {
     }
 
     @Test
-    fun `getAssignment should return node when shard is present` () {
+    fun `getAssignment should return node when shard is present`() {
         val sId = ShardId(Index(followerIndex, "_na_"), 0)
         val params = ShardReplicationParams(remoteCluster, sId, sId)
-        val initializingShard = TestShardRouting.newShardRouting(
-            followerIndex,
-            sId.id,
-            "1",
-            true,
-            ShardRoutingState.INITIALIZING
-        )
+        val initializingShard =
+            TestShardRouting.newShardRouting(
+                followerIndex,
+                sId.id,
+                "1",
+                true,
+                ShardRoutingState.INITIALIZING,
+            )
         val startedShard = initializingShard.moveToStarted()
         val clusterState = createClusterState(sId, startedShard)
 
@@ -119,27 +124,43 @@ class ShardReplicationExecutorTests: OpenSearchTestCase() {
         }
     }
 
-    private fun createClusterState(shardId: ShardId?, shardRouting: ShardRouting?): ClusterState {
+    private fun createClusterState(
+        shardId: ShardId?,
+        shardRouting: ShardRouting?,
+    ): ClusterState {
         val indices: MutableList<String> = ArrayList()
         indices.add(followerIndex)
-        val metadata = Metadata.builder()
-            .put(
-                IndexMetadata.builder(ReplicationMetadataStore.REPLICATION_CONFIG_SYSTEM_INDEX).settings(settings(
-                    Version.CURRENT)).numberOfShards(1).numberOfReplicas(0))
-            .put(
-                IndexMetadata.builder(IndexReplicationTaskTests.followerIndex).settings(settings(
-                    Version.CURRENT)).numberOfShards(2).numberOfReplicas(0))
-            .build()
+        val metadata =
+            Metadata
+                .builder()
+                .put(
+                    IndexMetadata
+                        .builder(ReplicationMetadataStore.REPLICATION_CONFIG_SYSTEM_INDEX)
+                        .settings(
+                            settings(Version.CURRENT),
+                        ).numberOfShards(1)
+                        .numberOfReplicas(0),
+                ).put(
+                    IndexMetadata
+                        .builder(IndexReplicationTaskTests.followerIndex)
+                        .settings(
+                            settings(Version.CURRENT),
+                        ).numberOfShards(2)
+                        .numberOfReplicas(0),
+                ).build()
 
-        val routingTableBuilder = RoutingTable.builder()
-            .addAsNew(metadata.index(ReplicationMetadataStore.REPLICATION_CONFIG_SYSTEM_INDEX))
-            .addAsNew(metadata.index(followerIndex))
+        val routingTableBuilder =
+            RoutingTable
+                .builder()
+                .addAsNew(metadata.index(ReplicationMetadataStore.REPLICATION_CONFIG_SYSTEM_INDEX))
+                .addAsNew(metadata.index(followerIndex))
 
         if (shardId != null) {
             routingTableBuilder.add(
-                IndexRoutingTable.builder(shardId.index)
+                IndexRoutingTable
+                    .builder(shardId.index)
                     .addShard(shardRouting)
-                    .build()
+                    .build(),
             )
         }
 

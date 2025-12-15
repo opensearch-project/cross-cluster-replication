@@ -15,7 +15,6 @@ import org.opensearch.action.ActionType
 import org.opensearch.action.support.clustermanager.AcknowledgedResponse
 
 class UpdateAutoFollowPatternAction : ActionType<AcknowledgedResponse>(NAME, ::AcknowledgedResponse) {
-
     companion object {
         const val NAME = "cluster:admin/plugins/replication/autofollow/update"
         val INSTANCE = UpdateAutoFollowPatternAction()

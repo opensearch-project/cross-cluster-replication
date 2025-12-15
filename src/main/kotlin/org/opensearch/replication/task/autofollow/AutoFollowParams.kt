@@ -23,7 +23,6 @@ import org.opensearch.persistent.PersistentTaskParams
 import java.io.IOException
 
 class AutoFollowParams : PersistentTaskParams {
-
     lateinit var leaderCluster: String
     lateinit var patternName: String
 
@@ -31,15 +30,14 @@ class AutoFollowParams : PersistentTaskParams {
         const val NAME = AutoFollowExecutor.TASK_NAME
 
         private val PARSER = ObjectParser<AutoFollowParams, Void>(NAME, true) { AutoFollowParams() }
+
         init {
             PARSER.declareString(AutoFollowParams::leaderCluster::set, ParseField("leader_cluster"))
             PARSER.declareString(AutoFollowParams::patternName::set, ParseField("pattern_name"))
         }
 
         @Throws(IOException::class)
-        fun fromXContent(parser: XContentParser): AutoFollowParams {
-            return PARSER.parse(parser, null)
-        }
+        fun fromXContent(parser: XContentParser): AutoFollowParams = PARSER.parse(parser, null)
     }
 
     private constructor() {
@@ -61,10 +59,13 @@ class AutoFollowParams : PersistentTaskParams {
 
     override fun getMinimalSupportedVersion(): Version = Version.V_2_0_0
 
-    override fun toXContent(builder: XContentBuilder, params: ToXContent.Params): XContentBuilder {
-        return builder.startObject()
+    override fun toXContent(
+        builder: XContentBuilder,
+        params: ToXContent.Params,
+    ): XContentBuilder =
+        builder
+            .startObject()
             .field("leader_cluster", leaderCluster)
             .field("pattern_name", patternName)
             .endObject()
-    }
 }

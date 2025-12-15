@@ -32,21 +32,24 @@ open class RestoreContext(
     val metadataSnapshot: Store.MetadataSnapshot,
     val replayOperationsFrom: Long,
 ) : Closeable {
-
     private val currentFiles = ConcurrentHashMap<String, IndexInput>(INITIAL_FILE_CACHE_CAPACITY)
 
     private val fileLocks = ConcurrentHashMap<String, ReentrantLock>()
 
-    fun openInput(store: Store, fileName: String): IndexInput {
+    fun openInput(
+        store: Store,
+        fileName: String,
+    ): IndexInput {
         val lock = fileLocks.computeIfAbsent(fileName) { ReentrantLock() }
 
         lock.withLock {
             var baseInput: IndexInput? = null
 
             withStoreReference(store) {
-                baseInput = currentFiles.computeIfAbsent(fileName) {
-                    store.directory().openInput(fileName, IOContext.DEFAULT)
-                }
+                baseInput =
+                    currentFiles.computeIfAbsent(fileName) {
+                        store.directory().openInput(fileName, IOContext.DEFAULT)
+                    }
             }
 
             return checkNotNull(baseInput) { "[RestoreContext] IndexInput file must not be null" }.clone()
@@ -54,7 +57,10 @@ open class RestoreContext(
     }
 
     // for testing
-    internal open fun withStoreReference(store: Store, block: () -> Unit) {
+    internal open fun withStoreReference(
+        store: Store,
+        block: () -> Unit,
+    ) {
         store.performOp(block)
     }
 
@@ -69,4 +75,3 @@ open class RestoreContext(
         private const val INITIAL_FILE_CACHE_CAPACITY = 20
     }
 }
-

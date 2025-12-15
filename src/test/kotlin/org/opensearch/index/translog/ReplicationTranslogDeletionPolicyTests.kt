@@ -14,14 +14,14 @@ import org.apache.lucene.store.ByteArrayDataOutput
 import org.hamcrest.Matchers.equalTo
 import org.mockito.Mockito
 import org.opensearch.common.UUIDs
-import org.opensearch.core.common.bytes.BytesArray
 import org.opensearch.common.bytes.ReleasableBytesReference
 import org.opensearch.common.collect.Tuple
 import org.opensearch.common.util.BigArrays
 import org.opensearch.common.util.io.IOUtils
+import org.opensearch.core.common.bytes.BytesArray
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.index.seqno.RetentionLease
 import org.opensearch.index.seqno.RetentionLeases
-import org.opensearch.core.index.shard.ShardId
 import org.opensearch.test.OpenSearchTestCase
 import java.io.IOException
 import java.nio.channels.FileChannel
@@ -31,8 +31,8 @@ import java.nio.file.Path
 import java.util.*
 import java.util.function.Supplier
 
-
 class ReplicationTranslogDeletionPolicyTests : OpenSearchTestCase() {
+    @Suppress("ktlint:standard:property-naming")
     private val TOTAL_OPS_IN_GEN = 10L
 
     @Throws(IOException::class)
@@ -44,12 +44,14 @@ class ReplicationTranslogDeletionPolicyTests : OpenSearchTestCase() {
         val retentionLeasesSupplier: Supplier<RetentionLeases> =
             createRetentionLeases(now, 0L, allGens.size * TOTAL_OPS_IN_GEN - 1)
         try {
-            val minimumRetainingSequenceNumber: Long = retentionLeasesSupplier.get()
-                .leases()
-                .stream()
-                .mapToLong { obj: RetentionLease -> obj.retainingSequenceNumber() }
-                .min()
-                .orElse(Long.MAX_VALUE)
+            val minimumRetainingSequenceNumber: Long =
+                retentionLeasesSupplier
+                    .get()
+                    .leases()
+                    .stream()
+                    .mapToLong { obj: RetentionLease -> obj.retainingSequenceNumber() }
+                    .min()
+                    .orElse(Long.MAX_VALUE)
             val selectedReader: Long = minimumRetainingSequenceNumber / TOTAL_OPS_IN_GEN
             val selectedGen = allGens[selectedReader.toInt()].generation
             assertThat(
@@ -57,10 +59,10 @@ class ReplicationTranslogDeletionPolicyTests : OpenSearchTestCase() {
                     ReplicationTranslogDeletionPolicy.getMinTranslogGenByRetentionLease(
                         readersAndWriter.v1(),
                         it,
-                        retentionLeasesSupplier
+                        retentionLeasesSupplier,
                     )
                 },
-                equalTo(selectedGen)
+                equalTo(selectedGen),
             )
         } finally {
             IOUtils.close(readersAndWriter.v1())
@@ -79,53 +81,60 @@ class ReplicationTranslogDeletionPolicyTests : OpenSearchTestCase() {
             val selectedGeneration = allGens[selectedReader].generation
             // Retaining seqno is part of lower gen
             val size =
-                allGens.stream().skip(selectedReader.toLong()).map { obj: BaseTranslogReader -> obj.sizeInBytes() }
-                    .reduce { a: Long, b: Long -> java.lang.Long.sum(a, b) }.get()
+                allGens
+                    .stream()
+                    .skip(selectedReader.toLong())
+                    .map { obj: BaseTranslogReader -> obj.sizeInBytes() }
+                    .reduce { a: Long, b: Long -> java.lang.Long.sum(a, b) }
+                    .get()
             var retentionLeasesSupplier: Supplier<RetentionLeases> =
                 createRetentionLeases(now, 0L, selectedGeneration * TOTAL_OPS_IN_GEN - 1)
             assertThat(
                 readersAndWriter.v2()?.let {
                     ReplicationTranslogDeletionPolicy.minTranslogGenRequired(
-                        readersAndWriter.v1(), it,
+                        readersAndWriter.v1(),
+                        it,
                         true,
                         size,
                         Int.MAX_VALUE.toLong(),
                         Int.MAX_VALUE,
                         Int.MAX_VALUE.toLong(),
-                        retentionLeasesSupplier
+                        retentionLeasesSupplier,
                     )
                 },
-                equalTo(selectedGeneration)
+                equalTo(selectedGeneration),
             )
             assertThat(
                 TranslogDeletionPolicy.getMinTranslogGenByAge(
                     readersAndWriter.v1(),
                     readersAndWriter.v2(),
                     100L,
-                    System.currentTimeMillis()
+                    System.currentTimeMillis(),
                 ),
-                equalTo(readersAndWriter.v2()?.generation)
+                equalTo(readersAndWriter.v2()?.generation),
             )
 
             // Retention lease is part of higher gen
-            retentionLeasesSupplier = createRetentionLeases(
-                now,
-                selectedGeneration * TOTAL_OPS_IN_GEN,
-                allGens.size * TOTAL_OPS_IN_GEN + TOTAL_OPS_IN_GEN - 1
-            )
+            retentionLeasesSupplier =
+                createRetentionLeases(
+                    now,
+                    selectedGeneration * TOTAL_OPS_IN_GEN,
+                    allGens.size * TOTAL_OPS_IN_GEN + TOTAL_OPS_IN_GEN - 1,
+                )
             assertThat(
                 readersAndWriter.v2()?.let {
                     ReplicationTranslogDeletionPolicy.minTranslogGenRequired(
-                        readersAndWriter.v1(), it,
+                        readersAndWriter.v1(),
+                        it,
                         true,
                         size,
                         Long.MIN_VALUE,
                         Int.MAX_VALUE,
                         Long.MAX_VALUE,
-                        retentionLeasesSupplier
+                        retentionLeasesSupplier,
                     )
                 },
-                equalTo(selectedGeneration)
+                equalTo(selectedGeneration),
             )
         } finally {
             IOUtils.close(readersAndWriter.v1())
@@ -134,7 +143,11 @@ class ReplicationTranslogDeletionPolicyTests : OpenSearchTestCase() {
     }
 
     @Throws(IOException::class)
-    private fun createRetentionLeases(now: Long, lowestSeqNo: Long, highestSeqNo: Long): Supplier<RetentionLeases> {
+    private fun createRetentionLeases(
+        now: Long,
+        lowestSeqNo: Long,
+        highestSeqNo: Long,
+    ): Supplier<RetentionLeases> {
         val leases = LinkedList<RetentionLease>()
         val numberOfLeases = randomIntBetween(1, 5)
         for (i in 0 until numberOfLeases) {
@@ -158,28 +171,29 @@ class ReplicationTranslogDeletionPolicyTests : OpenSearchTestCase() {
                 Mockito.doReturn(writer.lastModifiedTime).`when`(reader).lastModifiedTime
                 readers.add(reader)
             }
-            writer = TranslogWriter.create(
-                ShardId("index", "uuid", 0),
-                translogUUID,
-                gen.toLong(),
-                tempDir.resolve(Translog.getFilename(gen.toLong())),
-                { path: Path, options: Array<OpenOption> ->
-                    FileChannel.open(
-                        path,
-                        *options
-                    )
-                },
-                TranslogConfig.DEFAULT_BUFFER_SIZE,
-                1L,
-                1L,
-                { 1L },
-                { 1L },
-                randomNonNegativeLong(),
-                TragicExceptionHolder(),
-                { },
-                BigArrays.NON_RECYCLING_INSTANCE,
-                false
-            )
+            writer =
+                TranslogWriter.create(
+                    ShardId("index", "uuid", 0),
+                    translogUUID,
+                    gen.toLong(),
+                    tempDir.resolve(Translog.getFilename(gen.toLong())),
+                    { path: Path, options: Array<OpenOption> ->
+                        FileChannel.open(
+                            path,
+                            *options,
+                        )
+                    },
+                    TranslogConfig.DEFAULT_BUFFER_SIZE,
+                    1L,
+                    1L,
+                    { 1L },
+                    { 1L },
+                    randomNonNegativeLong(),
+                    TragicExceptionHolder(),
+                    { },
+                    BigArrays.NON_RECYCLING_INSTANCE,
+                    false,
+                )
             writer = Mockito.spy(writer)
             Mockito.doReturn(now - (numberOfReaders - gen + 1) * 1000).`when`(writer).lastModifiedTime
             val bytes = ByteArray(4)

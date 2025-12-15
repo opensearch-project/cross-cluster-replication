@@ -12,19 +12,27 @@ import org.opensearch.threadpool.TestThreadPool
 
 @ThreadLeakScope(ThreadLeakScope.Scope.NONE)
 class UpdateReplicationMetadataTests : OpenSearchTestCase() {
-
     var threadPool = TestThreadPool("ReplicationPluginTest")
-    var clusterService  = ClusterServiceUtils.createClusterService(threadPool)
+    var clusterService = ClusterServiceUtils.createClusterService(threadPool)
 
     fun `test single task update`() {
         val currentState: ClusterState = clusterService.state()
         // single task
-        val tasks = arrayListOf(UpdateReplicationStateDetailsRequest("test-index",
-                hashMapOf("REPLICATION_LAST_KNOWN_OVERALL_STATE" to "RUNNING"), UpdateReplicationStateDetailsRequest.UpdateType.ADD))
+        val tasks =
+            arrayListOf(
+                UpdateReplicationStateDetailsRequest(
+                    "test-index",
+                    hashMapOf("REPLICATION_LAST_KNOWN_OVERALL_STATE" to "RUNNING"),
+                    UpdateReplicationStateDetailsRequest.UpdateType.ADD,
+                ),
+            )
         val tasksResult = UpdateReplicationStateDetailsTaskExecutor.INSTANCE.execute(currentState, tasks)
 
-        val updatedReplicationDetails = tasksResult.resultingState?.metadata
-                ?.custom<ReplicationStateMetadata>(ReplicationStateMetadata.NAME)?.replicationDetails
+        val updatedReplicationDetails =
+            tasksResult.resultingState
+                ?.metadata
+                ?.custom<ReplicationStateMetadata>(ReplicationStateMetadata.NAME)
+                ?.replicationDetails
 
         Assert.assertNotNull(updatedReplicationDetails)
         Assert.assertNotNull(updatedReplicationDetails?.get("test-index"))
@@ -36,14 +44,26 @@ class UpdateReplicationMetadataTests : OpenSearchTestCase() {
     fun `test multiple tasks to add replication metadata`() {
         val currentState: ClusterState = clusterService.state()
         // multiple tasks
-        val tasks = arrayListOf(UpdateReplicationStateDetailsRequest("test-index-1",
-                hashMapOf("REPLICATION_LAST_KNOWN_OVERALL_STATE" to "RUNNING"), UpdateReplicationStateDetailsRequest.UpdateType.ADD),
-                UpdateReplicationStateDetailsRequest("test-index-2",
-                        hashMapOf("REPLICATION_LAST_KNOWN_OVERALL_STATE" to "RUNNING"), UpdateReplicationStateDetailsRequest.UpdateType.ADD))
+        val tasks =
+            arrayListOf(
+                UpdateReplicationStateDetailsRequest(
+                    "test-index-1",
+                    hashMapOf("REPLICATION_LAST_KNOWN_OVERALL_STATE" to "RUNNING"),
+                    UpdateReplicationStateDetailsRequest.UpdateType.ADD,
+                ),
+                UpdateReplicationStateDetailsRequest(
+                    "test-index-2",
+                    hashMapOf("REPLICATION_LAST_KNOWN_OVERALL_STATE" to "RUNNING"),
+                    UpdateReplicationStateDetailsRequest.UpdateType.ADD,
+                ),
+            )
         val tasksResult = UpdateReplicationStateDetailsTaskExecutor.INSTANCE.execute(currentState, tasks)
 
-        val updatedReplicationDetails = tasksResult.resultingState?.metadata
-                ?.custom<ReplicationStateMetadata>(ReplicationStateMetadata.NAME)?.replicationDetails
+        val updatedReplicationDetails =
+            tasksResult.resultingState
+                ?.metadata
+                ?.custom<ReplicationStateMetadata>(ReplicationStateMetadata.NAME)
+                ?.replicationDetails
 
         Assert.assertNotNull(updatedReplicationDetails)
         Assert.assertNotNull(updatedReplicationDetails?.get("test-index-1"))
@@ -57,14 +77,26 @@ class UpdateReplicationMetadataTests : OpenSearchTestCase() {
     fun `test multiple tasks to add and delete replication metadata`() {
         val currentState: ClusterState = clusterService.state()
         // multiple tasks
-        val tasks = arrayListOf(UpdateReplicationStateDetailsRequest("test-index-1",
-                hashMapOf("REPLICATION_LAST_KNOWN_OVERALL_STATE" to "RUNNING"), UpdateReplicationStateDetailsRequest.UpdateType.ADD),
-                UpdateReplicationStateDetailsRequest("test-index-2",
-                        hashMapOf("REPLICATION_LAST_KNOWN_OVERALL_STATE" to "RUNNING"), UpdateReplicationStateDetailsRequest.UpdateType.REMOVE))
+        val tasks =
+            arrayListOf(
+                UpdateReplicationStateDetailsRequest(
+                    "test-index-1",
+                    hashMapOf("REPLICATION_LAST_KNOWN_OVERALL_STATE" to "RUNNING"),
+                    UpdateReplicationStateDetailsRequest.UpdateType.ADD,
+                ),
+                UpdateReplicationStateDetailsRequest(
+                    "test-index-2",
+                    hashMapOf("REPLICATION_LAST_KNOWN_OVERALL_STATE" to "RUNNING"),
+                    UpdateReplicationStateDetailsRequest.UpdateType.REMOVE,
+                ),
+            )
         val tasksResult = UpdateReplicationStateDetailsTaskExecutor.INSTANCE.execute(currentState, tasks)
 
-        val updatedReplicationDetails = tasksResult.resultingState?.metadata
-                ?.custom<ReplicationStateMetadata>(ReplicationStateMetadata.NAME)?.replicationDetails
+        val updatedReplicationDetails =
+            tasksResult.resultingState
+                ?.metadata
+                ?.custom<ReplicationStateMetadata>(ReplicationStateMetadata.NAME)
+                ?.replicationDetails
 
         Assert.assertNotNull(updatedReplicationDetails)
         Assert.assertNotNull(updatedReplicationDetails?.get("test-index-1"))

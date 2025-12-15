@@ -11,12 +11,12 @@
 
 package org.opensearch.replication.task.shard
 
-import org.opensearch.replication.ReplicationSettings
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.opensearch.common.logging.Loggers
 import org.opensearch.index.shard.IndexShard
+import org.opensearch.replication.ReplicationSettings
 import java.util.Collections
 import java.util.concurrent.atomic.AtomicLong
 import kotlin.collections.ArrayList
@@ -30,7 +30,10 @@ import kotlin.collections.ArrayList
  * 1. Requesting the range of operations to be fetched in the batch.
  * 2. Updating the final status of the batch fetch.
  */
-class ShardReplicationChangesTracker(indexShard: IndexShard, private val replicationSettings: ReplicationSettings) {
+class ShardReplicationChangesTracker(
+    indexShard: IndexShard,
+    private val replicationSettings: ReplicationSettings,
+) {
     private val log = Loggers.getLogger(javaClass, indexShard.shardId())!!
 
     private val mutex = Mutex()
@@ -38,7 +41,6 @@ class ShardReplicationChangesTracker(indexShard: IndexShard, private val replica
     private val observedSeqNoAtLeader = AtomicLong(indexShard.localCheckpoint)
     private val seqNoAlreadyRequested = AtomicLong(indexShard.localCheckpoint)
     private val batchSizeSettings = BatchSizeSettings(indexShard.indexSettings(), replicationSettings)
-
 
     /**
      * Provides a range of operations to be fetched next.
@@ -51,7 +53,7 @@ class ShardReplicationChangesTracker(indexShard: IndexShard, private val replica
      * 4. If we've already fetched all the operations from leader, there would be one and only one
      *    reader polling on leader per shard.
      */
-    suspend fun requestBatchToFetch():Pair<Long, Long> {
+    suspend fun requestBatchToFetch(): Pair<Long, Long> {
         mutex.withLock {
             logDebug("Waiting to get batch. requested: ${seqNoAlreadyRequested.get()}, leader: ${observedSeqNoAtLeader.get()}")
 
@@ -71,11 +73,12 @@ class ShardReplicationChangesTracker(indexShard: IndexShard, private val replica
                 val currentBatchSize = batchSizeSettings.getEffectiveBatchSize()
                 val fromSeq = seqNoAlreadyRequested.getAndAdd(currentBatchSize.toLong()) + 1
                 val toSeq = fromSeq + currentBatchSize - 1
-                val sizeInfo = if (batchSizeSettings.isDynamicallyReduced()) {
-                    "reduced to $currentBatchSize"
-                } else {
-                    "$currentBatchSize from ${batchSizeSettings.getBatchSizeSource()}"
-                }
+                val sizeInfo =
+                    if (batchSizeSettings.isDynamicallyReduced()) {
+                        "reduced to $currentBatchSize"
+                    } else {
+                        "$currentBatchSize from ${batchSizeSettings.getBatchSizeSource()}"
+                    }
                 logDebug("Fetching the batch $fromSeq-$toSeq (batch size: $sizeInfo)")
                 Pair(fromSeq, toSeq)
             }
@@ -101,20 +104,26 @@ class ShardReplicationChangesTracker(indexShard: IndexShard, private val replica
     /**
      * Batch Size Settings
      */
-    fun batchSizeSettings() : BatchSizeSettings {
-        return batchSizeSettings
-    }
+    fun batchSizeSettings(): BatchSizeSettings = batchSizeSettings
 
     /**
      * Ensures that we've successfully fetched a particular range of operations.
      * In case of any failure(or we didn't get complete batch), we make sure that we're fetching the
      * missing operations in the next batch.
      */
-    fun updateBatchFetched(success: Boolean, fromSeqNoRequested: Long, toSeqNoRequested: Long, toSeqNoReceived: Long, seqNoAtLeader: Long) {
+    fun updateBatchFetched(
+        success: Boolean,
+        fromSeqNoRequested: Long,
+        toSeqNoRequested: Long,
+        toSeqNoReceived: Long,
+        seqNoAtLeader: Long,
+    ) {
         if (success) {
             // we shouldn't ever be getting more operations than requested.
-            assert(toSeqNoRequested >= toSeqNoReceived) { "${Thread.currentThread().getName()} Got more operations in the batch than requested" }
-            logDebug("Updating the batch fetched. ${fromSeqNoRequested}-${toSeqNoReceived}/${toSeqNoRequested}, seqNoAtLeader:$seqNoAtLeader")
+            assert(
+                toSeqNoRequested >= toSeqNoReceived,
+            ) { "${Thread.currentThread().getName()} Got more operations in the batch than requested" }
+            logDebug("Updating the batch fetched. $fromSeqNoRequested-$toSeqNoReceived/$toSeqNoRequested, seqNoAtLeader:$seqNoAtLeader")
 
             // If we didn't get the complete batch that we had requested.
             if (toSeqNoRequested > toSeqNoReceived) {
@@ -123,7 +132,7 @@ class ShardReplicationChangesTracker(indexShard: IndexShard, private val replica
                     seqNoAlreadyRequested.updateAndGet { toSeqNoReceived }
                 } else {
                     // Else, add to the missing operations to missing batch
-                    logDebug("Didn't get the complete batch. Adding the missing operations ${toSeqNoReceived + 1}-${toSeqNoRequested}")
+                    logDebug("Didn't get the complete batch. Adding the missing operations ${toSeqNoReceived + 1}-$toSeqNoRequested")
                     missingBatches.add(Pair(toSeqNoReceived + 1, toSeqNoRequested))
                 }
             }

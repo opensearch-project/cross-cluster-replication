@@ -120,6 +120,8 @@ configurations.all {
     resolutionStrategy {
         force "org.jetbrains.kotlin:kotlin-stdlib:${kotlin_version}"
         force "org.jetbrains.kotlin:kotlin-stdlib-common:${kotlin_version}"
+        force "org.jetbrains.kotlin:kotlin-stdlib-jdk7:${kotlin_version}"
+        force "org.jetbrains.kotlin:kotlin-stdlib-jdk8:${kotlin_version}"
         force 'junit:junit:4.13.1'
         force 'commons-beanutils:commons-beanutils:1.9.4'
         force 'com.google.guava:guava:30.1.1-jre'
@@ -140,17 +142,25 @@ configurations.all {
 
 configurations {
     opensearchPlugin
+    ktlint
+}
+
+configurations.ktlint {
+    resolutionStrategy {
+        force "ch.qos.logback:logback-classic:1.5.16"
+        force "ch.qos.logback:logback-core:1.5.16"
+    }
 }
 
 dependencies {
     runtimeOnly "org.opensearch:opensearch:${opensearch_version}"
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
-    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8:${kotlin_version}"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7:${kotlin_version}"
     implementation "org.jetbrains.kotlin:kotlin-stdlib:${kotlin_version}"
     implementation "org.jetbrains.kotlin:kotlin-stdlib-common:${kotlin_version}"
     implementation "org.jetbrains:annotations:13.0"
     implementation "com.github.seancfoley:ipaddress:5.4.1"
-    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.0" // Moving away from kotlin_version
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.10.2" // Moving away from kotlin_version
     implementation "org.opensearch:common-utils:${common_utils_version}"
     implementation "org.apache.httpcomponents.client5:httpclient5:${versions.httpclient5}"
     implementation "org.apache.httpcomponents.core5:httpcore5:${versions.httpcore5}"
@@ -159,11 +169,13 @@ dependencies {
     testImplementation "org.opensearch.test:framework:${opensearch_version}"
     testImplementation "org.assertj:assertj-core:3.17.2"
     testImplementation "org.opensearch.client:opensearch-rest-high-level-client:${opensearch_version}"
-    testImplementation "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.6.0" // Moving away from kotlin_version
+    testImplementation "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.10.2" // Moving away from kotlin_version
     testImplementation "org.jetbrains.kotlin:kotlin-test:${kotlin_version}"
     testImplementation "com.nhaarman.mockitokotlin2:mockito-kotlin:2.2.0"
 
     opensearchPlugin "org.opensearch.plugin:opensearch-security:${security_plugin_version}@zip"
+
+    ktlint "com.pinterest.ktlint:ktlint-cli:1.8.0"
 }
 
 repositories {
@@ -186,6 +198,25 @@ compileTestKotlin {
         jvmTarget = "21"
         freeCompilerArgs = ['-Xjsr305=strict']
     }
+}
+
+tasks.register('ktlint', JavaExec) {
+    description = "Check Kotlin code style."
+    mainClass = "com.pinterest.ktlint.Main"
+    classpath = configurations.ktlint
+    args "src/**/*.kt"
+    // to generate report in checkstyle format prepend following args:
+    // "--reporter=plain", "--reporter=checkstyle,output=${buildDir}/ktlint.xml"
+    // see https://github.com/pinterest/ktlint#usage for more
+}
+
+tasks.register('ktlintFormat', JavaExec) {
+    description = "Fix Kotlin code style deviations."
+    classpath = configurations.ktlint
+    // https://github.com/pinterest/ktlint/issues/1391#issuecomment-1251287020
+    jvmArgs "--add-opens=java.base/java.lang=ALL-UNNAMED"
+    setProperty("mainClass", "com.pinterest.ktlint.Main")
+    args "-F", "src/**/*.kt"
 }
 
 ext {

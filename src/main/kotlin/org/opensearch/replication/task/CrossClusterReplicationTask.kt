@@ -11,70 +11,79 @@
 
 package org.opensearch.replication.task
 
-import org.opensearch.replication.ReplicationSettings
-import org.opensearch.replication.metadata.ReplicationMetadataManager
-import org.opensearch.replication.metadata.store.ReplicationMetadata
-import org.opensearch.replication.task.autofollow.AutoFollowTask
-import org.opensearch.replication.task.shard.ShardReplicationTask
-import org.opensearch.replication.util.coroutineContext
-import org.opensearch.replication.util.suspending
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.NonCancellable
+import kotlinx.coroutines.ObsoleteCoroutinesApi
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import kotlinx.coroutines.withTimeoutOrNull
-import kotlinx.coroutines.ObsoleteCoroutinesApi
 import org.apache.logging.log4j.Logger
 import org.opensearch.OpenSearchException
+import org.opensearch.cluster.service.ClusterService
+import org.opensearch.common.settings.Settings
 import org.opensearch.core.action.ActionListener
 import org.opensearch.core.action.ActionResponse
-import org.opensearch.transport.client.Client
-import org.opensearch.cluster.service.ClusterService
 import org.opensearch.core.common.io.stream.StreamOutput
-import org.opensearch.common.settings.Settings
+import org.opensearch.core.index.shard.ShardId
+import org.opensearch.core.rest.RestStatus
+import org.opensearch.core.tasks.TaskId
 import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.ToXContentObject
 import org.opensearch.core.xcontent.XContentBuilder
 import org.opensearch.index.IndexService
 import org.opensearch.index.shard.IndexShard
-import org.opensearch.core.index.shard.ShardId
 import org.opensearch.indices.cluster.IndicesClusterStateService
 import org.opensearch.persistent.AllocatedPersistentTask
 import org.opensearch.persistent.PersistentTaskState
 import org.opensearch.persistent.PersistentTasksService
+import org.opensearch.replication.ReplicationSettings
+import org.opensearch.replication.metadata.ReplicationMetadataManager
+import org.opensearch.replication.metadata.store.ReplicationMetadata
+import org.opensearch.replication.task.autofollow.AutoFollowTask
+import org.opensearch.replication.task.shard.ShardReplicationTask
+import org.opensearch.replication.util.coroutineContext
 import org.opensearch.replication.util.stackTraceToString
-import org.opensearch.core.rest.RestStatus
-import org.opensearch.core.tasks.TaskId
+import org.opensearch.replication.util.suspending
 import org.opensearch.tasks.TaskManager
 import org.opensearch.threadpool.ThreadPool
+import org.opensearch.transport.client.Client
 
-abstract class CrossClusterReplicationTask(id: Long, type: String, action: String, description: String, parentTask: TaskId,
-                                           headers: Map<String, String>,
-                                           protected val executor: String,
-                                           protected val clusterService: ClusterService,
-                                           protected val threadPool: ThreadPool,
-                                           protected val client: Client,
-                                           protected val replicationMetadataManager: ReplicationMetadataManager,
-                                           protected val replicationSettings: ReplicationSettings) :
-    AllocatedPersistentTask(id, type, action, description, parentTask, headers) {
-
+abstract class CrossClusterReplicationTask(
+    id: Long,
+    type: String,
+    action: String,
+    description: String,
+    parentTask: TaskId,
+    headers: Map<String, String>,
+    protected val executor: String,
+    protected val clusterService: ClusterService,
+    protected val threadPool: ThreadPool,
+    protected val client: Client,
+    protected val replicationMetadataManager: ReplicationMetadataManager,
+    protected val replicationSettings: ReplicationSettings,
+) : AllocatedPersistentTask(id, type, action, description, parentTask, headers) {
     private val overallTaskScope = CoroutineScope(threadPool.coroutineContext(executor))
-    protected abstract val log : Logger
+    protected abstract val log: Logger
     protected abstract val followerIndexName: String
     protected abstract val leaderAlias: String
     protected lateinit var replicationMetadata: ReplicationMetadata
+
     @Volatile private lateinit var taskManager: TaskManager
 
     companion object {
         const val DEFAULT_WAIT_ON_ERRORS = 60000L
     }
 
-    override fun init(persistentTasksService: PersistentTasksService, taskManager: TaskManager,
-                      persistentTaskId: String, allocationId: Long) {
+    override fun init(
+        persistentTasksService: PersistentTasksService,
+        taskManager: TaskManager,
+        persistentTaskId: String,
+        allocationId: Long,
+    ) {
         super.init(persistentTasksService, taskManager, persistentTaskId, allocationId)
         this.taskManager = taskManager
     }
@@ -90,7 +99,7 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
 
     fun run(initialState: PersistentTaskState? = null) {
         overallTaskScope.launch {
-            var exception : Throwable? = null
+            var exception: Throwable? = null
             try {
                 registerCloseListeners()
                 waitAndSetReplicationMetadata()
@@ -98,7 +107,9 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
                 markAsCompleted()
             } catch (e: Exception) {
                 log.error(
-                    "Exception encountered in CrossClusterReplicationTask - coroutine:isActive=${isActive} Context=${coroutineContext}", e)
+                    "Exception encountered in CrossClusterReplicationTask - coroutine:isActive=$isActive Context=$coroutineContext",
+                    e,
+                )
                 if (isCancelled || e is CancellationException) {
                     markAsCompleted()
                     log.info("Completed the task with id:$id")
@@ -123,18 +134,26 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
 
     override fun markAsCompleted() {
         log.info("Going to mark ${this.javaClass.simpleName}:${this.id} task as completed")
-        taskManager.storeResult(this, replicationTaskResponse(), ActionListener.wrap(
-                {log.info("Successfully persisted task status")},
-                {e -> log.warn("Error storing result ${e.stackTraceToString()}")}
-        ))
+        taskManager.storeResult(
+            this,
+            replicationTaskResponse(),
+            ActionListener.wrap(
+                { log.info("Successfully persisted task status") },
+                { e -> log.warn("Error storing result ${e.stackTraceToString()}") },
+            ),
+        )
         super.markAsCompleted()
     }
 
     override fun markAsFailed(e: Exception) {
-        taskManager.storeResult(this, e, ActionListener.wrap(
-                {log.info("Successfully persisted failure")},
-                {log.error("Task failed due to ${e.stackTraceToString()}")}
-        ))
+        taskManager.storeResult(
+            this,
+            e,
+            ActionListener.wrap(
+                { log.info("Successfully persisted failure") },
+                { log.error("Task failed due to ${e.stackTraceToString()}") },
+            ),
+        )
         super.markAsFailed(e)
     }
 
@@ -142,7 +161,7 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
      * A list of [ShardId]s or index names for which this task's [onIndexOrShardClosed] method should be called when
      * closed.
      */
-    protected open fun indicesOrShards() : List<Any> = emptyList()
+    protected open fun indicesOrShards(): List<Any> = emptyList()
 
     protected fun registerCloseListeners() {
         for (indexOrShard in indicesOrShards()) {
@@ -156,15 +175,21 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
         }
     }
 
-    open fun onIndexShardClosed(shardId: ShardId, indexShard: IndexShard?, indexSettings: Settings) {
+    open fun onIndexShardClosed(
+        shardId: ShardId,
+        indexShard: IndexShard?,
+        indexSettings: Settings,
+    ) {
         // Replication task are tied to shards/index on the node.
         // On shard closed event, task running on the node can be cancelled
         // Sub classes can override this to take action/cancel the task
         cancelTask("$shardId was closed.")
     }
 
-    open fun onIndexRemoved(indexService: IndexService,
-                            reason: IndicesClusterStateService.AllocatedIndices.IndexRemovalReason) {
+    open fun onIndexRemoved(
+        indexService: IndexService,
+        reason: IndicesClusterStateService.AllocatedIndices.IndexRemovalReason,
+    ) {
         // Replication task are tied to shards/index on the node.
         // On index removed event, task running on the node can be cancelled
         // Sub classes can override this to take action/cancel the task
@@ -180,7 +205,10 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
     }
 
     @ObsoleteCoroutinesApi
-    protected abstract suspend fun execute(scope: CoroutineScope, initialState: PersistentTaskState?)
+    protected abstract suspend fun execute(
+        scope: CoroutineScope,
+        initialState: PersistentTaskState?,
+    )
 
     protected open suspend fun cleanup() {}
 
@@ -193,7 +221,7 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
         } else {
             try {
                 cleanup()
-            } catch(e: Exception) {
+            } catch (e: Exception) {
                 cause.addSuppressed(e)
             }
         }
@@ -203,12 +231,12 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
         if (this::replicationMetadata.isInitialized) {
             return
         } else {
-            while(overallTaskScope.isActive) {
+            while (overallTaskScope.isActive) {
                 try {
                     setReplicationMetadata()
                     return
                 } catch (e: OpenSearchException) {
-                    if(e.status().status < 500 && e.status() != RestStatus.TOO_MANY_REQUESTS) {
+                    if (e.status().status < 500 && e.status() != RestStatus.TOO_MANY_REQUESTS) {
                         throw e
                     }
                     log.error("Failed to fetch replication metadata due to ", e)
@@ -223,20 +251,26 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
      */
     protected abstract suspend fun setReplicationMetadata()
 
-    //used only in testing
-    open suspend fun setReplicationMetadata(rm :ReplicationMetadata) {
+    // used only in testing
+    open suspend fun setReplicationMetadata(rm: ReplicationMetadata) {
         replicationMetadata = rm
     }
 
-    open class CrossClusterReplicationTaskResponse(val status: String): ActionResponse(), ToXContentObject {
+    open class CrossClusterReplicationTaskResponse(
+        val status: String,
+    ) : ActionResponse(),
+        ToXContentObject {
         override fun writeTo(out: StreamOutput) {
             out.writeString(status)
         }
 
-        override fun toXContent(builder: XContentBuilder, params: ToXContent.Params): XContentBuilder {
-            return builder.startObject()
-                    .field("status", status)
-                    .endObject()
-        }
+        override fun toXContent(
+            builder: XContentBuilder,
+            params: ToXContent.Params,
+        ): XContentBuilder =
+            builder
+                .startObject()
+                .field("status", status)
+                .endObject()
     }
 }

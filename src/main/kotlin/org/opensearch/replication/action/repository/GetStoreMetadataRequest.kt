@@ -17,14 +17,16 @@ import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.core.index.shard.ShardId
 
 class GetStoreMetadataRequest : RemoteClusterRepositoryRequest<GetStoreMetadataRequest> {
+    constructor(
+        restoreUUID: String,
+        node: DiscoveryNode,
+        leaderShardId: ShardId,
+        followerCluster: String,
+        followerShardId: ShardId,
+    ) :
+        super(restoreUUID, node, leaderShardId, followerCluster, followerShardId)
 
-    constructor(restoreUUID: String, node: DiscoveryNode, leaderShardId: ShardId,
-                followerCluster: String, followerShardId: ShardId):
-            super(restoreUUID, node, leaderShardId, followerCluster, followerShardId)
+    constructor(input: StreamInput) : super(input)
 
-    constructor(input : StreamInput): super(input)
-
-    override fun validate(): ActionRequestValidationException? {
-        return null
-    }
+    override fun validate(): ActionRequestValidationException? = null
 }
