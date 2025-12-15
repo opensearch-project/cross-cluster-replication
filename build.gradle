@@ -50,7 +50,7 @@ buildscript {
 
 
         // for bwc tests
-        opensearch_previous_version = System.getProperty("bwc_older_version", "2.6.0")
+        opensearch_previous_version = System.getProperty("bwc_older_version", "3.3.0")
         plugin_previous_version = opensearch_previous_version.replaceAll(/(\.\d)([^\d]*)$/, '$1.0$2')
 
         common_utils_version = System.getProperty("common_utils.version", opensearch_build)
@@ -935,7 +935,7 @@ task "bwcTestSuite"(type: RestIntegTestTask) {
     dependsOn tasks.named("fullRestartClusterTask")
 }
 
-task integTestRemote (type: RestIntegTestTask) {
+task integTestRemote (type: Test) {
     doFirst {
         systemProperty "tests.cluster.followCluster.http_hosts", System.getProperty("follower.http_host")
         systemProperty "tests.cluster.followCluster.transport_hosts", System.getProperty("follower.transport_host")
