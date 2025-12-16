@@ -395,6 +395,7 @@ testClusters {
         if (_numNodes > 1) numberOfNodes = _numNodes
         //numberOfNodes = 3
         setting 'path.repo', repo.absolutePath
+        setting "network.host", "127.0.0.1"
         if(_numNodes == 1) jvmArgs "${-> getDebugJvmArgs(debugPort++)}"
     }
     followCluster {
@@ -412,6 +413,7 @@ testClusters {
         if (_numNodes > 1) numberOfNodes = _numNodes
         //numberOfNodes = 3
         setting 'path.repo', repo.absolutePath
+        setting "network.host", "127.0.0.1"
         if(_numNodes == 1) jvmArgs "${-> getDebugJvmArgs(debugPort++)}"
     }
 }
