@@ -387,7 +387,6 @@ testClusters {
         testDistribution = "INTEG_TEST"
         if(knnEnabled) {
             plugin(provider(knnPluginFile))
-            testDistribution = "ARCHIVE"
             systemProperty "java.library.path", "${buildDir}/testclusters/leaderCluster-0/distro/${opensearch_version_no_qualifier}-ARCHIVE/plugins/opensearch-knn/lib"
             environment "LD_LIBRARY_PATH", "${buildDir}/testclusters/leaderCluster-0/distro/${opensearch_version_no_qualifier}-ARCHIVE/plugins/opensearch-knn/lib"
         }
@@ -396,6 +395,7 @@ testClusters {
         if (_numNodes > 1) numberOfNodes = _numNodes
         //numberOfNodes = 3
         setting 'path.repo', repo.absolutePath
+        setting "network.host", "127.0.0.1"
         if(_numNodes == 1) jvmArgs "${-> getDebugJvmArgs(debugPort++)}"
     }
     followCluster {
@@ -406,7 +406,6 @@ testClusters {
         }
         if(knnEnabled) {
             plugin(provider(knnPluginFile))
-            testDistribution = "ARCHIVE"
             systemProperty "java.library.path", "${buildDir}/testclusters/followCluster-0/distro/${opensearch_version_no_qualifier}-ARCHIVE/plugins/opensearch-knn/lib"
             environment "LD_LIBRARY_PATH", "${buildDir}/testclusters/followCluster-0/distro/${opensearch_version_no_qualifier}-ARCHIVE/plugins/opensearch-knn/lib"
         }
@@ -414,6 +413,7 @@ testClusters {
         if (_numNodes > 1) numberOfNodes = _numNodes
         //numberOfNodes = 3
         setting 'path.repo', repo.absolutePath
+        setting "network.host", "127.0.0.1"
         if(_numNodes == 1) jvmArgs "${-> getDebugJvmArgs(debugPort++)}"
     }
 }
@@ -542,7 +542,6 @@ integTest {
     }
 
     systemProperty "build.dir", "${buildDir}"
-    systemProperty "java.security.policy", "file://${projectDir}/src/test/resources/plugin-security.policy"
     finalizedBy jacocoTestReport
 }
 
@@ -698,13 +697,7 @@ clusters.each { name ->
                 plugin(provider(securityPluginOld))
                 cliSetup("opensearch-security/install_demo_configuration.sh", "-y")
             }
-            // Currently fetching the ARCHIVE distribution fails on mac as it tries to fetch the Mac specific "DARWIN" distribution
-            // for Opensearch which is not publish yet. Changing this to INTEG_TEST to make it work on mac.
-            if (System.getProperty("os.name").startsWith("Mac")) {
-                testDistribution = "INTEG_TEST"
-            } else {
-                testDistribution = "ARCHIVE"
-            }
+            testDistribution = "INTEG_TEST"
 
             if (_numNodes != 3) numberOfNodes = 3
             setting 'path.repo', repo.absolutePath
@@ -750,7 +743,6 @@ List<Provider<RegularFile>> replPluginProvider = [
             }
         }
         systemProperty "build.dir", "${buildDir}"
-        systemProperty "java.security.policy", "file://${projectDir}/src/test/resources/plugin-security.policy"
         nonInputProperties.systemProperty('tests.cluster_suffix', i)
         nonInputProperties.systemProperty('tests.bwcTask', "oldVersionClusterTask")
         filter {
