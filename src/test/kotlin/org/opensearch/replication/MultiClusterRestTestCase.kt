@@ -681,6 +681,12 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
         return true
     }
 
+    protected fun clusterNodes(clusterName: String): Int {
+        val systemProperties = BootstrapInfo.getSystemProperties()
+        val totalNodes = systemProperties.get("tests.cluster.${clusterName}.total_nodes") as String?
+        return totalNodes?.toIntOrNull() ?: 1
+    }
+
     protected fun docCount(cluster: RestHighLevelClient, indexName: String) : Int {
         val persistentConnectionRequest = Request("GET", "/$indexName/_search?pretty&q=*")
 
