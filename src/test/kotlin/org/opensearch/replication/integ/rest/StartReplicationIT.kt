@@ -658,6 +658,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             assertBusy {
                 assertThat(followerClient.indices().exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT)).isEqualTo(true)
             }
+            followerClient.stopReplication(followerIndexName)
         } finally {
             leaderSynonymPaths.forEach { if (Files.exists(it)) Files.delete(it) }
             followerSynonymPaths.forEach { if (Files.exists(it)) Files.delete(it) }
@@ -705,6 +706,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             assertBusy {
                 assertThat(followerClient.indices().exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT)).isEqualTo(true)
             }
+            followerClient.stopReplication(followerIndexName)
         } finally {
             leaderSynonymPaths.forEach { if (Files.exists(it)) Files.delete(it) }
             followerSynonymPaths.forEach { if (Files.exists(it)) Files.delete(it) }
