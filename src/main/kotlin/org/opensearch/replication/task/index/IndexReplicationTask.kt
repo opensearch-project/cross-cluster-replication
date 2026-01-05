@@ -361,7 +361,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 log.warn("Index metadata not found for $indexName, defaulting to open operation for safety")
                 true // Default to performing open operation for safety
             } else {
-                val isClosed = indexMetadata.state == IndexMetadata.State.CLOSED
+                val isClosed = indexMetadata.state != IndexMetadata.State.OPEN
                 log.debug("Index $indexName state check: ${if (isClosed) "CLOSED" else "OPEN"}")
                 isClosed
             }
