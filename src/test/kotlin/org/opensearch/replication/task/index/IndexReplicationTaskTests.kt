@@ -320,11 +320,8 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
         var newClusterState = ClusterState.builder(clusterService.state()).metadata(metadata).routingTable(routingTableBuilder.build()).build()
         setState(clusterService, newClusterState)
 
-        val isIndexClosedMethod = IndexReplicationTask::class.java.getDeclaredMethod("isIndexClosed", String::class.java)
-        isIndexClosedMethod.isAccessible = true
-
         // Test with closed index - should return true
-        val isClosedResult = isIndexClosedMethod.invoke(replicationTask, followerIndex) as Boolean
+        val isClosedResult = replicationTask.isIndexClosed(followerIndex)
         assertThat(isClosedResult).isTrue()
 
         // Test case 2: Index is open - should return false
@@ -337,7 +334,7 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
         newClusterState = ClusterState.builder(clusterService.state()).metadata(metadata).routingTable(routingTableBuilder.build()).build()
         setState(clusterService, newClusterState)
 
-        val isOpenResult = isIndexClosedMethod.invoke(replicationTask, followerIndex) as Boolean
+        val isOpenResult = replicationTask.isIndexClosed(followerIndex)
         assertThat(isOpenResult).isFalse()
         
         // Test case 3: Index metadata not found - should default to true (safe fallback)
@@ -349,7 +346,7 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
         newClusterState = ClusterState.builder(clusterService.state()).metadata(metadata).routingTable(routingTableBuilder.build()).build()
         setState(clusterService, newClusterState)
 
-        val isMissingResult = isIndexClosedMethod.invoke(replicationTask, "non-existent-index") as Boolean
+        val isMissingResult = replicationTask.isIndexClosed("non-existent-index")
         assertThat(isMissingResult).isTrue() // Should default to true for safety
     }
 
@@ -361,9 +358,6 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
         val rm = ReplicationMetadata(connectionName, ReplicationStoreMetadataType.INDEX.name, ReplicationOverallState.RUNNING.name, "reason", rc, rc, Settings.EMPTY)
         replicationTask.setReplicationMetadata(rm)
 
-        val isIndexClosedMethod = IndexReplicationTask::class.java.getDeclaredMethod("isIndexClosed", String::class.java)
-        isIndexClosedMethod.isAccessible = true
-
         // Test case 1: Index is closed
         var metadata = Metadata.builder()
             .put(IndexMetadata.builder(followerIndex).settings(settings(Version.CURRENT)).numberOfShards(1).numberOfReplicas(0).state(IndexMetadata.State.CLOSE))
@@ -371,7 +365,7 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
         var newClusterState = ClusterState.builder(clusterService.state()).metadata(metadata).build()
         setState(clusterService, newClusterState)
 
-        val isClosedResult = isIndexClosedMethod.invoke(replicationTask, followerIndex) as Boolean
+        val isClosedResult = replicationTask.isIndexClosed(followerIndex)
         assertThat(isClosedResult).isTrue()
 
         // Test case 2: Index is open
@@ -381,7 +375,7 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
         newClusterState = ClusterState.builder(clusterService.state()).metadata(metadata).build()
         setState(clusterService, newClusterState)
 
-        val isOpenResult = isIndexClosedMethod.invoke(replicationTask, followerIndex) as Boolean
+        val isOpenResult = replicationTask.isIndexClosed(followerIndex)
         assertThat(isOpenResult).isFalse()
 
         // Test case 3: Index metadata not found - should return true (safe fallback)
@@ -389,7 +383,7 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
         newClusterState = ClusterState.builder(clusterService.state()).metadata(metadata).build()
         setState(clusterService, newClusterState)
 
-        val isMissingResult = isIndexClosedMethod.invoke(replicationTask, "non-existent-index") as Boolean
+        val isMissingResult = replicationTask.isIndexClosed("non-existent-index")
         assertThat(isMissingResult).isTrue() // Should default to true for safety
     }
 }

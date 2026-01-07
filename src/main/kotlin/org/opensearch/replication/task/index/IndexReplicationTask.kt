@@ -347,7 +347,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
     /**
      * Checks if the specified index is currently in a closed state.
      */
-    private fun isIndexClosed(indexName: String): Boolean {
+    internal fun isIndexClosed(indexName: String): Boolean {
         return try {
             val clusterState = clusterService.state()
             val indexMetadata = clusterState.metadata.index(indexName)
