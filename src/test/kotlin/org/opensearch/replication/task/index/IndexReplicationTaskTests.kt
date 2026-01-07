@@ -301,4 +301,95 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
 
         return indexReplicationTask
     }
+
+    fun testConditionallyOpenIndex() = runBlocking {
+        val replicationTask: IndexReplicationTask = spy(createIndexReplicationTask())
+        val taskManager = Mockito.mock(TaskManager::class.java)
+        replicationTask.setPersistent(taskManager)
+        val rc = ReplicationContext(followerIndex)
+        val rm = ReplicationMetadata(connectionName, ReplicationStoreMetadataType.INDEX.name, ReplicationOverallState.RUNNING.name, "reason", rc, rc, Settings.EMPTY)
+        replicationTask.setReplicationMetadata(rm)
+
+        // Test case 1: Index is closed - should trigger open operation
+        var metadata = Metadata.builder()
+            .put(IndexMetadata.builder(REPLICATION_CONFIG_SYSTEM_INDEX).settings(settings(Version.CURRENT)).numberOfShards(1).numberOfReplicas(0))
+            .put(IndexMetadata.builder(followerIndex).settings(settings(Version.CURRENT)).numberOfShards(1).numberOfReplicas(0).state(IndexMetadata.State.CLOSE))
+            .build()
+        var routingTableBuilder = RoutingTable.builder()
+            .addAsNew(metadata.index(REPLICATION_CONFIG_SYSTEM_INDEX))
+        var newClusterState = ClusterState.builder(clusterService.state()).metadata(metadata).routingTable(routingTableBuilder.build()).build()
+        setState(clusterService, newClusterState)
+
+        val isIndexClosedMethod = IndexReplicationTask::class.java.getDeclaredMethod("isIndexClosed", String::class.java)
+        isIndexClosedMethod.isAccessible = true
+
+        // Test with closed index - should return true
+        val isClosedResult = isIndexClosedMethod.invoke(replicationTask, followerIndex) as Boolean
+        assertThat(isClosedResult).isTrue()
+
+        // Test case 2: Index is open - should return false
+        metadata = Metadata.builder()
+            .put(IndexMetadata.builder(REPLICATION_CONFIG_SYSTEM_INDEX).settings(settings(Version.CURRENT)).numberOfShards(1).numberOfReplicas(0))
+            .put(IndexMetadata.builder(followerIndex).settings(settings(Version.CURRENT)).numberOfShards(1).numberOfReplicas(0).state(IndexMetadata.State.OPEN))
+            .build()
+        routingTableBuilder = RoutingTable.builder()
+            .addAsNew(metadata.index(REPLICATION_CONFIG_SYSTEM_INDEX))
+        newClusterState = ClusterState.builder(clusterService.state()).metadata(metadata).routingTable(routingTableBuilder.build()).build()
+        setState(clusterService, newClusterState)
+
+        val isOpenResult = isIndexClosedMethod.invoke(replicationTask, followerIndex) as Boolean
+        assertThat(isOpenResult).isFalse()
+        
+        // Test case 3: Index metadata not found - should default to true (safe fallback)
+        metadata = Metadata.builder()
+            .put(IndexMetadata.builder(REPLICATION_CONFIG_SYSTEM_INDEX).settings(settings(Version.CURRENT)).numberOfShards(1).numberOfReplicas(0))
+            .build()
+        routingTableBuilder = RoutingTable.builder()
+            .addAsNew(metadata.index(REPLICATION_CONFIG_SYSTEM_INDEX))
+        newClusterState = ClusterState.builder(clusterService.state()).metadata(metadata).routingTable(routingTableBuilder.build()).build()
+        setState(clusterService, newClusterState)
+
+        val isMissingResult = isIndexClosedMethod.invoke(replicationTask, "non-existent-index") as Boolean
+        assertThat(isMissingResult).isTrue() // Should default to true for safety
+    }
+
+    fun testIsIndexClosedMethod() = runBlocking {
+        val replicationTask: IndexReplicationTask = spy(createIndexReplicationTask())
+        val taskManager = Mockito.mock(TaskManager::class.java)
+        replicationTask.setPersistent(taskManager)
+        val rc = ReplicationContext(followerIndex)
+        val rm = ReplicationMetadata(connectionName, ReplicationStoreMetadataType.INDEX.name, ReplicationOverallState.RUNNING.name, "reason", rc, rc, Settings.EMPTY)
+        replicationTask.setReplicationMetadata(rm)
+
+        val isIndexClosedMethod = IndexReplicationTask::class.java.getDeclaredMethod("isIndexClosed", String::class.java)
+        isIndexClosedMethod.isAccessible = true
+
+        // Test case 1: Index is closed
+        var metadata = Metadata.builder()
+            .put(IndexMetadata.builder(followerIndex).settings(settings(Version.CURRENT)).numberOfShards(1).numberOfReplicas(0).state(IndexMetadata.State.CLOSE))
+            .build()
+        var newClusterState = ClusterState.builder(clusterService.state()).metadata(metadata).build()
+        setState(clusterService, newClusterState)
+
+        val isClosedResult = isIndexClosedMethod.invoke(replicationTask, followerIndex) as Boolean
+        assertThat(isClosedResult).isTrue()
+
+        // Test case 2: Index is open
+        metadata = Metadata.builder()
+            .put(IndexMetadata.builder(followerIndex).settings(settings(Version.CURRENT)).numberOfShards(1).numberOfReplicas(0).state(IndexMetadata.State.OPEN))
+            .build()
+        newClusterState = ClusterState.builder(clusterService.state()).metadata(metadata).build()
+        setState(clusterService, newClusterState)
+
+        val isOpenResult = isIndexClosedMethod.invoke(replicationTask, followerIndex) as Boolean
+        assertThat(isOpenResult).isFalse()
+
+        // Test case 3: Index metadata not found - should return true (safe fallback)
+        metadata = Metadata.builder().build()
+        newClusterState = ClusterState.builder(clusterService.state()).metadata(metadata).build()
+        setState(clusterService, newClusterState)
+
+        val isMissingResult = isIndexClosedMethod.invoke(replicationTask, "non-existent-index") as Boolean
+        assertThat(isMissingResult).isTrue() // Should default to true for safety
+    }
 }
