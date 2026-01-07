@@ -346,11 +346,6 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
 
     /**
      * Checks if the specified index is currently in a closed state.
-     * This method provides robust error handling with fallback to safe behavior.
-     * 
-     * @param indexName The name of the index to check
-     * @return true if the index is closed or if the state cannot be determined (safe fallback),
-     *         false if the index is confirmed to be open
      */
     private fun isIndexClosed(indexName: String): Boolean {
         return try {
