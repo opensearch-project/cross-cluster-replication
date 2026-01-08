@@ -344,6 +344,44 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         return clusterService.state().routingTable.hasIndex(followerIndexName)
     }
 
+    /**
+     * Checks if the specified index is currently in a closed state.
+     */
+    internal fun isIndexClosed(indexName: String): Boolean {
+        return try {
+            val clusterState = clusterService.state()
+            val indexMetadata = clusterState.metadata.index(indexName)
+            
+            if (indexMetadata == null) {
+                log.warn("Index metadata not found for $indexName, defaulting to open operation for safety")
+                true // Default to performing open operation for safety
+            } else {
+                val isClosed = indexMetadata.state != IndexMetadata.State.OPEN
+                log.debug("Index $indexName state check: ${if (isClosed) "CLOSED" else "OPEN"}")
+                isClosed
+            }
+        } catch (e: Exception) {
+            log.warn("Failed to check state for index $indexName, defaulting to open operation for safety", e)
+            true // Default to performing open operation for safety
+        }
+    }
+
+    /**
+     * Conditionally opens an index if it is currently closed.
+     */
+    private suspend fun conditionallyOpenIndex(indexName: String, logSuffix: String = "") {
+        if (isIndexClosed(indexName)) {
+            log.info("Index $indexName is closed, opening it")
+            val updateRequest = UpdateMetadataRequest(indexName, UpdateMetadataRequest.Type.OPEN, Requests.openIndexRequest(indexName))
+            client.suspendExecute(UpdateMetadataAction.INSTANCE, updateRequest, injectSecurityContext = true)
+            if (logSuffix.isNotEmpty()) {
+                log.info("Opened the index $indexName $logSuffix")
+            }
+        } else {
+            log.info("Index $indexName is already open, skipping open operation")
+        }
+    }
+
     private suspend fun evalMonitoringState():IndexReplicationState {
         // Handling for node crashes during Static Index Updates'
         // Makes sure follower index is open, shard tasks are running
@@ -355,8 +393,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
             return MonitoringState
         }
 
-        val updateRequest = UpdateMetadataRequest(followerIndexName, UpdateMetadataRequest.Type.OPEN, Requests.openIndexRequest(followerIndexName))
-        client.suspendExecute(UpdateMetadataAction.INSTANCE, updateRequest, injectSecurityContext = true)
+        conditionallyOpenIndex(followerIndexName)
 
         registerCloseListeners()
         val clusterState = clusterService.state()
@@ -642,9 +679,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
 
             } finally {
                 //Step 5: open the index
-                val updateRequest = UpdateMetadataRequest(followerIndexName, UpdateMetadataRequest.Type.OPEN, Requests.openIndexRequest(followerIndexName))
-                client.suspendExecute(UpdateMetadataAction.INSTANCE, updateRequest, injectSecurityContext = true)
-                log.info("Opened the index $followerIndexName now post applying static settings")
+                conditionallyOpenIndex(followerIndexName, "now post applying static settings")
 
                 //Step 6 :  Register Close Listeners again
                 registerCloseListeners()
