@@ -98,6 +98,7 @@ import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATION_INDEX_
 import org.opensearch.core.rest.RestStatus
 import org.opensearch.core.tasks.TaskId
 import org.opensearch.tasks.TaskManager
+import org.opensearch.action.admin.cluster.snapshots.restore.RestoreSnapshotRequest
 import org.opensearch.threadpool.ThreadPool
 import java.util.Collections
 import java.util.function.Predicate
@@ -592,7 +593,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                             .alias(alias.alias)
                             .indexRouting(alias.indexRouting)
                             .searchRouting(alias.searchRouting)
-                            .writeIndex(alias.writeIndex())
+                            .writeIndex(false) // Always strip write index on follower to allow bidirectional replication
                             .isHidden(alias.isHidden)
 
                         if (alias.filteringRequired())  {
@@ -603,11 +604,15 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                     }
 
                     var toRemove = followerAliases - leaderAliases
-
+                    val leaderAliasNames = leaderAliases.map { it.alias() }.toSet()
                     for (alias in toRemove) {
-                        log.info("Removing alias  ${alias.alias} from $followerIndexName")
-                        request.addAliasAction(AliasActions.remove().index(followerIndexName)
+                        // Only remove if it doesn't exist on the leader at all (by name).
+                        // If it exists on leader but differs (e.g. writeIndex), it was added/updated in the 'toAdd' loop above.
+                        if (!leaderAliasNames.contains(alias.alias())) {
+                            log.info("Removing alias  ${alias.alias} from $followerIndexName")
+                            request.addAliasAction(AliasActions.remove().index(followerIndexName)
                                 .alias(alias.alias))
+                        }
                     }
                 }
 
@@ -918,6 +923,8 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         }
         val replMetadata = replicationMetadataManager.getIndexReplicationMetadata(this.followerIndexName)
         restoreRequest.indexSettings(replMetadata.settings)
+        restoreRequest.aliasWriteIndexPolicy(RestoreSnapshotRequest.AliasWriteIndexPolicy.STRIP_WRITE_INDEX)
+
 
         try {
             val response = client.suspending(client.admin().cluster()::restoreSnapshot, defaultContext = true)(restoreRequest)

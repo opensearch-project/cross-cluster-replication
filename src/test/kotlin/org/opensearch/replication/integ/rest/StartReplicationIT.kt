@@ -798,6 +798,59 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         )
     }
 
+    fun `test that write alias is stripped on follower`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        setMetadataSyncDelay() // Ensure sync happens reasonably fast
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+
+        // Create leader index with a write alias
+        val createIndexResponse = leaderClient.indices().create(
+            CreateIndexRequest(leaderIndexName)
+                .alias(Alias("write_alias").writeIndex(true)),
+            RequestOptions.DEFAULT
+        )
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+
+        // Start replication
+        followerClient.startReplication(
+            StartReplicationRequest("source", leaderIndexName, followerIndexName),
+            waitForRestore = true
+        )
+
+        assertBusy {
+            assertThat(followerClient.indices().exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT)).isEqualTo(true)
+        }
+
+        // Verify follower alias exists but has write_index=false initially
+        var followerAliases = followerClient.indices().getAlias(GetAliasesRequest().indices(followerIndexName), RequestOptions.DEFAULT)
+        var aliasMetadata = followerAliases.aliases[followerIndexName]?.find { it.alias == "write_alias" }
+        assertThat(aliasMetadata).isNotNull
+        assertThat(aliasMetadata?.writeIndex()).isFalse()
+
+        // Phase 2: Trigger metadata sync/update on leader to ensure it doesn't revert
+        // Add a new alias on leader to force a diff and sync
+        val indicesAliasesRequest = IndicesAliasesRequest()
+        indicesAliasesRequest.addAliasAction(
+            IndicesAliasesRequest.AliasActions.add().index(leaderIndexName).alias("new_alias")
+        )
+        leaderClient.indices().updateAliases(indicesAliasesRequest, RequestOptions.DEFAULT)
+
+        TimeUnit.SECONDS.sleep(SLEEP_TIME_BETWEEN_SYNC + 2) // Wait for sync
+
+        assertBusy {
+            // Check new alias appeared
+            val aliases = followerClient.indices().getAlias(GetAliasesRequest().indices(followerIndexName), RequestOptions.DEFAULT)
+            assertThat(aliases.aliases[followerIndexName]?.find { it.alias == "new_alias" }).isNotNull
+        }
+
+        // Re-verify "write_alias" still has write_index=false after sync
+        followerAliases = followerClient.indices().getAlias(GetAliasesRequest().indices(followerIndexName), RequestOptions.DEFAULT)
+        aliasMetadata = followerAliases.aliases[followerIndexName]?.find { it.alias == "write_alias" }
+        assertThat(aliasMetadata).isNotNull
+        assertThat(aliasMetadata?.writeIndex()).isFalse()
+    }
+
     fun `test that snapshot on leader does not affect replication during bootstrap`() {
 
         Assume.assumeFalse(SNAPSHOTS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS,checkifIntegTestRemote())
