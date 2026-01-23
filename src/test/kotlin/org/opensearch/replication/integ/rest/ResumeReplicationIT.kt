@@ -52,8 +52,8 @@ import org.opensearch.replication.ANALYZERS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS
 class ResumeReplicationIT: MultiClusterRestTestCase() {
     private val leaderIndexName = "leader_index"
     private val followerIndexName = "resumed_index"
-    private val leaderClusterPath = "testclusters/leaderCluster-0"
-    private val followerClusterPath = "testclusters/followCluster-0"
+    private val leaderClusterPath = "testclusters/leaderCluster-"
+    private val followerClusterPath = "testclusters/followCluster-"
     private val buildDir = System.getProperty("build.dir")
     private val synonymsJson = "/analyzers/synonym_setting.json"
 
@@ -169,12 +169,16 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
         Assume.assumeFalse(ANALYZERS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS, checkifIntegTestRemote())
 
         val synonyms = javaClass.getResourceAsStream("/analyzers/synonyms.txt")
-        val config = PathUtils.get(buildDir, leaderClusterPath, "config")
-        val synonymPath = config.resolve("synonyms.txt")
+        val leaderSynonymPaths = mutableListOf<java.nio.file.Path>()
+        for (i in 0 until clusterNodes(LEADER)) {
+            val config = PathUtils.get(buildDir, leaderClusterPath + i, "config")
+            val synonymPath = config.resolve("synonyms.txt")
+            leaderSynonymPaths.add(synonymPath)
+            Files.copy(javaClass.getResourceAsStream("/analyzers/synonyms.txt"), synonymPath)
+        }
         val leaderClient = getClientForCluster(LEADER)
         val followerClient = getClientForCluster(FOLLOWER)
         try {
-            Files.copy(synonyms, synonymPath)
             val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
             assertThat(createIndexResponse.isAcknowledged).isTrue()
             createConnectionBetweenClusters(FOLLOWER, LEADER)
@@ -193,9 +197,7 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
                 followerClient.resumeReplication(followerIndexName)
             }.isInstanceOf(ResponseException::class.java).hasMessageContaining("resource_not_found_exception")
         } finally {
-            if (Files.exists(synonymPath)) {
-                Files.delete(synonymPath)
-            }
+            leaderSynonymPaths.forEach { if (Files.exists(it)) Files.delete(it) }
         }
     }
 
@@ -203,23 +205,30 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
 
         Assume.assumeFalse(ANALYZERS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS, checkifIntegTestRemote())
 
-        val synonyms = javaClass.getResourceAsStream("/analyzers/synonyms.txt")
-        val config = PathUtils.get(buildDir, leaderClusterPath, "config")
         val synonymFilename = "synonyms.txt"
-        val synonymPath = config.resolve(synonymFilename)
-        val followerConfig = PathUtils.get(buildDir, followerClusterPath, "config")
-        val followerSynonymPath = followerConfig.resolve(synonymFilename)
+        val leaderSynonymPaths = mutableListOf<java.nio.file.Path>()
+        val followerSynonymPaths = mutableListOf<java.nio.file.Path>()
+        for (i in 0 until clusterNodes(LEADER)) {
+            val config = PathUtils.get(buildDir, leaderClusterPath + i, "config")
+            val synonymPath = config.resolve(synonymFilename)
+            leaderSynonymPaths.add(synonymPath)
+            Files.copy(javaClass.getResourceAsStream("/analyzers/synonyms.txt"), synonymPath)
+        }
         val leaderClient = getClientForCluster(LEADER)
         val followerClient = getClientForCluster(FOLLOWER)
         try {
-            Files.copy(synonyms, synonymPath)
             val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
             assertThat(createIndexResponse.isAcknowledged).isTrue()
             createConnectionBetweenClusters(FOLLOWER, LEADER)
             followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
             followerClient.pauseReplication(followerIndexName)
             leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
-            Files.copy(synonyms, followerSynonymPath)
+            for (i in 0 until clusterNodes(FOLLOWER)) {
+                val followerConfig = PathUtils.get(buildDir, followerClusterPath + i, "config")
+                val followerSynonymPath = followerConfig.resolve(synonymFilename)
+                followerSynonymPaths.add(followerSynonymPath)
+                Files.copy(javaClass.getResourceAsStream("/analyzers/synonyms.txt"), followerSynonymPath)
+            }
             val settings: Settings = Settings.builder().loadFromStream(synonymsJson, javaClass.getResourceAsStream(synonymsJson), false)
                 .build()
             try {
@@ -231,13 +240,10 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
             followerClient.resumeReplication(followerIndexName)
             var statusResp = followerClient.replicationStatus(followerIndexName)
             `validate status syncing response`(statusResp)
+            followerClient.stopReplication(followerIndexName)
         } finally {
-            if (Files.exists(synonymPath)) {
-                Files.delete(synonymPath)
-            }
-            if (Files.exists(followerSynonymPath)) {
-                Files.delete(followerSynonymPath)
-            }
+            leaderSynonymPaths.forEach { if (Files.exists(it)) Files.delete(it) }
+            followerSynonymPaths.forEach { if (Files.exists(it)) Files.delete(it) }
         }
     }
 
@@ -245,18 +251,26 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
 
         Assume.assumeFalse(ANALYZERS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS, checkifIntegTestRemote())
 
-        val synonyms = javaClass.getResourceAsStream("/analyzers/synonyms.txt")
-        val config = PathUtils.get(buildDir, leaderClusterPath, "config")
-        val synonymPath = config.resolve("synonyms.txt")
-        val newSynonymPath = config.resolve("synonyms_new.txt")
-        val followerConfig = PathUtils.get(buildDir, followerClusterPath, "config")
         val followerSynonymFilename = "synonyms_follower.txt"
-        val followerSynonymPath = followerConfig.resolve(followerSynonymFilename)
+        val leaderSynonymPaths = mutableListOf<java.nio.file.Path>()
+        val leaderNewSynonymPaths = mutableListOf<java.nio.file.Path>()
+        val followerSynonymPaths = mutableListOf<java.nio.file.Path>()
+        for (i in 0 until clusterNodes(LEADER)) {
+            val config = PathUtils.get(buildDir, leaderClusterPath + i, "config")
+            val synonymPath = config.resolve("synonyms.txt")
+            leaderSynonymPaths.add(synonymPath)
+            leaderNewSynonymPaths.add(config.resolve("synonyms_new.txt"))
+            Files.copy(javaClass.getResourceAsStream("/analyzers/synonyms.txt"), synonymPath)
+        }
+        for (i in 0 until clusterNodes(FOLLOWER)) {
+            val followerConfig = PathUtils.get(buildDir, followerClusterPath + i, "config")
+            val followerSynonymPath = followerConfig.resolve(followerSynonymFilename)
+            followerSynonymPaths.add(followerSynonymPath)
+            Files.copy(javaClass.getResourceAsStream("/analyzers/synonyms.txt"), followerSynonymPath)
+        }
         val leaderClient = getClientForCluster(LEADER)
         val followerClient = getClientForCluster(FOLLOWER)
         try {
-            Files.copy(synonyms, synonymPath)
-            Files.copy(synonyms, followerSynonymPath)
             var settings: Settings = Settings.builder().loadFromStream(synonymsJson, javaClass.getResourceAsStream(synonymsJson), false)
                 .build()
             try {
@@ -272,7 +286,9 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
             followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName, overriddenSettings), waitForRestore = true)
             followerClient.pauseReplication(followerIndexName)
             leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
-            Files.copy(synonyms, newSynonymPath)
+            for (newSynonymPath in leaderNewSynonymPaths) {
+                Files.copy(javaClass.getResourceAsStream("/analyzers/synonyms.txt"), newSynonymPath)
+            }
             settings = Settings.builder()
                 .put("index.analysis.filter.my_filter.synonyms_path", "synonyms_new.txt")
                 .build()
@@ -285,16 +301,11 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
             followerClient.resumeReplication(followerIndexName)
             var statusResp = followerClient.replicationStatus(followerIndexName)
             `validate status syncing response`(statusResp)
+            followerClient.stopReplication(followerIndexName)
         } finally {
-            if (Files.exists(synonymPath)) {
-                Files.delete(synonymPath)
-            }
-            if (Files.exists(followerSynonymPath)) {
-                Files.delete(followerSynonymPath)
-            }
-            if (Files.exists(newSynonymPath)) {
-                Files.delete(newSynonymPath)
-            }
+            leaderSynonymPaths.forEach { if (Files.exists(it)) Files.delete(it) }
+            followerSynonymPaths.forEach { if (Files.exists(it)) Files.delete(it) }
+            leaderNewSynonymPaths.forEach { if (Files.exists(it)) Files.delete(it) }
         }
     }
 }

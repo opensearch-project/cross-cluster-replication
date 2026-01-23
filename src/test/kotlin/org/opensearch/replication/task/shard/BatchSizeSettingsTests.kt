@@ -236,13 +236,11 @@ class BatchSizeSettingsTests : OpenSearchTestCase() {
 
         // Test thread safety of batch size operations
         val threads = mutableListOf<Thread>()
-        val results = mutableListOf<Int>()
         
         // Create multiple threads that reduce batch size
-        repeat(5) { i ->
+        repeat(5) {
             val thread = Thread {
                 batchSizeSettings.reduceBatchSize()
-                results.add(batchSizeSettings.getEffectiveBatchSize())
             }
             threads.add(thread)
         }
@@ -253,11 +251,9 @@ class BatchSizeSettingsTests : OpenSearchTestCase() {
         // Wait for all threads to complete
         threads.forEach { it.join() }
         
-        // Verify that batch size was reduced and all results are valid
+        // Verify that batch size was reduced 5 times: 50000 -> 1562
         assertTrue(batchSizeSettings.isDynamicallyReduced())
-        assertTrue(batchSizeSettings.getEffectiveBatchSize() < 50000)
-        assertTrue(batchSizeSettings.getEffectiveBatchSize() >= 16)
-        assertEquals(1562, results[4])
+        assertEquals(1562, batchSizeSettings.getEffectiveBatchSize())
     }
 
     @Test
