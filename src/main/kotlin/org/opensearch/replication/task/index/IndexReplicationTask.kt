@@ -583,7 +583,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                     request = null
                 } else {
                     log.info("All aliases are not equal on $followerIndexName. Will sync up them")
-                    request  = IndicesAliasesRequest()
+                    request = IndicesAliasesRequest()
                     var toAdd = leaderAliases - followerAliases
 
                     for (alias in toAdd) {
@@ -593,8 +593,14 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                             .alias(alias.alias)
                             .indexRouting(alias.indexRouting)
                             .searchRouting(alias.searchRouting)
-                            .writeIndex(false) // Always strip write index on follower to allow bidirectional replication
                             .isHidden(alias.isHidden)
+
+                        val writeIndex = alias.writeIndex()
+                        if (writeIndex == true) {
+                            aliasAction.writeIndex(false) // Strip write index if it's true on leader
+                        } else {
+                            aliasAction.writeIndex(writeIndex) // Preserve null or false
+                        }
 
                         if (alias.filteringRequired())  {
                             aliasAction = aliasAction.filter(alias.filter.string())
@@ -609,7 +615,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                         // Only remove if it doesn't exist on the leader at all (by name).
                         // If it exists on leader but differs (e.g. writeIndex), it was added/updated in the 'toAdd' loop above.
                         if (!leaderAliasNames.contains(alias.alias())) {
-                            log.info("Removing alias  ${alias.alias} from $followerIndexName")
+                            log.info("Removing alias ${alias.alias} from $followerIndexName")
                             request.addAliasAction(AliasActions.remove().index(followerIndexName)
                                 .alias(alias.alias))
                         }

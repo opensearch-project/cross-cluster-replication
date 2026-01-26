@@ -812,7 +812,6 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         setMetadataSyncDelay() // Ensure sync happens reasonably fast
         createConnectionBetweenClusters(FOLLOWER, LEADER)
 
-        // Create leader index with a write alias
         val createIndexResponse = leaderClient.indices().create(
             CreateIndexRequest(leaderIndexName)
                 .alias(Alias("write_alias").writeIndex(true)),
@@ -820,7 +819,6 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         )
         assertThat(createIndexResponse.isAcknowledged).isTrue()
 
-        // Start replication
         followerClient.startReplication(
             StartReplicationRequest("source", leaderIndexName, followerIndexName),
             waitForRestore = true
@@ -830,14 +828,12 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             assertThat(followerClient.indices().exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT)).isEqualTo(true)
         }
 
-        // Verify follower alias exists but has write_index=false initially
         var followerAliases = followerClient.indices().getAlias(GetAliasesRequest().indices(followerIndexName), RequestOptions.DEFAULT)
         var aliasMetadata = followerAliases.aliases[followerIndexName]?.find { it.alias == "write_alias" }
         assertThat(aliasMetadata).isNotNull
         assertThat(aliasMetadata?.writeIndex()).isFalse()
 
-        // Phase 2: Trigger metadata sync/update on leader to ensure it doesn't revert
-        // Add a new alias on leader to force a diff and sync
+        // trigger a metadata sync to ensure the alias state is persisted
         val indicesAliasesRequest = IndicesAliasesRequest()
         indicesAliasesRequest.addAliasAction(
             IndicesAliasesRequest.AliasActions.add().index(leaderIndexName).alias("new_alias")
@@ -847,12 +843,10 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         TimeUnit.SECONDS.sleep(SLEEP_TIME_BETWEEN_SYNC + 2) // Wait for sync
 
         assertBusy {
-            // Check new alias appeared
             val aliases = followerClient.indices().getAlias(GetAliasesRequest().indices(followerIndexName), RequestOptions.DEFAULT)
             assertThat(aliases.aliases[followerIndexName]?.find { it.alias == "new_alias" }).isNotNull
         }
 
-        // Re-verify "write_alias" still has write_index=false after sync
         followerAliases = followerClient.indices().getAlias(GetAliasesRequest().indices(followerIndexName), RequestOptions.DEFAULT)
         aliasMetadata = followerAliases.aliases[followerIndexName]?.find { it.alias == "write_alias" }
         assertThat(aliasMetadata).isNotNull
@@ -1415,11 +1409,37 @@ class StartReplicationIT: MultiClusterRestTestCase() {
     private fun assertEqualAliases() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
-        var getAliasesRequest = GetAliasesRequest().indices(followerIndexName)
-        var aliasRespone = followerClient.indices().getAlias(getAliasesRequest, RequestOptions.DEFAULT)
-        var followerAliases = aliasRespone.aliases.get(followerIndexName)
-        aliasRespone = leaderClient.indices().getAlias(GetAliasesRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
-        var leaderAliases = aliasRespone.aliases.get(leaderIndexName)
-        Assert.assertEquals(followerAliases, leaderAliases)
+        val getAliasesRequest = GetAliasesRequest().indices(followerIndexName)
+        var aliasResponse = followerClient.indices().getAlias(getAliasesRequest, RequestOptions.DEFAULT)
+        val followerAliases = aliasResponse.aliases.get(followerIndexName)
+        aliasResponse = leaderClient.indices().getAlias(GetAliasesRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
+        val leaderAliases = aliasResponse.aliases.get(leaderIndexName)
+
+        if (followerAliases == null || leaderAliases == null) {
+            Assert.fail("Aliases are null. Leader: $leaderAliases, Follower: $followerAliases")
+        }
+        if (followerAliases!!.size != leaderAliases!!.size) {
+            Assert.fail("Alias count mismatch. Leader: ${leaderAliases.size}, Follower: ${followerAliases.size}")
+        }
+
+        for (leader in leaderAliases) {
+            val follower = followerAliases.find { it.alias() == leader.alias() }
+            Assert.assertNotNull("Follower missing alias ${leader.alias()}", follower)
+
+            Assert.assertEquals("Filter mismatch for ${leader.alias()}", leader.filter(), follower!!.filter())
+            Assert.assertEquals("IndexRouting mismatch for ${leader.alias()}", leader.indexRouting(), follower.indexRouting())
+            Assert.assertEquals("SearchRouting mismatch for ${leader.alias()}", leader.searchRouting(), follower.searchRouting())
+            Assert.assertEquals("IsHidden mismatch for ${leader.alias()}", leader.isHidden(), follower.isHidden())
+
+            val leaderWrite = leader.writeIndex()
+            val followerWrite = follower.writeIndex()
+
+            if (leaderWrite == true) {
+                Assert.assertFalse("Follower alias ${follower.alias()} should have writeIndex=false when leader is true", followerWrite == true)
+            } else {
+                Assert.assertEquals("WriteIndex mismatch for ${leader.alias()} (Leader: $leaderWrite)", leaderWrite, followerWrite)
+            }
+        }
     }
 }
+
