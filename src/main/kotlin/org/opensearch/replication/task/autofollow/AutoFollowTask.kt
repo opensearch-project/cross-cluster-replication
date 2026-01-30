@@ -69,7 +69,7 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
     lateinit var stat: AutoFollowStat
 
     override suspend fun execute(scope: CoroutineScope, initialState: PersistentTaskState?) {
-        stat = AutoFollowStat(params.patternName, replicationMetadata.leaderContext.resource)
+        stat = AutoFollowStat(params.patternName, replicationMetadata.leaderContext.resource, params.leaderCluster)
         while (scope.isActive) {
             try {
                 addRetryScheduler()
@@ -254,6 +254,7 @@ class AutoFollowStat: Task.Status {
 
     val name :String
     val pattern :String
+    val leaderAlias :String
     var failCount: Long=0
     var failedIndices = ConcurrentSkipListSet<String>() // Failed indices for replication from this autofollow task
     var failCounterForRun :Long=0
@@ -262,9 +263,10 @@ class AutoFollowStat: Task.Status {
     var lastExecutionTime : Long=0
 
 
-    constructor(name: String, pattern: String) {
+    constructor(name: String, pattern: String, leaderAlias: String) {
         this.name = name
         this.pattern = pattern
+        this.leaderAlias = leaderAlias
     }
 
     constructor(inp: StreamInput) {
@@ -276,6 +278,7 @@ class AutoFollowStat: Task.Status {
         successCount = inp.readLong()
         failedLeaderCall = inp.readLong()
         lastExecutionTime = inp.readLong()
+        leaderAlias = if (inp.available() > 0) inp.readString() else ""
     }
 
     override fun writeTo(out: StreamOutput) {
@@ -286,6 +289,7 @@ class AutoFollowStat: Task.Status {
        out.writeLong(successCount)
        out.writeLong(failedLeaderCall)
        out.writeLong(lastExecutionTime)
+       out.writeString(leaderAlias)
     }
 
     override fun getWriteableName(): String {
@@ -296,6 +300,7 @@ class AutoFollowStat: Task.Status {
         builder.startObject()
         builder.field("name", name)
         builder.field("pattern", pattern)
+        builder.field("leader_alias", leaderAlias)
         builder.field("num_success_start_replication", successCount)
         builder.field("num_failed_start_replication", failCount)
         builder.field("num_failed_leader_calls", failedLeaderCall)

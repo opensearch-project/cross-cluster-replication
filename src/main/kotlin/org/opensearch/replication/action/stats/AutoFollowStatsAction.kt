@@ -60,7 +60,7 @@ class AutoFollowStatsResponse : Writeable , ToXContentObject {
 
 class AutoFollowStatsResponses : BaseTasksResponse, ToXContentObject {
     val statsResponses: List<AutoFollowStatsResponse>
-    var aggResponse = AutoFollowStat("", "")
+    var aggResponse = AutoFollowStat("", "", "")
 
     constructor(
             autoFollowStatsResponse: List<AutoFollowStatsResponse>,
