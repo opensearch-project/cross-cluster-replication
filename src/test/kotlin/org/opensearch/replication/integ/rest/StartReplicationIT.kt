@@ -102,6 +102,32 @@ class StartReplicationIT: MultiClusterRestTestCase() {
     // 3x of SLEEP_TIME_BETWEEN_POLL_MS
     val SLEEP_TIME_BETWEEN_SYNC = 15L
 
+    fun `test start replication with cluster_manager_timeout`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
+            waitForRestore = true, clusterManagerTimeout = "30s")
+        assertBusy {
+            assertThat(followerClient.indices().exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT)).isEqualTo(true)
+        }
+    }
+
+    fun `test start replication fails with both master_timeout and cluster_manager_timeout`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+        leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        val lowLevelRequest = Request("PUT", "/_plugins/_replication/${followerIndexName}/_start?cluster_manager_timeout=30s&master_timeout=30s")
+        lowLevelRequest.setJsonEntity("""{"leader_alias":"source","leader_index":"$leaderIndexName","use_roles":{"leader_cluster_role":"leader_role","follower_cluster_role":"follower_role"}}""")
+        assertThatThrownBy {
+            followerClient.lowLevelClient.performRequest(lowLevelRequest)
+        }.isInstanceOf(ResponseException::class.java)
+            .hasMessageContaining("Please only use one of the request parameters [master_timeout, cluster_manager_timeout]")
+    }
+
     fun `test start replication in following state and empty index`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
@@ -1397,6 +1423,32 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             nodeIPs.add(it["ip"] as String)
         }
         return nodeIPs
+    }
+
+    fun `test update replication with cluster_manager_timeout`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
+        followerClient.updateReplication(followerIndexName, Settings.builder().put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0).build(),
+            clusterManagerTimeout = "30s")
+    }
+
+    fun `test update replication fails with both master_timeout and cluster_manager_timeout`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
+        val lowLevelRequest = Request("PUT", "/_plugins/_replication/${followerIndexName}/_update?cluster_manager_timeout=30s&master_timeout=30s")
+        lowLevelRequest.setJsonEntity("{\"settings\":{}}")
+        assertThatThrownBy {
+            followerClient.lowLevelClient.performRequest(lowLevelRequest)
+        }.isInstanceOf(ResponseException::class.java)
+            .hasMessageContaining("Please only use one of the request parameters [master_timeout, cluster_manager_timeout]")
     }
 
     private fun assertValidationFailure(client: RestHighLevelClient, leader: String, follower: String, errrorMsg: String) {

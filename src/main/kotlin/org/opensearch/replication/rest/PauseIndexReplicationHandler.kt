@@ -15,6 +15,7 @@ import org.opensearch.replication.action.pause.PauseIndexReplicationAction
 import org.opensearch.replication.action.pause.PauseIndexReplicationRequest
 import org.opensearch.replication.metadata.ReplicationMetadataManager
 import org.apache.logging.log4j.LogManager
+import org.opensearch.common.logging.DeprecationLogger
 import org.opensearch.transport.client.node.NodeClient
 import org.opensearch.rest.BaseRestHandler
 import org.opensearch.rest.RestChannel
@@ -27,6 +28,7 @@ class PauseIndexReplicationHandler : BaseRestHandler() {
 
     companion object {
         private val log = LogManager.getLogger(PauseIndexReplicationHandler::class.java)
+        private val deprecationLogger = DeprecationLogger.getLogger(PauseIndexReplicationHandler::class.java)
     }
 
     override fun routes(): List<RestHandler.Route> {
@@ -47,6 +49,10 @@ class PauseIndexReplicationHandler : BaseRestHandler() {
         } else {
             PauseIndexReplicationRequest(followIndex, ReplicationMetadataManager.CUSTOMER_INITIATED_ACTION)
         }
+        pauseReplicationRequest.clusterManagerNodeTimeout(
+            request.paramAsTime("cluster_manager_timeout", pauseReplicationRequest.clusterManagerNodeTimeout())
+        )
+        parseDeprecatedMasterTimeoutParameter(pauseReplicationRequest, request, deprecationLogger, getName())
         return RestChannelConsumer { channel: RestChannel? ->
             client.admin().cluster()
                     .execute(PauseIndexReplicationAction.INSTANCE, pauseReplicationRequest, RestToXContentListener(channel))

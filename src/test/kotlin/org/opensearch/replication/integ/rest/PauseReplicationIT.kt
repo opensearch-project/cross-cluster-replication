@@ -50,6 +50,34 @@ import java.util.concurrent.TimeUnit
 class PauseReplicationIT: MultiClusterRestTestCase() {
     private val leaderIndexName = "leader_index"
 
+    fun `test pause replication with cluster_manager_timeout`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        val followerIndexName = "pause_index_master_timeout"
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+        leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
+        followerClient.pauseReplication(followerIndexName, clusterManagerTimeout = "30s")
+        val statusResp = followerClient.replicationStatus(followerIndexName)
+        `validate paused status response`(statusResp)
+        followerClient.resumeReplication(followerIndexName)
+    }
+
+    fun `test pause replication fails with both master_timeout and cluster_manager_timeout`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        val followerIndexName = "pause_index_both_timeout"
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+        leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
+        val lowLevelRequest = Request("POST", "/_plugins/_replication/${followerIndexName}/_pause?cluster_manager_timeout=30s&master_timeout=30s")
+        lowLevelRequest.setJsonEntity("{}")
+        assertThatThrownBy {
+            followerClient.lowLevelClient.performRequest(lowLevelRequest)
+        }.isInstanceOf(ResponseException::class.java)
+            .hasMessageContaining("Please only use one of the request parameters [master_timeout, cluster_manager_timeout]")
+    }
+
     fun `test pause replication in following state and empty index`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
