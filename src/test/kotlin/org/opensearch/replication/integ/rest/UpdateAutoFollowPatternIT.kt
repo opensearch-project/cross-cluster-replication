@@ -553,4 +553,25 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
         assertEquals(HttpStatus.SC_OK.toLong(), persistentConnectionResponse.statusLine.statusCode.toLong())
     }
 
+    fun `test update auto follow pattern with cluster_manager_timeout`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
+        try {
+            followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern, clusterManagerTimeout = "30s")
+        } finally {
+            followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
+        }
+    }
+
+    fun `test update auto follow pattern fails with both master_timeout and cluster_manager_timeout`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
+        val lowLevelRequest = Request("POST", "/_plugins/_replication/_autofollow?cluster_manager_timeout=30s&master_timeout=30s")
+        lowLevelRequest.setJsonEntity("""{"leader_alias":"$connectionAlias","name":"$indexPatternName","pattern":"$indexPattern","use_roles":{"leader_cluster_role":"leader_role","follower_cluster_role":"follower_role"}}""")
+        Assertions.assertThatThrownBy {
+            followerClient.lowLevelClient.performRequest(lowLevelRequest)
+        }.isInstanceOf(ResponseException::class.java)
+            .hasMessageContaining("Please only use one of the request parameters [master_timeout, cluster_manager_timeout]")
+    }
+
 }

@@ -58,6 +58,33 @@ class StopReplicationIT: MultiClusterRestTestCase() {
     private val leaderIndexName = "leader_index"
     private val followerIndexName = "follower_index"
 
+    fun `test stop replication with cluster_manager_timeout`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
+        followerClient.stopReplication(followerIndexName, clusterManagerTimeout = "30s")
+        assertBusy {
+            assertThat(followerClient.indices().exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT)).isEqualTo(true)
+        }
+    }
+
+    fun `test stop replication fails with both master_timeout and cluster_manager_timeout`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+        leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
+        val lowLevelRequest = Request("POST", "/_plugins/_replication/${followerIndexName}/_stop?cluster_manager_timeout=30s&master_timeout=30s")
+        lowLevelRequest.setJsonEntity("{}")
+        assertThatThrownBy {
+            followerClient.lowLevelClient.performRequest(lowLevelRequest)
+        }.isInstanceOf(ResponseException::class.java)
+            .hasMessageContaining("Please only use one of the request parameters [master_timeout, cluster_manager_timeout]")
+    }
+
     fun `test stop replication in following state and empty index`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)

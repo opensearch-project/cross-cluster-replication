@@ -43,6 +43,7 @@ import org.junit.Assert
 import org.junit.Assume
 import java.nio.file.Files
 import java.util.concurrent.TimeUnit
+import org.opensearch.client.Request
 import org.opensearch.replication.ANALYZERS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS
 
 @MultiClusterAnnotations.ClusterConfigurations(
@@ -307,5 +308,32 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
             followerSynonymPaths.forEach { if (Files.exists(it)) Files.delete(it) }
             leaderNewSynonymPaths.forEach { if (Files.exists(it)) Files.delete(it) }
         }
+    }
+
+    fun `test resume replication with cluster_manager_timeout`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
+        followerClient.pauseReplication(followerIndexName)
+        followerClient.resumeReplication(followerIndexName, clusterManagerTimeout = "30s")
+    }
+
+    fun `test resume replication fails with both master_timeout and cluster_manager_timeout`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
+        followerClient.pauseReplication(followerIndexName)
+        val lowLevelRequest = Request("POST", "/_plugins/_replication/${followerIndexName}/_resume?cluster_manager_timeout=30s&master_timeout=30s")
+        lowLevelRequest.setJsonEntity("{}")
+        assertThatThrownBy {
+            followerClient.lowLevelClient.performRequest(lowLevelRequest)
+        }.isInstanceOf(ResponseException::class.java)
+            .hasMessageContaining("Please only use one of the request parameters [master_timeout, cluster_manager_timeout]")
     }
 }

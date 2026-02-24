@@ -14,6 +14,7 @@ package org.opensearch.replication.rest
 import org.opensearch.replication.action.autofollow.UpdateAutoFollowPatternAction
 import org.opensearch.replication.action.autofollow.UpdateAutoFollowPatternRequest
 import org.opensearch.OpenSearchStatusException
+import org.opensearch.common.logging.DeprecationLogger
 import org.opensearch.transport.client.node.NodeClient
 import org.opensearch.rest.BaseRestHandler
 import org.opensearch.rest.BaseRestHandler.RestChannelConsumer
@@ -26,6 +27,7 @@ class UpdateAutoFollowPatternsHandler : BaseRestHandler() {
 
     companion object {
         const val PATH = "/_plugins/_replication/_autofollow"
+        private val deprecationLogger = DeprecationLogger.getLogger(UpdateAutoFollowPatternsHandler::class.java)
     }
 
     override fun routes(): List<RestHandler.Route> {
@@ -45,6 +47,10 @@ class UpdateAutoFollowPatternsHandler : BaseRestHandler() {
         }
 
         val updateRequest = UpdateAutoFollowPatternRequest.fromXContent(request.contentParser(), action)
+        updateRequest.clusterManagerNodeTimeout(
+            request.paramAsTime("cluster_manager_timeout", updateRequest.clusterManagerNodeTimeout())
+        )
+        parseDeprecatedMasterTimeoutParameter(updateRequest, request, deprecationLogger, getName())
         return RestChannelConsumer { channel ->
             client.admin().cluster()
                 .execute(UpdateAutoFollowPatternAction.INSTANCE, updateRequest, RestToXContentListener(channel))
