@@ -352,7 +352,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         return try {
             val clusterState = clusterService.state()
             val indexMetadata = clusterState.metadata.index(indexName)
-            
+
             if (indexMetadata == null) {
                 log.warn("Index metadata not found for $indexName, defaulting to open operation for safety")
                 true // Default to performing open operation for safety
@@ -637,11 +637,16 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 mappingResponse = client.suspending(client.admin().indices()::getMappings, injectSecurityContext = true)(gmr)
                 @Suppress("UNCHECKED_CAST")
                 val followerProperties = mappingResponse?.mappings()?.get(this.followerIndexName)?.sourceAsMap()?.toMap()?.get("properties") as? Map<String,Any>?
-                for((key,value) in followerProperties?: emptyMap()) {
-                    if (leaderProperties?.getValue(key).toString() != (value).toString()) {
-                        log.debug("Updating Multi-field Mapping at Follower")
-                        updateFollowerMapping(this.followerIndexName, leaderMappingSource)
-                        break
+                if (leaderProperties?.size != followerProperties?.size) {
+                    log.debug("Updating Multi-field Mapping at Follower - Mapping Size Difference Detected")
+                    updateFollowerMapping(this.followerIndexName, leaderMappingSource)
+                } else {
+                    for((key,value) in followerProperties?: emptyMap()) {
+                        if (leaderProperties?.getValue(key).toString() != (value).toString()) {
+                            log.debug("Updating Multi-field Mapping at Follower")
+                            updateFollowerMapping(this.followerIndexName, leaderMappingSource)
+                            break
+                        }
                     }
                 }
             } catch (e: Exception) {
