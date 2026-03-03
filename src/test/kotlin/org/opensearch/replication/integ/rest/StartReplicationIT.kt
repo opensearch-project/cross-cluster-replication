@@ -1276,7 +1276,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         )
     }
 
-    fun `test that follower index mapping does not update when only new fields are added but not respective docs in leader index`() {
+    fun `test that follower index mapping updates when only new fields are added but not respective docs in leader index`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
         createConnectionBetweenClusters(FOLLOWER, LEADER)
@@ -1306,7 +1306,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         val leaderMappings = leaderClient.indices().getMapping(GetMappingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
             .mappings()[leaderIndexName]
         TimeUnit.MINUTES.sleep(2)
-        Assert.assertNotEquals(
+        Assert.assertEquals(
             leaderMappings,
             followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
                 .mappings()[followerIndexName]
