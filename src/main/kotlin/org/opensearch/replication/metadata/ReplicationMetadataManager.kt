@@ -129,6 +129,18 @@ open class ReplicationMetadataManager constructor(private val clusterService: Cl
         updateReplicationState(followerIndex, ReplicationOverallState.STOPPED)
     }
 
+    /**
+     * Removes only the ReplicationStateMetadata entry from cluster state without deleting
+     * the metadata from the store. This triggers task cancellation while preserving
+     * metadata for cleanup retry.
+     * 
+     * Use this when cleanup operations fail but we still want tasks to cancel themselves
+     * for consistency. The metadata remains available for retry on subsequent STOP calls.
+     */
+    suspend fun removeReplicationStateOnly(followerIndex: String) {
+        updateReplicationState(followerIndex, ReplicationOverallState.STOPPED)
+    }
+
     suspend fun deleteAutofollowMetadata(patternName: String,
                                          connectionName: String) {
         val delReq = DeleteReplicationMetadataRequest(ReplicationStoreMetadataType.AUTO_FOLLOW.name, connectionName, patternName)

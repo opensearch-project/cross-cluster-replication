@@ -319,10 +319,20 @@ class StopReplicationIT: MultiClusterRestTestCase() {
         assertBusy {
             assertThat(leaderClient.indices().exists(GetIndexRequest("restored-$followerIndexName"), RequestOptions.DEFAULT)).isEqualTo(true)
         }
-        // Invoke stop on the new leader cluster index
-        assertThatThrownBy { leaderClient.stopReplication("restored-$followerIndexName") }
-                .isInstanceOf(ResponseException::class.java)
-                .hasMessageContaining("Metadata for restored-$followerIndexName doesn't exist")
+        // Invoke stop on the restored index - this should succeed and clean up stale replication artifacts
+        // The restored index has replication blocks/settings from the snapshot but no metadata
+        // Our idempotent STOP implementation cleans up these stale artifacts instead of throwing an exception
+        leaderClient.stopReplication("restored-$followerIndexName")
+        
+        // Verify stale artifacts were cleaned up by checking that the index is no longer blocked
+        assertBusy({
+            val clusterBlocksResponse = leaderClient.lowLevelClient.performRequest(Request("GET", "/_cluster/state/blocks"))
+            val clusterResponseString = EntityUtils.toString(clusterBlocksResponse.entity)
+            assertThat(clusterResponseString.contains("restored-$followerIndexName"))
+                    .withFailMessage("Replication block should have been removed after stop")
+                    .isFalse()
+        }, 10, TimeUnit.SECONDS)
+        
         // Start replication on the new leader index
         followerClient.startReplication(
                 StartReplicationRequest("source", "restored-$followerIndexName", "restored-$followerIndexName"),

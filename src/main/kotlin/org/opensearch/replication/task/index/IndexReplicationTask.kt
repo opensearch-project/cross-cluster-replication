@@ -749,6 +749,19 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         try {
             storedContext = client.threadPool().threadContext.stashContext()
             log.info("Going to initiate stop of index $followerIndexName due to deletion of corresponding leader index ${leaderIndex.name}")
+            
+            // CRITICAL: For auto-delete, we need to:
+            // 1. Remove index blocks first (so we can delete the index)
+            // 2. Delete the index
+            // 3. Call STOP API (which will clean up tasks and metadata)
+            if (clusterService.clusterSettings.get(ReplicationPlugin.REPLICATION_REPLICATE_INDEX_DELETION)) {
+                // Remove replication blocks so we can delete the index
+                val removeBlockRequest = UpdateIndexBlockRequest(followerIndexName, IndexBlockUpdateType.REMOVE_BLOCK)
+                client.suspendExecute(replicationMetadata, UpdateIndexBlockAction.INSTANCE, removeBlockRequest, defaultContext = true)
+                
+                deleteIndex()
+            }
+            
             val stopReplicationResponse = client.execute(INTERNAL_STOP_REPLICATION_ACTION_TYPE, StopIndexReplicationRequest(followerIndexName)).actionGet()
             if (!stopReplicationResponse.isAcknowledged) {
                 throw ReplicationException(
@@ -810,11 +823,12 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         // Currently, we don't have view on the cancellation reason. Before triggering
         // any further actions on the index from this task, verify that, this is the actual task tracking the index.
         // - stale task during cancellation shouldn't trigger further actions.
-        if(isTrackingTaskForIndex()) {
-            if (currentTaskState.state == ReplicationState.RESTORING)  {
-                log.info("Replication stopped before restore could finish, so removing partial restore..")
-                cancelRestore()
-            }
+        withContext(NonCancellable) {
+            if(isTrackingTaskForIndex()) {
+                if (currentTaskState.state == ReplicationState.RESTORING)  {
+                    log.info("Replication stopped before restore could finish, so removing partial restore..")
+                    cancelRestore()
+                }
 
             // if cancelled and not in paused state.
             val replicationStateParams = getReplicationStateParamsForIndex(clusterService, followerIndexName)
@@ -825,17 +839,26 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                         PauseIndexReplicationRequest(followerIndexName, TASK_CANCELLATION_REASON))
             }
 
-            // Deleting the follower index if replication is stopped because of leader index deletion
+            // SAFETY NET: Delete follower index if leader was deleted
+            // This is a fallback in case the task was cancelled before stopReplication() could complete
+            // The primary deletion happens in stopReplication() before calling STOP API
+            // Check isCancelled OR COMPLETED state since task might be cancelled during state transition
             if (clusterService.clusterSettings.get(ReplicationPlugin.REPLICATION_REPLICATE_INDEX_DELETION)
-                && currentTaskState.state == ReplicationState.COMPLETED && isLeaderIndexDeleted)  {
-                deleteIndex()
+                && (currentTaskState.state == ReplicationState.COMPLETED || isCancelled) 
+                && isLeaderIndexDeleted)  {
+                try {
+                    deleteIndex()
+                } catch (e: Exception) {
+                    log.warn("Auto-delete safety net failed, index may have already been deleted", e)
+                }
+                }
             }
         }
 
         /* This is to minimise overhead of calling an additional listener as
          * it continues to be called even after the task is completed.
          */
-        clusterService.removeListener(this)
+        clusterService.removeListener(this@IndexReplicationTask)
     }
 
     private suspend fun addIndexBlockForReplication() {
