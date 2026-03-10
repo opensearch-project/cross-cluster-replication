@@ -34,6 +34,11 @@ import org.opensearch.gradle.testclusters.OpenSearchNode
 import org.opensearch.gradle.test.RestIntegTestTask
 
 buildscript {
+    configurations.all {
+        resolutionStrategy {
+            force 'org.codehaus.plexus:plexus-utils:3.5.1'
+        }
+    }
     ext {
         isSnapshot = "true" == System.getProperty("build.snapshot", "true")
         opensearch_version = System.getProperty("opensearch.version", "2.19.5-SNAPSHOT")
@@ -129,7 +134,8 @@ configurations.all {
         force 'org.apache.httpcomponents.client5:httpclient5-osgi:5.0.3'
         force 'com.fasterxml.jackson.core:jackson-databind:2.13.4.2'
         force 'org.yaml:snakeyaml:2.0'
-        force 'org.codehaus.plexus:plexus-utils:3.0.24'
+        force 'org.codehaus.plexus:plexus-utils:3.5.1'
+        force 'org.apache.logging.log4j:log4j-core:2.25.3'
     }
 }
 
