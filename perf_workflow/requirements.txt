@@ -4,7 +4,7 @@ yamlfix
 cerberus
 pipenv
 filelock>=3.20.3
-requests~=2.32.4
+requests>=2.33.0
 retry2
 ndg-httpsclient
 psutil

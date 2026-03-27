@@ -157,7 +157,7 @@ dependencies {
     implementation "org.apache.httpcomponents.core5:httpcore5-h2:${versions.httpcore5}"
 
     testImplementation "org.opensearch.test:framework:${opensearch_version}"
-    testImplementation "org.assertj:assertj-core:3.17.2"
+    testImplementation "org.assertj:assertj-core:3.27.7"
     testImplementation "org.opensearch.client:opensearch-rest-high-level-client:${opensearch_version}"
     testImplementation "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.6.0" // Moving away from kotlin_version
     testImplementation "org.jetbrains.kotlin:kotlin-test:${kotlin_version}"
