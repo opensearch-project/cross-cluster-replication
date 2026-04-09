@@ -45,6 +45,9 @@ class UpdateAutoFollowPatternsHandler : BaseRestHandler() {
         }
 
         val updateRequest = UpdateAutoFollowPatternRequest.fromXContent(request.contentParser(), action)
+        updateRequest.clusterManagerNodeTimeout(
+            request.paramAsTime("cluster_manager_timeout", updateRequest.clusterManagerNodeTimeout())
+        )
         return RestChannelConsumer { channel ->
             client.admin().cluster()
                 .execute(UpdateAutoFollowPatternAction.INSTANCE, updateRequest, RestToXContentListener(channel))

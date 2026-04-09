@@ -23,6 +23,7 @@ import java.io.IOException
 
 class StopIndexReplicationHandler : BaseRestHandler() {
 
+
     override fun routes(): List<RestHandler.Route> {
         return listOf(RestHandler.Route(RestRequest.Method.POST, "/_plugins/_replication/{index}/_stop"))
     }
@@ -36,6 +37,9 @@ class StopIndexReplicationHandler : BaseRestHandler() {
         request.contentOrSourceParamParser().use { parser ->
             val followIndex = request.param("index")
             val stopReplicationRequest = StopIndexReplicationRequest.fromXContent(parser, followIndex)
+            stopReplicationRequest.clusterManagerNodeTimeout(
+                request.paramAsTime("cluster_manager_timeout", stopReplicationRequest.clusterManagerNodeTimeout())
+            )
             return RestChannelConsumer { channel: RestChannel? ->
                 client.admin().cluster()
                         .execute(STOP_REPLICATION_ACTION_TYPE, stopReplicationRequest, RestToXContentListener(channel))

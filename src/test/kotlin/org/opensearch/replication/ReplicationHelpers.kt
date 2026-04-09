@@ -65,9 +65,11 @@ fun RestHighLevelClient.startReplication(request: StartReplicationRequest,
                                          waitFor: TimeValue = TimeValue.timeValueSeconds(10),
                                          waitForShardsInit: Boolean = true,
                                          waitForRestore: Boolean = false,
-                                         requestOptions: RequestOptions = RequestOptions.DEFAULT) {
-    val lowLevelRequest = Request("PUT", REST_REPLICATION_START.replace("{index}", request.toIndex, true)
-            + "?wait_for_restore=${waitForRestore}")
+                                         requestOptions: RequestOptions = RequestOptions.DEFAULT,
+                                         clusterManagerTimeout: String? = null) {
+    var url = REST_REPLICATION_START.replace("{index}", request.toIndex, true) + "?wait_for_restore=${waitForRestore}"
+    if (clusterManagerTimeout != null) url += "&cluster_manager_timeout=$clusterManagerTimeout"
+    val lowLevelRequest = Request("PUT", url)
     if (request.settings == Settings.EMPTY) {
         lowLevelRequest.setJsonEntity("""{
                                        "leader_alias" : "${request.leaderAlias}",
@@ -207,8 +209,11 @@ fun `validate paused status response due to leader index deleted`(statusResp: Ma
     Assert.assertTrue(statusResp.getValue("reason").toString().contains(STATUS_REASON_INDEX_NOT_FOUND))
 }
 
-fun RestHighLevelClient.stopReplication(index: String, shouldWait: Boolean = true, requestOptions: RequestOptions = RequestOptions.DEFAULT) {
-    val lowLevelStopRequest = Request("POST", REST_REPLICATION_STOP.replace("{index}", index,true))
+fun RestHighLevelClient.stopReplication(index: String, shouldWait: Boolean = true, requestOptions: RequestOptions = RequestOptions.DEFAULT,
+                                        clusterManagerTimeout: String? = null) {
+    var url = REST_REPLICATION_STOP.replace("{index}", index, true)
+    if (clusterManagerTimeout != null) url += "?cluster_manager_timeout=$clusterManagerTimeout"
+    val lowLevelStopRequest = Request("POST", url)
     lowLevelStopRequest.setJsonEntity("{}")
     lowLevelStopRequest.setOptions(requestOptions)
     val lowLevelStopResponse = lowLevelClient.performRequest(lowLevelStopRequest)
@@ -218,8 +223,11 @@ fun RestHighLevelClient.stopReplication(index: String, shouldWait: Boolean = tru
 }
 
 
-fun RestHighLevelClient.pauseReplication(index: String, reason:String? = null, shouldWait: Boolean = true, requestOptions: RequestOptions = RequestOptions.DEFAULT) {
-    val lowLevelPauseRequest = Request("POST", REST_REPLICATION_PAUSE.replace("{index}", index,true))
+fun RestHighLevelClient.pauseReplication(index: String, reason:String? = null, shouldWait: Boolean = true, requestOptions: RequestOptions = RequestOptions.DEFAULT,
+                                         clusterManagerTimeout: String? = null) {
+    var url = REST_REPLICATION_PAUSE.replace("{index}", index, true)
+    if (clusterManagerTimeout != null) url += "?cluster_manager_timeout=$clusterManagerTimeout"
+    val lowLevelPauseRequest = Request("POST", url)
     if (null == reason) {
         lowLevelPauseRequest.setJsonEntity("{}")
     } else {
@@ -232,8 +240,11 @@ fun RestHighLevelClient.pauseReplication(index: String, reason:String? = null, s
     if (shouldWait) waitForReplicationStop(index)
 }
 
-fun RestHighLevelClient.resumeReplication(index: String, requestOptions: RequestOptions = RequestOptions.DEFAULT) {
-    val lowLevelResumeRequest = Request("POST", REST_REPLICATION_RESUME.replace("{index}", index, true))
+fun RestHighLevelClient.resumeReplication(index: String, requestOptions: RequestOptions = RequestOptions.DEFAULT,
+                                          clusterManagerTimeout: String? = null) {
+    var url = REST_REPLICATION_RESUME.replace("{index}", index, true)
+    if (clusterManagerTimeout != null) url += "?cluster_manager_timeout=$clusterManagerTimeout"
+    val lowLevelResumeRequest = Request("POST", url)
     lowLevelResumeRequest.setJsonEntity("{}")
     lowLevelResumeRequest.setOptions(requestOptions)
     val lowLevelResumeResponse = lowLevelClient.performRequest(lowLevelResumeRequest)
@@ -242,8 +253,11 @@ fun RestHighLevelClient.resumeReplication(index: String, requestOptions: Request
     waitForReplicationStart(index, TimeValue.timeValueSeconds(10))
 }
 
-fun RestHighLevelClient.updateReplication(index: String, settings: Settings, requestOptions: RequestOptions = RequestOptions.DEFAULT) {
-    val lowLevelRequest = Request("PUT", REST_REPLICATION_UPDATE.replace("{index}", index,true))
+fun RestHighLevelClient.updateReplication(index: String, settings: Settings, requestOptions: RequestOptions = RequestOptions.DEFAULT,
+                                          clusterManagerTimeout: String? = null) {
+    var url = REST_REPLICATION_UPDATE.replace("{index}", index, true)
+    if (clusterManagerTimeout != null) url += "?cluster_manager_timeout=$clusterManagerTimeout"
+    val lowLevelRequest = Request("PUT", url)
     lowLevelRequest.setJsonEntity(settings.toString())
     lowLevelRequest.setOptions(requestOptions)
     val lowLevelResponse = lowLevelClient.performRequest(lowLevelRequest)
@@ -327,8 +341,11 @@ fun RestHighLevelClient.updateAutoFollowPattern(connection: String, patternName:
                                                 settings: Settings = Settings.EMPTY,
                                                 useRoles: UseRoles = UseRoles(),
                                                 requestOptions: RequestOptions = RequestOptions.DEFAULT,
-                                                ignoreIfExists: Boolean = false) {
-    val lowLevelRequest = Request("POST", REST_AUTO_FOLLOW_PATTERN)
+                                                ignoreIfExists: Boolean = false,
+                                                clusterManagerTimeout: String? = null) {
+    var url = REST_AUTO_FOLLOW_PATTERN
+    if (clusterManagerTimeout != null) url += "?cluster_manager_timeout=$clusterManagerTimeout"
+    val lowLevelRequest = Request("POST", url)
     if (settings == Settings.EMPTY) {
         lowLevelRequest.setJsonEntity("""{
                                        "leader_alias" : "${connection}",

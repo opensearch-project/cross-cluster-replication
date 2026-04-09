@@ -47,6 +47,9 @@ class PauseIndexReplicationHandler : BaseRestHandler() {
         } else {
             PauseIndexReplicationRequest(followIndex, ReplicationMetadataManager.CUSTOMER_INITIATED_ACTION)
         }
+        pauseReplicationRequest.clusterManagerNodeTimeout(
+            request.paramAsTime("cluster_manager_timeout", pauseReplicationRequest.clusterManagerNodeTimeout())
+        )
         return RestChannelConsumer { channel: RestChannel? ->
             client.admin().cluster()
                     .execute(PauseIndexReplicationAction.INSTANCE, pauseReplicationRequest, RestToXContentListener(channel))

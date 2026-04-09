@@ -71,6 +71,9 @@ import org.junit.Assert
 import org.junit.Assume
 import org.opensearch.core.xcontent.DeprecationHandler
 import org.opensearch.core.xcontent.NamedXContentRegistry
+import org.opensearch.core.common.bytes.BytesArray
+import org.opensearch.rest.RestRequest
+import org.opensearch.test.rest.FakeRestRequest
 import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING
 import org.opensearch.replication.followerStats
 import org.opensearch.replication.leaderStats
@@ -82,6 +85,8 @@ import org.opensearch.bootstrap.BootstrapInfo
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.index.mapper.Mapping
 import org.opensearch.indices.replication.common.ReplicationType
+import org.opensearch.replication.action.index.ReplicateIndexRequest
+import org.opensearch.replication.action.update.UpdateIndexReplicationRequest
 import org.opensearch.replication.util.ValidationUtil
 
 
@@ -101,6 +106,24 @@ class StartReplicationIT: MultiClusterRestTestCase() {
     private val longIndexName = "index_".repeat(43)
     // 3x of SLEEP_TIME_BETWEEN_POLL_MS
     val SLEEP_TIME_BETWEEN_SYNC = 15L
+
+    fun `test start replication with cluster_manager_timeout`() {
+        // Verify cluster_manager_timeout param is parsed from HTTP request and set on the action request
+        val restRequest = FakeRestRequest.Builder(NamedXContentRegistry.EMPTY)
+            .withMethod(RestRequest.Method.PUT)
+            .withPath("/_plugins/_replication/follower-index/_start")
+            .withParams(mapOf("index" to followerIndexName, "cluster_manager_timeout" to "60s"))
+            .withContent(
+                BytesArray("""{"leader_alias":"source","leader_index":"$leaderIndexName"}"""),
+                XContentType.JSON
+            )
+            .build()
+        val request = ReplicateIndexRequest.fromXContent(restRequest.contentOrSourceParamParser(), restRequest.param("index"))
+        request.clusterManagerNodeTimeout(
+            restRequest.paramAsTime("cluster_manager_timeout", request.clusterManagerNodeTimeout())
+        )
+        assertEquals(TimeValue.timeValueSeconds(60), request.clusterManagerNodeTimeout())
+    }
 
     fun `test start replication in following state and empty index`() {
         val followerClient = getClientForCluster(FOLLOWER)
@@ -1397,6 +1420,21 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             nodeIPs.add(it["ip"] as String)
         }
         return nodeIPs
+    }
+
+    fun `test update replication with cluster_manager_timeout`() {
+        // Verify cluster_manager_timeout param is parsed from HTTP request and set on the request
+        val restRequest = FakeRestRequest.Builder(NamedXContentRegistry.EMPTY)
+            .withMethod(RestRequest.Method.PUT)
+            .withPath("/_plugins/_replication/follower-index/_update")
+            .withParams(mapOf("index" to followerIndexName, "cluster_manager_timeout" to "60s"))
+            .withContent(BytesArray("""{"settings":{}}"""), XContentType.JSON)
+            .build()
+        val request = UpdateIndexReplicationRequest(restRequest.param("index"), Settings.EMPTY)
+        request.clusterManagerNodeTimeout(
+            restRequest.paramAsTime("cluster_manager_timeout", request.clusterManagerNodeTimeout())
+        )
+        assertEquals(TimeValue.timeValueSeconds(60), request.clusterManagerNodeTimeout())
     }
 
     private fun assertValidationFailure(client: RestHighLevelClient, leader: String, follower: String, errrorMsg: String) {
