@@ -35,7 +35,7 @@ import org.opensearch.gradle.test.RestIntegTestTask
 buildscript {
     ext {
         isSnapshot = "true" == System.getProperty("build.snapshot", "true")
-        opensearch_version = System.getProperty("opensearch.version", "3.5.0-SNAPSHOT")
+        opensearch_version = System.getProperty("opensearch.version", "3.6.0-SNAPSHOT")
         buildVersionQualifier = System.getProperty("build.version_qualifier", "")
         // e.g. 2.0.0-rc1-SNAPSHOT -> 2.0.0.0-rc1-SNAPSHOT
         version_tokens = opensearch_version.tokenize('-')
@@ -157,7 +157,7 @@ dependencies {
     implementation "org.apache.httpcomponents.core5:httpcore5-h2:${versions.httpcore5}"
 
     testImplementation "org.opensearch.test:framework:${opensearch_version}"
-    testImplementation "org.assertj:assertj-core:3.17.2"
+    testImplementation "org.assertj:assertj-core:3.27.7"
     testImplementation "org.opensearch.client:opensearch-rest-high-level-client:${opensearch_version}"
     testImplementation "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.6.0" // Moving away from kotlin_version
     testImplementation "org.jetbrains.kotlin:kotlin-test:${kotlin_version}"
@@ -384,7 +384,7 @@ testClusters {
         if(securityEnabled) {
             plugin(provider(securityPluginFile))
         }
-        testDistribution = "INTEG_TEST"
+        testDistribution = "ARCHIVE"
         if(knnEnabled) {
             plugin(provider(knnPluginFile))
             testDistribution = "ARCHIVE"
@@ -399,7 +399,7 @@ testClusters {
         if(_numNodes == 1) jvmArgs "${-> getDebugJvmArgs(debugPort++)}"
     }
     followCluster {
-        testDistribution = "INTEG_TEST"
+        testDistribution = "ARCHIVE"
         plugin(project.tasks.bundlePlugin.archiveFile)
         if(securityEnabled) {
             plugin(provider(securityPluginFile))
