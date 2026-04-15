@@ -126,6 +126,7 @@ class TransportReplicateIndexClusterManagerNodeAction @Inject constructor(transp
                     listener.onResponse(ReplicateIndexResponse(false))
                 }
 
+                log.info("Persistent task created for replication: follower=${replicateIndexReq.followerIndex}, leader=${replicateIndexReq.leaderAlias}:${replicateIndexReq.leaderIndex}, taskId=${task.id}")
                 log.debug("Waiting for persistent task to move to following state")
                 // Now wait for the replication to start and the follower index to get created before returning
                 persistentTasksService.waitForTaskCondition(task.id, replicateIndexReq.timeout()) { t ->

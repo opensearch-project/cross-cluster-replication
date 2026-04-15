@@ -410,6 +410,8 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 .collect(Collectors.toList())
 
         if (runningShardTasksForIndex.size != followerShardIds.size) {
+            val missingShardsIds = followerShardIds - runningShardTasksForIndex.map { it.followerShardId }.toSet()
+            log.info("Shard task count mismatch for follower=$followerIndexName: expected=${followerShardIds.size}, running=${runningShardTasksForIndex.size}, missingShards=$missingShardsIds")
             return InitFollowState
         }
 
@@ -874,6 +876,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
             it.value.shardId
         }?.associate { shardId ->
             val task = runningShardTasks.getOrElse(shardId) {
+                log.info("Starting missing shard task for follower=$followerIndexName, shardId=$shardId, leaderShard=${ShardId(leaderIndex, shardId.id)}")
                 startReplicationTask(ShardReplicationParams(leaderAlias, ShardId(leaderIndex, shardId.id), shardId))
             }
             return@associate shardId to task
@@ -949,16 +952,20 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         cso.waitForNextChange("remote restore start") { inProgressRestore(it) != null }
         return RestoreState
     }
-
+ 
     private suspend fun waitForRestore(): IndexReplicationState {
         var restore = inProgressRestore(clusterService.state())
+        var timeoutCount = 0
+        val restoreStartTime = System.currentTimeMillis()
 
         // Waiting for snapshot restore to reach a terminal stage.
         while (restore != null && restore.state() != RestoreInProgress.State.FAILURE && restore.state() != RestoreInProgress.State.SUCCESS) {
             try {
                 cso.waitForNextChange("remote restore finish")
             } catch(e: OpenSearchTimeoutException) {
-                log.info("Timed out while waiting for restore to complete.")
+                timeoutCount++
+                val elapsedSecs = (System.currentTimeMillis() - restoreStartTime) / 1000
+                log.debug("Timed out while waiting for restore to complete. follower=$followerIndexName, leader=$leaderAlias:${leaderIndex.name}, elapsedSecs=$elapsedSecs, timeoutCount=$timeoutCount, restoreState=${restore?.state()}")
             }
             restore = inProgressRestore(clusterService.state())
         }

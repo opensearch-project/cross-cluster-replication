@@ -110,7 +110,7 @@ class RemoteClusterRetentionLeaseHelper constructor(var followerClusterNameWithU
             log.info("Added new retention lease: id=$retentionLeaseId, leaderShard=$leaderShardId, seqNo=$seqNo")
             return true
         } catch (e: Exception) {
-            log.warn("Failed to add new retention lease: id=$retentionLeaseId, leaderShard=$leaderShardId, seqNo=$seqNo, error=${e.message}")
+            log.info("Failed to add new retention lease: id=$retentionLeaseId, leaderShard=$leaderShardId, seqNo=$seqNo, error=${e.message}")
             return false
         }
     }

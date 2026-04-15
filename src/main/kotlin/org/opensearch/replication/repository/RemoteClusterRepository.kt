@@ -316,6 +316,8 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         // 2. Request for individual files from leader cluster for this shardId
         // make sure the store is not released until we are done.
         val fileMetadata = ArrayList(metadataSnapshot.asMap().values)
+        val totalSizeBytes = fileMetadata.sumOf { it.length() }
+        log.info("Starting bootstrap restore: follower=$followerIndexName, followerShard=$followerShardId, leaderShard=$leaderShardId, fileCount=${fileMetadata.size}, totalSizeBytes=$totalSizeBytes")
         multiChunkTransfer = RemoteClusterMultiChunkTransfer(log, clusterService.clusterName.value(), client.threadPool().threadContext,
                 store, replicationSettings.concurrentFileChunks, restoreUUID, replMetadata, leaderShardNode,
                 leaderShardId, fileMetadata, leaderClusterClient, recoveryState, replicationSettings.chunkSize,

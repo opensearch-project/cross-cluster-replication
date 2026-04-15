@@ -245,17 +245,17 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                         backOffForRetry = initialBackoffMillis
                     } catch (e: OpenSearchTimeoutException) {
                         //TimeoutException is thrown if leader fails to send new changes in 1 minute, so we dont need a backoff again here for this exception
-                        logInfo("Long-poll timed out waiting for new changes from $leaderShardId. Current seqNo: $fromSeqNo")
+                        logInfo("Timed out waiting for new changes. Current seqNo: $fromSeqNo. $e")
                         changeTracker.updateBatchFetched(false, fromSeqNo, toSeqNo, fromSeqNo - 1,-1)
                     } catch (e: NodeNotConnectedException) {
                         followerClusterStats.stats[followerShardId]!!.opsReadFailures.addAndGet(1)
-                        logWarn("Node not connected to $leaderAlias, retrying with different node. followerShard=$followerShardId, seqNo=$fromSeqNo: ${e.message}")
+                        logInfo("Node not connected to $leaderAlias, retrying with different node. followerShard=$followerShardId, seqNo=$fromSeqNo: ${e.message}")
                         delay(backOffForRetry)
                         backOffForRetry = (backOffForRetry * factor).toLong().coerceAtMost(maxTimeOut)
                         changeTracker.updateBatchFetched(false, fromSeqNo, toSeqNo, fromSeqNo - 1,-1)
                     } catch (e: Exception) {
                         followerClusterStats.stats[followerShardId]!!.opsReadFailures.addAndGet(1)
-                        logWarn("Failed to get changes from $leaderShardId: seqNo=$fromSeqNo, backoffMs=$backOffForRetry, error=${e.message}")
+                        logInfo("Unable to get changes from seqNo: $fromSeqNo. ${e.stackTraceToString()}")
 
                         // Handle 2GB limit exception specifically
                         if (e is IllegalArgumentException &&

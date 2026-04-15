@@ -132,8 +132,8 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
         val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), clusterService.state().metadata.clusterUUID(), remoteClient)
         shards?.forEach {
             val followerShardId = it.value.shardId
-
-            if  (!retentionLeaseHelper.verifyRetentionLeaseExist(ShardId(params.leaderIndex, followerShardId.id), followerShardId)) {
+            if (!retentionLeaseHelper.verifyRetentionLeaseExist(ShardId(params.leaderIndex, followerShardId.id), followerShardId)) {
+                log.info("Retention lease missing for follower=${params.followerIndexName}, followerShard=$followerShardId, leaderShard=${ShardId(params.leaderIndex, followerShardId.id)} - replication cannot be resumed")
                 isResumable = false
             }
         }
