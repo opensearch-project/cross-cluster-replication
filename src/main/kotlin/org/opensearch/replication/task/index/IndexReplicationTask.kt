@@ -188,6 +188,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                             log.debug("Resuming tasks now.")
                             InitFollowState
                         } else {
+                            log.info("Starting new index replication: follower=$followerIndexName, leader=$leaderAlias:${leaderIndex.name}")
                             setupAndStartRestore()
                         }
                     }
@@ -263,7 +264,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 }
                 if (isCompleted) break
             } catch(e: ReplicationException) {
-                log.error("Exiting index replication task", e)
+                log.error("Exiting index replication task follower=$followerIndexName, leader=$leaderAlias:${leaderIndex.name}", e)
                 throw e
             } catch(e: OpenSearchException) {
                 val status = e.status().status
@@ -272,7 +273,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 // should continue to poll and Any failure encoutered from shard task should
                 // invoke state transition and exit
                 if(status < 500 && status != RestStatus.TOO_MANY_REQUESTS.status) {
-                    log.error("Exiting index replication task", e)
+                    log.error("Exiting index replication task follower=$followerIndexName, status=$status", e)
                     throw e
                 }
                 log.debug("Encountered transient error while running index replication task", e)
@@ -284,7 +285,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
     private suspend fun failReplication(failedState: FailedState) {
         withContext(NonCancellable) {
             val reason = failedState.errorMsg
-            log.error("Moving replication[IndexReplicationTask:$id][reason=${reason}] to failed state")
+            log.error("Moving replication[IndexReplicationTask:$id][follower=$followerIndexName, leader=$leaderAlias:${leaderIndex.name}, reason=${reason}] to failed state")
             try {
                 replicationMetadataManager.updateIndexReplicationState(
                     followerIndexName,
@@ -372,9 +373,9 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
      */
     private suspend fun conditionallyOpenIndex(indexName: String, logSuffix: String = "") {
         if (isIndexClosed(indexName)) {
-            log.info("Index $indexName is closed, opening it")
             val updateRequest = UpdateMetadataRequest(indexName, UpdateMetadataRequest.Type.OPEN, Requests.openIndexRequest(indexName))
             client.suspendExecute(UpdateMetadataAction.INSTANCE, updateRequest, injectSecurityContext = true)
+            log.info("Index $indexName is closed, opening it")
             if (logSuffix.isNotEmpty()) {
                 log.info("Opened the index $indexName $logSuffix")
             }
@@ -431,7 +432,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         } catch (e: Exception) {
             errorEncountered = true
             if (shouldAliasLogError) {
-                log.error("Encountered exception while updating alias ${e.stackTraceToString()}")
+                log.error("Encountered exception while updating alias follower=$followerIndexName, error=${e.stackTraceToString()}")
             }
         } finally {
             if (errorEncountered) {
@@ -448,7 +449,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         } catch (e: Exception) {
             errorEncountered = true
             if (shouldSettingsLogError) {
-                log.error("Encountered exception while updating settings ${e.stackTraceToString()}")
+                log.error("Encountered exception while updating settings follower=$followerIndexName, error=${e.stackTraceToString()}")
             }
         } finally {
             if (errorEncountered) {
@@ -645,7 +646,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                     }
                 }
             } catch (e: Exception) {
-                log.error("Error in getting the required metadata ${e.stackTraceToString()}")
+                log.error("Error in getting the required metadata follower=$followerIndexName, leader=$leaderAlias:${leaderIndex.name}, error=${e.stackTraceToString()}")
             } finally {
                 withContext(NonCancellable) {
                     log.debug("Metadata sync sleeping for ${replicationSettings.metadataSyncInterval.millis}")
@@ -721,7 +722,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
 
     private suspend fun pauseReplication(state: FailedState): IndexReplicationState {
         try {
-            log.error("Going to initiate auto-pause of $followerIndexName due to shard failures - $state")
+            log.error("Going to initiate auto-pause of $followerIndexName due to shard failures - failedShards=${state.failedShards.keys}, reason=${state.errorMsg}")
             val pauseReplicationResponse = client.suspendExecute(
                 replicationMetadata,
                 PauseIndexReplicationAction.INSTANCE, PauseIndexReplicationRequest(followerIndexName, "$AUTOPAUSED_REASON_PREFIX + ${state.errorMsg}"),
@@ -916,7 +917,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         val updateSettingsRequest = remoteClient.admin().indices().prepareUpdateSettings().setSettings(settingsBuilder).setIndices(leaderIndex.name).request()
         val updateResponse = remoteClient.suspending(remoteClient.admin().indices()::updateSettings, injectSecurityContext = true)(updateSettingsRequest)
         if(!updateResponse.isAcknowledged) {
-            log.error("Unable to update setting for translog pruning based on retention lease")
+            log.error("Unable to update setting for translog pruning based on retention lease leaderIndex=${leaderIndex.name}")
         }
 
         val restoreRequest = client.admin().cluster()

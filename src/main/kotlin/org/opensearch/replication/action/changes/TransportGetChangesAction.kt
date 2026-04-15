@@ -106,9 +106,10 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
                 if(fetchFromTranslog) {
                     try {
                         ops = translogService.getHistoryOfOperations(indexShard, request.fromSeqNo, toSeqNo)
-                    } catch (e: Exception) {
                         log.debug("Fetching changes from translog for ${request.shardId} " +
-                                "- from:${request.fromSeqNo}, to:$toSeqNo failed with exception - ${e.stackTraceToString()}")
+                                "from: ${request.fromSeqNo} to: $toSeqNo")
+                    } catch (e: Exception) {
+                        log.warn("Translog fetch failed for shard=${request.shardId}, from=${request.fromSeqNo}, to=$toSeqNo - falling back to Lucene: ${e.message}")
                         fetchFromTranslog = false
                     }
                 }

@@ -194,7 +194,7 @@ class TransportReplayChangesAction @Inject constructor(settings: Settings, trans
             //TODO: call .masterNodeTimeout() with the setting indices.mapping.dynamic_timeout
         val updateMappingRequest = UpdateMetadataRequest(followerIndex, UpdateMetadataRequest.Type.MAPPING, putMappingRequest)
         client.suspendExecute(UpdateMetadataAction.INSTANCE, updateMappingRequest, injectSecurityContext = true)
-        log.debug("Mappings synced for $followerIndex")
+        log.debug("Mappings synced for $followerIndex from ${leaderAlias}:${leaderIndex}")
     }
 
     /**

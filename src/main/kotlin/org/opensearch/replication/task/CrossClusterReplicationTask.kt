@@ -98,7 +98,7 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
                 markAsCompleted()
             } catch (e: Exception) {
                 log.error(
-                    "Exception encountered in CrossClusterReplicationTask - coroutine:isActive=${isActive} Context=${coroutineContext}", e)
+                    "Exception encountered in CrossClusterReplicationTask - task=${this.javaClass.simpleName}, id=$id, follower=$followerIndexName, leader=$leaderAlias, coroutine:isActive=${isActive} Context=${coroutineContext}", e)
                 if (isCancelled || e is CancellationException) {
                     markAsCompleted()
                     log.info("Completed the task with id:$id")
@@ -211,7 +211,7 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
                     if(e.status().status < 500 && e.status() != RestStatus.TOO_MANY_REQUESTS) {
                         throw e
                     }
-                    log.error("Failed to fetch replication metadata due to ", e)
+                    log.error("Failed to fetch replication metadata due to task=${this.javaClass.simpleName}, id=$id, error=${e.message}", e)
                     delay(DEFAULT_WAIT_ON_ERRORS)
                 }
             }
