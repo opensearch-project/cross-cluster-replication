@@ -10,7 +10,6 @@
  */
 
 package org.opensearch.replication.integ.rest
-
 import org.opensearch.replication.MultiClusterAnnotations
 import org.opensearch.replication.MultiClusterRestTestCase
 import org.opensearch.replication.StartReplicationRequest
@@ -39,6 +38,13 @@ import org.opensearch.client.indices.CreateIndexRequest
 import org.opensearch.client.indices.GetMappingsRequest
 import org.opensearch.common.io.PathUtils
 import org.opensearch.common.settings.Settings
+import org.opensearch.common.unit.TimeValue
+import org.opensearch.common.xcontent.XContentType
+import org.opensearch.core.common.bytes.BytesArray
+import org.opensearch.core.xcontent.NamedXContentRegistry
+import org.opensearch.replication.action.resume.ResumeIndexReplicationRequest
+import org.opensearch.rest.RestRequest
+import org.opensearch.test.rest.FakeRestRequest
 import org.junit.Assert
 import org.junit.Assume
 import java.nio.file.Files
@@ -307,5 +313,22 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
             followerSynonymPaths.forEach { if (Files.exists(it)) Files.delete(it) }
             leaderNewSynonymPaths.forEach { if (Files.exists(it)) Files.delete(it) }
         }
+    }
+
+    fun `test resume replication with cluster_manager_timeout`() {
+        // Verify cluster_manager_timeout param is parsed from HTTP request and set on the request
+        val restRequest = FakeRestRequest.Builder(NamedXContentRegistry.EMPTY)
+            .withMethod(RestRequest.Method.POST)
+            .withPath("/_plugins/_replication/follower-index/_resume")
+            .withParams(mapOf("index" to "follower-index", "cluster_manager_timeout" to "60s"))
+            .withContent(BytesArray("{}"), XContentType.JSON)
+            .build()
+        val resumeRequest = ResumeIndexReplicationRequest.fromXContent(
+            restRequest.contentOrSourceParamParser(), restRequest.param("index")
+        )
+        resumeRequest.clusterManagerNodeTimeout(
+            restRequest.paramAsTime("cluster_manager_timeout", resumeRequest.clusterManagerNodeTimeout())
+        )
+        assertEquals(TimeValue.timeValueSeconds(60), resumeRequest.clusterManagerNodeTimeout())
     }
 }

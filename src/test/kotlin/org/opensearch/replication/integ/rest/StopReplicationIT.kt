@@ -10,7 +10,6 @@
  */
 
 package org.opensearch.replication.integ.rest
-
 import org.opensearch.replication.IndexUtil
 import org.opensearch.replication.MultiClusterAnnotations
 import org.opensearch.replication.MultiClusterRestTestCase
@@ -41,6 +40,11 @@ import org.opensearch.cluster.SnapshotsInProgress
 import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.unit.TimeValue
+import org.opensearch.common.xcontent.XContentType
+import org.opensearch.core.common.bytes.BytesArray
+import org.opensearch.core.xcontent.NamedXContentRegistry
+import org.opensearch.rest.RestRequest
+import org.opensearch.test.rest.FakeRestRequest
 import org.opensearch.index.mapper.MapperService
 import org.opensearch.replication.SNAPSHOTS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS
 import java.util.Random
@@ -57,6 +61,18 @@ const val FOLLOWER = "followCluster"
 class StopReplicationIT: MultiClusterRestTestCase() {
     private val leaderIndexName = "leader_index"
     private val followerIndexName = "follower_index"
+
+    fun `test stop replication with cluster_manager_timeout`() {
+        // Verify cluster_manager_timeout param is parsed from HTTP request and set on the request
+        val restRequest = FakeRestRequest.Builder(NamedXContentRegistry.EMPTY)
+            .withMethod(RestRequest.Method.POST)
+            .withPath("/_plugins/_replication/follower-index/_stop")
+            .withParams(mapOf("index" to "follower-index", "cluster_manager_timeout" to "60s"))
+            .withContent(BytesArray("{}"), XContentType.JSON)
+            .build()
+        val parsedTimeout = restRequest.paramAsTime("cluster_manager_timeout", TimeValue.timeValueSeconds(30))
+        assertEquals(TimeValue.timeValueSeconds(60), parsedTimeout)
+    }
 
     fun `test stop replication in following state and empty index`() {
         val followerClient = getClientForCluster(FOLLOWER)

@@ -373,9 +373,9 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
      */
     private suspend fun conditionallyOpenIndex(indexName: String, logSuffix: String = "") {
         if (isIndexClosed(indexName)) {
+            log.info("Index $indexName is closed, opening it")
             val updateRequest = UpdateMetadataRequest(indexName, UpdateMetadataRequest.Type.OPEN, Requests.openIndexRequest(indexName))
             client.suspendExecute(UpdateMetadataAction.INSTANCE, updateRequest, injectSecurityContext = true)
-            log.info("Index $indexName is closed, opening it")
             if (logSuffix.isNotEmpty()) {
                 log.info("Opened the index $indexName $logSuffix")
             }
