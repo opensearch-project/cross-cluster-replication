@@ -21,7 +21,6 @@ import org.opensearch.index.seqno.RetentionLeaseAlreadyExistsException
 import org.opensearch.replication.action.index.block.IndexBlockUpdateType
 import org.opensearch.replication.action.index.block.UpdateIndexBlockAction
 import org.opensearch.replication.action.index.block.UpdateIndexBlockRequest
-import org.opensearch.replication.repository.RemoteClusterRepository
 import org.opensearch.replication.seqno.RemoteClusterRetentionLeaseHelper
 import org.opensearch.replication.task.index.IndexReplicationParams
 import org.opensearch.replication.util.suspendExecute
@@ -120,13 +119,11 @@ class ForceResumeCoordinator(
 
             try {
                 retentionLeaseHelper.addRetentionLease(
-                    leaderShardId, retainingSeqNo, followerShardId,
-                    RemoteClusterRepository.REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC
+                    leaderShardId, retainingSeqNo, followerShardId
                 )
             } catch (e: RetentionLeaseAlreadyExistsException) {
                 retentionLeaseHelper.renewRetentionLease(
-                    leaderShardId, retainingSeqNo, followerShardId,
-                    RemoteClusterRepository.REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC
+                    leaderShardId, retainingSeqNo, followerShardId
                 )
             }
             acquiredLeases[followerShardId.id] = retainingSeqNo

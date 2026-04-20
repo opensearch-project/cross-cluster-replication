@@ -115,6 +115,18 @@ class RemoteClusterRetentionLeaseHelper constructor(var followerClusterNameWithU
         }
     }
 
+    /**
+     * Suspend (non-blocking) version of addRetentionLease for use in coroutine contexts
+     * (e.g., transport thread). The blocking overload below uses actionGet() and must NOT
+     * be called from transport threads.
+     */
+    public suspend fun addRetentionLease(leaderShardId: ShardId, seqNo: Long, followerShardId: ShardId) {
+        val retentionLeaseId = retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)
+        val request = RetentionLeaseActions.AddRequest(leaderShardId, retentionLeaseId, seqNo, retentionLeaseSource)
+        log.info("Adding retention lease $retentionLeaseId (async)")
+        client.suspendExecute(RetentionLeaseActions.Add.INSTANCE, request)
+    }
+
     public suspend fun renewRetentionLease(leaderShardId: ShardId, seqNo: Long, followerShardId: ShardId) {
         val retentionLeaseId = retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)
         val request = RetentionLeaseActions.RenewRequest(leaderShardId, retentionLeaseId, seqNo, retentionLeaseSource)
@@ -194,46 +206,6 @@ class RemoteClusterRetentionLeaseHelper constructor(var followerClusterNameWithU
     }
 
 
-    /**
-     * Acquires a retention lease with exponential backoff retry logic.
-     * On [RetentionLeaseAlreadyExistsException], renews the existing lease instead.
-     * Used by force resume to reliably acquire pre-restore leases.
-     *
-     * @return true if the lease was successfully acquired or renewed
-     * @throws Exception if all retry attempts are exhausted
-     */
-    public suspend fun acquireLeaseWithRetry(
-        leaderShardId: ShardId,
-        retainingSeqNo: Long,
-        followerShardId: ShardId,
-        timeout: Long,
-        maxAttempts: Int = 5
-    ): Boolean {
-        var attempt = 0
-        var backoff = 1000L // 1 second initial backoff
-
-        while (attempt < maxAttempts) {
-            try {
-                addRetentionLease(leaderShardId, retainingSeqNo, followerShardId, timeout)
-                return true
-            } catch (e: RetentionLeaseAlreadyExistsException) {
-                renewRetentionLease(leaderShardId, retainingSeqNo, followerShardId, timeout)
-                return true
-            } catch (e: Exception) {
-                attempt++
-                if (attempt >= maxAttempts) throw e
-                log.warn("Retention lease acquisition attempt $attempt/$maxAttempts failed " +
-                        "for shard ${followerShardId.id}: ${e.message}. Retrying in ${backoff}ms...")
-                kotlinx.coroutines.delay(backoff)
-                backoff = (backoff * 2).coerceAtMost(30000L)
-            }
-        }
-        return false
-    }
-
-    /**
-     * Remove these once the callers are moved to above APIs
-     */
     public fun addRetentionLease(leaderShardId: ShardId, seqNo: Long,
                                          followerShardId: ShardId, timeout: Long) {
         val retentionLeaseId = retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)
