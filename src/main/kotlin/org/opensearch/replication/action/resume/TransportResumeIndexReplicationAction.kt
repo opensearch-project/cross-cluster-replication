@@ -104,7 +104,7 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
                     // Delegate to force resume coordinator (snapshot bootstrap path)
                     log.info("Retention lease expired for ${request.indexName}. " +
                             "Force resume requested — initiating snapshot bootstrap.")
-                    val coordinator = ForceResumeCoordinator(client, clusterService, replicationMetadataManager)
+                    val coordinator = ForceResumeCoordinator(client, clusterService)
                     val result = coordinator.executeForceResume(params)
                     log.info("Force resume coordinator completed for ${request.indexName}: " +
                             "leases acquired at ${result.leaseAcquiredAtSeqNo}, " +
