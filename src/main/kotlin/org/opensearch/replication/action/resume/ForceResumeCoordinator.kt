@@ -30,12 +30,10 @@ import org.opensearch.transport.client.Client
 
 /**
  * Coordinates the force resume operation when retention leases have expired.
- *
  * Reuses existing infrastructure:
- * - Block removal/addition: same as TransportStopIndexReplicationAction
- * - Index deletion: same as IndexReplicationTask.cancelRestore()
- * - Lease add/renew/remove: existing RemoteClusterRetentionLeaseHelper methods
- *
+ * Block removal/addition: same as TransportStopIndexReplicationAction
+ * Index deletion: same as IndexReplicationTask.cancelRestore()
+ * Lease add/renew/remove: existing RemoteClusterRetentionLeaseHelper methods
  * The only new logic is acquiring retention leases at leaderGlobalCheckpoint+1
  * BEFORE deleting the follower index, which prevents the race condition where
  * the leader's translog is purged during the async snapshot restore.
@@ -135,7 +133,7 @@ class ForceResumeCoordinator(
             log.info("Acquired pre-restore lease for shard ${followerShardId.id} at seqNo $retainingSeqNo")
         }
     }
-    
+
     // Fetches the leader shard's global checkpoint via IndicesStatsAction.
     private suspend fun getLeaderGlobalCheckpoint(remoteClient: Client, leaderIndexName: String, shardId: Int): Long {
         val statsResponse = remoteClient.suspendExecute(
