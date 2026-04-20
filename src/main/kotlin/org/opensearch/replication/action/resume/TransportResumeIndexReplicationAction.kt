@@ -91,9 +91,31 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
                 val replMetdata = replicationMetadataManager.getIndexReplicationMetadata(request.indexName)
                 val remoteMetadata = getLeaderIndexMetadata(replMetdata.connectionName, replMetdata.leaderContext.resource)
                 val params = IndexReplicationParams(replMetdata.connectionName, remoteMetadata.index, request.indexName)
-                if (!isResumable(params)) {
-                    throw ResourceNotFoundException("Retention lease doesn't exist. Replication can't be resumed for ${request.indexName}")
+                val resumable = isResumable(params)
+
+                if (!resumable && !request.forceResume) {
+                    throw ResourceNotFoundException(
+                        "Retention lease doesn't exist. Replication can't be resumed for ${request.indexName}. " +
+                                "Use force_resume=true to restore from snapshot."
+                    )
                 }
+
+                if (!resumable && request.forceResume) {
+                    // Delegate to force resume coordinator (snapshot bootstrap path)
+                    log.info("Retention lease expired for ${request.indexName}. " +
+                            "Force resume requested — initiating snapshot bootstrap.")
+                    val coordinator = ForceResumeCoordinator(client, clusterService, replicationMetadataManager)
+                    val result = coordinator.executeForceResume(params)
+                    log.info("Force resume coordinator completed for ${request.indexName}: " +
+                            "leases acquired at ${result.leaseAcquiredAtSeqNo}, " +
+                            "duration=${result.durationMillis}ms")
+                    // After coordinator completes, fall through to start IndexReplicationTask.
+                    // Since the follower index was deleted, isResumed() returns false,
+                    // which triggers setupAndStartRestore() in the state machine.
+                }
+
+                // For force resume with valid leases, proceed with normal resume
+                // (forceResume=true but leases exist → no-op, just resume normally)
 
                 val remoteClient = client.getRemoteClusterClient(params.leaderAlias)
                 val getSettingsRequest = GetSettingsRequest().includeDefaults(false).indices(params.leaderIndex.name)
