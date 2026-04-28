@@ -386,4 +386,75 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
         val isMissingResult = replicationTask.isIndexClosed("non-existent-index")
         assertThat(isMissingResult).isTrue() // Should default to true for safety
     }
+
+    // --- Issue #1661: number_of_replicas must not be synced when follower has auto_expand_replicas active ---
+
+    fun testIsAutoExpandReplicasActive_trueForNumericRange() {
+        val settings = Settings.builder()
+            .put(IndexMetadata.INDEX_AUTO_EXPAND_REPLICAS_SETTING.key, "0-1")
+            .build()
+        assertThat(IndexReplicationTask.isAutoExpandReplicasActive(settings)).isTrue()
+    }
+
+    fun testIsAutoExpandReplicasActive_trueForAllRange() {
+        val settings = Settings.builder()
+            .put(IndexMetadata.INDEX_AUTO_EXPAND_REPLICAS_SETTING.key, "0-all")
+            .build()
+        assertThat(IndexReplicationTask.isAutoExpandReplicasActive(settings)).isTrue()
+    }
+
+    fun testIsAutoExpandReplicasActive_falseWhenDisabled() {
+        val settings = Settings.builder()
+            .put(IndexMetadata.INDEX_AUTO_EXPAND_REPLICAS_SETTING.key, "false")
+            .build()
+        assertThat(IndexReplicationTask.isAutoExpandReplicasActive(settings)).isFalse()
+    }
+
+    fun testIsAutoExpandReplicasActive_falseWhenDisabledCaseInsensitive() {
+        val settings = Settings.builder()
+            .put(IndexMetadata.INDEX_AUTO_EXPAND_REPLICAS_SETTING.key, "False")
+            .build()
+        assertThat(IndexReplicationTask.isAutoExpandReplicasActive(settings)).isFalse()
+    }
+
+    fun testIsAutoExpandReplicasActive_falseWhenAbsent() {
+        val settings = Settings.builder()
+            .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, "1")
+            .build()
+        assertThat(IndexReplicationTask.isAutoExpandReplicasActive(settings)).isFalse()
+    }
+
+    fun testFilterOutNumberOfReplicas_removesKey() {
+        val settings = Settings.builder()
+            .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, "1")
+            .put(IndexMetadata.INDEX_AUTO_EXPAND_REPLICAS_SETTING.key, "0-all")
+            .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, "3")
+            .build()
+
+        val filtered = IndexReplicationTask.filterOutNumberOfReplicas(settings)
+
+        assertThat(filtered.get(IndexMetadata.SETTING_NUMBER_OF_REPLICAS)).isNull()
+        // Other keys are preserved.
+        assertThat(filtered.get(IndexMetadata.INDEX_AUTO_EXPAND_REPLICAS_SETTING.key)).isEqualTo("0-all")
+        assertThat(filtered.get(IndexMetadata.SETTING_NUMBER_OF_SHARDS)).isEqualTo("3")
+    }
+
+    fun testFilterOutNumberOfReplicas_noopWhenKeyAbsent() {
+        val settings = Settings.builder()
+            .put(IndexMetadata.INDEX_AUTO_EXPAND_REPLICAS_SETTING.key, "0-all")
+            .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, "3")
+            .build()
+
+        val filtered = IndexReplicationTask.filterOutNumberOfReplicas(settings)
+
+        // Same keys, same values.
+        assertThat(filtered.keySet()).isEqualTo(settings.keySet())
+        assertThat(filtered.get(IndexMetadata.INDEX_AUTO_EXPAND_REPLICAS_SETTING.key)).isEqualTo("0-all")
+        assertThat(filtered.get(IndexMetadata.SETTING_NUMBER_OF_SHARDS)).isEqualTo("3")
+    }
+
+    fun testFilterOutNumberOfReplicas_emptySettings() {
+        val filtered = IndexReplicationTask.filterOutNumberOfReplicas(Settings.EMPTY)
+        assertThat(filtered.keySet()).isEmpty()
+    }
 }

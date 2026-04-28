@@ -166,6 +166,32 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         const val AUTOPAUSED_REASON_PREFIX = "AutoPaused: "
         const val TASK_CANCELLATION_REASON = AUTOPAUSED_REASON_PREFIX + "Index replication task was cancelled by user"
 
+        /**
+         * Returns true if the given settings has `index.auto_expand_replicas` set to anything other
+         * than "false" (the OpenSearch sentinel that disables auto-expand).
+         *
+         * When this returns true, CCR must NOT sync `index.number_of_replicas` from the leader to the
+         * follower: the follower's local OpenSearch is responsible for computing `number_of_replicas`
+         * from its own data-node count. See issue #1661.
+         */
+        internal fun isAutoExpandReplicasActive(settings: Settings): Boolean {
+            val value = settings.get(IndexMetadata.INDEX_AUTO_EXPAND_REPLICAS_SETTING.key) ?: return false
+            // OpenSearch stores the disabled sentinel as the literal string "false".
+            return !value.equals("false", ignoreCase = true)
+        }
+
+        /**
+         * Returns a copy of the given settings with `index.number_of_replicas` removed. Used to
+         * prevent CCR from syncing `number_of_replicas` to a follower whose auto-expand is active
+         * (see issue #1661).
+         */
+        internal fun filterOutNumberOfReplicas(settings: Settings): Settings {
+            if (settings.get(IndexMetadata.SETTING_NUMBER_OF_REPLICAS) == null) {
+                return settings
+            }
+            return settings.filter { k: String -> k != IndexMetadata.SETTING_NUMBER_OF_REPLICAS }
+        }
+
     }
 
     //only for testing
@@ -523,7 +549,22 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                         }
                     }
                 }
-                val desiredSettings = desiredSettingsBuilder.build()
+                var desiredSettings = desiredSettingsBuilder.build()
+
+                // Issue #1661: When the follower has `index.auto_expand_replicas` active (any value other
+                // than "false"), the follower cluster independently manages `index.number_of_replicas` based
+                // on its local node count. Syncing `number_of_replicas` from the leader in that case destroys
+                // STARTED replica shards and triggers perpetual YELLOW state as `adaptAutoExpandReplicas()`
+                // re-creates them only for the next sync to destroy them again.
+                //
+                // Note: any explicit `number_of_replicas` the user set in the replication metadata overrides
+                // is also suppressed here. This is intentional \u2014 `auto_expand_replicas` and a fixed
+                // `number_of_replicas` are contradictory settings, and the follower's active auto-expand
+                // takes precedence until it is disabled.
+                if (isAutoExpandReplicasActive(followerSettings)) {
+                    desiredSettings = filterOutNumberOfReplicas(desiredSettings)
+                    followerSettings = filterOutNumberOfReplicas(followerSettings)
+                }
 
                 val changedSettingsBuilder = Settings.builder()
                 for(key in desiredSettings.keySet()) {
