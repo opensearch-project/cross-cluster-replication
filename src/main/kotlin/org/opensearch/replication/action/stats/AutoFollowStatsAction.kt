@@ -27,6 +27,9 @@ import java.io.IOException
 
 class AutoFollowStatsAction : ActionType<AutoFollowStatsResponses>(NAME, reader) {
     companion object {
+        // TODO: Rename to "cluster:admin/plugins/replication/autofollow/stats" in OpenSearch 4.0
+        // This is a cluster-level action but uses the indices: prefix for backward compatibility.
+        // See https://github.com/opensearch-project/security/pull/6038 for plugin-defined default roles.
         const val NAME = "indices:admin/plugins/replication/autofollow/stats"
         val INSTANCE = AutoFollowStatsAction()
         val reader = Writeable.Reader { inp -> AutoFollowStatsResponses(inp) }

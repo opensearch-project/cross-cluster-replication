@@ -13,3 +13,6 @@ build/
 __pycache__/
 Pipfile
 Pipfile.lock
+bin/main/
+bin/test/
+.kotlin/
