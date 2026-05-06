@@ -37,6 +37,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.opensearch.OpenSearchStatusException
 import org.opensearch.action.admin.cluster.repositories.put.PutRepositoryRequest
+import org.opensearch.action.admin.cluster.settings.ClusterUpdateSettingsRequest
 import org.opensearch.action.admin.cluster.snapshots.create.CreateSnapshotRequest
 import org.opensearch.action.admin.indices.alias.Alias
 import org.opensearch.action.admin.indices.alias.IndicesAliasesRequest
@@ -1299,15 +1300,22 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         )
     }
 
-    fun `test that follower index mapping does not update when only new fields are added but not respective docs in leader index`() {
+    fun `test that follower index mapping updates when only new fields are added without respective docs in leader index`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
         createConnectionBetweenClusters(FOLLOWER, LEADER)
-        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        // Reduce metadata sync interval for faster test execution
+        val updateSettingsRequest = ClusterUpdateSettingsRequest()
+        updateSettingsRequest.transientSettings(Collections.singletonMap<String, String?>("plugins.replication.follower.metadata_sync_interval", "10s"))
+        followerClient.cluster().putSettings(updateSettingsRequest, RequestOptions.DEFAULT)
+        val createIndexResponse = leaderClient.indices().create(
+            CreateIndexRequest(leaderIndexName).mapping(
+                """{"dynamic":"strict","properties":{"name":{"type":"text"}}}""",
+                XContentType.JSON
+            ),
+            RequestOptions.DEFAULT
+        )
         assertThat(createIndexResponse.isAcknowledged).isTrue()
-        var putMappingRequest = PutMappingRequest(leaderIndexName)
-        putMappingRequest.source("{\"properties\":{\"name\":{\"type\":\"text\"}}}", XContentType.JSON)
-        leaderClient.indices().putMapping(putMappingRequest, RequestOptions.DEFAULT)
         val sourceMap = mapOf("name" to randomAlphaOfLength(5))
         leaderClient.index(IndexRequest(leaderIndexName).id("1").source(sourceMap), RequestOptions.DEFAULT)
         followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
@@ -1323,18 +1331,105 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
                 .mappings()[followerIndexName]
         )
-        putMappingRequest = PutMappingRequest(leaderIndexName)
-        putMappingRequest.source("{\"properties\":{\"name\":{\"type\":\"text\"},\"age\":{\"type\":\"integer\"}}}",XContentType.JSON)
+        // Add a new field to the strict mapping on leader (no doc indexed yet)
+        val putMappingRequest = PutMappingRequest(leaderIndexName)
+        putMappingRequest.source(
+            """{"dynamic":"strict","properties":{"name":{"type":"text"},"age":{"type":"integer"}}}""",
+            XContentType.JSON
+        )
         leaderClient.indices().putMapping(putMappingRequest, RequestOptions.DEFAULT)
+        // Wait for metadata poll to sync the mapping to follower
         val leaderMappings = leaderClient.indices().getMapping(GetMappingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
             .mappings()[leaderIndexName]
-        TimeUnit.MINUTES.sleep(2)
-        Assert.assertNotEquals(
+        assertBusy({
+            Assert.assertEquals(
+                leaderMappings,
+                followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
+                    .mappings()[followerIndexName]
+            )
+        }, 30, TimeUnit.SECONDS)
+        // Now index a doc using the new field on leader — with strict mapping,
+        // this would fail on follower if the mapping hadn't been synced
+        leaderClient.index(
+            IndexRequest(leaderIndexName).id("2").source(mapOf("name" to "test", "age" to 30)),
+            RequestOptions.DEFAULT
+        )
+        // Verify the doc replicates successfully to follower
+        assertBusy({
+            Assert.assertEquals(
+                2,
+                followerClient.count(CountRequest(followerIndexName), RequestOptions.DEFAULT).count.toInt()
+            )
+        }, 30, TimeUnit.SECONDS)
+    }
+
+    fun `test that replication recovers when doc with new field is indexed immediately after mapping update on strict index`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+        // Reduce metadata sync interval for faster test execution
+        val updateSettingsRequest = ClusterUpdateSettingsRequest()
+        updateSettingsRequest.transientSettings(Collections.singletonMap<String, String?>("plugins.replication.follower.metadata_sync_interval", "10s"))
+        followerClient.cluster().putSettings(updateSettingsRequest, RequestOptions.DEFAULT)
+        val createIndexResponse = leaderClient.indices().create(
+            CreateIndexRequest(leaderIndexName).mapping(
+                """{"dynamic":"strict","properties":{"name":{"type":"text"}}}""",
+                XContentType.JSON
+            ),
+            RequestOptions.DEFAULT
+        )
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        leaderClient.index(IndexRequest(leaderIndexName).id("1").source(mapOf("name" to "first")), RequestOptions.DEFAULT)
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
+            waitForRestore = true)
+        assertBusy({
+            Assert.assertEquals(
+                1,
+                followerClient.count(CountRequest(followerIndexName), RequestOptions.DEFAULT).count.toInt()
+            )
+        }, 30, TimeUnit.SECONDS)
+
+        // Update mapping AND immediately index a doc with the new field — no gap for metadata poll
+        val putMappingRequest = PutMappingRequest(leaderIndexName)
+        putMappingRequest.source(
+            """{"dynamic":"strict","properties":{"name":{"type":"text"},"age":{"type":"integer"}}}""",
+            XContentType.JSON
+        )
+        leaderClient.indices().putMapping(putMappingRequest, RequestOptions.DEFAULT)
+        // Index doc with new field immediately — follower may not have the mapping yet
+        leaderClient.index(
+            IndexRequest(leaderIndexName).id("2").source(mapOf("name" to "second", "age" to 25)),
+            RequestOptions.DEFAULT
+        )
+
+        // Verify follower does NOT yet have the new mapping (metadata poll hasn't fired)
+        @Suppress("UNCHECKED_CAST")
+        val followerProps = followerClient.indices()
+            .getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
+            .mappings()[followerIndexName]?.sourceAsMap()?.get("properties") as? Map<String, Any>
+        Assert.assertFalse(
+            "Follower should not have 'age' field yet before metadata sync",
+            followerProps?.containsKey("age") ?: false
+        )
+
+        // Replication should eventually succeed — either via metadata poll or retry-with-mapping-fetch
+        assertBusy({
+            Assert.assertEquals(
+                2,
+                followerClient.count(CountRequest(followerIndexName), RequestOptions.DEFAULT).count.toInt()
+            )
+        }, 30, TimeUnit.SECONDS)
+
+        // Verify the mapping was synced
+        val leaderMappings = leaderClient.indices().getMapping(GetMappingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
+            .mappings()[leaderIndexName]
+        Assert.assertEquals(
             leaderMappings,
             followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
                 .mappings()[followerIndexName]
         )
     }
+
 
     fun `test operations are fetched from lucene when leader is in mixed mode`() {
 
