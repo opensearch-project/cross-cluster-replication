@@ -126,7 +126,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                 val throwable: Throwable = downstreamException as Throwable
 
                 withContext(NonCancellable) {
-                    logInfo("Going to mark ShardReplicationTask as Failed with ${throwable.stackTraceToString()}")
+                    logInfo("Going to mark ShardReplicationTask as Failed: leaderShard=$leaderShardId, followerShard=$followerShardId, cause=${throwable.stackTraceToString()}")
                     try {
                         updateTaskState(FailedState(toESException(throwable)))
                     } catch (inner: Exception) {
@@ -197,15 +197,17 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         updateTaskState(FollowingState)
         val followerIndexService = indicesService.indexServiceSafe(followerShardId.index)
         val indexShard = followerIndexService.getShard(followerShardId.id)
+        logInfo("Shard replication started: leaderShard=$leaderShardId, followerShard=$followerShardId, localCheckpoint=${indexShard.localCheckpoint}, globalCheckpoint=${indexShard.lastSyncedGlobalCheckpoint}")
 
         try {
             //Retention leases preserve the operations including and starting from the retainingSequenceNumber we specify when we take the lease .
             //hence renew retention lease with lastSyncedGlobalCheckpoint + 1
             retentionLeaseHelper.renewRetentionLease(leaderShardId, indexShard.lastSyncedGlobalCheckpoint + 1, followerShardId)
+            log.debug("${Thread.currentThread().name}: Initial retention lease renewed: leaderShard=$leaderShardId, followerShard=$followerShardId, seqNo=${indexShard.lastSyncedGlobalCheckpoint + 1}")
         } catch (ex: Exception) {
             // In case of a failure, we just log it and move on. All failures scenarios are being handled below with
             // retries and backoff depending on exception.
-            log.error("Retention lease renewal failed: ${ex.stackTraceToString()}")
+            log.error("Retention lease renewal failed: leaderShard=$leaderShardId, followerShard=$followerShardId, error=${ex.stackTraceToString()}")
         }
 
         addListenerToInterruptTask()
@@ -247,7 +249,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                         changeTracker.updateBatchFetched(false, fromSeqNo, toSeqNo, fromSeqNo - 1,-1)
                     } catch (e: NodeNotConnectedException) {
                         followerClusterStats.stats[followerShardId]!!.opsReadFailures.addAndGet(1)
-                        logInfo("Node not connected. Retrying request using a different node. ${e.stackTraceToString()}")
+                        logInfo("Node not connected to $leaderAlias, retrying with different node. followerShard=$followerShardId, seqNo=$fromSeqNo: ${e.message}")
                         delay(backOffForRetry)
                         backOffForRetry = (backOffForRetry * factor).toLong().coerceAtMost(maxTimeOut)
                         changeTracker.updateBatchFetched(false, fromSeqNo, toSeqNo, fromSeqNo - 1,-1)
@@ -290,9 +292,13 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                 try {
                     retentionLeaseHelper.renewRetentionLease(leaderShardId, indexShard.lastSyncedGlobalCheckpoint + 1, followerShardId)
                     lastLeaseRenewalMillis = System.currentTimeMillis()
+                    log.debug("${Thread.currentThread().name}: Retention lease renewed: leaderShard=$leaderShardId, followerShard=$followerShardId, seqNo=${indexShard.lastSyncedGlobalCheckpoint + 1}")
                 } catch (ex: Exception) {
                     when (ex) {
-                        is RetentionLeaseNotFoundException ->  throw ex
+                        is RetentionLeaseNotFoundException -> {
+                            logError("Retention lease not found for $leaderShardId/$followerShardId - replication cannot continue")
+                            throw ex
+                        }
                         is RetentionLeaseInvalidRetainingSeqNoException -> {
                             if (System.currentTimeMillis() - lastLeaseRenewalMillis >  replicationSettings.leaseRenewalMaxFailureDuration.millis) {
                                 log.error("Retention lease renewal has been failing for last " +
@@ -325,6 +331,9 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     }
     private fun logInfo(msg: String) {
         log.info("${Thread.currentThread().name}: $msg")
+    }
+    private fun logWarn(msg: String) {
+        log.warn("${Thread.currentThread().name}: $msg")
     }
     private fun logError(msg: String) {
         log.error("${Thread.currentThread().name}: $msg")

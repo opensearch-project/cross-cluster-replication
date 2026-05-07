@@ -24,6 +24,7 @@ import java.io.IOException
 
 class ReplicateIndexHandler : BaseRestHandler() {
 
+
     override fun routes(): List<RestHandler.Route> {
         return listOf(RestHandler.Route(RestRequest.Method.PUT, "/_plugins/_replication/{index}/_start"))
     }
@@ -38,7 +39,9 @@ class ReplicateIndexHandler : BaseRestHandler() {
             val followerIndex = request.param("index")
             val followIndexRequest = ReplicateIndexRequest.fromXContent(parser, followerIndex)
             followIndexRequest.waitForRestore = request.paramAsBoolean("wait_for_restore", false)
-
+            followIndexRequest.clusterManagerNodeTimeout(
+                request.paramAsTime("cluster_manager_timeout", followIndexRequest.clusterManagerNodeTimeout())
+            )
             return RestChannelConsumer {
                 channel: RestChannel? -> client.admin().cluster()
                     .execute(ReplicateIndexAction.INSTANCE, followIndexRequest, RestToXContentListener(channel))

@@ -206,7 +206,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             ByteSizeValue(512, ByteSizeUnit.MB), Setting.Property.Dynamic, Setting.Property.IndexScope)
         val REPLICATION_FOLLOWER_BLOCK_START: Setting<Boolean> = Setting.boolSetting("plugins.replication.follower.block.start", false,
                 Setting.Property.Dynamic, Setting.Property.NodeScope)
-        val REPLICATION_AUTOFOLLOW_CONCURRENT_REPLICATION_JOBS_TRIGGER_SIZE: Setting<Int> = Setting.intSetting("plugins.replication.autofollow.concurrent_replication_jobs_trigger_size", 3, 1, 10,
+        val REPLICATION_AUTOFOLLOW_CONCURRENT_REPLICATION_JOBS_TRIGGER_SIZE: Setting<Int> = Setting.intSetting("plugins.replication.autofollow.concurrent_replication_jobs_trigger_size", 3, 1, 100,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
         val REPLICATION_REPLICATE_INDEX_DELETION: Setting<Boolean> = Setting.boolSetting("plugins.replication.replicate.delete_index", false,
             Setting.Property.Dynamic, Setting.Property.NodeScope)

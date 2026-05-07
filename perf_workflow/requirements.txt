@@ -3,7 +3,8 @@ validators
 yamlfix
 cerberus
 pipenv
-requests~=2.32.4
+filelock>=3.20.3
+requests>=2.33.0
 retry2
 ndg-httpsclient
 psutil

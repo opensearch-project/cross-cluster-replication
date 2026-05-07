@@ -41,6 +41,9 @@ class ResumeIndexReplicationHandler : BaseRestHandler() {
         request.contentOrSourceParamParser().use { parser ->
             val followIndex = request.param("index")
             val resumeReplicationRequest = ResumeIndexReplicationRequest.fromXContent(parser, followIndex)
+            resumeReplicationRequest.clusterManagerNodeTimeout(
+                request.paramAsTime("cluster_manager_timeout", resumeReplicationRequest.clusterManagerNodeTimeout())
+            )
             return RestChannelConsumer { channel: RestChannel? ->
                 client.admin().cluster()
                         .execute(ResumeIndexReplicationAction.INSTANCE, resumeReplicationRequest, RestToXContentListener(channel))

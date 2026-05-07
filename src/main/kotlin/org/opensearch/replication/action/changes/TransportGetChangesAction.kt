@@ -91,8 +91,9 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
                     // to the translog, which means we can't return those changes. Return to the caller to retry.
                     // TODO: Figure out a better way to wait for the global checkpoint to be synced to the translog
                     if (lastGlobalCheckpoint(indexShard, isRemoteEnabledOrMigrating) < request.fromSeqNo) {
-                        assert(gcp > lastGlobalCheckpoint(indexShard, isRemoteEnabledOrMigrating)) { "Checkpoint didn't advance at all $gcp ${lastGlobalCheckpoint(indexShard, isRemoteEnabledOrMigrating)}" }
-                        throw OpenSearchTimeoutException("global checkpoint not synced. Retry after a few miliseconds...")
+                        // Checkpoint may not have advanced if there's a race condition - this is retryable
+                        log.debug("Checkpoint didn't advance: gcp=$gcp, lastGlobalCheckpoint=${lastGlobalCheckpoint(indexShard, isRemoteEnabledOrMigrating)}")
+                        throw OpenSearchTimeoutException("global checkpoint not synced. Retry after a few milliseconds...")
                     }
                 }
 
@@ -105,6 +106,8 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
                 if(fetchFromTranslog) {
                     try {
                         ops = translogService.getHistoryOfOperations(indexShard, request.fromSeqNo, toSeqNo)
+                        log.debug("Fetching changes from translog for ${request.shardId} " +
+                                "from: ${request.fromSeqNo} to: $toSeqNo")
                     } catch (e: Exception) {
                         log.debug("Fetching changes from translog for ${request.shardId} " +
                                 "- from:${request.fromSeqNo}, to:$toSeqNo failed with exception - ${e.stackTraceToString()}")

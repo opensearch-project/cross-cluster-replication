@@ -56,6 +56,9 @@ class RemoteClusterTranslogService : AbstractLifecycleComponent(){
                 op = snapshot.next()
             }
         }
+        if (filteredOpsFromTranslog != opsSize.toInt()) {
+            log.error("Translog operation count mismatch for shard=${indexShard.shardId()}: expected=$opsSize, got=$filteredOpsFromTranslog, range=$startSeqNo-$toSeqNo")
+        }
         assert(filteredOpsFromTranslog == opsSize.toInt()) {"Missing operations while fetching from translog"}
 
         val sortedOps = ArrayList<Translog.Operation>(opsSize.toInt())

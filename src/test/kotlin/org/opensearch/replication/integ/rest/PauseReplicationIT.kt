@@ -39,7 +39,13 @@ import org.opensearch.client.indices.GetIndexRequest
 import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.unit.TimeValue
+import org.opensearch.common.xcontent.XContentType
+import org.opensearch.core.common.bytes.BytesArray
+import org.opensearch.core.xcontent.NamedXContentRegistry
 import org.opensearch.index.mapper.MapperService
+import org.opensearch.replication.action.pause.PauseIndexReplicationRequest
+import org.opensearch.rest.RestRequest
+import org.opensearch.test.rest.FakeRestRequest
 import java.util.concurrent.TimeUnit
 
 
@@ -49,6 +55,23 @@ import java.util.concurrent.TimeUnit
 )
 class PauseReplicationIT: MultiClusterRestTestCase() {
     private val leaderIndexName = "leader_index"
+
+    fun `test pause replication with cluster_manager_timeout`() {
+        // Verify cluster_manager_timeout param is parsed from HTTP request and set on the request
+        val restRequest = FakeRestRequest.Builder(NamedXContentRegistry.EMPTY)
+            .withMethod(RestRequest.Method.POST)
+            .withPath("/_plugins/_replication/follower-index/_pause")
+            .withParams(mapOf("index" to "follower-index", "cluster_manager_timeout" to "60s"))
+            .withContent(BytesArray("{}"), XContentType.JSON)
+            .build()
+        val pauseRequest = PauseIndexReplicationRequest.fromXContent(
+            restRequest.contentOrSourceParamParser(), restRequest.param("index")
+        )
+        pauseRequest.clusterManagerNodeTimeout(
+            restRequest.paramAsTime("cluster_manager_timeout", pauseRequest.clusterManagerNodeTimeout())
+        )
+        assertEquals(TimeValue.timeValueSeconds(60), pauseRequest.clusterManagerNodeTimeout())
+    }
 
     fun `test pause replication in following state and empty index`() {
         val followerClient = getClientForCluster(FOLLOWER)

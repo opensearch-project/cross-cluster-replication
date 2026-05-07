@@ -316,12 +316,14 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         // 2. Request for individual files from leader cluster for this shardId
         // make sure the store is not released until we are done.
         val fileMetadata = ArrayList(metadataSnapshot.asMap().values)
+        val totalSizeBytes = fileMetadata.sumOf { it.length() }
+        log.info("Starting bootstrap restore: follower=$followerIndexName, followerShard=$followerShardId, leaderShard=$leaderShardId, fileCount=${fileMetadata.size}, totalSizeBytes=$totalSizeBytes")
         multiChunkTransfer = RemoteClusterMultiChunkTransfer(log, clusterService.clusterName.value(), client.threadPool().threadContext,
                 store, replicationSettings.concurrentFileChunks, restoreUUID, replMetadata, leaderShardNode,
                 leaderShardId, fileMetadata, leaderClusterClient, recoveryState, replicationSettings.chunkSize,
                 object : ActionListener<Void> {
                     override fun onFailure(e: java.lang.Exception?) {
-                        log.error("Restore of ${store.shardId()} failed due to ${e?.stackTraceToString()}")
+                        log.error("Restore of ${store.shardId()} failed due to follower=$followerIndexName, leaderShard=$leaderShardId, error=${e?.stackTraceToString()}")
                         if (e is NodeDisconnectedException || e is NodeNotConnectedException || e is ConnectTransportException) {
                             log.info("Retrying restore shard for ${store.shardId()}")
                             Thread.sleep(1000) // to get updated leader cluster state
@@ -330,7 +332,7 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
                                         recoveryState, listener, ::restoreShardUsingMultiChunkTransfer, log = log)
                             }
                         } else {
-                            log.error("Not retrying restore shard for ${store.shardId()}")
+                            log.error("Not retrying restore shard for ${store.shardId()} follower=$followerIndexName, leaderShard=$leaderShardId")
                             store.decRef()
                             releaseLeaderResources(restoreUUID, leaderShardNode, leaderShardId, followerShardId, followerIndexName)
                             listener.onFailure(e)
