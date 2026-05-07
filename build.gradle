@@ -35,7 +35,7 @@ import org.opensearch.gradle.test.RestIntegTestTask
 buildscript {
     ext {
         isSnapshot = "true" == System.getProperty("build.snapshot", "true")
-        opensearch_version = System.getProperty("opensearch.version", "3.6.0-SNAPSHOT")
+        opensearch_version = System.getProperty("opensearch.version", "3.7.0-SNAPSHOT")
         buildVersionQualifier = System.getProperty("build.version_qualifier", "")
         // e.g. 2.0.0-rc1-SNAPSHOT -> 2.0.0.0-rc1-SNAPSHOT
         version_tokens = opensearch_version.tokenize('-')
@@ -274,6 +274,8 @@ class CrossClusterWaitForHttpResource {
     private URL url;
     private String username;
     private String password;
+    private String clientCertPath;
+    private String clientKeyPath;
     Set<Integer> validResponseCodes = Collections.singleton(200);
 
     CrossClusterWaitForHttpResource(String protocol, String host, int numberOfNodes) throws MalformedURLException {
@@ -312,7 +314,54 @@ class CrossClusterWaitForHttpResource {
         this.password = password;
     }
 
+    void setClientCert(String certPath, String keyPath) {
+        this.clientCertPath = certPath;
+        this.clientKeyPath = keyPath;
+    }
+
     void checkResource() throws IOException {
+        if (clientCertPath != null && clientKeyPath != null) {
+            // Use java.net.http.HttpClient which properly handles client certs
+            def certFactory = java.security.cert.CertificateFactory.getInstance("X.509")
+            def cert = new File(clientCertPath).withInputStream { certFactory.generateCertificate(it) }
+            def rootCa = new File(new File(clientCertPath).parent, "root-ca.pem").withInputStream { certFactory.generateCertificate(it) }
+            def keyLines = new File(clientKeyPath).readLines().findAll { !it.startsWith("-----") }.join("")
+            def keyBytes = Base64.getDecoder().decode(keyLines)
+            def keySpec = new java.security.spec.PKCS8EncodedKeySpec(keyBytes)
+            def key = java.security.KeyFactory.getInstance("RSA").generatePrivate(keySpec)
+
+            def ks = java.security.KeyStore.getInstance("JKS")
+            ks.load(null, null)
+            ks.setKeyEntry("admin", key, "".toCharArray(), [cert, rootCa] as java.security.cert.Certificate[])
+            def kmf = javax.net.ssl.KeyManagerFactory.getInstance(javax.net.ssl.KeyManagerFactory.getDefaultAlgorithm())
+            kmf.init(ks, "".toCharArray())
+
+            TrustManager[] trustAllCerts = [ new X509TrustManager() {
+                X509Certificate[] getAcceptedIssuers() { return null }
+                void checkClientTrusted(X509Certificate[] certs, String authType) {}
+                void checkServerTrusted(X509Certificate[] certs, String authType) {}
+            }] as TrustManager[]
+
+            def sc = javax.net.ssl.SSLContext.getInstance("TLS")
+            sc.init(kmf.getKeyManagers(), trustAllCerts, new java.security.SecureRandom())
+
+            def sslParams = sc.getDefaultSSLParameters()
+            sslParams.setEndpointIdentificationAlgorithm("")
+            def httpClient = java.net.http.HttpClient.newBuilder()
+                .sslContext(sc)
+                .sslParameters(sslParams)
+                .build()
+            def request = java.net.http.HttpRequest.newBuilder()
+                .uri(new URI(this.@url.toString().replace(">=", "%3E%3D")))
+                .header("Authorization", "Basic ")
+                .GET()
+                .build()
+            def response = httpClient.send(request, java.net.http.HttpResponse.BodyHandlers.ofString())
+            if (validResponseCodes.contains(response.statusCode())) {
+                return
+            }
+            throw new IOException(response.statusCode() + " " + response.body())
+        }
         final HttpURLConnection connection = buildConnection()
         connection.connect();
         final Integer response = connection.getResponseCode();
@@ -340,7 +389,25 @@ class CrossClusterWaitForHttpResource {
                 }
             ] as TrustManager[];
             SSLContext sc = SSLContext.getInstance("SSL");
-            sc.init(null, trustAllCerts, new java.security.SecureRandom());
+            javax.net.ssl.KeyManager[] keyManagers = null
+            if (clientCertPath != null && clientKeyPath != null) {
+                def certFactory = java.security.cert.CertificateFactory.getInstance("X.509")
+                def cert = new File(clientCertPath).withInputStream { certFactory.generateCertificate(it) }
+                def rootCa = new File(new File(clientCertPath).parent, "root-ca.pem").withInputStream { certFactory.generateCertificate(it) }
+                def keyLines = new File(clientKeyPath).readLines()
+                    .findAll { !it.startsWith("-----") }
+                    .join("")
+                def keyBytes = Base64.getDecoder().decode(keyLines)
+                def keySpec = new java.security.spec.PKCS8EncodedKeySpec(keyBytes)
+                def key = java.security.KeyFactory.getInstance("RSA").generatePrivate(keySpec)
+                def ks = java.security.KeyStore.getInstance("JKS")
+                ks.load(null, null)
+                ks.setKeyEntry("admin", key, "".toCharArray(), [cert, rootCa] as java.security.cert.Certificate[])
+                def kmf = javax.net.ssl.KeyManagerFactory.getInstance(javax.net.ssl.KeyManagerFactory.getDefaultAlgorithm())
+                kmf.init(ks, "".toCharArray())
+                keyManagers = kmf.getKeyManagers()
+            }
+            sc.init(keyManagers, trustAllCerts, new java.security.SecureRandom());
             connection.setSSLSocketFactory(sc.getSocketFactory());
             // Create all-trusting host name verifier
             HostnameVerifier allHostsValid = new HostnameVerifier() {
@@ -441,8 +508,15 @@ def configureCluster(OpenSearchCluster cluster, Boolean securityEnabled) {
             protocol = "https"
         }
         CrossClusterWaitForHttpResource wait = new CrossClusterWaitForHttpResource(protocol, cluster.getFirstNode().getHttpSocketURI(), cluster.nodes.size())
-        wait.setUsername("admin")
-        wait.setPassword("admin")
+        if (securityEnabled) {
+            wait.setClientCert(
+                "$projectDir/src/test/resources/security/plugin/kirk.pem",
+                "$projectDir/src/test/resources/security/plugin/kirk-key.pem"
+            )
+        } else {
+            wait.setUsername("admin")
+            wait.setPassword("admin")
+        }
         return wait.wait(500)
     }
 
@@ -576,9 +650,10 @@ def addSecurityConfig(OpenSearchNode node, Boolean securityEnabled) {
         node.setting("plugins.security.ssl.http.pemcert_filepath", "esnode.pem")
         node.setting("plugins.security.ssl.http.pemkey_filepath", "esnode-key.pem")
         node.setting("plugins.security.ssl.http.pemtrustedcas_filepath", "root-ca.pem")
+        node.setting("plugins.security.ssl.http.clientauth_mode", "OPTIONAL")
         node.setting("plugins.security.allow_unsafe_democertificates", "true")
         node.setting("plugins.security.allow_default_init_securityindex", "true")
-        node.setting("plugins.security.authcz.admin_dn", "CN=kirk,OU=client,O=client,L=test,C=de")
+        node.setting("plugins.security.authcz.admin_dn", "[\"CN=kirk,OU=client,O=client,L=test,C=de\"]")
         node.setting("plugins.security.audit.type", "internal_opensearch")
         node.setting("plugins.security.enable_snapshot_restore_privilege", "true")
         node.setting("plugins.security.check_snapshot_restore_write_privileges", "true")
