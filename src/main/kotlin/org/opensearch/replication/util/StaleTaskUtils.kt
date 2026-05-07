@@ -142,7 +142,7 @@ object StaleTaskUtils {
     /**
      * Removes ALL replication tasks for the given index from the cluster state,
      * regardless of whether they are stale or actively running.
-     * Used by the Start/Resume APIs to ensure a clean slate before creating new tasks.
+     * Used by the Start and Resume APIs to ensure a clean slate before creating new tasks.
      * @return the number of tasks successfully removed
      */
     suspend fun removeAllTasksForIndex(
