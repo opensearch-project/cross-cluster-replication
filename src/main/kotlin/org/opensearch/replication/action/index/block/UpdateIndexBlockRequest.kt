@@ -25,20 +25,23 @@ import org.opensearch.core.xcontent.XContentBuilder
 import java.util.function.Supplier
 
 enum class IndexBlockUpdateType {
-    ADD_BLOCK, REMOVE_BLOCK
+    ADD_BLOCK,
+    REMOVE_BLOCK,
 }
 
-class UpdateIndexBlockRequest :  AcknowledgedRequest<UpdateIndexBlockRequest>, IndicesRequest, ToXContentObject {
-
+class UpdateIndexBlockRequest :
+    AcknowledgedRequest<UpdateIndexBlockRequest>,
+    IndicesRequest,
+    ToXContentObject {
     var indexName: String
     var updateType: IndexBlockUpdateType
 
-    constructor(index: String, updateType: IndexBlockUpdateType): super() {
+    constructor(index: String, updateType: IndexBlockUpdateType) : super() {
         this.indexName = index
         this.updateType = updateType
     }
 
-    constructor(inp: StreamInput): super(inp) {
+    constructor(inp: StreamInput) : super(inp) {
         indexName = inp.readString()
         updateType = inp.readEnum(IndexBlockUpdateType::class.java)
     }
@@ -47,18 +50,17 @@ class UpdateIndexBlockRequest :  AcknowledgedRequest<UpdateIndexBlockRequest>, I
         /* No validation for now. Null checks are implicit as constructor doesn't
         allow nulls to be passed into the request.
          */
-        return null;
+        return null
     }
 
-    override fun indices(): Array<String> {
-        return arrayOf(indexName)
-    }
+    override fun indices(): Array<String> = arrayOf(indexName)
 
-    override fun indicesOptions(): IndicesOptions {
-        return IndicesOptions.strictSingleIndexNoExpandForbidClosed()
-    }
+    override fun indicesOptions(): IndicesOptions = IndicesOptions.strictSingleIndexNoExpandForbidClosed()
 
-    override fun toXContent(builder: XContentBuilder, params: ToXContent.Params): XContentBuilder {
+    override fun toXContent(
+        builder: XContentBuilder,
+        params: ToXContent.Params,
+    ): XContentBuilder {
         builder.startObject()
         builder.field("indexName", indexName)
         builder.field("updateType", updateType)

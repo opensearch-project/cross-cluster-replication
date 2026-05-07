@@ -22,33 +22,27 @@ import java.util.concurrent.atomic.AtomicInteger
  */
 class BatchSizeSettings(
     private val indexSettings: IndexSettings,
-    private val replicationSettings: ReplicationSettings
+    private val replicationSettings: ReplicationSettings,
 ) {
-
     /**
      * Get the effective batch size - index-level if set, otherwise cluster-level
      */
-    fun getBatchSize(): Int {
-        return if (hasIndexLevelSetting()) {
+    fun getBatchSize(): Int =
+        if (hasIndexLevelSetting()) {
             ReplicationPlugin.REPLICATION_FOLLOWER_OPS_BATCH_SIZE_INDEX.get(indexSettings.settings)
         } else {
             replicationSettings.batchSize
         }
-    }
 
     /**
      * Check if index-level setting is configured
      */
-    fun hasIndexLevelSetting(): Boolean {
-        return indexSettings.settings.hasValue(ReplicationPlugin.REPLICATION_FOLLOWER_OPS_BATCH_SIZE_INDEX.key)
-    }
+    fun hasIndexLevelSetting(): Boolean = indexSettings.settings.hasValue(ReplicationPlugin.REPLICATION_FOLLOWER_OPS_BATCH_SIZE_INDEX.key)
 
     /**
      * Get the source of the current batch size setting
      */
-    fun getBatchSizeSource(): String {
-        return if (hasIndexLevelSetting()) "index-level" else "cluster-level"
-    }
+    fun getBatchSizeSource(): String = if (hasIndexLevelSetting()) "index-level" else "cluster-level"
 
     // For dynamic batch size adjustment (2GB fix)
     private val dynamicBatchSize = AtomicInteger(-1)
@@ -81,7 +75,5 @@ class BatchSizeSettings(
     /**
      * Check if batch size has been dynamically reduced
      */
-    fun isDynamicallyReduced(): Boolean {
-        return dynamicBatchSize.get() > 0
-    }
+    fun isDynamicallyReduced(): Boolean = dynamicBatchSize.get() > 0
 }

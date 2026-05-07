@@ -14,7 +14,6 @@ package org.opensearch.replication.action.status
 import org.opensearch.action.ActionType
 import org.opensearch.core.common.io.stream.Writeable
 
-
 class ShardsInfoAction : ActionType<ReplicationStatusResponse>(NAME, reader) {
     companion object {
         const val NAME = "indices:admin/plugins/replication/index/all-shards"
@@ -24,4 +23,3 @@ class ShardsInfoAction : ActionType<ReplicationStatusResponse>(NAME, reader) {
 
     override fun getResponseReader(): Writeable.Reader<ReplicationStatusResponse> = reader
 }
-

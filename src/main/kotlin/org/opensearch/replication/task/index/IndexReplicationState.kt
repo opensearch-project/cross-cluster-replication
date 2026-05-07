@@ -11,18 +11,18 @@
 
 package org.opensearch.replication.task.index
 
-import org.opensearch.replication.task.ReplicationState
-import org.opensearch.replication.task.shard.ShardReplicationParams
 import org.opensearch.core.ParseField
 import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.core.common.io.stream.StreamOutput
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.core.xcontent.ObjectParser
 import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.XContentBuilder
 import org.opensearch.core.xcontent.XContentParser
-import org.opensearch.core.index.shard.ShardId
 import org.opensearch.persistent.PersistentTaskState
 import org.opensearch.persistent.PersistentTasksCustomMetadata.PersistentTask
+import org.opensearch.replication.task.ReplicationState
+import org.opensearch.replication.task.shard.ShardReplicationParams
 import java.io.IOException
 import java.lang.IllegalArgumentException
 
@@ -32,7 +32,7 @@ sealed class IndexReplicationState : PersistentTaskState {
     companion object {
         const val NAME = IndexReplicationExecutor.TASK_NAME
 
-        fun reader(inp : StreamInput) : IndexReplicationState {
+        fun reader(inp: StreamInput): IndexReplicationState {
             val state = inp.readEnum(ReplicationState::class.java)!!
             return when (state) {
                 ReplicationState.INIT -> InitialState
@@ -52,9 +52,7 @@ sealed class IndexReplicationState : PersistentTaskState {
         }
 
         @Throws(IOException::class)
-        fun fromXContent(parser: XContentParser): IndexReplicationState {
-            return PARSER.parse(parser, null).build()
-        }
+        fun fromXContent(parser: XContentParser): IndexReplicationState = PARSER.parse(parser, null).build()
     }
 
     constructor(state: ReplicationState) {
@@ -67,11 +65,14 @@ sealed class IndexReplicationState : PersistentTaskState {
 
     final override fun getWriteableName(): String = NAME
 
-    override fun toXContent(builder: XContentBuilder, params: ToXContent.Params?): XContentBuilder {
-        return builder.startObject()
+    override fun toXContent(
+        builder: XContentBuilder,
+        params: ToXContent.Params?,
+    ): XContentBuilder =
+        builder
+            .startObject()
             .field("state", state)
             .endObject()
-    }
 
     class Builder {
         lateinit var state: String
@@ -82,11 +83,12 @@ sealed class IndexReplicationState : PersistentTaskState {
 
         fun build(): IndexReplicationState {
             // Issue details - https://github.com/opensearch-project/cross-cluster-replication/issues/223
-            state = if(!this::state.isInitialized) {
-                ReplicationState.MONITORING.name
-            } else {
-                state
-            }
+            state =
+                if (!this::state.isInitialized) {
+                    ReplicationState.MONITORING.name
+                } else {
+                    state
+                }
             return when (state) {
                 ReplicationState.INIT.name -> InitialState
                 ReplicationState.RESTORING.name -> RestoreState
@@ -129,8 +131,10 @@ object MonitoringState : IndexReplicationState(ReplicationState.MONITORING)
 /**
  * State when index task is in failed state.
  */
-data class FailedState(val failedShards: Map<ShardId, PersistentTask<ShardReplicationParams>>, val errorMsg: String)
-    : IndexReplicationState(ReplicationState.FAILED) {
+data class FailedState(
+    val failedShards: Map<ShardId, PersistentTask<ShardReplicationParams>>,
+    val errorMsg: String,
+) : IndexReplicationState(ReplicationState.FAILED) {
     constructor(inp: StreamInput) : this(inp.readMap(::ShardId, ::PersistentTask), "")
 
     override fun writeTo(out: StreamOutput) {
@@ -138,21 +142,25 @@ data class FailedState(val failedShards: Map<ShardId, PersistentTask<ShardReplic
         out.writeMap(failedShards, { o, k -> k.writeTo(o) }, { o, v -> v.writeTo(o) })
     }
 
-    override fun toXContent(builder: XContentBuilder, params: ToXContent.Params?): XContentBuilder {
-        return builder.startObject()
-                .field("error_message", errorMsg)
-                .field("failed_shard_replication_tasks").map(failedShards.mapKeys { it.key.toString() })
-                .field("state", state)
-                .endObject()
-    }
+    override fun toXContent(
+        builder: XContentBuilder,
+        params: ToXContent.Params?,
+    ): XContentBuilder =
+        builder
+            .startObject()
+            .field("error_message", errorMsg)
+            .field("failed_shard_replication_tasks")
+            .map(failedShards.mapKeys { it.key.toString() })
+            .field("state", state)
+            .endObject()
 }
 
 /**
  * State when index is being actively replicated.
  */
-data class FollowingState(val shardReplicationTasks: Map<ShardId, PersistentTask<ShardReplicationParams>>)
-    : IndexReplicationState(ReplicationState.FOLLOWING) {
-
+data class FollowingState(
+    val shardReplicationTasks: Map<ShardId, PersistentTask<ShardReplicationParams>>,
+) : IndexReplicationState(ReplicationState.FOLLOWING) {
     constructor(inp: StreamInput) : this(inp.readMap(::ShardId, ::PersistentTask))
 
     override fun writeTo(out: StreamOutput) {
@@ -160,10 +168,14 @@ data class FollowingState(val shardReplicationTasks: Map<ShardId, PersistentTask
         out.writeMap(shardReplicationTasks, { o, k -> k.writeTo(o) }, { o, v -> v.writeTo(o) })
     }
 
-    override fun toXContent(builder: XContentBuilder, params: ToXContent.Params?): XContentBuilder {
-        return builder.startObject()
-            .field("shard_replication_tasks").map(shardReplicationTasks.mapKeys { it.key.toString() })
+    override fun toXContent(
+        builder: XContentBuilder,
+        params: ToXContent.Params?,
+    ): XContentBuilder =
+        builder
+            .startObject()
+            .field("shard_replication_tasks")
+            .map(shardReplicationTasks.mapKeys { it.key.toString() })
             .field("state", state)
             .endObject()
-    }
 }

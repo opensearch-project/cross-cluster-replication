@@ -20,7 +20,7 @@ import org.opensearch.core.index.shard.ShardId
 import org.opensearch.transport.RemoteClusterAwareRequest
 
 class GetChangesRequest : SingleShardRequest<GetChangesRequest> {
-    val shardId : ShardId
+    val shardId: ShardId
     val fromSeqNo: Long
     val toSeqNo: Long
 
@@ -30,15 +30,13 @@ class GetChangesRequest : SingleShardRequest<GetChangesRequest> {
         this.toSeqNo = toSeqNo
     }
 
-    constructor(input : StreamInput) : super(input) {
+    constructor(input: StreamInput) : super(input) {
         this.shardId = ShardId(input)
         this.fromSeqNo = input.readLong()
         this.toSeqNo = input.readVLong()
     }
 
-    override fun validate(): ActionRequestValidationException? {
-        return super.validateNonNullIndex()
-    }
+    override fun validate(): ActionRequestValidationException? = super.validateNonNullIndex()
 
     override fun writeTo(out: StreamOutput) {
         super.writeTo(out)

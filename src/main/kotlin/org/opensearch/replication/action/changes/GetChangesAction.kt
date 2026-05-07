@@ -14,7 +14,6 @@ package org.opensearch.replication.action.changes
 import org.opensearch.action.ActionType
 
 class GetChangesAction private constructor() : ActionType<GetChangesResponse>(NAME, ::GetChangesResponse) {
-
     companion object {
         const val NAME = "indices:data/read/plugins/replication/changes"
         val INSTANCE = GetChangesAction()

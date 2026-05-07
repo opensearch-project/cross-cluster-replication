@@ -18,17 +18,18 @@ import org.opensearch.core.index.shard.ShardId
 import org.opensearch.index.translog.Translog
 
 class ReplayChangesRequest : ReplicatedWriteRequest<ReplayChangesRequest> {
-
     val leaderAlias: String
     val leaderIndex: String
     val changes: List<Translog.Operation>
     val maxSeqNoOfUpdatesOrDeletes: Long
 
-    constructor(shardId: ShardId,
-                changes: List<Translog.Operation>,
-                maxSeqNoOfUpdatesOrDeletes: Long,
-                leaderAlias: String,
-                leaderIndex: String) : super(shardId) {
+    constructor(
+        shardId: ShardId,
+        changes: List<Translog.Operation>,
+        maxSeqNoOfUpdatesOrDeletes: Long,
+        leaderAlias: String,
+        leaderIndex: String,
+    ) : super(shardId) {
         this.changes = changes
         this.maxSeqNoOfUpdatesOrDeletes = maxSeqNoOfUpdatesOrDeletes
         this.leaderAlias = leaderAlias
@@ -50,7 +51,5 @@ class ReplayChangesRequest : ReplicatedWriteRequest<ReplayChangesRequest> {
         out.writeLong(maxSeqNoOfUpdatesOrDeletes)
     }
 
-    override fun toString(): String {
-        return "ReplayChangesRequest[changes=<${changes.take(3)}]"
-    }
+    override fun toString(): String = "ReplayChangesRequest[changes=<${changes.take(3)}]"
 }

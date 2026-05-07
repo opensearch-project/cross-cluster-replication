@@ -21,19 +21,19 @@ import org.opensearch.replication.task.shard.FollowerShardMetric.FollowerStats
 import java.io.IOException
 
 class FollowerNodeStatsResponse : BaseNodeResponse {
-    var stats :Map<ShardId, FollowerStats>
+    var stats: Map<ShardId, FollowerStats>
 
     constructor(inp: StreamInput) : super(inp) {
         stats = inp.readMap(::ShardId, ::FollowerStats)
     }
 
-    constructor(node : DiscoveryNode, remoteClusterStats: Map<ShardId, FollowerShardMetric>) : super(node) {
-        stats = remoteClusterStats.mapValues { (_ , v) -> v.createStats()  }
+    constructor(node: DiscoveryNode, remoteClusterStats: Map<ShardId, FollowerShardMetric>) : super(node) {
+        stats = remoteClusterStats.mapValues { (_, v) -> v.createStats() }
     }
 
     @Throws(IOException::class)
     override fun writeTo(out: StreamOutput) {
         super.writeTo(out)
-        out.writeMap(stats, { o, k -> k.writeTo(o)}, { o, v -> v.writeTo(o)})
+        out.writeMap(stats, { o, k -> k.writeTo(o) }, { o, v -> v.writeTo(o) })
     }
 }

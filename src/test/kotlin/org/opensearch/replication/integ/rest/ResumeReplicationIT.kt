@@ -10,22 +10,10 @@
  */
 
 package org.opensearch.replication.integ.rest
-import org.opensearch.replication.MultiClusterAnnotations
-import org.opensearch.replication.MultiClusterRestTestCase
-import org.opensearch.replication.StartReplicationRequest
-import org.opensearch.replication.`validate aggregated paused status response`
-import org.opensearch.replication.`validate not paused status aggregated response`
-import org.opensearch.replication.`validate not paused status response`
-import org.opensearch.replication.`validate paused status response`
-import org.opensearch.replication.`validate status syncing aggregated response`
-import org.opensearch.replication.`validate status syncing response`
-import org.opensearch.replication.pauseReplication
-import org.opensearch.replication.replicationStatus
-import org.opensearch.replication.resumeReplication
-import org.opensearch.replication.startReplication
-import org.opensearch.replication.stopReplication
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
+import org.junit.Assert
+import org.junit.Assume
 import org.opensearch.action.DocWriteResponse
 import org.opensearch.action.admin.indices.delete.DeleteIndexRequest
 import org.opensearch.action.admin.indices.open.OpenIndexRequest
@@ -42,20 +30,32 @@ import org.opensearch.common.unit.TimeValue
 import org.opensearch.common.xcontent.XContentType
 import org.opensearch.core.common.bytes.BytesArray
 import org.opensearch.core.xcontent.NamedXContentRegistry
+import org.opensearch.replication.ANALYZERS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS
+import org.opensearch.replication.MultiClusterAnnotations
+import org.opensearch.replication.MultiClusterRestTestCase
+import org.opensearch.replication.StartReplicationRequest
 import org.opensearch.replication.action.resume.ResumeIndexReplicationRequest
+import org.opensearch.replication.pauseReplication
+import org.opensearch.replication.replicationStatus
+import org.opensearch.replication.resumeReplication
+import org.opensearch.replication.startReplication
+import org.opensearch.replication.stopReplication
+import org.opensearch.replication.`validate aggregated paused status response`
+import org.opensearch.replication.`validate not paused status aggregated response`
+import org.opensearch.replication.`validate not paused status response`
+import org.opensearch.replication.`validate paused status response`
+import org.opensearch.replication.`validate status syncing aggregated response`
+import org.opensearch.replication.`validate status syncing response`
 import org.opensearch.rest.RestRequest
 import org.opensearch.test.rest.FakeRestRequest
-import org.junit.Assert
-import org.junit.Assume
 import java.nio.file.Files
 import java.util.concurrent.TimeUnit
-import org.opensearch.replication.ANALYZERS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS
 
 @MultiClusterAnnotations.ClusterConfigurations(
-        MultiClusterAnnotations.ClusterConfiguration(clusterName = LEADER),
-        MultiClusterAnnotations.ClusterConfiguration(clusterName = FOLLOWER)
+    MultiClusterAnnotations.ClusterConfiguration(clusterName = LEADER),
+    MultiClusterAnnotations.ClusterConfiguration(clusterName = FOLLOWER),
 )
-class ResumeReplicationIT: MultiClusterRestTestCase() {
+class ResumeReplicationIT : MultiClusterRestTestCase() {
     private val leaderIndexName = "leader_index"
     private val followerIndexName = "resumed_index"
     private val leaderClusterPath = "testclusters/leaderCluster-"
@@ -76,11 +76,10 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
         followerClient.pauseReplication(followerIndexName)
         var statusResp = followerClient.replicationStatus(followerIndexName)
         `validate paused status response`(statusResp)
-        statusResp = followerClient.replicationStatus(followerIndexName,false)
+        statusResp = followerClient.replicationStatus(followerIndexName, false)
         `validate aggregated paused status response`(statusResp)
         followerClient.resumeReplication(followerIndexName)
     }
-
 
     fun `test resume without pause `() {
         val followerClient = getClientForCluster(FOLLOWER)
@@ -92,15 +91,15 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
         assertThatThrownBy {
             var statusResp = followerClient.replicationStatus(followerIndexName)
             `validate status syncing response`(statusResp)
-            statusResp = followerClient.replicationStatus(followerIndexName,false)
+            statusResp = followerClient.replicationStatus(followerIndexName, false)
             `validate status syncing aggregated response`(statusResp)
             followerClient.resumeReplication(followerIndexName)
             statusResp = followerClient.replicationStatus(followerIndexName)
             `validate not paused status response`(statusResp)
-            statusResp = followerClient.replicationStatus(followerIndexName,false)
+            statusResp = followerClient.replicationStatus(followerIndexName, false)
             `validate not paused status aggregated response`(statusResp)
         }.isInstanceOf(ResponseException::class.java)
-                .hasMessageContaining("Replication on Index ${followerIndexName} is already running")
+            .hasMessageContaining("Replication on Index $followerIndexName is already running")
     }
 
     fun `test resume without retention lease`() {
@@ -119,7 +118,7 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
         assertThatThrownBy {
             followerClient.resumeReplication(followerIndexName)
         }.isInstanceOf(ResponseException::class.java)
-                .hasMessageContaining("Retention lease doesn't exist. Replication can't be resumed for $followerIndexName")
+            .hasMessageContaining("Retention lease doesn't exist. Replication can't be resumed for $followerIndexName")
     }
 
     fun `test pause and resume replication amid leader index close and open`() {
@@ -134,20 +133,24 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
         and verify the same
          */
         followerClient.pauseReplication(followerIndexName)
-        leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
-        leaderClient.indices().open(OpenIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
+        leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        leaderClient.indices().open(OpenIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
         followerClient.resumeReplication(followerIndexName)
-        //Update mapping post resume assert
-        val sourceMap : MutableMap<String, String> = HashMap()
+        // Update mapping post resume assert
+        val sourceMap: MutableMap<String, String> = HashMap()
         sourceMap["x"] = "y"
         val indexResponse = leaderClient.index(IndexRequest(leaderIndexName).id("2").source(sourceMap), RequestOptions.DEFAULT)
         assertThat(indexResponse.result).isIn(DocWriteResponse.Result.CREATED, DocWriteResponse.Result.UPDATED)
-        assertBusy ({
+        assertBusy({
             Assert.assertEquals(
-                    leaderClient.indices().getMapping(GetMappingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
-                            .mappings()[leaderIndexName],
-                    followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
-                            .mappings()[followerIndexName]
+                leaderClient
+                    .indices()
+                    .getMapping(GetMappingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
+                    .mappings()[leaderIndexName],
+                followerClient
+                    .indices()
+                    .getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
+                    .mappings()[followerIndexName],
             )
         }, 60, TimeUnit.SECONDS)
     }
@@ -163,15 +166,14 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
         and verify the same
          */
         followerClient.pauseReplication(followerIndexName)
-        leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
+        leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
         assertThatThrownBy {
             followerClient.resumeReplication(followerIndexName)
         }.isInstanceOf(ResponseException::class.java)
-                .hasMessageContaining("closed")
+            .hasMessageContaining("closed")
     }
 
     fun `test that replication fails to resume when custom analyser is not present in follower`() {
-
         Assume.assumeFalse(ANALYZERS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS, checkifIntegTestRemote())
 
         val synonyms = javaClass.getResourceAsStream("/analyzers/synonyms.txt")
@@ -190,15 +192,18 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
             createConnectionBetweenClusters(FOLLOWER, LEADER)
             followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
             followerClient.pauseReplication(followerIndexName)
-            leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
-            val settings: Settings = Settings.builder().loadFromStream(synonymsJson, javaClass.getResourceAsStream(synonymsJson), false)
-                .build()
+            leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+            val settings: Settings =
+                Settings
+                    .builder()
+                    .loadFromStream(synonymsJson, javaClass.getResourceAsStream(synonymsJson), false)
+                    .build()
             try {
                 leaderClient.indices().putSettings(UpdateSettingsRequest(leaderIndexName).settings(settings), RequestOptions.DEFAULT)
             } catch (e: Exception) {
                 assumeNoException("Ignored test as analyzer setting could not be added", e)
             }
-            leaderClient.indices().open(OpenIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
+            leaderClient.indices().open(OpenIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
             assertThatThrownBy {
                 followerClient.resumeReplication(followerIndexName)
             }.isInstanceOf(ResponseException::class.java).hasMessageContaining("resource_not_found_exception")
@@ -208,7 +213,6 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
     }
 
     fun `test that replication resumes when custom analyser is present in follower`() {
-
         Assume.assumeFalse(ANALYZERS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS, checkifIntegTestRemote())
 
         val synonymFilename = "synonyms.txt"
@@ -228,21 +232,24 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
             createConnectionBetweenClusters(FOLLOWER, LEADER)
             followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
             followerClient.pauseReplication(followerIndexName)
-            leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
+            leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
             for (i in 0 until clusterNodes(FOLLOWER)) {
                 val followerConfig = PathUtils.get(buildDir, followerClusterPath + i, "config")
                 val followerSynonymPath = followerConfig.resolve(synonymFilename)
                 followerSynonymPaths.add(followerSynonymPath)
                 Files.copy(javaClass.getResourceAsStream("/analyzers/synonyms.txt"), followerSynonymPath)
             }
-            val settings: Settings = Settings.builder().loadFromStream(synonymsJson, javaClass.getResourceAsStream(synonymsJson), false)
-                .build()
+            val settings: Settings =
+                Settings
+                    .builder()
+                    .loadFromStream(synonymsJson, javaClass.getResourceAsStream(synonymsJson), false)
+                    .build()
             try {
                 leaderClient.indices().putSettings(UpdateSettingsRequest(leaderIndexName).settings(settings), RequestOptions.DEFAULT)
             } catch (e: Exception) {
                 assumeNoException("Ignored test as analyzer setting could not be added", e)
             }
-            leaderClient.indices().open(OpenIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
+            leaderClient.indices().open(OpenIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
             followerClient.resumeReplication(followerIndexName)
             var statusResp = followerClient.replicationStatus(followerIndexName)
             `validate status syncing response`(statusResp)
@@ -254,7 +261,6 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
     }
 
     fun `test that replication resumes when custom analyser is overridden and present in follower`() {
-
         Assume.assumeFalse(ANALYZERS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS, checkifIntegTestRemote())
 
         val followerSynonymFilename = "synonyms_follower.txt"
@@ -277,33 +283,47 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
         val leaderClient = getClientForCluster(LEADER)
         val followerClient = getClientForCluster(FOLLOWER)
         try {
-            var settings: Settings = Settings.builder().loadFromStream(synonymsJson, javaClass.getResourceAsStream(synonymsJson), false)
-                .build()
+            var settings: Settings =
+                Settings
+                    .builder()
+                    .loadFromStream(synonymsJson, javaClass.getResourceAsStream(synonymsJson), false)
+                    .build()
             try {
-                val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName).settings(settings), RequestOptions.DEFAULT)
+                val createIndexResponse =
+                    leaderClient.indices().create(
+                        CreateIndexRequest(leaderIndexName).settings(settings),
+                        RequestOptions.DEFAULT,
+                    )
                 assertThat(createIndexResponse.isAcknowledged).isTrue()
             } catch (e: Exception) {
                 assumeNoException("Ignored test as analyzer setting could not be added", e)
             }
             createConnectionBetweenClusters(FOLLOWER, LEADER)
-            val overriddenSettings: Settings = Settings.builder()
-                .put("index.analysis.filter.my_filter.synonyms_path", followerSynonymFilename)
-                .build()
-            followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName, overriddenSettings), waitForRestore = true)
+            val overriddenSettings: Settings =
+                Settings
+                    .builder()
+                    .put("index.analysis.filter.my_filter.synonyms_path", followerSynonymFilename)
+                    .build()
+            followerClient.startReplication(
+                StartReplicationRequest("source", leaderIndexName, followerIndexName, overriddenSettings),
+                waitForRestore = true,
+            )
             followerClient.pauseReplication(followerIndexName)
-            leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
+            leaderClient.indices().close(CloseIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
             for (newSynonymPath in leaderNewSynonymPaths) {
                 Files.copy(javaClass.getResourceAsStream("/analyzers/synonyms.txt"), newSynonymPath)
             }
-            settings = Settings.builder()
-                .put("index.analysis.filter.my_filter.synonyms_path", "synonyms_new.txt")
-                .build()
+            settings =
+                Settings
+                    .builder()
+                    .put("index.analysis.filter.my_filter.synonyms_path", "synonyms_new.txt")
+                    .build()
             try {
                 leaderClient.indices().putSettings(UpdateSettingsRequest(leaderIndexName).settings(settings), RequestOptions.DEFAULT)
             } catch (e: Exception) {
                 assumeNoException("Ignored test as analyzer setting could not be added", e)
             }
-            leaderClient.indices().open(OpenIndexRequest(leaderIndexName), RequestOptions.DEFAULT);
+            leaderClient.indices().open(OpenIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
             followerClient.resumeReplication(followerIndexName)
             var statusResp = followerClient.replicationStatus(followerIndexName)
             `validate status syncing response`(statusResp)
@@ -317,17 +337,21 @@ class ResumeReplicationIT: MultiClusterRestTestCase() {
 
     fun `test resume replication with cluster_manager_timeout`() {
         // Verify cluster_manager_timeout param is parsed from HTTP request and set on the request
-        val restRequest = FakeRestRequest.Builder(NamedXContentRegistry.EMPTY)
-            .withMethod(RestRequest.Method.POST)
-            .withPath("/_plugins/_replication/follower-index/_resume")
-            .withParams(mapOf("index" to "follower-index", "cluster_manager_timeout" to "60s"))
-            .withContent(BytesArray("{}"), XContentType.JSON)
-            .build()
-        val resumeRequest = ResumeIndexReplicationRequest.fromXContent(
-            restRequest.contentOrSourceParamParser(), restRequest.param("index")
-        )
+        val restRequest =
+            FakeRestRequest
+                .Builder(NamedXContentRegistry.EMPTY)
+                .withMethod(RestRequest.Method.POST)
+                .withPath("/_plugins/_replication/follower-index/_resume")
+                .withParams(mapOf("index" to "follower-index", "cluster_manager_timeout" to "60s"))
+                .withContent(BytesArray("{}"), XContentType.JSON)
+                .build()
+        val resumeRequest =
+            ResumeIndexReplicationRequest.fromXContent(
+                restRequest.contentOrSourceParamParser(),
+                restRequest.param("index"),
+            )
         resumeRequest.clusterManagerNodeTimeout(
-            restRequest.paramAsTime("cluster_manager_timeout", resumeRequest.clusterManagerNodeTimeout())
+            restRequest.paramAsTime("cluster_manager_timeout", resumeRequest.clusterManagerNodeTimeout()),
         )
         assertEquals(TimeValue.timeValueSeconds(60), resumeRequest.clusterManagerNodeTimeout())
     }

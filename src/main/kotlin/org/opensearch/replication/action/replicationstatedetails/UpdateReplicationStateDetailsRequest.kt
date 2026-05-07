@@ -11,33 +11,33 @@
 
 package org.opensearch.replication.action.replicationstatedetails
 
-import org.opensearch.replication.metadata.state.ReplicationStateParams
 import org.opensearch.action.ActionRequestValidationException
 import org.opensearch.action.support.clustermanager.AcknowledgedRequest
 import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.core.common.io.stream.StreamOutput
+import org.opensearch.replication.metadata.state.ReplicationStateParams
 
-class UpdateReplicationStateDetailsRequest: AcknowledgedRequest<UpdateReplicationStateDetailsRequest> {
-
-    val followIndexName : String
-    val replicationStateParams : ReplicationStateParams
-    val updateType : UpdateType
+class UpdateReplicationStateDetailsRequest : AcknowledgedRequest<UpdateReplicationStateDetailsRequest> {
+    val followIndexName: String
+    val replicationStateParams: ReplicationStateParams
+    val updateType: UpdateType
 
     enum class UpdateType {
-        ADD, REMOVE
+        ADD,
+        REMOVE,
     }
 
-    constructor(followIndexName : String,
-                replicationStateParams: ReplicationStateParams,
-                updateType: UpdateType) {
+    constructor(
+        followIndexName: String,
+        replicationStateParams: ReplicationStateParams,
+        updateType: UpdateType,
+    ) {
         this.followIndexName = followIndexName
         this.replicationStateParams = replicationStateParams
         this.updateType = updateType
     }
 
-    override fun validate(): ActionRequestValidationException? {
-        return null
-    }
+    override fun validate(): ActionRequestValidationException? = null
 
     constructor(inp: StreamInput) : super(inp) {
         followIndexName = inp.readString()

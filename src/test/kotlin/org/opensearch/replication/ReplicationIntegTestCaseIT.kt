@@ -13,8 +13,4 @@ package org.opensearch.replication
 
 import org.opensearch.test.OpenSearchIntegTestCase
 
-class ReplicationIntegTestCaseIT : OpenSearchIntegTestCase() {
-
-}
-
-
+class ReplicationIntegTestCaseIT : OpenSearchIntegTestCase()

@@ -15,7 +15,9 @@ import org.opensearch.action.support.clustermanager.AcknowledgedResponse
 import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.core.common.io.stream.StreamOutput
 
-class ReplicateIndexResponse(val ack: Boolean) : AcknowledgedResponse(ack) {
+class ReplicateIndexResponse(
+    val ack: Boolean,
+) : AcknowledgedResponse(ack) {
     constructor(inp: StreamInput) : this(inp.readBoolean())
 
     override fun writeTo(out: StreamOutput) {

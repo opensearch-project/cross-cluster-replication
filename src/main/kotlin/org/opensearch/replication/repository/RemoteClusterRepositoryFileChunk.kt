@@ -14,11 +14,10 @@ package org.opensearch.replication.repository
 import org.opensearch.index.store.StoreFileMetadata
 import org.opensearch.indices.recovery.MultiChunkTransfer.ChunkRequest
 
-class RemoteClusterRepositoryFileChunk constructor(val storeFileMetadata: StoreFileMetadata,
-                                                   val offset: Long,
-                                                   val length: Int): ChunkRequest {
-
-    override fun lastChunk(): Boolean {
-        return storeFileMetadata.length() <= offset + length
-    }
+class RemoteClusterRepositoryFileChunk constructor(
+    val storeFileMetadata: StoreFileMetadata,
+    val offset: Long,
+    val length: Int,
+) : ChunkRequest {
+    override fun lastChunk(): Boolean = storeFileMetadata.length() <= offset + length
 }

@@ -26,4 +26,3 @@ class FollowerStatsAction : ActionType<FollowerStatsResponse>(NAME, reader) {
 
     override fun getResponseReader(): Writeable.Reader<FollowerStatsResponse> = reader
 }
-

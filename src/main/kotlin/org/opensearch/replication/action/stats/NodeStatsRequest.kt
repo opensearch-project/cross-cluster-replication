@@ -17,8 +17,7 @@ import org.opensearch.transport.TransportRequest
 import java.io.IOException
 
 class NodeStatsRequest : TransportRequest {
-
-    constructor(inp :StreamInput) : super(inp)
+    constructor(inp: StreamInput) : super(inp)
 
     constructor() : super()
 
@@ -27,4 +26,3 @@ class NodeStatsRequest : TransportRequest {
         super.writeTo(out)
     }
 }
-

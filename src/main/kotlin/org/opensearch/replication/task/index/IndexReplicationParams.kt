@@ -12,21 +12,20 @@
 package org.opensearch.replication.task.index
 
 import org.opensearch.Version
+import org.opensearch.common.xcontent.XContentType
 import org.opensearch.core.ParseField
 import org.opensearch.core.common.Strings
 import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.core.common.io.stream.StreamOutput
+import org.opensearch.core.index.Index
 import org.opensearch.core.xcontent.ObjectParser
 import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.XContentBuilder
 import org.opensearch.core.xcontent.XContentParser
-import org.opensearch.common.xcontent.XContentType
-import org.opensearch.core.index.Index
 import org.opensearch.persistent.PersistentTaskParams
 import java.io.IOException
 
 class IndexReplicationParams : PersistentTaskParams {
-
     lateinit var leaderAlias: String
     lateinit var leaderIndex: Index
     lateinit var followerIndexName: String
@@ -35,18 +34,19 @@ class IndexReplicationParams : PersistentTaskParams {
         const val NAME = IndexReplicationExecutor.TASK_NAME
 
         private val PARSER = ObjectParser<IndexReplicationParams, Void>(NAME, true) { IndexReplicationParams() }
+
         init {
             PARSER.declareString(IndexReplicationParams::leaderAlias::set, ParseField("leader_alias"))
-            PARSER.declareObject(IndexReplicationParams::leaderIndex::set,
-                    { parser: XContentParser, _ -> Index.fromXContent(parser) },
-                    ParseField("leader_index"))
+            PARSER.declareObject(
+                IndexReplicationParams::leaderIndex::set,
+                { parser: XContentParser, _ -> Index.fromXContent(parser) },
+                ParseField("leader_index"),
+            )
             PARSER.declareString(IndexReplicationParams::followerIndexName::set, ParseField("follower_index"))
         }
 
         @Throws(IOException::class)
-        fun fromXContent(parser: XContentParser): IndexReplicationParams {
-            return PARSER.parse(parser, null)
-        }
+        fun fromXContent(parser: XContentParser): IndexReplicationParams = PARSER.parse(parser, null)
     }
 
     constructor(leaderAlias: String, leaderIndex: Index, followerIndexName: String) {
@@ -62,13 +62,16 @@ class IndexReplicationParams : PersistentTaskParams {
 
     override fun getWriteableName(): String = NAME
 
-    override fun toXContent(builder: XContentBuilder, params: ToXContent.Params?): XContentBuilder {
-        return builder.startObject()
+    override fun toXContent(
+        builder: XContentBuilder,
+        params: ToXContent.Params?,
+    ): XContentBuilder =
+        builder
+            .startObject()
             .field("leader_alias", leaderAlias)
             .field("leader_index", leaderIndex)
             .field("follower_index", followerIndexName)
             .endObject()
-    }
 
     override fun writeTo(out: StreamOutput) {
         out.writeString(leaderAlias)
@@ -78,7 +81,5 @@ class IndexReplicationParams : PersistentTaskParams {
 
     override fun getMinimalSupportedVersion(): Version = Version.V_2_0_0
 
-    override fun toString(): String {
-        return Strings.toString(XContentType.JSON, this)
-    }
+    override fun toString(): String = Strings.toString(XContentType.JSON, this)
 }
