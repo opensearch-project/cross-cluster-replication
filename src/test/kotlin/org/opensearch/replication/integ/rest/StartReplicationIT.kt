@@ -949,7 +949,11 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             val sourceMap = mapOf("name" to randomAlphaOfLength(5))
             leaderClient.index(IndexRequest(leaderIndexName).id(i.toString()).source(sourceMap), RequestOptions.DEFAULT)
         }
-        // Have to wait until the new operations are available to read at the leader cluster
+        // Wait for follower to catch up before checking leader stats
+        assertBusy({
+            assertThat(followerClient.count(CountRequest(followerIndexName), RequestOptions.DEFAULT).count).isEqualTo(docCount.toLong())
+        }, 60L, TimeUnit.SECONDS)
+        // Now leader stats should reflect all operations read
         assertBusy({
             val stats = leaderClient.leaderStats()
             assertThat(stats.size).isEqualTo(9)
@@ -958,7 +962,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             assertThat(stats.getValue("operations_read_lucene").toString()).isEqualTo("0")
             assertThat(stats.getValue("operations_read_translog").toString()).isEqualTo(docCount.toString())
             assertThat(stats.containsKey("index_stats"))
-        }, 60L, TimeUnit.SECONDS)
+        }, 30L, TimeUnit.SECONDS)
     }
 
 
@@ -1000,14 +1004,18 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         assertThat(stats.getValue("num_paused_indices").toString()).isEqualTo("1")
         assertThat(stats.getValue("num_failed_indices").toString()).isEqualTo("0")
         assertThat(stats.getValue("num_shard_tasks").toString()).isEqualTo("1")
+        // Wait for follower to catch up
+        assertBusy({
+            assertThat(followerClient.count(CountRequest(followerIndexName), RequestOptions.DEFAULT).count).isEqualTo(docCount.toLong())
+        }, 60, TimeUnit.SECONDS)
         assertBusy({
             stats = followerClient.followerStats()
             assertThat(stats.getValue("operations_written").toString()).isEqualTo("50")
-        }, 60, TimeUnit.SECONDS)
-        assertThat(stats.getValue("operations_read").toString()).isEqualTo("50")
-        assertThat(stats.getValue("failed_read_requests").toString()).isEqualTo("0")
-        assertThat(stats.getValue("failed_write_requests").toString()).isEqualTo("0")
-        assertThat(stats.getValue("follower_checkpoint").toString()).isEqualTo((docCount-1).toString())
+            assertThat(stats.getValue("operations_read").toString()).isEqualTo("50")
+            assertThat(stats.getValue("failed_read_requests").toString()).isEqualTo("0")
+            assertThat(stats.getValue("failed_write_requests").toString()).isEqualTo("0")
+            assertThat(stats.getValue("follower_checkpoint").toString()).isEqualTo((docCount-1).toString())
+        }, 30, TimeUnit.SECONDS)
         assertThat(stats.containsKey("index_stats"))
         assertThat(stats.size).isEqualTo(16)
     }
