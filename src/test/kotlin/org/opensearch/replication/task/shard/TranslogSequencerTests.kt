@@ -42,7 +42,17 @@ import org.opensearch.test.client.NoOpClient
 import java.util.Locale
 
 @ObsoleteCoroutinesApi
+@com.carrotsearch.randomizedtesting.annotations.ThreadLeakFilters(
+    filters = [TranslogSequencerTests.CoroutineThreadFilter::class]
+)
 class TranslogSequencerTests : OpenSearchTestCase() {
+
+    class CoroutineThreadFilter : com.carrotsearch.randomizedtesting.ThreadFilter {
+        override fun reject(t: Thread): Boolean {
+            return t.name == "kotlinx.coroutines.DefaultExecutor"
+        }
+    }
+
     class RequestCapturingClient : NoOpClient(TranslogSequencerTests::class.java.simpleName) {
         val requestsReceived = mutableListOf<ReplayChangesRequest>()
 
