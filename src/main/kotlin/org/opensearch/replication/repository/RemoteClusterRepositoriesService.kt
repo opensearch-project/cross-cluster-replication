@@ -17,9 +17,10 @@ import org.opensearch.transport.ProxyConnectionStrategy.PROXY_ADDRESS
 import org.opensearch.transport.SniffConnectionStrategy.REMOTE_CLUSTER_SEEDS
 import java.util.function.Supplier
 
-class RemoteClusterRepositoriesService(private val repositoriesService: Supplier<RepositoriesService>,
-                                       clusterService: ClusterService) {
-
+class RemoteClusterRepositoriesService(
+    private val repositoriesService: Supplier<RepositoriesService>,
+    clusterService: ClusterService,
+) {
     init {
         listenForUpdates(clusterService.clusterSettings)
     }
@@ -29,17 +30,23 @@ class RemoteClusterRepositoriesService(private val repositoriesService: Supplier
         clusterSettings.addAffixUpdateConsumer(PROXY_ADDRESS, this::updateRepositoryDetailsForProxy) { _, _ -> Unit }
     }
 
-    private fun updateRepositoryDetailsForSeeds(alias: String, seeds: List<String>?) {
-        if(seeds.isNullOrEmpty()) {
+    private fun updateRepositoryDetailsForSeeds(
+        alias: String,
+        seeds: List<String>?,
+    ) {
+        if (seeds.isNullOrEmpty()) {
             repositoriesService.get().unregisterInternalRepository(REMOTE_REPOSITORY_PREFIX + alias)
             return
         }
-        //TODO: Check to see if register should happen based on every seed node update
+        // TODO: Check to see if register should happen based on every seed node update
         repositoriesService.get().registerInternalRepository(REMOTE_REPOSITORY_PREFIX + alias, REMOTE_REPOSITORY_TYPE)
     }
 
-    private fun updateRepositoryDetailsForProxy(alias: String, proxyIp: String?) {
-        if(proxyIp.isNullOrEmpty()) {
+    private fun updateRepositoryDetailsForProxy(
+        alias: String,
+        proxyIp: String?,
+    ) {
+        if (proxyIp.isNullOrEmpty()) {
             repositoriesService.get().unregisterInternalRepository(REMOTE_REPOSITORY_PREFIX + alias)
             return
         }

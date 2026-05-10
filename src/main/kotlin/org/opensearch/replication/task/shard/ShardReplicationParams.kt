@@ -12,23 +12,21 @@
 package org.opensearch.replication.task.shard
 
 import org.opensearch.Version
+import org.opensearch.common.xcontent.XContentType
 import org.opensearch.core.ParseField
 import org.opensearch.core.common.Strings
 import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.core.common.io.stream.StreamOutput
+import org.opensearch.core.index.Index
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.core.xcontent.ObjectParser
 import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.XContentBuilder
 import org.opensearch.core.xcontent.XContentParser
-import org.opensearch.common.xcontent.XContentType
-import org.opensearch.core.index.shard.ShardId
 import org.opensearch.persistent.PersistentTaskParams
 import java.io.IOException
-import org.opensearch.core.index.Index
-
 
 class ShardReplicationParams : PersistentTaskParams {
-
     var leaderAlias: String
     var leaderShardId: ShardId
     var followerShardId: ShardId
@@ -39,12 +37,13 @@ class ShardReplicationParams : PersistentTaskParams {
         this.followerShardId = followerShardId
     }
 
-    constructor(inp : StreamInput) : this(inp.readString(), ShardId(inp), ShardId(inp))
+    constructor(inp: StreamInput) : this(inp.readString(), ShardId(inp), ShardId(inp))
 
     companion object {
         const val NAME = ShardReplicationExecutor.TASK_NAME
 
         private val PARSER = ObjectParser<Builder, Void>(ShardReplicationExecutor.TASK_NAME, true) { Builder() }
+
         init {
             PARSER.declareString(Builder::leaderAlias, ParseField("leader_alias"))
             // ShardId is converted to String - parsing from the same format to construct the params
@@ -55,24 +54,23 @@ class ShardReplicationParams : PersistentTaskParams {
         }
 
         @Throws(IOException::class)
-        fun fromXContent(parser: XContentParser): ShardReplicationParams {
-            return PARSER.parse(parser, null).build()
-        }
+        fun fromXContent(parser: XContentParser): ShardReplicationParams = PARSER.parse(parser, null).build()
     }
 
-    override fun getWriteableName(): String {
-        return NAME
-    }
+    override fun getWriteableName(): String = NAME
 
-    override fun toXContent(builder: XContentBuilder, params: ToXContent.Params?): XContentBuilder {
-        return builder.startObject()
+    override fun toXContent(
+        builder: XContentBuilder,
+        params: ToXContent.Params?,
+    ): XContentBuilder =
+        builder
+            .startObject()
             .field("leader_alias", leaderAlias)
             .field("leader_shard", leaderShardId)
             .field("leader_index_uuid", leaderShardId.index.uuid) // The XContent of ShardId doesn't serialize index uuid
             .field("follower_shard", followerShardId)
             .field("follower_index_uuid", followerShardId.index.uuid)
             .endObject()
-    }
 
     override fun writeTo(out: StreamOutput) {
         out.writeString(leaderAlias)
@@ -82,9 +80,7 @@ class ShardReplicationParams : PersistentTaskParams {
 
     override fun getMinimalSupportedVersion(): Version = Version.V_2_0_0
 
-    override fun toString(): String {
-        return Strings.toString(XContentType.JSON, this)
-    }
+    override fun toString(): String = Strings.toString(XContentType.JSON, this)
 
     class Builder {
         lateinit var leaderAlias: String
@@ -116,9 +112,17 @@ class ShardReplicationParams : PersistentTaskParams {
         fun build(): ShardReplicationParams {
             val leaderShardIdObj = ShardId.fromString(leaderShardId)
             val followerShardIdObj = ShardId.fromString(followerShardId)
-            return ShardReplicationParams(leaderAlias, ShardId(Index(leaderShardIdObj.indexName, leaderIndexUUID),
-                    leaderShardIdObj.id), ShardId(Index(followerShardIdObj.indexName, followerIndexUUID),
-                    followerShardIdObj.id))
+            return ShardReplicationParams(
+                leaderAlias,
+                ShardId(
+                    Index(leaderShardIdObj.indexName, leaderIndexUUID),
+                    leaderShardIdObj.id,
+                ),
+                ShardId(
+                    Index(followerShardIdObj.indexName, followerIndexUUID),
+                    followerShardIdObj.id,
+                ),
+            )
         }
     }
 }

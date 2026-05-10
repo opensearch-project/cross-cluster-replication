@@ -35,7 +35,6 @@ import org.opensearch.transport.client.Client
  * inputs produces the same result.
  */
 object StaleTaskUtils {
-
     private val log = LogManager.getLogger(StaleTaskUtils::class.java)
 
     /**
@@ -47,11 +46,14 @@ object StaleTaskUtils {
     //  Finds all replication tasks for the given index from the cluster state.
     private fun findReplicationTasksForIndex(
         clusterService: ClusterService,
-        indexName: String
+        indexName: String,
     ): List<PersistentTasksCustomMetadata.PersistentTask<*>> {
-        val allTasks = clusterService.state().metadata
-            .custom<PersistentTasksCustomMetadata>(PersistentTasksCustomMetadata.TYPE)
-            ?: return emptyList()
+        val allTasks =
+            clusterService
+                .state()
+                .metadata
+                .custom<PersistentTasksCustomMetadata>(PersistentTasksCustomMetadata.TYPE)
+                ?: return emptyList()
 
         return allTasks.tasks().filter { task ->
             isReplicationTaskForIndex(task, indexName)
@@ -61,7 +63,7 @@ object StaleTaskUtils {
     // Determines whether a persistent task is a replication task for the given index.
     fun isReplicationTaskForIndex(
         task: PersistentTasksCustomMetadata.PersistentTask<*>,
-        indexName: String
+        indexName: String,
     ): Boolean {
         val taskId = task.id
         if (!taskId.startsWith("replication:")) return false
@@ -85,7 +87,7 @@ object StaleTaskUtils {
     suspend fun removeStaleTasksForIndex(
         clusterService: ClusterService,
         client: Client,
-        indexName: String
+        indexName: String,
     ): Int {
         log.info("Starting stale task cleanup for index $indexName")
 
@@ -101,9 +103,10 @@ object StaleTaskUtils {
         val validNodeIds = clusterState.nodes().dataNodes.keys
 
         // Group tasks by executor node (null for unassigned)
-        val tasksByNode = replicationTasks.groupBy {
-            if (it.isAssigned) it.assignment.executorNode else null
-        }
+        val tasksByNode =
+            replicationTasks.groupBy {
+                if (it.isAssigned) it.assignment.executorNode else null
+            }
 
         var removed = 0
 
@@ -148,7 +151,7 @@ object StaleTaskUtils {
     suspend fun removeAllTasksForIndex(
         clusterService: ClusterService,
         client: Client,
-        indexName: String
+        indexName: String,
     ): Int {
         log.info("Removing all replication tasks for index $indexName")
 
@@ -173,9 +176,9 @@ object StaleTaskUtils {
     private suspend fun removeTask(
         client: Client,
         task: PersistentTasksCustomMetadata.PersistentTask<*>,
-        indexName: String
-    ): Boolean {
-        return try {
+        indexName: String,
+    ): Boolean =
+        try {
             log.info("Removing task: ${task.id} from cluster state")
             val removeRequest = RemovePersistentTaskAction.Request(task.id)
             client.suspendExecute(RemovePersistentTaskAction.INSTANCE, removeRequest)
@@ -193,15 +196,18 @@ object StaleTaskUtils {
                 false
             }
         }
-    }
 
     //  Queries the task manager on a specific node to get descriptions of running replication tasks.
-    private suspend fun getRunningTaskDescriptions(client: Client, nodeId: String): Set<String> {
-        return try {
-            val listTasksRequest = ListTasksRequest()
-                .setActions("cluster:indices/admin/replication*", "cluster:indices/shards/replication*")
-                .setNodes(nodeId)
-                .setDetailed(true)
+    private suspend fun getRunningTaskDescriptions(
+        client: Client,
+        nodeId: String,
+    ): Set<String> =
+        try {
+            val listTasksRequest =
+                ListTasksRequest()
+                    .setActions("cluster:indices/admin/replication*", "cluster:indices/shards/replication*")
+                    .setNodes(nodeId)
+                    .setDetailed(true)
 
             val response = client.suspendExecute(ListTasksAction.INSTANCE, listTasksRequest)
             response.tasks.mapNotNull { it.description }.toSet()
@@ -209,7 +215,6 @@ object StaleTaskUtils {
             log.error("Failed to fetch running tasks from node $nodeId: ${e.message}")
             emptySet()
         }
-    }
 
     /**
      * Checks if a persistent task is actually running on its assigned node by matching
@@ -217,26 +222,34 @@ object StaleTaskUtils {
      */
     private fun isTaskRunningOnNode(
         persistentTask: PersistentTasksCustomMetadata.PersistentTask<*>,
-        runningDescriptions: Set<String>
+        runningDescriptions: Set<String>,
     ): Boolean {
         val params = persistentTask.params
-        val pattern = when (params) {
-            is IndexReplicationParams -> {
-                Regex("->\\s+${Regex.escape(params.followerIndexName)}\\s*$")
+        val pattern =
+            when (params) {
+                is IndexReplicationParams -> {
+                    Regex("->\\s+${Regex.escape(params.followerIndexName)}\\s*$")
+                }
+
+                is ShardReplicationParams -> {
+                    val followerIndex = params.followerShardId.indexName
+                    val shardId = params.followerShardId.id
+                    Regex("->\\s+\\[${Regex.escape(followerIndex)}\\]\\[${shardId}\\]\\s*$")
+                }
+
+                else -> {
+                    return true
+                } // Unknown params type — assume running to be safe
             }
-            is ShardReplicationParams -> {
-                val followerIndex = params.followerShardId.indexName
-                val shardId = params.followerShardId.id
-                Regex("->\\s+\\[${Regex.escape(followerIndex)}\\]\\[${shardId}\\]\\s*$")
-            }
-            else -> return true // Unknown params type — assume running to be safe
-        }
 
         return runningDescriptions.any { pattern.containsMatchIn(it) }
     }
 
     //  Checks if the given exception or any of its causes is an instance of the specified type.
-    private fun hasCause(e: Throwable, type: Class<out Throwable>): Boolean {
+    private fun hasCause(
+        e: Throwable,
+        type: Class<out Throwable>,
+    ): Boolean {
         var current: Throwable? = e
         while (current != null) {
             if (type.isInstance(current)) return true

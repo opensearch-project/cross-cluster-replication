@@ -21,16 +21,26 @@ import org.opensearch.core.xcontent.XContentBuilder
 /**
  * Enum that represents the state of replication of either shards or indices.
  */
-enum class ReplicationState : Writeable, ToXContentFragment {
-
-    INIT, RESTORING, INIT_FOLLOW, FOLLOWING, MONITORING, FAILED, COMPLETED;
+enum class ReplicationState :
+    Writeable,
+    ToXContentFragment {
+    INIT,
+    RESTORING,
+    INIT_FOLLOW,
+    FOLLOWING,
+    MONITORING,
+    FAILED,
+    COMPLETED,
+    ;
 
     override fun writeTo(out: StreamOutput) {
         out.writeEnum(this)
-        fun readState(inp : StreamInput) : ReplicationState = inp.readEnum(ReplicationState::class.java)
+
+        fun readState(inp: StreamInput): ReplicationState = inp.readEnum(ReplicationState::class.java)
     }
 
-    override fun toXContent(builder: XContentBuilder, params: ToXContent.Params?): XContentBuilder {
-        return builder.value(toString())
-    }
+    override fun toXContent(
+        builder: XContentBuilder,
+        params: ToXContent.Params?,
+    ): XContentBuilder = builder.value(toString())
 }

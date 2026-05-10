@@ -11,20 +11,19 @@
 
 package org.opensearch.replication.task.autofollow
 
+import org.assertj.core.api.Assertions.assertThat
 import org.opensearch.common.io.stream.BytesStreamOutput
+import org.opensearch.common.xcontent.XContentFactory
 import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.core.xcontent.ToXContent
-import org.opensearch.common.xcontent.XContentFactory
 import org.opensearch.test.OpenSearchTestCase
-import org.assertj.core.api.Assertions.assertThat
 
 class AutoFollowStatTests : OpenSearchTestCase() {
-
     fun testSerializationWithLeaderAlias() {
         val name = "test-autofollow-rule"
         val pattern = "test-pattern*"
         val leaderAlias = "test-leader-cluster"
-        
+
         val stat = AutoFollowStat(name, pattern, leaderAlias)
         stat.successCount = 5
         stat.failCount = 2
@@ -55,7 +54,7 @@ class AutoFollowStatTests : OpenSearchTestCase() {
     fun testBackwardCompatibilityWithoutLeaderAlias() {
         val name = "test-autofollow-rule"
         val pattern = "test-pattern*"
-        
+
         // Simulate old version serialization (without leaderAlias)
         val output = BytesStreamOutput()
         output.writeString(name)
@@ -85,7 +84,7 @@ class AutoFollowStatTests : OpenSearchTestCase() {
         val name = "test-autofollow-rule"
         val pattern = "test-pattern*"
         val leaderAlias = "test-leader-cluster"
-        
+
         val stat = AutoFollowStat(name, pattern, leaderAlias)
         stat.successCount = 5
         stat.failCount = 2
@@ -114,7 +113,7 @@ class AutoFollowStatTests : OpenSearchTestCase() {
         val name = "test-autofollow-rule"
         val pattern = "test-pattern*"
         val leaderAlias = ""
-        
+
         val stat = AutoFollowStat(name, pattern, leaderAlias)
 
         // Convert to XContent

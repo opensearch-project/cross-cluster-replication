@@ -33,24 +33,27 @@ class UpdateMetadataRequest : AcknowledgedRequest<UpdateMetadataRequest> {
     }
 
     enum class Type {
-        MAPPING, SETTING, ALIAS, OPEN, CLOSE
+        MAPPING,
+        SETTING,
+        ALIAS,
+        OPEN,
+        CLOSE,
     }
 
-    constructor(inp: StreamInput): super(inp) {
+    constructor(inp: StreamInput) : super(inp) {
         indexName = inp.readString()
         type = inp.readEnum(Type::class.java)
-        request = when (type) {
-            Type.MAPPING -> PutMappingRequest(inp)
-            Type.SETTING -> UpdateSettingsRequest(inp)
-            Type.ALIAS -> IndicesAliasesRequest(inp)
-            Type.OPEN -> OpenIndexRequest(inp)
-            Type.CLOSE -> CloseIndexRequest(inp)
-        }
+        request =
+            when (type) {
+                Type.MAPPING -> PutMappingRequest(inp)
+                Type.SETTING -> UpdateSettingsRequest(inp)
+                Type.ALIAS -> IndicesAliasesRequest(inp)
+                Type.OPEN -> OpenIndexRequest(inp)
+                Type.CLOSE -> CloseIndexRequest(inp)
+            }
     }
 
-    override fun validate(): ActionRequestValidationException? {
-        return request.validate()
-    }
+    override fun validate(): ActionRequestValidationException? = request.validate()
 
     override fun writeTo(out: StreamOutput) {
         super.writeTo(out)

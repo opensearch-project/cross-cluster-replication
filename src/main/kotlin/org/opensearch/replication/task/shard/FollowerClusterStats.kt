@@ -13,25 +13,25 @@ package org.opensearch.replication.task.shard
 
 import org.apache.logging.log4j.LogManager
 import org.opensearch.common.inject.Singleton
+import org.opensearch.common.xcontent.XContentType
 import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.core.common.io.stream.StreamOutput
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.ToXContentFragment
 import org.opensearch.core.xcontent.XContentBuilder
-import org.opensearch.common.xcontent.XContentType
-import org.opensearch.core.index.shard.ShardId
 import java.util.concurrent.atomic.AtomicLong
 
-class FollowerShardMetric  {
+class FollowerShardMetric {
     var followerCheckpoint: Long = 0L
     var leaderCheckpoint: Long = 0L
-    var opsWritten :AtomicLong = AtomicLong()
-    var opsWriteFailures :AtomicLong = AtomicLong()
-    var opsWriteThrottles :AtomicLong = AtomicLong()
-    var opsRead :AtomicLong = AtomicLong()
-    var opsReadFailures :AtomicLong = AtomicLong()
-    var opsReadThrottles :AtomicLong = AtomicLong()
-    val totalWriteTime :AtomicLong = AtomicLong()
+    var opsWritten: AtomicLong = AtomicLong()
+    var opsWriteFailures: AtomicLong = AtomicLong()
+    var opsWriteThrottles: AtomicLong = AtomicLong()
+    var opsRead: AtomicLong = AtomicLong()
+    var opsReadFailures: AtomicLong = AtomicLong()
+    var opsReadThrottles: AtomicLong = AtomicLong()
+    val totalWriteTime: AtomicLong = AtomicLong()
 
     constructor()
 
@@ -42,23 +42,45 @@ class FollowerShardMetric  {
     /**
      * Creates a serializable representation for these metrics.
      */
-    fun createStats() : FollowerStats {
-        return FollowerStats(opsWritten.get(), opsWriteFailures.get(), opsWriteThrottles.get(), opsRead.get(), opsReadFailures.get(), opsReadThrottles.get(),
-                followerCheckpoint, leaderCheckpoint, totalWriteTime.get())
-    }
+    fun createStats(): FollowerStats =
+        FollowerStats(
+            opsWritten.get(),
+            opsWriteFailures.get(),
+            opsWriteThrottles.get(),
+            opsRead.get(),
+            opsReadFailures.get(),
+            opsReadThrottles.get(),
+            followerCheckpoint,
+            leaderCheckpoint,
+            totalWriteTime.get(),
+        )
 
     // this can represent stats for an index as well as for a shard
-    open class FollowerStats(var opsWritten: Long=0, var opsWriteFailures: Long=0, var opsWriteThrottles: Long=0, var opsRead: Long=0, var opsReadFailures: Long=0, var opsReadThrottles : Long=0,
-                             var followerCheckpoint: Long=0, var leaderCheckpoint: Long=0, var totalWriteTime: Long=0) : ToXContentFragment {
-
-        override fun toXContent(builder: XContentBuilder, params: ToXContent.Params?): XContentBuilder {
+    open class FollowerStats(
+        var opsWritten: Long = 0,
+        var opsWriteFailures: Long = 0,
+        var opsWriteThrottles: Long = 0,
+        var opsRead: Long = 0,
+        var opsReadFailures: Long = 0,
+        var opsReadThrottles: Long = 0,
+        var followerCheckpoint: Long = 0,
+        var leaderCheckpoint: Long = 0,
+        var totalWriteTime: Long = 0,
+    ) : ToXContentFragment {
+        override fun toXContent(
+            builder: XContentBuilder,
+            params: ToXContent.Params?,
+        ): XContentBuilder {
             builder.startObject()
             toXContentFragment(builder, params)
             return builder.endObject()
         }
 
         @Suppress("UNUSED_PARAMETER")
-        fun toXContentFragment(builder: XContentBuilder, params: ToXContent.Params?): XContentBuilder {
+        fun toXContentFragment(
+            builder: XContentBuilder,
+            params: ToXContent.Params?,
+        ): XContentBuilder {
             builder.field("operations_written", opsWritten)
             builder.field("operations_read", opsRead)
             builder.field("failed_read_requests", opsReadFailures)
@@ -71,7 +93,7 @@ class FollowerShardMetric  {
             return builder
         }
 
-        constructor(inp: StreamInput) : this()  {
+        constructor(inp: StreamInput) : this() {
             opsWritten = inp.readLong()
             opsWriteFailures = inp.readLong()
             opsRead = inp.readLong()
@@ -107,14 +129,17 @@ class FollowerShardMetric  {
     }
 
     // used only for cluster aggregation
-    class FollowerStatsFragment(): FollowerStats(), ToXContentFragment {
-        override fun toXContent(builder: XContentBuilder, params: ToXContent.Params?): XContentBuilder {
-            return toXContentFragment(builder, params)
-        }
+    class FollowerStatsFragment :
+        FollowerStats(),
+        ToXContentFragment {
+        override fun toXContent(
+            builder: XContentBuilder,
+            params: ToXContent.Params?,
+        ): XContentBuilder = toXContentFragment(builder, params)
     }
 }
 
 @Singleton
 class FollowerClusterStats {
-    var stats :MutableMap<ShardId, FollowerShardMetric> =  mutableMapOf()
+    var stats: MutableMap<ShardId, FollowerShardMetric> = mutableMapOf()
 }

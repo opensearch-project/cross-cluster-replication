@@ -18,18 +18,17 @@ import org.opensearch.core.common.io.stream.StreamOutput
 import org.opensearch.index.store.StoreFileMetadata
 
 class GetFileChunkResponse : ActionResponse {
-
     val storeFileMetadata: StoreFileMetadata
     val offset: Long
     val data: BytesReference
 
-    constructor(storeFileMetadata: StoreFileMetadata, offset: Long, data: BytesReference): super() {
+    constructor(storeFileMetadata: StoreFileMetadata, offset: Long, data: BytesReference) : super() {
         this.storeFileMetadata = storeFileMetadata
         this.offset = offset
         this.data = data
     }
 
-    constructor(inp: StreamInput): super(inp) {
+    constructor(inp: StreamInput) : super(inp) {
         storeFileMetadata = StoreFileMetadata(inp)
         offset = inp.readLong()
         data = inp.readBytesReference()

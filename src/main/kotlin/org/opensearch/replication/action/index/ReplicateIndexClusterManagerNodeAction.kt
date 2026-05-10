@@ -14,7 +14,7 @@ package org.opensearch.replication.action.index
 import org.opensearch.action.ActionType
 import org.opensearch.action.support.clustermanager.AcknowledgedResponse
 
-class ReplicateIndexClusterManagerNodeAction private constructor(): ActionType<AcknowledgedResponse>(NAME, ::AcknowledgedResponse) {
+class ReplicateIndexClusterManagerNodeAction private constructor() : ActionType<AcknowledgedResponse>(NAME, ::AcknowledgedResponse) {
     companion object {
         const val NAME = "internal:indices/admin/plugins/replication/index/start"
         val INSTANCE: ReplicateIndexClusterManagerNodeAction = ReplicateIndexClusterManagerNodeAction()

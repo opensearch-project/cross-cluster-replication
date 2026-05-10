@@ -4,7 +4,7 @@ import org.assertj.core.api.Assertions
 import org.opensearch.common.io.stream.BytesStreamOutput
 import org.opensearch.test.OpenSearchTestCase
 
-class UpdateReplicationStateDetailsRequestTests: OpenSearchTestCase() {
+class UpdateReplicationStateDetailsRequestTests : OpenSearchTestCase() {
     companion object {
         const val INDEX = "index"
     }

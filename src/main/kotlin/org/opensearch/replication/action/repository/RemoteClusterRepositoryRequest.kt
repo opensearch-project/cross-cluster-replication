@@ -18,20 +18,22 @@ import org.opensearch.core.common.io.stream.StreamOutput
 import org.opensearch.core.index.shard.ShardId
 import org.opensearch.transport.RemoteClusterAwareRequest
 
-abstract class RemoteClusterRepositoryRequest<T : SingleShardRequest<T>?>:
-        SingleShardRequest<T>, RemoteClusterAwareRequest {
-
+abstract class RemoteClusterRepositoryRequest<T : SingleShardRequest<T>?> :
+    SingleShardRequest<T>,
+    RemoteClusterAwareRequest {
     val restoreUUID: String
     val node: DiscoveryNode
     val leaderShardId: ShardId
     val followerCluster: String
     val followerShardId: ShardId
 
-    constructor(restoreUUID: String,
-                node: DiscoveryNode,
-                leaderShardId: ShardId,
-                followerCluster: String,
-                followerShardId: ShardId): super(leaderShardId.indexName) {
+    constructor(
+        restoreUUID: String,
+        node: DiscoveryNode,
+        leaderShardId: ShardId,
+        followerCluster: String,
+        followerShardId: ShardId,
+    ) : super(leaderShardId.indexName) {
         this.restoreUUID = restoreUUID
         this.node = node
         this.leaderShardId = leaderShardId
@@ -56,7 +58,5 @@ abstract class RemoteClusterRepositoryRequest<T : SingleShardRequest<T>?>:
         followerShardId.writeTo(out)
     }
 
-    override fun getPreferredTargetNode(): DiscoveryNode {
-        return node
-    }
+    override fun getPreferredTargetNode(): DiscoveryNode = node
 }

@@ -7,8 +7,7 @@ import org.opensearch.common.util.concurrent.ThreadContext
 import org.opensearch.commons.authuser.User
 import org.opensearch.test.OpenSearchTestCase
 
-class SecurityContextTests: OpenSearchTestCase() {
-
+class SecurityContextTests : OpenSearchTestCase() {
     companion object {
         var threadContext: ThreadContext? = null
     }

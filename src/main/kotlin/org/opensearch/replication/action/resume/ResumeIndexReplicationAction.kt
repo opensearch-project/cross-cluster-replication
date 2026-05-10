@@ -14,7 +14,7 @@ package org.opensearch.replication.action.resume
 import org.opensearch.action.ActionType
 import org.opensearch.action.support.clustermanager.AcknowledgedResponse
 
-class ResumeIndexReplicationAction private constructor(): ActionType<AcknowledgedResponse>(NAME, ::AcknowledgedResponse) {
+class ResumeIndexReplicationAction private constructor() : ActionType<AcknowledgedResponse>(NAME, ::AcknowledgedResponse) {
     companion object {
         const val NAME = "indices:admin/plugins/replication/index/resume"
         val INSTANCE: ResumeIndexReplicationAction = ResumeIndexReplicationAction()

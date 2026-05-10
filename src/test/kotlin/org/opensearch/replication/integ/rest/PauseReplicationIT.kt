@@ -11,21 +11,6 @@
 
 package org.opensearch.replication.integ.rest
 
-import org.opensearch.replication.IndexUtil
-import org.opensearch.replication.MultiClusterAnnotations
-import org.opensearch.replication.MultiClusterRestTestCase
-import org.opensearch.replication.StartReplicationRequest
-import org.opensearch.replication.`validate aggregated paused status response`
-import org.opensearch.replication.`validate paused status response`
-import org.opensearch.replication.pauseReplication
-import org.opensearch.replication.replicationStatus
-import org.opensearch.replication.resumeReplication
-import org.opensearch.replication.startReplication
-import org.opensearch.replication.stopReplication
-import org.opensearch.replication.updateReplication
-import org.opensearch.replication.getShardReplicationTasks
-import org.opensearch.replication.`validate paused status response due to leader index deleted`
-import org.opensearch.replication.`validate status syncing response`
 import org.apache.hc.core5.http.io.entity.EntityUtils
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
@@ -43,32 +28,50 @@ import org.opensearch.common.xcontent.XContentType
 import org.opensearch.core.common.bytes.BytesArray
 import org.opensearch.core.xcontent.NamedXContentRegistry
 import org.opensearch.index.mapper.MapperService
+import org.opensearch.replication.IndexUtil
+import org.opensearch.replication.MultiClusterAnnotations
+import org.opensearch.replication.MultiClusterRestTestCase
+import org.opensearch.replication.StartReplicationRequest
 import org.opensearch.replication.action.pause.PauseIndexReplicationRequest
+import org.opensearch.replication.getShardReplicationTasks
+import org.opensearch.replication.pauseReplication
+import org.opensearch.replication.replicationStatus
+import org.opensearch.replication.resumeReplication
+import org.opensearch.replication.startReplication
+import org.opensearch.replication.stopReplication
+import org.opensearch.replication.updateReplication
+import org.opensearch.replication.`validate aggregated paused status response`
+import org.opensearch.replication.`validate paused status response`
+import org.opensearch.replication.`validate paused status response due to leader index deleted`
+import org.opensearch.replication.`validate status syncing response`
 import org.opensearch.rest.RestRequest
 import org.opensearch.test.rest.FakeRestRequest
 import java.util.concurrent.TimeUnit
 
-
 @MultiClusterAnnotations.ClusterConfigurations(
-        MultiClusterAnnotations.ClusterConfiguration(clusterName = LEADER),
-        MultiClusterAnnotations.ClusterConfiguration(clusterName = FOLLOWER)
+    MultiClusterAnnotations.ClusterConfiguration(clusterName = LEADER),
+    MultiClusterAnnotations.ClusterConfiguration(clusterName = FOLLOWER),
 )
-class PauseReplicationIT: MultiClusterRestTestCase() {
+class PauseReplicationIT : MultiClusterRestTestCase() {
     private val leaderIndexName = "leader_index"
 
     fun `test pause replication with cluster_manager_timeout`() {
         // Verify cluster_manager_timeout param is parsed from HTTP request and set on the request
-        val restRequest = FakeRestRequest.Builder(NamedXContentRegistry.EMPTY)
-            .withMethod(RestRequest.Method.POST)
-            .withPath("/_plugins/_replication/follower-index/_pause")
-            .withParams(mapOf("index" to "follower-index", "cluster_manager_timeout" to "60s"))
-            .withContent(BytesArray("{}"), XContentType.JSON)
-            .build()
-        val pauseRequest = PauseIndexReplicationRequest.fromXContent(
-            restRequest.contentOrSourceParamParser(), restRequest.param("index")
-        )
+        val restRequest =
+            FakeRestRequest
+                .Builder(NamedXContentRegistry.EMPTY)
+                .withMethod(RestRequest.Method.POST)
+                .withPath("/_plugins/_replication/follower-index/_pause")
+                .withParams(mapOf("index" to "follower-index", "cluster_manager_timeout" to "60s"))
+                .withContent(BytesArray("{}"), XContentType.JSON)
+                .build()
+        val pauseRequest =
+            PauseIndexReplicationRequest.fromXContent(
+                restRequest.contentOrSourceParamParser(),
+                restRequest.param("index"),
+            )
         pauseRequest.clusterManagerNodeTimeout(
-            restRequest.paramAsTime("cluster_manager_timeout", pauseRequest.clusterManagerNodeTimeout())
+            restRequest.paramAsTime("cluster_manager_timeout", pauseRequest.clusterManagerNodeTimeout()),
         )
         assertEquals(TimeValue.timeValueSeconds(60), pauseRequest.clusterManagerNodeTimeout())
     }
@@ -89,21 +92,27 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
         // Since, we were still in FOLLOWING phase when pause was called, the index
         // in follower index should not have been deleted in follower cluster
         assertBusy {
-            assertThat(followerClient.indices()
-                    .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
-                    .isEqualTo(true)
+            assertThat(
+                followerClient
+                    .indices()
+                    .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT),
+            ).isEqualTo(true)
         }
         val statusResp = followerClient.replicationStatus(followerIndexName)
         `validate paused status response`(statusResp, myReason)
-        var settings = Settings.builder()
+        var settings =
+            Settings
+                .builder()
                 .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0)
                 .build()
-        followerClient.updateReplication( followerIndexName, settings)
+        followerClient.updateReplication(followerIndexName, settings)
         followerClient.resumeReplication(followerIndexName)
     }
 
     fun `test pause replication in restoring state with multiple shards`() {
-        val settings = Settings.builder()
+        val settings =
+            Settings
+                .builder()
                 .put(IndexMetadata.SETTING_NUMBER_OF_SHARDS, 20)
                 .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 0)
                 .put(MapperService.INDEX_MAPPING_TOTAL_FIELDS_LIMIT_SETTING.key, Long.MAX_VALUE)
@@ -111,37 +120,50 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
         testPauseReplicationInRestoringState(settings, 5000, 1000, 1000)
     }
 
-    private fun testPauseReplicationInRestoringState(settings: Settings,
-                                                     nFields: Int,
-                                                     fieldLength: Int,
-                                                     stepSize: Int) {
-        logger.info("""Testing pause replication in restoring state with params: 
+    private fun testPauseReplicationInRestoringState(
+        settings: Settings,
+        nFields: Int,
+        fieldLength: Int,
+        stepSize: Int,
+    ) {
+        logger.info(
+            """Testing pause replication in restoring state with params: 
             | shards:$settings[IndexMetadata.SETTING_NUMBER_OF_SHARDS]
             | nFields:$nFields
             | fieldLength:$fieldLength
             | stepSize:$stepSize 
-            | """.trimMargin())
+            | 
+            """.trimMargin(),
+        )
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
         val followerIndexName = "pause_index_restore_state"
         createConnectionBetweenClusters(FOLLOWER, LEADER)
-        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName).settings(settings),
-                RequestOptions.DEFAULT)
+        val createIndexResponse =
+            leaderClient.indices().create(
+                CreateIndexRequest(leaderIndexName).settings(settings),
+                RequestOptions.DEFAULT,
+            )
         assertThat(createIndexResponse.isAcknowledged).isTrue()
         // Put a large amount of data into the index
         IndexUtil.fillIndex(leaderClient, leaderIndexName, nFields, fieldLength, stepSize)
         assertBusy {
-            assertThat(leaderClient.indices()
-                    .exists(GetIndexRequest(leaderIndexName), RequestOptions.DEFAULT))
+            assertThat(
+                leaderClient
+                    .indices()
+                    .exists(GetIndexRequest(leaderIndexName), RequestOptions.DEFAULT),
+            )
         }
-        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
-                TimeValue.timeValueSeconds(10),
-                false)
-        //Given the size of index, the replication should be in RESTORING phase at this point
+        followerClient.startReplication(
+            StartReplicationRequest("source", leaderIndexName, followerIndexName),
+            TimeValue.timeValueSeconds(10),
+            false,
+        )
+        // Given the size of index, the replication should be in RESTORING phase at this point
         assertThatThrownBy {
             followerClient.pauseReplication(followerIndexName)
         }.isInstanceOf(ResponseException::class.java)
-                .hasMessageContaining("Index is in restore phase currently for index: ${followerIndexName}")
+            .hasMessageContaining("Index is in restore phase currently for index: $followerIndexName")
         // wait for the shard tasks to be up as the replication block is added before adding shard replication tasks
         // During intermittent test failures, stop replication under finally block executes before this without removing
         // replication block (even though next call to _stop replication API can succeed in removing this block).
@@ -153,19 +175,22 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
     fun `test pause without replication in progress`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val followerIndexName = "pause_index_no_repl"
-        //ToDo : Using followerIndex interferes with other test. Is wipeIndicesFromCluster not working ?
+        // ToDo : Using followerIndex interferes with other test. Is wipeIndicesFromCluster not working ?
         var randomIndex = "random"
-        val createIndexResponse = followerClient.indices().create(CreateIndexRequest(randomIndex),
-                RequestOptions.DEFAULT)
+        val createIndexResponse =
+            followerClient.indices().create(
+                CreateIndexRequest(randomIndex),
+                RequestOptions.DEFAULT,
+            )
         assertThat(createIndexResponse.isAcknowledged).isTrue()
         assertThatThrownBy {
             followerClient.pauseReplication(randomIndex)
             var statusResp = followerClient.replicationStatus(followerIndexName)
             `validate paused status response`(statusResp)
-            statusResp = followerClient.replicationStatus(followerIndexName,false)
+            statusResp = followerClient.replicationStatus(followerIndexName, false)
             `validate aggregated paused status response`(statusResp)
         }.isInstanceOf(ResponseException::class.java)
-                .hasMessageContaining("No replication in progress for index:$randomIndex")
+            .hasMessageContaining("No replication in progress for index:$randomIndex")
     }
 
     fun `test pause replication and stop replication`() {
@@ -183,14 +208,16 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
             followerClient.pauseReplication(followerIndexName)
             var statusResp = followerClient.replicationStatus(followerIndexName)
             `validate paused status response`(statusResp)
-            statusResp = followerClient.replicationStatus(followerIndexName,false)
+            statusResp = followerClient.replicationStatus(followerIndexName, false)
             `validate aggregated paused status response`(statusResp)
             // Since, we were still in FOLLOWING phase when pause was called, the index
             // in follower index should not have been deleted in follower cluster
             assertBusy {
-                assertThat(followerClient.indices()
-                        .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
-                        .isEqualTo(true)
+                assertThat(
+                    followerClient
+                        .indices()
+                        .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT),
+                ).isEqualTo(true)
             }
         } finally {
             followerClient.stopReplication(followerIndexName)
@@ -204,19 +231,23 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
         createConnectionBetweenClusters(FOLLOWER, LEADER)
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
-        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
-                waitForRestore = true)
+        followerClient.startReplication(
+            StartReplicationRequest("source", leaderIndexName, followerIndexName),
+            waitForRestore = true,
+        )
         // Need to wait till index blocks appear into state
         assertBusy({
             val clusterBlocksResponse = followerClient.lowLevelClient.performRequest(Request("GET", "/_cluster/state/blocks"))
             val clusterResponseString = EntityUtils.toString(clusterBlocksResponse.entity)
             assertThat(clusterResponseString.contains("cross-cluster-replication"))
-                    .withFailMessage("Cant find replication block after starting replication")
-                    .isTrue()
+                .withFailMessage("Cant find replication block after starting replication")
+                .isTrue()
         }, 10, TimeUnit.SECONDS)
 
         // setting an invalid seed so that leader cluster is unavailable
-        val settings: Settings = Settings.builder()
+        val settings: Settings =
+            Settings
+                .builder()
                 .putList("cluster.remote.source.seeds", "127.0.0.1:9305")
                 .build()
         val updateSettingsRequest = ClusterUpdateSettingsRequest()
@@ -240,11 +271,23 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
         createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName2), RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
         // For followerIndexName1
-        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName1,
-            followerIndexName1), waitForRestore = true)
+        followerClient.startReplication(
+            StartReplicationRequest(
+                "source",
+                leaderIndexName1,
+                followerIndexName1,
+            ),
+            waitForRestore = true,
+        )
         // For followerIndexName2
-        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName2,
-            followerIndexName2), waitForRestore = true)
+        followerClient.startReplication(
+            StartReplicationRequest(
+                "source",
+                leaderIndexName2,
+                followerIndexName2,
+            ),
+            waitForRestore = true,
+        )
         val deleteResponse = leaderClient.indices().delete(DeleteIndexRequest(leaderIndexName1), RequestOptions.DEFAULT)
         assertThat(deleteResponse.isAcknowledged)
         // followerIndexName1 -> autopause
@@ -270,9 +313,11 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
         val leaderClient = getClientForCluster(LEADER)
 
         // Disabling the replication of delete index explicitly
-        val settings = Settings.builder()
-            .put("plugins.replication.replicate.delete_index", false)
-            .build()
+        val settings =
+            Settings
+                .builder()
+                .put("plugins.replication.replicate.delete_index", false)
+                .build()
         val request = ClusterUpdateSettingsRequest()
         request.transientSettings(settings)
         followerClient.cluster().putSettings(request, RequestOptions.DEFAULT)
@@ -283,11 +328,23 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
         createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName2), RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
         // For followerIndexName1
-        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName1,
-            followerIndexName1), waitForRestore = true)
+        followerClient.startReplication(
+            StartReplicationRequest(
+                "source",
+                leaderIndexName1,
+                followerIndexName1,
+            ),
+            waitForRestore = true,
+        )
         // For followerIndexName2
-        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName2,
-            followerIndexName2), waitForRestore = true)
+        followerClient.startReplication(
+            StartReplicationRequest(
+                "source",
+                leaderIndexName2,
+                followerIndexName2,
+            ),
+            waitForRestore = true,
+        )
         val deleteResponse = leaderClient.indices().delete(DeleteIndexRequest(leaderIndexName1), RequestOptions.DEFAULT)
         assertThat(deleteResponse.isAcknowledged)
         // followerIndexName1 -> autopause
@@ -309,27 +366,29 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
         val leaderClient = getClientForCluster(LEADER)
         val followerIndexName = "pause_index_no_body"
         createConnectionBetweenClusters(FOLLOWER, LEADER)
-        
+
         // Create index on leader
         val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
         assertThat(createIndexResponse.isAcknowledged).isTrue()
-        
+
         // Start replication
         followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
-        
+
         // Pause replication without sending any request body
-        val lowLevelPauseRequest = Request("POST", "/_plugins/_replication/${followerIndexName}/_pause")
+        val lowLevelPauseRequest = Request("POST", "/_plugins/_replication/$followerIndexName/_pause")
         // Not setting any entity - testing empty request body
         val lowLevelPauseResponse = followerClient.lowLevelClient.performRequest(lowLevelPauseRequest)
         assertThat(lowLevelPauseResponse.statusLine.statusCode).isEqualTo(200)
-        
+
         // Verify that the replication is paused with default reason
         assertBusy {
             val statusResp = followerClient.replicationStatus(followerIndexName)
             assertThat(statusResp.getValue("status")).isEqualTo("PAUSED")
-            assertThat(statusResp.getValue("reason")).isEqualTo(org.opensearch.replication.metadata.ReplicationMetadataManager.CUSTOMER_INITIATED_ACTION)
+            assertThat(
+                statusResp.getValue("reason"),
+            ).isEqualTo(org.opensearch.replication.metadata.ReplicationMetadataManager.CUSTOMER_INITIATED_ACTION)
         }
-        
+
         // Clean up
         followerClient.resumeReplication(followerIndexName)
     }

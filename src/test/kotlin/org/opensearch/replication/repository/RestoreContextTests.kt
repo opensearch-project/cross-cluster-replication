@@ -16,7 +16,6 @@ import org.opensearch.test.OpenSearchTestCase
 import java.util.UUID
 
 class RestoreContextTests : OpenSearchTestCase() {
-
     fun `test openInput returns cloned IndexInput from cache`() {
         // given
         val fileName = "test_file"
@@ -26,24 +25,29 @@ class RestoreContextTests : OpenSearchTestCase() {
         val mockDirectory = mock<Directory>()
         val mockBaseInput = mock<IndexInput>()
         val mockClonedInput = mock<IndexInput>()
-        val mockStore = mock<Store> {
-            on { directory() } doReturn mockDirectory
-        }
+        val mockStore =
+            mock<Store> {
+                on { directory() } doReturn mockDirectory
+            }
 
         whenever(mockDirectory.openInput(eq(fileName), any())).thenReturn(mockBaseInput)
         whenever(mockBaseInput.clone()).thenReturn(mockClonedInput)
 
-        val sut = object : RestoreContext(
-            restoreUUID = UUID.randomUUID().toString(),
-            shard = mockShard,
-            indexCommitRef = mockIndexCommit,
-            metadataSnapshot = Store.MetadataSnapshot.EMPTY,
-            replayOperationsFrom = 0L,
-        ) {
-            override fun withStoreReference(store: Store, block: () -> Unit) {
-                block()
+        val sut =
+            object : RestoreContext(
+                restoreUUID = UUID.randomUUID().toString(),
+                shard = mockShard,
+                indexCommitRef = mockIndexCommit,
+                metadataSnapshot = Store.MetadataSnapshot.EMPTY,
+                replayOperationsFrom = 0L,
+            ) {
+                override fun withStoreReference(
+                    store: Store,
+                    block: () -> Unit,
+                ) {
+                    block()
+                }
             }
-        }
 
         val threads = mutableListOf<Thread>()
         val results = mutableListOf<IndexInput>()
@@ -51,12 +55,13 @@ class RestoreContextTests : OpenSearchTestCase() {
 
         // when
         repeat(10) {
-            val thread = Thread {
-                val input = sut.openInput(mockStore, fileName)
-                synchronized(lock) {
-                    results.add(input)
+            val thread =
+                Thread {
+                    val input = sut.openInput(mockStore, fileName)
+                    synchronized(lock) {
+                        results.add(input)
+                    }
                 }
-            }
             threads.add(thread)
         }
 

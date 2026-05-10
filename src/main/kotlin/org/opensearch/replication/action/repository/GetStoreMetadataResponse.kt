@@ -17,10 +17,9 @@ import org.opensearch.core.common.io.stream.StreamOutput
 import org.opensearch.index.store.Store
 
 class GetStoreMetadataResponse : ActionResponse {
+    val metadataSnapshot: Store.MetadataSnapshot
 
-    val metadataSnapshot : Store.MetadataSnapshot
-
-    constructor(metadataSnapshot: Store.MetadataSnapshot): super() {
+    constructor(metadataSnapshot: Store.MetadataSnapshot) : super() {
         this.metadataSnapshot = metadataSnapshot
     }
 

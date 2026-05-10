@@ -21,11 +21,13 @@ import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.ToXContentObject
 import org.opensearch.core.xcontent.XContentBuilder
 
-class ValidatePermissionsRequest: AcknowledgedRequest<ValidatePermissionsRequest>, IndicesRequest.Replaceable, ToXContentObject {
+class ValidatePermissionsRequest :
+    AcknowledgedRequest<ValidatePermissionsRequest>,
+    IndicesRequest.Replaceable,
+    ToXContentObject {
     val cluster: String
     val index: String
     var clusterRole: String? = null
-
 
     constructor(leaderAlias: String, leaderIndex: String, leaderClusterRole: String?) {
         this.cluster = leaderAlias
@@ -51,19 +53,16 @@ class ValidatePermissionsRequest: AcknowledgedRequest<ValidatePermissionsRequest
         return null
     }
 
-    override fun indices(vararg indices: String?): IndicesRequest {
-        return this
-    }
+    override fun indices(vararg indices: String?): IndicesRequest = this
 
-    override fun indices(): Array<String> {
-        return arrayOf(index)
-    }
+    override fun indices(): Array<String> = arrayOf(index)
 
-    override fun indicesOptions(): IndicesOptions {
-        return IndicesOptions.strictSingleIndexNoExpandForbidClosed()
-    }
+    override fun indicesOptions(): IndicesOptions = IndicesOptions.strictSingleIndexNoExpandForbidClosed()
 
-    override fun toXContent(builder: XContentBuilder, params: ToXContent.Params): XContentBuilder {
+    override fun toXContent(
+        builder: XContentBuilder,
+        params: ToXContent.Params,
+    ): XContentBuilder {
         builder.startObject()
         builder.field("cluster", cluster)
         builder.field("resource", index)

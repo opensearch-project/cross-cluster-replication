@@ -20,7 +20,6 @@ import java.io.IOException
  * A request to get node (cluster) level replication stats.
  */
 class FollowerStatsRequest : BaseNodesRequest<FollowerStatsRequest?> {
-
     /**
      *
      * @param in A stream input object.
@@ -38,5 +37,4 @@ class FollowerStatsRequest : BaseNodesRequest<FollowerStatsRequest?> {
     override fun writeTo(out: StreamOutput) {
         super.writeTo(out)
     }
-
 }

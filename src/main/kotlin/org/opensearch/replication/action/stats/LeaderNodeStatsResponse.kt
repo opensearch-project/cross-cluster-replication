@@ -21,19 +21,19 @@ import org.opensearch.replication.seqno.RemoteShardMetric.RemoteStats
 import java.io.IOException
 
 class LeaderNodeStatsResponse : BaseNodeResponse {
-    var remoteStats :Map<ShardId, RemoteStats>
+    var remoteStats: Map<ShardId, RemoteStats>
 
     constructor(inp: StreamInput) : super(inp) {
         remoteStats = inp.readMap(::ShardId, ::RemoteStats)
     }
 
-    constructor(node : DiscoveryNode, remoteClusterStats: Map<ShardId, RemoteShardMetric>) : super(node) {
-        remoteStats = remoteClusterStats.mapValues { (_ , v) -> v.createStats()  }
+    constructor(node: DiscoveryNode, remoteClusterStats: Map<ShardId, RemoteShardMetric>) : super(node) {
+        remoteStats = remoteClusterStats.mapValues { (_, v) -> v.createStats() }
     }
 
     @Throws(IOException::class)
     override fun writeTo(out: StreamOutput) {
         super.writeTo(out)
-        out.writeMap(remoteStats, { o, k -> k.writeTo(o)}, { o, v -> v.writeTo(o)})
+        out.writeMap(remoteStats, { o, k -> k.writeTo(o) }, { o, v -> v.writeTo(o) })
     }
 }

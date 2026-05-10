@@ -23,23 +23,29 @@ class GetFileChunkRequest : RemoteClusterRepositoryRequest<GetFileChunkRequest> 
     val offset: Long
     val length: Int
 
-    constructor(restoreUUID: String, node: DiscoveryNode, leaderShardId: ShardId, storeFileMetaData: StoreFileMetadata,
-                offset: Long, length: Int, followerCluster: String, followerShardId: ShardId):
-            super(restoreUUID, node, leaderShardId, followerCluster, followerShardId) {
+    constructor(
+        restoreUUID: String,
+        node: DiscoveryNode,
+        leaderShardId: ShardId,
+        storeFileMetaData: StoreFileMetadata,
+        offset: Long,
+        length: Int,
+        followerCluster: String,
+        followerShardId: ShardId,
+    ) :
+        super(restoreUUID, node, leaderShardId, followerCluster, followerShardId) {
         this.storeFileMetadata = storeFileMetaData
         this.offset = offset
         this.length = length
     }
 
-    constructor(input : StreamInput): super(input) {
+    constructor(input: StreamInput) : super(input) {
         storeFileMetadata = StoreFileMetadata(input)
         offset = input.readLong()
         length = input.readInt()
     }
 
-    override fun validate(): ActionRequestValidationException? {
-        return null
-    }
+    override fun validate(): ActionRequestValidationException? = null
 
     override fun writeTo(out: StreamOutput) {
         super.writeTo(out)

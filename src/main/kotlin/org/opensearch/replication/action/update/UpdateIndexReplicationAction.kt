@@ -14,7 +14,7 @@ package org.opensearch.replication.action.update
 import org.opensearch.action.ActionType
 import org.opensearch.action.support.clustermanager.AcknowledgedResponse
 
-class UpdateIndexReplicationAction private constructor(): ActionType<AcknowledgedResponse>(NAME, ::AcknowledgedResponse) {
+class UpdateIndexReplicationAction private constructor() : ActionType<AcknowledgedResponse>(NAME, ::AcknowledgedResponse) {
     companion object {
         const val NAME = "indices:admin/plugins/replication/index/update"
         val INSTANCE: UpdateIndexReplicationAction = UpdateIndexReplicationAction()

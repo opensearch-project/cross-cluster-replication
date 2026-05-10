@@ -16,15 +16,17 @@ import org.opensearch.cluster.node.DiscoveryNode
 import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.core.index.shard.ShardId
 
-class ReleaseLeaderResourcesRequest: RemoteClusterRepositoryRequest<ReleaseLeaderResourcesRequest> {
+class ReleaseLeaderResourcesRequest : RemoteClusterRepositoryRequest<ReleaseLeaderResourcesRequest> {
+    constructor(
+        restoreUUID: String,
+        node: DiscoveryNode,
+        leaderShardId: ShardId,
+        followerCluster: String,
+        followerShardId: ShardId,
+    ) :
+        super(restoreUUID, node, leaderShardId, followerCluster, followerShardId)
 
-    constructor(restoreUUID: String, node: DiscoveryNode, leaderShardId: ShardId,
-                followerCluster: String, followerShardId: ShardId):
-            super(restoreUUID, node, leaderShardId, followerCluster, followerShardId)
+    constructor(input: StreamInput) : super(input)
 
-    constructor(input : StreamInput): super(input)
-
-    override fun validate(): ActionRequestValidationException? {
-        return null
-    }
+    override fun validate(): ActionRequestValidationException? = null
 }
