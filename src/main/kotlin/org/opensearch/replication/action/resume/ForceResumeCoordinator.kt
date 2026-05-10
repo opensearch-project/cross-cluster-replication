@@ -110,7 +110,10 @@ class ForceResumeCoordinator(
 
         val shards = clusterService.state().routingTable
             .indicesRouting().get(params.followerIndexName)?.shards()
-            ?: return
+        if (shards == null) {
+            log.warn("No routing table found for follower index ${params.followerIndexName}, skipping lease acquisition")
+            return
+        }
 
         shards.forEach { entry ->
             val followerShardId = entry.value.shardId
@@ -141,7 +144,7 @@ class ForceResumeCoordinator(
         return statsResponse.shards
             .firstOrNull { it.shardRouting.shardId().id == shardId && it.shardRouting.primary() }
             ?.seqNoStats?.globalCheckpoint
-            ?: throw IllegalStateException("Primary shard $shardId not found for leader index $leaderIndexName")
+            ?: throw IllegalStateException("Primary shard $shardId not found or seqNoStats unavailable for leader index $leaderIndexName")
     }
 
     /**
@@ -173,10 +176,13 @@ class ForceResumeCoordinator(
                     remoteClient
                 )
                 for (shardIdInt in acquiredLeases.keys) {
-                    val followerShardId = ShardId(
-                        clusterService.state().metadata.index(params.followerIndexName)?.index ?: continue,
-                        shardIdInt
-                    )
+                    val indexMetadata = clusterService.state().metadata.index(params.followerIndexName)
+                    if (indexMetadata == null) {
+                        log.warn("Follower index ${params.followerIndexName} not found in metadata during cleanup. " +
+                                "Retention leases on leader may be orphaned for shard $shardIdInt.")
+                        continue
+                    }
+                    val followerShardId = ShardId(indexMetadata.index, shardIdInt)
                     retentionLeaseHelper.attemptRetentionLeaseRemoval(ShardId(params.leaderIndex, shardIdInt), followerShardId)
                 }
             } catch (e: Exception) {
