@@ -136,9 +136,11 @@ class ForceResumeCoordinator(
 
     // Fetches the leader shard's global checkpoint via IndicesStatsAction.
     private suspend fun getLeaderGlobalCheckpoint(remoteClient: Client, leaderIndexName: String, shardId: Int): Long {
+        val statsRequest = IndicesStatsRequest().indices(leaderIndexName).clear()
+        statsRequest.translog(true) // translog stats include seqNoStats/globalCheckpoint
         val statsResponse = remoteClient.suspendExecute(
             IndicesStatsAction.INSTANCE,
-            IndicesStatsRequest().all().indices(leaderIndexName),
+            statsRequest,
             injectSecurityContext = true
         )
         return statsResponse.shards
