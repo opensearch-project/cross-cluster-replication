@@ -48,18 +48,19 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.opensearch.OpenSearchException
 import org.opensearch.OpenSearchTimeoutException
-import org.opensearch.action.ActionListener
+import org.opensearch.core.action.ActionListener
 import org.opensearch.action.admin.indices.alias.IndicesAliasesRequest
 import org.opensearch.action.admin.indices.alias.IndicesAliasesRequest.AliasActions
 import org.opensearch.action.admin.indices.alias.get.GetAliasesRequest
+import org.opensearch.action.admin.indices.delete.DeleteIndexAction
 import org.opensearch.action.admin.indices.delete.DeleteIndexRequest
 import org.opensearch.action.admin.indices.settings.get.GetSettingsRequest
 import org.opensearch.action.admin.indices.settings.put.UpdateSettingsRequest
 import org.opensearch.action.admin.indices.mapping.get.GetMappingsRequest
 import org.opensearch.action.admin.indices.mapping.put.PutMappingRequest
 import org.opensearch.action.support.IndicesOptions
-import org.opensearch.client.Client
-import org.opensearch.client.Requests
+import org.opensearch.transport.client.Client
+import org.opensearch.transport.client.Requests
 import org.opensearch.cluster.ClusterChangedEvent
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.ClusterStateListener
@@ -68,22 +69,22 @@ import org.opensearch.cluster.RestoreInProgress
 import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.cluster.routing.allocation.decider.EnableAllocationDecider
 import org.opensearch.cluster.service.ClusterService
-import org.opensearch.common.io.stream.StreamOutput
+import org.opensearch.core.common.io.stream.StreamOutput
 import org.opensearch.common.logging.Loggers
 import org.opensearch.common.settings.Setting
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.settings.SettingsModule
-import org.opensearch.common.unit.ByteSizeUnit
-import org.opensearch.common.unit.ByteSizeValue
+import org.opensearch.core.common.unit.ByteSizeUnit
+import org.opensearch.core.common.unit.ByteSizeValue
 import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.ToXContentObject
 import org.opensearch.core.xcontent.XContentBuilder
 import org.opensearch.common.xcontent.XContentType
-import org.opensearch.index.Index
+import org.opensearch.core.index.Index
 import org.opensearch.index.IndexService
 import org.opensearch.index.IndexSettings
 import org.opensearch.index.shard.IndexShard
-import org.opensearch.index.shard.ShardId
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.indices.cluster.IndicesClusterStateService
 import org.opensearch.indices.recovery.RecoveryState
 import org.opensearch.persistent.PersistentTaskState
@@ -94,9 +95,10 @@ import org.opensearch.persistent.PersistentTasksService
 import org.opensearch.replication.ReplicationException
 import org.opensearch.replication.MappingNotAvailableException
 import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING
-import org.opensearch.rest.RestStatus
-import org.opensearch.tasks.TaskId
+import org.opensearch.core.rest.RestStatus
+import org.opensearch.core.tasks.TaskId
 import org.opensearch.tasks.TaskManager
+import org.opensearch.action.admin.cluster.snapshots.restore.RestoreSnapshotRequest
 import org.opensearch.threadpool.ThreadPool
 import java.util.Collections
 import java.util.function.Predicate
@@ -104,8 +106,12 @@ import java.util.stream.Collectors
 import kotlin.coroutines.resume
 import kotlin.coroutines.resumeWithException
 import kotlin.coroutines.suspendCoroutine
+import org.opensearch.commons.replication.action.ReplicationActions.INTERNAL_STOP_REPLICATION_ACTION_TYPE
+import org.opensearch.commons.replication.action.StopIndexReplicationRequest
+import org.opensearch.replication.ReplicationPlugin
 import kotlin.streams.toList
 import org.opensearch.cluster.DiffableUtils
+import org.opensearch.common.util.concurrent.ThreadContext
 
 open class IndexReplicationTask(id: Long, type: String, action: String, description: String,
                            parentTask: TaskId,
@@ -132,8 +138,9 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
     override val followerIndexName = params.followerIndexName
 
     override val log = Loggers.getLogger(javaClass, Index(params.followerIndexName, ClusterState.UNKNOWN_UUID))
-    private val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
+    private val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), clusterService.state().metadata.clusterUUID(), remoteClient)
     private var shouldCallEvalMonitoring = true
+    private var isLeaderIndexDeleted = false
     private var updateSettingsContinuousFailCount = 0
     private var updateAliasContinousFailCount = 0
 
@@ -181,6 +188,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                             log.debug("Resuming tasks now.")
                             InitFollowState
                         } else {
+                            log.info("Starting new index replication: follower=$followerIndexName, leader=$leaderAlias:${leaderIndex.name}")
                             setupAndStartRestore()
                         }
                     }
@@ -222,8 +230,18 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                                     updateMetadata()
                                 }
                                 is FailedState -> {
-                                    // Try pausing first if we get Failed state. This returns failed state if pause failed
-                                    pauseReplication(state)
+                                    // Try pausing or stopping if we get Failed state based on settings.
+                                    // If index deletion replication is turned on in the settings and leader index is
+                                    // not available then stop the replication, otherwise pause the replication.
+                                    // This returns failed state if pause or stop failed
+                                   if (replicationSettings.replicateIndexDeletion
+                                       && state.errorMsg.contains("org.opensearch.index.IndexNotFoundException - \"no such index ["
+                                               + leaderIndex.name + "]\"")) {
+                                       isLeaderIndexDeleted = true
+                                       stopReplication(state)
+                                    } else {
+                                        pauseReplication(state)
+                                    }
                                 }
                                 else -> {
                                     state
@@ -246,7 +264,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 }
                 if (isCompleted) break
             } catch(e: ReplicationException) {
-                log.error("Exiting index replication task", e)
+                log.error("Exiting index replication task follower=$followerIndexName, leader=$leaderAlias:${leaderIndex.name}", e)
                 throw e
             } catch(e: OpenSearchException) {
                 val status = e.status().status
@@ -255,7 +273,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 // should continue to poll and Any failure encoutered from shard task should
                 // invoke state transition and exit
                 if(status < 500 && status != RestStatus.TOO_MANY_REQUESTS.status) {
-                    log.error("Exiting index replication task", e)
+                    log.error("Exiting index replication task follower=$followerIndexName, status=$status", e)
                     throw e
                 }
                 log.debug("Encountered transient error while running index replication task", e)
@@ -267,7 +285,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
     private suspend fun failReplication(failedState: FailedState) {
         withContext(NonCancellable) {
             val reason = failedState.errorMsg
-            log.error("Moving replication[IndexReplicationTask:$id][reason=${reason}] to failed state")
+            log.error("Moving replication[IndexReplicationTask:$id][follower=$followerIndexName, leader=$leaderAlias:${leaderIndex.name}, reason=${reason}] to failed state")
             try {
                 replicationMetadataManager.updateIndexReplicationState(
                     followerIndexName,
@@ -290,7 +308,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
     private suspend fun pollShardTaskStatus(): IndexReplicationState {
         val failedShardTasks = findAllReplicationFailedShardTasks(followerIndexName, clusterService.state())
         if (failedShardTasks.isNotEmpty()) {
-            log.info("Failed shard tasks - ", failedShardTasks)
+            log.info("Failed shard tasks - $failedShardTasks")
             var msg = ""
             for ((shard, task) in failedShardTasks) {
                 val taskState = task.state
@@ -328,33 +346,72 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         return clusterService.state().routingTable.hasIndex(followerIndexName)
     }
 
+    /**
+     * Checks if the specified index is currently in a closed state.
+     */
+    internal fun isIndexClosed(indexName: String): Boolean {
+        return try {
+            val clusterState = clusterService.state()
+            val indexMetadata = clusterState.metadata.index(indexName)
+            
+            if (indexMetadata == null) {
+                log.warn("Index metadata not found for $indexName, defaulting to open operation for safety")
+                true // Default to performing open operation for safety
+            } else {
+                val isClosed = indexMetadata.state != IndexMetadata.State.OPEN
+                log.debug("Index $indexName state check: ${if (isClosed) "CLOSED" else "OPEN"}")
+                isClosed
+            }
+        } catch (e: Exception) {
+            log.warn("Failed to check state for index $indexName, defaulting to open operation for safety", e)
+            true // Default to performing open operation for safety
+        }
+    }
+
+    /**
+     * Conditionally opens an index if it is currently closed.
+     */
+    private suspend fun conditionallyOpenIndex(indexName: String, logSuffix: String = "") {
+        if (isIndexClosed(indexName)) {
+            log.info("Index $indexName is closed, opening it")
+            val updateRequest = UpdateMetadataRequest(indexName, UpdateMetadataRequest.Type.OPEN, Requests.openIndexRequest(indexName))
+            client.suspendExecute(UpdateMetadataAction.INSTANCE, updateRequest, injectSecurityContext = true)
+            if (logSuffix.isNotEmpty()) {
+                log.info("Opened the index $indexName $logSuffix")
+            }
+        } else {
+            log.info("Index $indexName is already open, skipping open operation")
+        }
+    }
+
     private suspend fun evalMonitoringState():IndexReplicationState {
         // Handling for node crashes during Static Index Updates'
         // Makes sure follower index is open, shard tasks are running
         // Shard & Index Tasks has Close listeners
         //All ops are idempotent .
 
-        //Only called once if task starts in MONITORING STATE 
+        //Only called once if task starts in MONITORING STATE
         if (!shouldCallEvalMonitoring) {
             return MonitoringState
         }
 
-        val updateRequest = UpdateMetadataRequest(followerIndexName, UpdateMetadataRequest.Type.OPEN, Requests.openIndexRequest(followerIndexName))
-        client.suspendExecute(UpdateMetadataAction.INSTANCE, updateRequest, injectSecurityContext = true)
+        conditionallyOpenIndex(followerIndexName)
 
         registerCloseListeners()
         val clusterState = clusterService.state()
         val persistentTasks = clusterState.metadata.custom<PersistentTasksCustomMetadata>(PersistentTasksCustomMetadata.TYPE)
 
-        val followerShardIds = clusterService.state().routingTable.indicesRouting().get(followerIndexName).shards()
-            .map {  shard -> shard.value.shardId }
-            .stream().collect(Collectors.toSet())
+        val followerShardIds = clusterService.state().routingTable.indicesRouting().get(followerIndexName)?.shards()
+            ?.map { shard -> shard.value.shardId }
+            ?.stream()?.collect(Collectors.toSet()).orEmpty()
         val runningShardTasksForIndex = persistentTasks.findTasks(ShardReplicationExecutor.TASK_NAME, Predicate { true }).stream()
                 .map { task -> task.params as ShardReplicationParams }
                 .filter {taskParam -> followerShardIds.contains(taskParam.followerShardId) }
                 .collect(Collectors.toList())
 
         if (runningShardTasksForIndex.size != followerShardIds.size) {
+            val missingShardsIds = followerShardIds - runningShardTasksForIndex.map { it.followerShardId }.toSet()
+            log.info("Shard task count mismatch for follower=$followerIndexName: expected=${followerShardIds.size}, running=${runningShardTasksForIndex.size}, missingShards=$missingShardsIds")
             return InitFollowState
         }
 
@@ -377,7 +434,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         } catch (e: Exception) {
             errorEncountered = true
             if (shouldAliasLogError) {
-                log.error("Encountered exception while updating alias ${e.stackTraceToString()}")
+                log.error("Encountered exception while updating alias follower=$followerIndexName, error=${e.stackTraceToString()}")
             }
         } finally {
             if (errorEncountered) {
@@ -394,7 +451,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         } catch (e: Exception) {
             errorEncountered = true
             if (shouldSettingsLogError) {
-                log.error("Encountered exception while updating settings ${e.stackTraceToString()}")
+                log.error("Encountered exception while updating settings follower=$followerIndexName, error=${e.stackTraceToString()}")
             }
         } finally {
             if (errorEncountered) {
@@ -413,12 +470,9 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         }
     }
 
-    private suspend fun UpdateFollowereMapping(followerIndex: String,mappingSource: String) {
+    private suspend fun updateFollowerMapping(followerIndex: String,mappingSource: String?) {
 
         val options = IndicesOptions.strictSingleIndexNoExpandForbidClosed()
-        if (null == mappingSource) {
-            throw MappingNotAvailableException("MappingSource is not available")
-        }
         val putMappingRequest = PutMappingRequest().indices(followerIndex).indicesOptions(options)
             .source(mappingSource, XContentType.JSON)
         val updateMappingRequest = UpdateMetadataRequest(followerIndex, UpdateMetadataRequest.Type.MAPPING, putMappingRequest)
@@ -437,16 +491,16 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 // If we we want to retrieve just the version of settings and alias versions, there are two options
                 // 1. Include this in GetChanges and communicate it to IndexTask via Metadata
                 // 2. Add another API to retrieve version of settings & aliases. Persist current version in Metadata
-                var leaderSettings = settingsResponse.indexToSettings.get(this.leaderIndex.name)
-                leaderSettings = leaderSettings.filter { k: String? ->
+                var leaderSettings = settingsResponse.indexToSettings.getOrDefault(this.leaderIndex.name, Settings.EMPTY)
+                leaderSettings = leaderSettings.filter { k: String ->
                     !blockListedSettings.contains(k)
                 }
 
                 gsr = GetSettingsRequest().includeDefaults(false).indices(this.followerIndexName)
                 settingsResponse = client.suspending(client.admin().indices()::getSettings, injectSecurityContext = true)(gsr)
-                var followerSettings = settingsResponse.indexToSettings.get(this.followerIndexName)
+                var followerSettings = settingsResponse.indexToSettings.getOrDefault(this.followerIndexName, Settings.EMPTY)
 
-                followerSettings = followerSettings.filter { k: String? ->
+                followerSettings = followerSettings.filter { k: String ->
                     k != REPLICATED_INDEX_SETTING.key
                 }
 
@@ -464,7 +518,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                             continue
                         }
                         val setting = indexScopedSettings[key]
-                        if (!setting.isPrivateIndex) {
+                        if (!setting.isPrivateIndex && !setting.isFinal) {
                             desiredSettingsBuilder.copy(key, settings);
                         }
                     }
@@ -476,7 +530,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                     if (desiredSettings.get(key) != followerSettings.get(key)) {
                         //Not intended setting on follower side.
                         val setting = indexScopedSettings[key]
-                        if (indexScopedSettings.isPrivateSetting(key)) {
+                        if (indexScopedSettings.isPrivateSetting(key) || setting.isFinal) {
                             continue
                         }
                         if (!setting.isDynamic()) {
@@ -489,7 +543,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
 
                 for (key in followerSettings.keySet()) {
                     val setting = indexScopedSettings[key]
-                    if (setting == null || setting.isPrivateIndex) {
+                    if (setting == null || setting.isPrivateIndex || setting.isFinal) {
                         continue
                     }
 
@@ -519,11 +573,11 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 //Alias
                 var getAliasesRequest = GetAliasesRequest().indices(this.leaderIndex.name)
                 var getAliasesRes = remoteClient.suspending(remoteClient.admin().indices()::getAliases, injectSecurityContext = true)(getAliasesRequest)
-                var leaderAliases = getAliasesRes.aliases.get(this.leaderIndex.name)
+                var leaderAliases = getAliasesRes.aliases.getOrDefault(this.leaderIndex.name, Collections.emptyList())
 
                 getAliasesRequest = GetAliasesRequest().indices(followerIndexName)
                 getAliasesRes = client.suspending(client.admin().indices()::getAliases, injectSecurityContext = true)(getAliasesRequest)
-                var followerAliases = getAliasesRes.aliases.get(followerIndexName)
+                var followerAliases = getAliasesRes.aliases.getOrDefault(followerIndexName, Collections.emptyList())
 
                 var request  :IndicesAliasesRequest?
 
@@ -532,7 +586,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                     request = null
                 } else {
                     log.info("All aliases are not equal on $followerIndexName. Will sync up them")
-                    request  = IndicesAliasesRequest()
+                    request = IndicesAliasesRequest()
                     var toAdd = leaderAliases - followerAliases
 
                     for (alias in toAdd) {
@@ -542,8 +596,14 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                             .alias(alias.alias)
                             .indexRouting(alias.indexRouting)
                             .searchRouting(alias.searchRouting)
-                            .writeIndex(alias.writeIndex())
                             .isHidden(alias.isHidden)
+
+                        val writeIndex = alias.writeIndex()
+                        if (writeIndex == true) {
+                            aliasAction.writeIndex(false) // Strip write index if it's true on leader
+                        } else {
+                            aliasAction.writeIndex(writeIndex) // Preserve null or false
+                        }
 
                         if (alias.filteringRequired())  {
                             aliasAction = aliasAction.filter(alias.filter.string())
@@ -553,11 +613,15 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                     }
 
                     var toRemove = followerAliases - leaderAliases
-
+                    val leaderAliasNames = leaderAliases.map { it.alias() }.toSet()
                     for (alias in toRemove) {
-                        log.info("Removing alias  ${alias.alias} from $followerIndexName")
-                        request.addAliasAction(AliasActions.remove().index(followerIndexName)
+                        // Only remove if it doesn't exist on the leader at all (by name).
+                        // If it exists on leader but differs (e.g. writeIndex), it was added/updated in the 'toAdd' loop above.
+                        if (!leaderAliasNames.contains(alias.alias())) {
+                            log.info("Removing alias ${alias.alias} from $followerIndexName")
+                            request.addAliasAction(AliasActions.remove().index(followerIndexName)
                                 .alias(alias.alias))
+                        }
                     }
                 }
 
@@ -569,21 +633,22 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 val options = IndicesOptions.strictSingleIndexNoExpandForbidClosed()
                 var gmr = GetMappingsRequest().indices(this.leaderIndex.name).indicesOptions(options)
                 var mappingResponse = remoteClient.suspending(remoteClient.admin().indices()::getMappings, injectSecurityContext = true)(gmr)
-                var leaderMappingSource = mappingResponse.mappings.get(this.leaderIndex.name).source().toString()
-                val leaderProperties = mappingResponse.mappings().get(this.leaderIndex.name).sourceAsMap().toMap().get("properties") as Map<String,Any>
+                var leaderMappingSource = mappingResponse?.mappings?.get(this.leaderIndex.name)?.source()?.toString()
+                @Suppress("UNCHECKED_CAST")
+                val leaderProperties = mappingResponse?.mappings()?.get(this.leaderIndex.name)?.sourceAsMap()?.toMap()?.get("properties") as? Map<String,Any>?
                 gmr = GetMappingsRequest().indices(this.followerIndexName).indicesOptions(options)
                 mappingResponse = client.suspending(client.admin().indices()::getMappings, injectSecurityContext = true)(gmr)
-                val followerProperties = mappingResponse.mappings().get(this.followerIndexName).sourceAsMap().toMap().get("properties") as Map<String,Any>
-                for(iter in followerProperties) {
-                    if(leaderProperties.containsKey(iter.key) && leaderProperties.getValue(iter.key).toString()!=(iter.value).toString()){
-                        log.info("Updating Multi-field Mapping at Follower")
-                        UpdateFollowereMapping(this.followerIndexName,leaderMappingSource)
-                        break;
+                @Suppress("UNCHECKED_CAST")
+                val followerProperties = mappingResponse?.mappings()?.get(this.followerIndexName)?.sourceAsMap()?.toMap()?.get("properties") as? Map<String,Any>?
+                for((key,value) in followerProperties?: emptyMap()) {
+                    if (leaderProperties?.getValue(key).toString() != (value).toString()) {
+                        log.debug("Updating Multi-field Mapping at Follower")
+                        updateFollowerMapping(this.followerIndexName, leaderMappingSource)
+                        break
                     }
                 }
-
             } catch (e: Exception) {
-                log.error("Error in getting the required metadata ${e.stackTraceToString()}")
+                log.error("Error in getting the required metadata follower=$followerIndexName, leader=$leaderAlias:${leaderIndex.name}, error=${e.stackTraceToString()}")
             } finally {
                 withContext(NonCancellable) {
                     log.debug("Metadata sync sleeping for ${replicationSettings.metadataSyncInterval.millis}")
@@ -608,8 +673,8 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
 
             try {
                 //Step 1 : Remove the tasks
-                val shards = clusterService.state().routingTable.indicesRouting().get(followerIndexName).shards()
-                shards.forEach {
+                val shards = clusterService.state().routingTable.indicesRouting().get(followerIndexName)?.shards()
+                shards?.forEach {
                     persistentTasksService.removeTask(ShardReplicationTask.taskIdForShard(it.value.shardId))
                 }
 
@@ -628,9 +693,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
 
             } finally {
                 //Step 5: open the index
-                val updateRequest = UpdateMetadataRequest(followerIndexName, UpdateMetadataRequest.Type.OPEN, Requests.openIndexRequest(followerIndexName))
-                client.suspendExecute(UpdateMetadataAction.INSTANCE, updateRequest, injectSecurityContext = true)
-                log.info("Opened the index $followerIndexName now post applying static settings")
+                conditionallyOpenIndex(followerIndexName, "now post applying static settings")
 
                 //Step 6 :  Register Close Listeners again
                 registerCloseListeners()
@@ -661,7 +724,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
 
     private suspend fun pauseReplication(state: FailedState): IndexReplicationState {
         try {
-            log.error("Going to initiate auto-pause of $followerIndexName due to shard failures - $state")
+            log.error("Going to initiate auto-pause of $followerIndexName due to shard failures - failedShards=${state.failedShards.keys}, reason=${state.errorMsg}")
             val pauseReplicationResponse = client.suspendExecute(
                 replicationMetadata,
                 PauseIndexReplicationAction.INSTANCE, PauseIndexReplicationRequest(followerIndexName, "$AUTOPAUSED_REASON_PREFIX + ${state.errorMsg}"),
@@ -682,6 +745,50 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 "Pause failed with \"${e.message}\". Original failure for initiating pause - ${state.errorMsg}")
         }
         return MonitoringState
+    }
+
+    private suspend fun stopReplication(state: FailedState): IndexReplicationState {
+        var storedContext: ThreadContext.StoredContext? = null
+        try {
+            storedContext = client.threadPool().threadContext.stashContext()
+            log.info("Going to initiate stop of index $followerIndexName due to deletion of corresponding leader index ${leaderIndex.name}")
+            val stopReplicationResponse = client.execute(INTERNAL_STOP_REPLICATION_ACTION_TYPE, StopIndexReplicationRequest(followerIndexName)).actionGet()
+            if (!stopReplicationResponse.isAcknowledged) {
+                throw ReplicationException(
+                    "Failed to gracefully stop replication after deletion of leader index. " +
+                            "Replication tasks may need to be stopped manually and deleted follower index."
+                )
+            }
+        } catch (e: CancellationException) {
+            log.error("Encountered CancellationException while stopping $followerIndexName, ignoring it", e)
+        } catch (e: Exception) {
+            log.error("Encountered exception while stopping $followerIndexName", e)
+            return FailedState(state.failedShards,
+                "Stop failed with \"${e.message}\". Original failure for initiating stop - ${state.errorMsg}")
+        } finally {
+            storedContext?.close()
+        }
+        return CompletedState
+    }
+
+    private suspend fun deleteIndex() {
+        try {
+            log.info("Going to initiate deletion of index $followerIndexName due to deletion of corresponding leader index ${leaderIndex.name}")
+            val deleteIndexResponse = client.suspendExecute(
+                replicationMetadata,
+                DeleteIndexAction.INSTANCE, DeleteIndexRequest(followerIndexName),
+                defaultContext = true
+            )
+            if (!deleteIndexResponse.isAcknowledged) {
+                throw ReplicationException(
+                    "Failed to gracefully delete the follower index after deletion of the leader index. " +
+                            "Follower index may need to be deleted manually."
+                )
+            }
+        } catch (e: Exception) {
+            log.error("Encountered exception while deleting $followerIndexName", e)
+            throw e
+        }
     }
 
     private fun findAllReplicationFailedShardTasks(followerIndexName: String, clusterState: ClusterState)
@@ -720,6 +827,12 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 client.execute(PauseIndexReplicationAction.INSTANCE,
                         PauseIndexReplicationRequest(followerIndexName, TASK_CANCELLATION_REASON))
             }
+
+            // Deleting the follower index if replication is stopped because of leader index deletion
+            if (clusterService.clusterSettings.get(ReplicationPlugin.REPLICATION_REPLICATE_INDEX_DELETION)
+                && currentTaskState.state == ReplicationState.COMPLETED && isLeaderIndexDeleted)  {
+                deleteIndex()
+            }
         }
 
         /* This is to minimise overhead of calling an additional listener as
@@ -750,7 +863,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
 
     suspend fun startNewOrMissingShardTasks():  Map<ShardId, PersistentTask<ShardReplicationParams>> {
         assert(clusterService.state().routingTable.hasIndex(followerIndexName)) { "Can't find index $followerIndexName" }
-        val shards = clusterService.state().routingTable.indicesRouting().get(followerIndexName).shards()
+        val shards = clusterService.state().routingTable.indicesRouting().get(followerIndexName)?.shards()
         val persistentTasks = clusterService.state().metadata.custom<PersistentTasksCustomMetadata>(PersistentTasksCustomMetadata.TYPE)
         val runningShardTasks = persistentTasks.findTasks(ShardReplicationExecutor.TASK_NAME, Predicate { true }).stream()
             .map { task -> task as PersistentTask<ShardReplicationParams> }
@@ -759,14 +872,15 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 {t: PersistentTask<ShardReplicationParams> -> t.params!!.followerShardId},
                 {t: PersistentTask<ShardReplicationParams> -> t}))
 
-        val tasks = shards.map {
+        val tasks = shards?.map {
             it.value.shardId
-        }.associate { shardId ->
+        }?.associate { shardId ->
             val task = runningShardTasks.getOrElse(shardId) {
+                log.info("Starting missing shard task for follower=$followerIndexName, shardId=$shardId, leaderShard=${ShardId(leaderIndex, shardId.id)}")
                 startReplicationTask(ShardReplicationParams(leaderAlias, ShardId(leaderIndex, shardId.id), shardId))
             }
             return@associate shardId to task
-        }
+        }.orEmpty()
 
         return tasks
     }
@@ -806,7 +920,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         val updateSettingsRequest = remoteClient.admin().indices().prepareUpdateSettings().setSettings(settingsBuilder).setIndices(leaderIndex.name).request()
         val updateResponse = remoteClient.suspending(remoteClient.admin().indices()::updateSettings, injectSecurityContext = true)(updateSettingsRequest)
         if(!updateResponse.isAcknowledged) {
-            log.error("Unable to update setting for translog pruning based on retention lease")
+            log.error("Unable to update setting for translog pruning based on retention lease leaderIndex=${leaderIndex.name}")
         }
 
         val restoreRequest = client.admin().cluster()
@@ -819,6 +933,8 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         }
         val replMetadata = replicationMetadataManager.getIndexReplicationMetadata(this.followerIndexName)
         restoreRequest.indexSettings(replMetadata.settings)
+        restoreRequest.aliasWriteIndexPolicy(RestoreSnapshotRequest.AliasWriteIndexPolicy.STRIP_WRITE_INDEX)
+
 
         try {
             val response = client.suspending(client.admin().cluster()::restoreSnapshot, defaultContext = true)(restoreRequest)
@@ -836,16 +952,20 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         cso.waitForNextChange("remote restore start") { inProgressRestore(it) != null }
         return RestoreState
     }
-
+ 
     private suspend fun waitForRestore(): IndexReplicationState {
         var restore = inProgressRestore(clusterService.state())
+        var timeoutCount = 0
+        val restoreStartTime = System.currentTimeMillis()
 
         // Waiting for snapshot restore to reach a terminal stage.
         while (restore != null && restore.state() != RestoreInProgress.State.FAILURE && restore.state() != RestoreInProgress.State.SUCCESS) {
             try {
                 cso.waitForNextChange("remote restore finish")
             } catch(e: OpenSearchTimeoutException) {
-                log.info("Timed out while waiting for restore to complete.")
+                timeoutCount++
+                val elapsedSecs = (System.currentTimeMillis() - restoreStartTime) / 1000
+                log.debug("Timed out while waiting for restore to complete. follower=$followerIndexName, leader=$leaderAlias:${leaderIndex.name}, elapsedSecs=$elapsedSecs, timeoutCount=$timeoutCount, restoreState=${restore?.state()}")
             }
             restore = inProgressRestore(clusterService.state())
         }
@@ -867,9 +987,9 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                     This can happen if there was a badly timed cluster manager node failure.""".trimIndent())
             }
         } else if (restore.state() == RestoreInProgress.State.FAILURE) {
-            val failureReason = restore.shards().values().find {
-                it.value.state() == RestoreInProgress.State.FAILURE
-            }!!.value.reason()
+            val failureReason = restore.shards().values.find {
+                it.state() == RestoreInProgress.State.FAILURE
+            }!!.reason()
             return FailedState(Collections.emptyMap(), failureReason)
         } else {
             return InitFollowState

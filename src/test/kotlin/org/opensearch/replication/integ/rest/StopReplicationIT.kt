@@ -10,7 +10,6 @@
  */
 
 package org.opensearch.replication.integ.rest
-
 import org.opensearch.replication.IndexUtil
 import org.opensearch.replication.MultiClusterAnnotations
 import org.opensearch.replication.MultiClusterRestTestCase
@@ -24,11 +23,13 @@ import org.apache.hc.core5.http.io.entity.EntityUtils
 import org.assertj.core.api.Assertions.assertThat
 import org.assertj.core.api.Assertions.assertThatThrownBy
 import org.junit.Assert
+import org.junit.Assume
 import org.opensearch.OpenSearchStatusException
 import org.opensearch.action.admin.cluster.settings.ClusterUpdateSettingsRequest
 import org.opensearch.action.admin.cluster.snapshots.create.CreateSnapshotRequest
 import org.opensearch.action.admin.cluster.snapshots.restore.RestoreSnapshotRequest
 import org.opensearch.action.admin.cluster.snapshots.status.SnapshotsStatusRequest
+import org.opensearch.action.admin.indices.delete.DeleteIndexRequest
 import org.opensearch.action.index.IndexRequest
 import org.opensearch.client.Request
 import org.opensearch.client.RequestOptions
@@ -39,7 +40,13 @@ import org.opensearch.cluster.SnapshotsInProgress
 import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.unit.TimeValue
+import org.opensearch.common.xcontent.XContentType
+import org.opensearch.core.common.bytes.BytesArray
+import org.opensearch.core.xcontent.NamedXContentRegistry
+import org.opensearch.rest.RestRequest
+import org.opensearch.test.rest.FakeRestRequest
 import org.opensearch.index.mapper.MapperService
+import org.opensearch.replication.SNAPSHOTS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS
 import java.util.Random
 import java.util.concurrent.TimeUnit
 
@@ -54,6 +61,18 @@ const val FOLLOWER = "followCluster"
 class StopReplicationIT: MultiClusterRestTestCase() {
     private val leaderIndexName = "leader_index"
     private val followerIndexName = "follower_index"
+
+    fun `test stop replication with cluster_manager_timeout`() {
+        // Verify cluster_manager_timeout param is parsed from HTTP request and set on the request
+        val restRequest = FakeRestRequest.Builder(NamedXContentRegistry.EMPTY)
+            .withMethod(RestRequest.Method.POST)
+            .withPath("/_plugins/_replication/follower-index/_stop")
+            .withParams(mapOf("index" to "follower-index", "cluster_manager_timeout" to "60s"))
+            .withContent(BytesArray("{}"), XContentType.JSON)
+            .build()
+        val parsedTimeout = restRequest.paramAsTime("cluster_manager_timeout", TimeValue.timeValueSeconds(30))
+        assertEquals(TimeValue.timeValueSeconds(60), parsedTimeout)
+    }
 
     fun `test stop replication in following state and empty index`() {
         val followerClient = getClientForCluster(FOLLOWER)
@@ -241,11 +260,43 @@ class StopReplicationIT: MultiClusterRestTestCase() {
         followerClient.index(IndexRequest(followerIndexName).id("2").source(sourceMap), RequestOptions.DEFAULT)
     }
 
+    fun `test delete follower index when leader index is unavailable`() {
+        val followerIndexName2 = "follower_index2"
+        val leaderIndexName2 = "leader_index2"
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+
+        // Enabling the replication of delete index
+        val settings = Settings.builder()
+            .put("plugins.replication.replicate.delete_index", true)
+            .build()
+        val request = ClusterUpdateSettingsRequest()
+        request.transientSettings(settings)
+        followerClient.cluster().putSettings(request, RequestOptions.DEFAULT)
+
+        createConnectionBetweenClusters(FOLLOWER, LEADER, "source")
+        val createIndex1Response = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndex1Response.isAcknowledged).isTrue()
+        val createIndex2Response = leaderClient.indices().create(CreateIndexRequest(leaderIndexName2), RequestOptions.DEFAULT)
+        assertThat(createIndex2Response.isAcknowledged).isTrue()
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
+            waitForRestore = true)
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName2, followerIndexName2),
+            waitForRestore = true)
+
+        val deleteResponse = leaderClient.indices().delete(DeleteIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(deleteResponse.isAcknowledged)
+
+        // Make sure follower index got deleted after it is deleted from the leader, and it didn't affect any other indexes
+        assertBusy({
+            Assert.assertFalse(followerClient.indices().exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
+        }, 30, TimeUnit.SECONDS)
+        Assert.assertTrue(followerClient.indices().exists(GetIndexRequest(followerIndexName2), RequestOptions.DEFAULT))
+    }
+
     fun `test stop replication with stale replication settings at leader cluster`() {
 
-        if(checkifIntegTestRemote()){
-            return;
-        }
+        Assume.assumeFalse(SNAPSHOTS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS, checkifIntegTestRemote())
         
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
@@ -284,10 +335,10 @@ class StopReplicationIT: MultiClusterRestTestCase() {
         assertBusy {
             assertThat(leaderClient.indices().exists(GetIndexRequest("restored-$followerIndexName"), RequestOptions.DEFAULT)).isEqualTo(true)
         }
-        // Invoke stop on the new leader cluster index
+        // Stop on restored index - metadata document doesn't exist
         assertThatThrownBy { leaderClient.stopReplication("restored-$followerIndexName") }
                 .isInstanceOf(ResponseException::class.java)
-                .hasMessageContaining("Metadata for restored-$followerIndexName doesn't exist")
+                .hasMessageContaining("No replication in progress for index:restored-$followerIndexName")
         // Start replication on the new leader index
         followerClient.startReplication(
                 StartReplicationRequest("source", "restored-$followerIndexName", "restored-$followerIndexName"),
@@ -299,5 +350,35 @@ class StopReplicationIT: MultiClusterRestTestCase() {
             `validate status syncing response`(statusResp)
             assertThat(followerClient.getShardReplicationTasks("restored-$followerIndexName")).isNotEmpty()
         }, 60, TimeUnit.SECONDS)
+    }
+
+    fun `test stop replication cleans up and allows restart`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        followerClient.startReplication(
+            StartReplicationRequest("source", leaderIndexName, followerIndexName),
+            waitForRestore = true
+        )
+        val sourceMap = mapOf("name" to randomAlphaOfLength(5))
+        leaderClient.index(IndexRequest(leaderIndexName).id("1").source(sourceMap), RequestOptions.DEFAULT)
+        assertBusy {
+            assertThat(followerClient.indices().exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT)).isTrue()
+        }
+        // Stop replication
+        followerClient.stopReplication(followerIndexName)
+        // Verify follower index is still accessible (unblocked) after stop
+        followerClient.index(IndexRequest(followerIndexName).id("2").source(sourceMap), RequestOptions.DEFAULT)
+        // Delete follower index and restart replication
+        followerClient.indices().delete(DeleteIndexRequest(followerIndexName), RequestOptions.DEFAULT)
+        followerClient.startReplication(
+            StartReplicationRequest("source", leaderIndexName, followerIndexName),
+            waitForRestore = true
+        )
+        assertBusy {
+            assertThat(followerClient.indices().exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT)).isTrue()
+        }
     }
 }

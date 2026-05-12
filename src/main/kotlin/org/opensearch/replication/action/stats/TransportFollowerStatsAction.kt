@@ -17,14 +17,17 @@ import org.apache.logging.log4j.LogManager
 import org.opensearch.action.FailedNodeException
 import org.opensearch.action.support.ActionFilters
 import org.opensearch.action.support.nodes.TransportNodesAction
-import org.opensearch.client.node.NodeClient
+import org.opensearch.transport.client.node.NodeClient
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Inject
-import org.opensearch.common.io.stream.StreamInput
+import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.replication.metadata.state.ReplicationStateMetadata
 import org.opensearch.replication.seqno.RemoteClusterStats
 import org.opensearch.replication.task.shard.FollowerClusterStats
 import org.opensearch.threadpool.ThreadPool
+import org.opensearch.action.support.TransportIndicesResolvingAction
+import org.opensearch.cluster.metadata.OptionallyResolvedIndices
+import org.opensearch.cluster.metadata.ResolvedIndices
 import org.opensearch.transport.TransportService
 
 class TransportFollowerStatsAction @Inject constructor(transportService: TransportService,
@@ -36,7 +39,10 @@ class TransportFollowerStatsAction @Inject constructor(transportService: Transpo
                                                        private val followerStats: FollowerClusterStats) :
         TransportNodesAction<FollowerStatsRequest, FollowerStatsResponse, NodeStatsRequest, FollowerNodeStatsResponse>(FollowerStatsAction.NAME,
              threadPool, clusterService, transportService,  actionFilters, ::FollowerStatsRequest,  ::NodeStatsRequest, ThreadPool.Names.MANAGEMENT,
-                FollowerNodeStatsResponse::class.java), CoroutineScope by GlobalScope {
+                FollowerNodeStatsResponse::class.java), CoroutineScope by GlobalScope,
+        TransportIndicesResolvingAction<FollowerStatsRequest> {
+
+    override fun resolveIndices(request: FollowerStatsRequest): OptionallyResolvedIndices = ResolvedIndices.of(listOf<String>())
 
     companion object {
         private val log = LogManager.getLogger(TransportFollowerStatsAction::class.java)

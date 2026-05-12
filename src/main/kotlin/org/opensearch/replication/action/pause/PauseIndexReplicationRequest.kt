@@ -15,10 +15,10 @@ import org.opensearch.replication.metadata.ReplicationMetadataManager
 import org.opensearch.action.ActionRequestValidationException
 import org.opensearch.action.IndicesRequest
 import org.opensearch.action.support.IndicesOptions
-import org.opensearch.action.support.master.AcknowledgedRequest
+import org.opensearch.action.support.clustermanager.AcknowledgedRequest
 import org.opensearch.core.ParseField
-import org.opensearch.common.io.stream.StreamInput
-import org.opensearch.common.io.stream.StreamOutput
+import org.opensearch.core.common.io.stream.StreamInput
+import org.opensearch.core.common.io.stream.StreamOutput
 import org.opensearch.core.xcontent.ObjectParser
 import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.ToXContentObject

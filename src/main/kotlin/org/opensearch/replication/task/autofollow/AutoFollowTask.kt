@@ -27,10 +27,10 @@ import org.opensearch.OpenSearchException
 import org.opensearch.OpenSearchSecurityException
 import org.opensearch.action.admin.indices.get.GetIndexRequest
 import org.opensearch.action.support.IndicesOptions
-import org.opensearch.client.Client
+import org.opensearch.transport.client.Client
 import org.opensearch.cluster.service.ClusterService
-import org.opensearch.common.io.stream.StreamInput
-import org.opensearch.common.io.stream.StreamOutput
+import org.opensearch.core.common.io.stream.StreamInput
+import org.opensearch.core.common.io.stream.StreamOutput
 import org.opensearch.common.logging.Loggers
 import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.XContentBuilder
@@ -39,12 +39,13 @@ import org.opensearch.replication.ReplicationException
 import org.opensearch.replication.action.status.ReplicationStatusAction
 import org.opensearch.replication.action.status.ShardInfoRequest
 import org.opensearch.replication.action.status.ShardInfoResponse
-import org.opensearch.rest.RestStatus
+import org.opensearch.core.rest.RestStatus
 import org.opensearch.tasks.Task
-import org.opensearch.tasks.TaskId
+import org.opensearch.core.tasks.TaskId
 import org.opensearch.threadpool.Scheduler
 import org.opensearch.threadpool.ThreadPool
 import java.util.concurrent.ConcurrentSkipListSet
+import java.util.concurrent.TimeUnit
 
 class AutoFollowTask(id: Long, type: String, action: String, description: String, parentTask: TaskId,
                      headers: Map<String, String>,
@@ -68,7 +69,8 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
     lateinit var stat: AutoFollowStat
 
     override suspend fun execute(scope: CoroutineScope, initialState: PersistentTaskState?) {
-        stat = AutoFollowStat(params.patternName, replicationMetadata.leaderContext.resource)
+        stat = AutoFollowStat(params.patternName, replicationMetadata.leaderContext.resource, params.leaderCluster)
+        log.info("AutoFollow task started: leaderAlias=$leaderAlias, pattern=${params.patternName}, resource=${replicationMetadata.leaderContext.resource}")
         while (scope.isActive) {
             try {
                 addRetryScheduler()
@@ -80,7 +82,7 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
                 // Any transient error encountered during auto follow execution should be re-tried
                 val status = e.status().status
                 if(status < 500 && status != RestStatus.TOO_MANY_REQUESTS.status) {
-                    log.error("Exiting autofollow task", e)
+                    log.error("Exiting autofollow task: leaderAlias=$leaderAlias, pattern=${params.patternName}, status=$status", e)
                     throw e
                 }
                 log.debug("Encountered transient error while running autofollow task", e)
@@ -91,7 +93,7 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
 
     private fun addRetryScheduler() {
         log.debug("Adding retry scheduler")
-        if(retryScheduler != null && !retryScheduler!!.isCancelled) {
+        if(retryScheduler != null && retryScheduler!!.getDelay(TimeUnit.NANOSECONDS) > 0L) {
             return
         }
          try {
@@ -103,7 +105,7 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
                     replicationSettings.autofollowRetryPollDuration,
                     ThreadPool.Names.SAME)
         } catch (e: Exception) {
-            log.error("Error scheduling retry on failed autofollow indices ${e.stackTraceToString()}")
+            log.error("Error scheduling retry on failed autofollow indices leaderAlias=$leaderAlias, pattern=$patternName, error=${e.stackTraceToString()}")
              retryScheduler = null
         }
     }
@@ -114,6 +116,7 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
 
     private suspend fun pollForIndices() {
         log.debug("Checking $leaderAlias under pattern name $patternName for new indices to auto follow")
+        log.debug("Polling for indices: leaderAlias=$leaderAlias, pattern=$patternName")
         val entry = replicationMetadata.leaderContext.resource
 
         // Fetch remote indices matching auto follow pattern
@@ -125,12 +128,11 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
                     .indicesOptions(IndicesOptions.lenientExpandOpen())
             val response = remoteClient.suspending(remoteClient.admin().indices()::getIndex, true)(indexReq)
             remoteIndices = response.indices.asIterable()
-
         } catch (e: Exception) {
             // Ideally, Calls to the remote cluster shouldn't fail and autofollow task should be able to pick-up the newly created indices
             // matching the pattern. Should be safe to retry after configured delay.
             if(stat.failedLeaderCall >= 0 && stat.failedLeaderCall.rem(10) == 0L) {
-                log.error("Fetching remote indices failed with error - ${e.stackTraceToString()}")
+                log.error("Fetching remote indices failed with error - leaderAlias=$leaderAlias, pattern=$patternName, consecutiveFailures=${stat.failedLeaderCall}, error=${e.stackTraceToString()}")
             }
             stat.failedLeaderCall++
         }
@@ -210,6 +212,7 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
                 throw ReplicationException("Failed to auto follow leader index $leaderIndex")
             }
             successStart = true
+            log.debug("Auto follow has started replication from ${leaderAlias}:$leaderIndex -> $leaderIndex")
         } catch (e: OpenSearchSecurityException) {
             // For permission related failures, Adding as part of failed indices as autofollow role doesn't have required permissions.
             log.trace("Cannot start replication on $leaderIndex due to missing permissions $e")
@@ -252,6 +255,7 @@ class AutoFollowStat: Task.Status {
 
     val name :String
     val pattern :String
+    val leaderAlias :String
     var failCount: Long=0
     var failedIndices = ConcurrentSkipListSet<String>() // Failed indices for replication from this autofollow task
     var failCounterForRun :Long=0
@@ -260,9 +264,10 @@ class AutoFollowStat: Task.Status {
     var lastExecutionTime : Long=0
 
 
-    constructor(name: String, pattern: String) {
+    constructor(name: String, pattern: String, leaderAlias: String) {
         this.name = name
         this.pattern = pattern
+        this.leaderAlias = leaderAlias
     }
 
     constructor(inp: StreamInput) {
@@ -274,6 +279,7 @@ class AutoFollowStat: Task.Status {
         successCount = inp.readLong()
         failedLeaderCall = inp.readLong()
         lastExecutionTime = inp.readLong()
+        leaderAlias = if (inp.available() > 0) inp.readString() else ""
     }
 
     override fun writeTo(out: StreamOutput) {
@@ -284,6 +290,7 @@ class AutoFollowStat: Task.Status {
        out.writeLong(successCount)
        out.writeLong(failedLeaderCall)
        out.writeLong(lastExecutionTime)
+       out.writeString(leaderAlias)
     }
 
     override fun getWriteableName(): String {
@@ -294,6 +301,7 @@ class AutoFollowStat: Task.Status {
         builder.startObject()
         builder.field("name", name)
         builder.field("pattern", pattern)
+        builder.field("leader_alias", leaderAlias)
         builder.field("num_success_start_replication", successCount)
         builder.field("num_failed_start_replication", failCount)
         builder.field("num_failed_leader_calls", failedLeaderCall)

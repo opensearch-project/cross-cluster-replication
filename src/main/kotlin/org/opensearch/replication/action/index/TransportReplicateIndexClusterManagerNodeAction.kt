@@ -17,6 +17,7 @@ import org.opensearch.replication.task.ReplicationState
 import org.opensearch.replication.task.index.IndexReplicationExecutor
 import org.opensearch.replication.task.index.IndexReplicationParams
 import org.opensearch.replication.task.index.IndexReplicationState
+import org.opensearch.replication.util.StaleTaskUtils
 import org.opensearch.replication.util.coroutineContext
 import org.opensearch.replication.util.startTask
 import org.opensearch.replication.util.suspending
@@ -27,12 +28,12 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import org.apache.logging.log4j.LogManager
 import org.opensearch.OpenSearchStatusException
-import org.opensearch.action.ActionListener
+import org.opensearch.core.action.ActionListener
 import org.opensearch.action.support.ActionFilters
 import org.opensearch.action.support.IndicesOptions
-import org.opensearch.action.support.master.AcknowledgedResponse
-import org.opensearch.action.support.master.TransportMasterNodeAction
-import org.opensearch.client.node.NodeClient
+import org.opensearch.action.support.clustermanager.AcknowledgedResponse
+import org.opensearch.action.support.clustermanager.TransportClusterManagerNodeAction
+import org.opensearch.transport.client.node.NodeClient
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.block.ClusterBlockException
 import org.opensearch.cluster.block.ClusterBlockLevel
@@ -40,14 +41,14 @@ import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.cluster.metadata.IndexNameExpressionResolver
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Inject
-import org.opensearch.common.io.stream.StreamInput
+import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.common.settings.IndexScopedSettings
 import org.opensearch.index.IndexNotFoundException
 import org.opensearch.persistent.PersistentTasksService
 import org.opensearch.replication.ReplicationPlugin
 import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.repositories.RepositoriesService
-import org.opensearch.rest.RestStatus
+import org.opensearch.core.rest.RestStatus
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
 import java.io.IOException
@@ -62,7 +63,7 @@ class TransportReplicateIndexClusterManagerNodeAction @Inject constructor(transp
                                                                           private val nodeClient : NodeClient,
                                                                           private val repositoryService: RepositoriesService,
                                                                           private val replicationMetadataManager: ReplicationMetadataManager) :
-        TransportMasterNodeAction<ReplicateIndexClusterManagerNodeRequest, AcknowledgedResponse>(ReplicateIndexClusterManagerNodeAction.NAME,
+    TransportClusterManagerNodeAction<ReplicateIndexClusterManagerNodeRequest, AcknowledgedResponse>(ReplicateIndexClusterManagerNodeAction.NAME,
                 transportService, clusterService, threadPool, actionFilters, ::ReplicateIndexClusterManagerNodeRequest, indexNameExpressionResolver),
         CoroutineScope by GlobalScope {
 
@@ -80,7 +81,7 @@ class TransportReplicateIndexClusterManagerNodeAction @Inject constructor(transp
     }
 
     @Throws(Exception::class)
-    override fun masterOperation(request: ReplicateIndexClusterManagerNodeRequest, state: ClusterState,
+    override fun clusterManagerOperation(request: ReplicateIndexClusterManagerNodeRequest, state: ClusterState,
                                  listener: ActionListener<AcknowledgedResponse>) {
         val replicateIndexReq = request.replicateIndexReq
         val user = request.user
@@ -97,11 +98,19 @@ class TransportReplicateIndexClusterManagerNodeAction @Inject constructor(transp
                     throw OpenSearchStatusException("[FORBIDDEN] Replication START block is set", RestStatus.FORBIDDEN)
                 }
 
+                log.debug("Making request to get metadata of ${replicateIndexReq.leaderIndex} index on remote cluster")
                 val remoteMetadata = getRemoteIndexMetadata(replicateIndexReq.leaderAlias, replicateIndexReq.leaderIndex)
+                log.debug("Response returned of the request made to get metadata of ${replicateIndexReq.leaderIndex} index on remote cluster")
 
                 if (state.routingTable.hasIndex(replicateIndexReq.followerIndex)) {
                     throw IllegalArgumentException("Cant use same index again for replication. " +
                     "Delete the index:${replicateIndexReq.followerIndex}")
+                }
+
+                // Remove all replication tasks before creating new ones
+                val removedTaskCount = StaleTaskUtils.removeAllTasksForIndex(clusterService, nodeClient, replicateIndexReq.followerIndex)
+                if (removedTaskCount > 0) {
+                    log.info("Cleaned up $removedTaskCount tasks for ${replicateIndexReq.followerIndex}")
                 }
 
                 indexScopedSettings.validate(replicateIndexReq.settings,
@@ -115,6 +124,7 @@ class TransportReplicateIndexClusterManagerNodeAction @Inject constructor(transp
                         ReplicationOverallState.RUNNING, user, replicateIndexReq.useRoles?.getOrDefault(ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE, null),
                         replicateIndexReq.useRoles?.getOrDefault(ReplicateIndexRequest.LEADER_CLUSTER_ROLE, null), replicateIndexReq.settings)
 
+                log.debug("Starting index replication task in persistent task service with name: replication:index:${replicateIndexReq.followerIndex}")
                 val task = persistentTasksService.startTask("replication:index:${replicateIndexReq.followerIndex}",
                         IndexReplicationExecutor.TASK_NAME, params)
 
@@ -123,13 +133,15 @@ class TransportReplicateIndexClusterManagerNodeAction @Inject constructor(transp
                     listener.onResponse(ReplicateIndexResponse(false))
                 }
 
+                log.info("Persistent task created for replication: follower=${replicateIndexReq.followerIndex}, leader=${replicateIndexReq.leaderAlias}:${replicateIndexReq.leaderIndex}, taskId=${task.id}")
+                log.debug("Waiting for persistent task to move to following state")
                 // Now wait for the replication to start and the follower index to get created before returning
                 persistentTasksService.waitForTaskCondition(task.id, replicateIndexReq.timeout()) { t ->
                     val replicationState = (t.state as IndexReplicationState?)?.state
                     replicationState == ReplicationState.FOLLOWING ||
                             (!replicateIndexReq.waitForRestore && replicationState == ReplicationState.RESTORING)
                 }
-
+                log.debug("Persistent task is moved to following replication state")
                 listener.onResponse(AcknowledgedResponse(true))
             } catch (e: Exception) {
                 log.error("Failed to trigger replication for ${replicateIndexReq.followerIndex} - ${e.stackTraceToString()}")

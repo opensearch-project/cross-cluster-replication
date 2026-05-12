@@ -11,7 +11,7 @@
 
 package org.opensearch.replication
 
-import com.nhaarman.mockitokotlin2.stub
+import org.opensearch.commons.replication.action.ReplicationActions.STOP_REPLICATION_ACTION_NAME
 import org.opensearch.replication.MultiClusterAnnotations.ClusterConfiguration
 import org.opensearch.replication.MultiClusterAnnotations.ClusterConfigurations
 import org.opensearch.replication.MultiClusterAnnotations.getAnnotationsFromClass
@@ -28,6 +28,7 @@ import org.apache.hc.core5.http.message.BasicHeader
 import org.apache.hc.core5.http.io.entity.StringEntity
 import org.apache.hc.core5.ssl.SSLContexts
 import org.apache.hc.core5.http.io.entity.EntityUtils
+import org.apache.hc.core5.http2.HttpVersionPolicy
 import org.apache.hc.core5.util.Timeout
 import org.apache.lucene.util.SetOnce
 import org.opensearch.action.admin.cluster.node.tasks.list.ListTasksRequest
@@ -39,7 +40,6 @@ import org.opensearch.client.ResponseException
 import org.opensearch.client.RestClient
 import org.opensearch.client.RestClientBuilder
 import org.opensearch.client.RestHighLevelClient
-import org.opensearch.common.Strings
 import org.opensearch.common.io.PathUtils
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.unit.TimeValue
@@ -58,12 +58,14 @@ import org.junit.After
 import org.junit.AfterClass
 import org.junit.Before
 import org.junit.BeforeClass
+import java.nio.charset.StandardCharsets
 import java.nio.file.Files
 import java.security.KeyManagementException
 import java.security.KeyStore
 import java.security.KeyStoreException
 import java.security.NoSuchAlgorithmException
 import java.security.cert.CertificateException
+import java.util.Base64
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicReference
 import java.util.Collections
@@ -82,6 +84,7 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
                       val preserveClusterSettings: Boolean,
                       val securityEnabled: Boolean) {
         val restClient : RestHighLevelClient
+        private val connectionManager: org.apache.hc.client5.http.impl.nio.PoolingAsyncClientConnectionManager
         init {
             val trustCerts = arrayOf<TrustManager>(object: X509TrustManager {
                 override fun checkClientTrusted(chain: Array<out java.security.cert.X509Certificate>?, authType: String?) {
@@ -100,16 +103,22 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
             val tlsStrategy = ClientTlsStrategyBuilder.create().setSslContext(sslContext)
                 .setHostnameVerifier { _, _ -> true } // Disable hostname verification for local cluster
                 .build()
-            val connManager = PoolingAsyncClientConnectionManagerBuilder.create().setTlsStrategy(tlsStrategy).build()
+            connectionManager = PoolingAsyncClientConnectionManagerBuilder.create().setTlsStrategy(tlsStrategy).build()
 
             val builder = RestClient.builder(*httpHosts.toTypedArray()).setHttpClientConfigCallback { httpAsyncClientBuilder ->
-                httpAsyncClientBuilder.setConnectionManager(connManager)
+                httpAsyncClientBuilder.setConnectionManager(connectionManager)
+                httpAsyncClientBuilder.setVersionPolicy(HttpVersionPolicy.FORCE_HTTP_1)
             }
             configureClient(builder, getClusterSettings(clusterName), securityEnabled)
             builder.setStrictDeprecationMode(false)
             restClient = RestHighLevelClient(builder)
         }
         val lowLevelClient = restClient.lowLevelClient!!
+
+        fun close() {
+            restClient.close()
+            connectionManager.close()
+        }
 
         var defaultSecuritySetupCompleted = false
         companion object {
@@ -121,7 +130,6 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
         lateinit var testClusters : Map<String, TestCluster>
         var isSecurityPropertyEnabled = false
         var forceInitSecurityConfiguration = false
-        var isMultiNodeClusterConfiguration = true
 
         internal fun createTestCluster(configuration: ClusterConfiguration) : TestCluster {
             return createTestCluster(configuration.clusterName, configuration.preserveSnapshots, configuration.preserveIndices,
@@ -134,7 +142,6 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
             val httpHostsProp = systemProperties.get("tests.cluster.${cluster}.http_hosts") as String?
             val transportHostsProp = systemProperties.get("tests.cluster.${cluster}.transport_hosts") as String?
             val securityEnabled = systemProperties.get("tests.cluster.${cluster}.security_enabled") as String?
-            val totalNodes = systemProperties.get("tests.cluster.${cluster}.total_nodes") as String?
 
             requireNotNull(httpHostsProp) { "Missing http hosts property for cluster: $cluster."}
             requireNotNull(transportHostsProp) { "Missing transport hosts property for cluster: $cluster."}
@@ -146,9 +153,6 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
                 isSecurityPropertyEnabled = true
             }
 
-            if(totalNodes != null && totalNodes < "2") {
-                isMultiNodeClusterConfiguration = false
-            }
 
             forceInitSecurityConfiguration = isSecurityPropertyEnabled && initSecurityConfiguration
 
@@ -181,7 +185,7 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
         @AfterClass @JvmStatic
         fun cleanUpRestClients() {
             testClusters.values.forEach {
-                it.restClient.close()
+                it.close()
             }
         }
 
@@ -238,8 +242,10 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
             for ((key, value) in headers) {
                 defaultHeaders[i++] = BasicHeader(key, value)
             }
+
+            val creds = System.getProperty("user", "admin") + ":" + System.getProperty("password", "myStrongPassword123!")
             if(securityEnabled) {
-                defaultHeaders[i++] = BasicHeader("Authorization", "Basic YWRtaW46YWRtaW4=")
+                defaultHeaders[i++] = BasicHeader("Authorization", "Basic " + Base64.getEncoder().encodeToString(creds.toByteArray(StandardCharsets.UTF_8)))
             }
 
             builder.setDefaultHeaders(defaultHeaders)
@@ -330,7 +336,7 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
                                 "indices:admin/plugins/replication/index/start",
                                 "indices:admin/plugins/replication/index/pause",
                                 "indices:admin/plugins/replication/index/resume",
-                                "indices:admin/plugins/replication/index/stop",
+                                "$STOP_REPLICATION_ACTION_NAME",
                                 "indices:admin/plugins/replication/index/update",
                                 "indices:admin/plugins/replication/index/status_check"
                             ]
@@ -420,7 +426,7 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
         clearCommand.endObject()
         if (mustClear) {
             val request = Request("PUT", "/_cluster/settings")
-            request.setJsonEntity(Strings.toString(clearCommand))
+            request.setJsonEntity(clearCommand.toString())
             testCluster.lowLevelClient.performRequest(request)
         }
     }
@@ -442,7 +448,9 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
                 val response=testCluster.lowLevelClient.performRequest(stopRequest)
             }
             catch (e:ResponseException){
-                if(e.response.statusLine.statusCode!=400) {
+                // 400 = index not being replicated, 500 = internal error (e.g., missing synonym files)
+                // Both are acceptable during cleanup - we just want to ensure indices can be deleted
+                if(e.response.statusLine.statusCode != 400 && e.response.statusLine.statusCode != 500) {
                     throw e
                 }
             }
@@ -514,6 +522,28 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
 
     fun getAsList(client: RestClient, endpoint: String): List<Any> {
         return OpenSearchRestTestCase.entityAsList(client.performRequest(Request("GET", endpoint)))
+    }
+
+    protected fun deleteConnection(fromClusterName: String, connectionName: String="source") {
+        val fromCluster = getNamedCluster(fromClusterName)
+        val persistentConnectionRequest = Request("PUT", "_cluster/settings")
+
+        val entityAsString = """
+                        {
+                          "persistent": {
+                             "cluster": {
+                               "remote": {
+                                 "$connectionName": {
+                                   "seeds": null
+                                 }
+                               }
+                             }
+                          }
+                        }""".trimMargin()
+
+        persistentConnectionRequest.entity = StringEntity(entityAsString, ContentType.APPLICATION_JSON)
+        val persistentConnectionResponse = fromCluster.lowLevelClient.performRequest(persistentConnectionRequest)
+        assertEquals(HttpStatus.SC_OK.toLong(), persistentConnectionResponse.statusLine.statusCode.toLong())
     }
 
     protected fun createConnectionBetweenClusters(fromClusterName: String, toClusterName: String, connectionName: String="source") {
@@ -645,4 +675,36 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
         val integTestRemote = systemProperties.get("tests.integTestRemote") as String?
         return integTestRemote.equals("true")
     }
+
+    protected fun isMultiNodeClusterConfiguration(leaderCluster: String, followerCluster: String): Boolean{
+        val systemProperties = BootstrapInfo.getSystemProperties()
+        val totalLeaderNodes = systemProperties.get("tests.cluster.${leaderCluster}.total_nodes") as String
+        val totalFollowerNodes = systemProperties.get("tests.cluster.${followerCluster}.total_nodes") as String
+
+        assertNotNull(totalLeaderNodes)
+        assertNotNull(totalFollowerNodes)
+        if(totalLeaderNodes < "2" ||  totalFollowerNodes < "2" ) {
+            return false
+        }
+        return true
+    }
+
+    protected fun clusterNodes(clusterName: String): Int {
+        val systemProperties = BootstrapInfo.getSystemProperties()
+        val totalNodes = systemProperties.get("tests.cluster.${clusterName}.total_nodes") as String?
+        return totalNodes?.toIntOrNull() ?: 1
+    }
+
+    protected fun docCount(cluster: RestHighLevelClient, indexName: String) : Int {
+        val persistentConnectionRequest = Request("GET", "/$indexName/_search?pretty&q=*")
+
+        val persistentConnectionResponse = cluster.lowLevelClient.performRequest(persistentConnectionRequest)
+        val statusResponse: Map<String, Map<String, Map<String, Any>>> = OpenSearchRestTestCase.entityAsMap(persistentConnectionResponse) as Map<String, Map<String, Map<String, String>>>
+        return statusResponse["hits"]?.get("total")?.get("value") as Int
+    }
+
+    protected fun deleteIndex(testCluster: RestHighLevelClient, indexName: String) {
+        testCluster.lowLevelClient.performRequest(Request("DELETE", indexName))
+    }
+
 }

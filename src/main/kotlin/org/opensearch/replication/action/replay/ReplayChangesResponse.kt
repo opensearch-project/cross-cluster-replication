@@ -13,7 +13,7 @@ package org.opensearch.replication.action.replay
 
 import org.opensearch.action.support.WriteResponse
 import org.opensearch.action.support.replication.ReplicationResponse
-import org.opensearch.common.io.stream.StreamInput
+import org.opensearch.core.common.io.stream.StreamInput
 
 class ReplayChangesResponse : ReplicationResponse, WriteResponse {
 

@@ -23,12 +23,12 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import org.apache.logging.log4j.Logger
-import org.opensearch.action.ActionListener
-import org.opensearch.client.Client
+import org.opensearch.core.action.ActionListener
+import org.opensearch.transport.client.Client
 import org.opensearch.cluster.node.DiscoveryNode
-import org.opensearch.common.unit.ByteSizeValue
+import org.opensearch.core.common.unit.ByteSizeValue
 import org.opensearch.common.util.concurrent.ThreadContext
-import org.opensearch.index.shard.ShardId
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.index.store.Store
 import org.opensearch.index.store.StoreFileMetadata
 import org.opensearch.indices.recovery.MultiChunkTransfer

@@ -14,12 +14,12 @@ package org.opensearch.replication.rest
 import org.opensearch.replication.action.autofollow.UpdateAutoFollowPatternAction
 import org.opensearch.replication.action.autofollow.UpdateAutoFollowPatternRequest
 import org.opensearch.OpenSearchStatusException
-import org.opensearch.client.node.NodeClient
+import org.opensearch.transport.client.node.NodeClient
 import org.opensearch.rest.BaseRestHandler
 import org.opensearch.rest.BaseRestHandler.RestChannelConsumer
 import org.opensearch.rest.RestHandler
 import org.opensearch.rest.RestRequest
-import org.opensearch.rest.RestStatus
+import org.opensearch.core.rest.RestStatus
 import org.opensearch.rest.action.RestToXContentListener
 
 class UpdateAutoFollowPatternsHandler : BaseRestHandler() {
@@ -45,6 +45,9 @@ class UpdateAutoFollowPatternsHandler : BaseRestHandler() {
         }
 
         val updateRequest = UpdateAutoFollowPatternRequest.fromXContent(request.contentParser(), action)
+        updateRequest.clusterManagerNodeTimeout(
+            request.paramAsTime("cluster_manager_timeout", updateRequest.clusterManagerNodeTimeout())
+        )
         return RestChannelConsumer { channel ->
             client.admin().cluster()
                 .execute(UpdateAutoFollowPatternAction.INSTANCE, updateRequest, RestToXContentListener(channel))

@@ -17,9 +17,9 @@ import org.opensearch.action.admin.indices.close.CloseIndexRequest
 import org.opensearch.action.admin.indices.mapping.put.PutMappingRequest
 import org.opensearch.action.admin.indices.open.OpenIndexRequest
 import org.opensearch.action.admin.indices.settings.put.UpdateSettingsRequest
-import org.opensearch.action.support.master.AcknowledgedRequest
-import org.opensearch.common.io.stream.StreamInput
-import org.opensearch.common.io.stream.StreamOutput
+import org.opensearch.action.support.clustermanager.AcknowledgedRequest
+import org.opensearch.core.common.io.stream.StreamInput
+import org.opensearch.core.common.io.stream.StreamOutput
 
 class UpdateMetadataRequest : AcknowledgedRequest<UpdateMetadataRequest> {
     var indexName: String

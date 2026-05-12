@@ -13,7 +13,7 @@ package org.opensearch.replication.rest
 
 import org.opensearch.replication.action.index.ReplicateIndexAction
 import org.opensearch.replication.action.index.ReplicateIndexRequest
-import org.opensearch.client.node.NodeClient
+import org.opensearch.transport.client.node.NodeClient
 import org.opensearch.rest.BaseRestHandler
 import org.opensearch.rest.BaseRestHandler.RestChannelConsumer
 import org.opensearch.rest.RestChannel
@@ -23,6 +23,7 @@ import org.opensearch.rest.action.RestToXContentListener
 import java.io.IOException
 
 class ReplicateIndexHandler : BaseRestHandler() {
+
 
     override fun routes(): List<RestHandler.Route> {
         return listOf(RestHandler.Route(RestRequest.Method.PUT, "/_plugins/_replication/{index}/_start"))
@@ -38,7 +39,9 @@ class ReplicateIndexHandler : BaseRestHandler() {
             val followerIndex = request.param("index")
             val followIndexRequest = ReplicateIndexRequest.fromXContent(parser, followerIndex)
             followIndexRequest.waitForRestore = request.paramAsBoolean("wait_for_restore", false)
-
+            followIndexRequest.clusterManagerNodeTimeout(
+                request.paramAsTime("cluster_manager_timeout", followIndexRequest.clusterManagerNodeTimeout())
+            )
             return RestChannelConsumer {
                 channel: RestChannel? -> client.admin().cluster()
                     .execute(ReplicateIndexAction.INSTANCE, followIndexRequest, RestToXContentListener(channel))

@@ -39,7 +39,13 @@ import org.opensearch.client.indices.GetIndexRequest
 import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.unit.TimeValue
+import org.opensearch.common.xcontent.XContentType
+import org.opensearch.core.common.bytes.BytesArray
+import org.opensearch.core.xcontent.NamedXContentRegistry
 import org.opensearch.index.mapper.MapperService
+import org.opensearch.replication.action.pause.PauseIndexReplicationRequest
+import org.opensearch.rest.RestRequest
+import org.opensearch.test.rest.FakeRestRequest
 import java.util.concurrent.TimeUnit
 
 
@@ -49,6 +55,23 @@ import java.util.concurrent.TimeUnit
 )
 class PauseReplicationIT: MultiClusterRestTestCase() {
     private val leaderIndexName = "leader_index"
+
+    fun `test pause replication with cluster_manager_timeout`() {
+        // Verify cluster_manager_timeout param is parsed from HTTP request and set on the request
+        val restRequest = FakeRestRequest.Builder(NamedXContentRegistry.EMPTY)
+            .withMethod(RestRequest.Method.POST)
+            .withPath("/_plugins/_replication/follower-index/_pause")
+            .withParams(mapOf("index" to "follower-index", "cluster_manager_timeout" to "60s"))
+            .withContent(BytesArray("{}"), XContentType.JSON)
+            .build()
+        val pauseRequest = PauseIndexReplicationRequest.fromXContent(
+            restRequest.contentOrSourceParamParser(), restRequest.param("index")
+        )
+        pauseRequest.clusterManagerNodeTimeout(
+            restRequest.paramAsTime("cluster_manager_timeout", pauseRequest.clusterManagerNodeTimeout())
+        )
+        assertEquals(TimeValue.timeValueSeconds(60), pauseRequest.clusterManagerNodeTimeout())
+    }
 
     fun `test pause replication in following state and empty index`() {
         val followerClient = getClientForCluster(FOLLOWER)
@@ -236,5 +259,78 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
             var statusResp = followerClient.replicationStatus(followerIndexName2)
             `validate status syncing response`(statusResp)
         }, 30, TimeUnit.SECONDS)
+    }
+
+    fun `test auto pause of index replication when leader index is unavailable and disabled the property replicate delete_index explicitly`() {
+        val followerIndexName1 = "auto_pause_index"
+        val leaderIndexName1 = "leader1"
+        val followerIndexName2 = "no_auto_pause_index"
+        val leaderIndexName2 = "leader2"
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+
+        // Disabling the replication of delete index explicitly
+        val settings = Settings.builder()
+            .put("plugins.replication.replicate.delete_index", false)
+            .build()
+        val request = ClusterUpdateSettingsRequest()
+        request.transientSettings(settings)
+        followerClient.cluster().putSettings(request, RequestOptions.DEFAULT)
+
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+        var createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName1), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName2), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        // For followerIndexName1
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName1,
+            followerIndexName1), waitForRestore = true)
+        // For followerIndexName2
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName2,
+            followerIndexName2), waitForRestore = true)
+        val deleteResponse = leaderClient.indices().delete(DeleteIndexRequest(leaderIndexName1), RequestOptions.DEFAULT)
+        assertThat(deleteResponse.isAcknowledged)
+        // followerIndexName1 -> autopause
+        assertBusy({
+            var statusResp = followerClient.replicationStatus(followerIndexName1)
+            assertThat(statusResp.containsKey("status"))
+            assertThat(statusResp.containsKey("reason"))
+            `validate paused status response due to leader index deleted`(statusResp)
+        }, 30, TimeUnit.SECONDS)
+        // followerIndexName2 -> Syncing state
+        assertBusy({
+            var statusResp = followerClient.replicationStatus(followerIndexName2)
+            `validate status syncing response`(statusResp)
+        }, 30, TimeUnit.SECONDS)
+    }
+
+    fun `test pause replication without request body`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        val followerIndexName = "pause_index_no_body"
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+        
+        // Create index on leader
+        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+        
+        // Start replication
+        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
+        
+        // Pause replication without sending any request body
+        val lowLevelPauseRequest = Request("POST", "/_plugins/_replication/${followerIndexName}/_pause")
+        // Not setting any entity - testing empty request body
+        val lowLevelPauseResponse = followerClient.lowLevelClient.performRequest(lowLevelPauseRequest)
+        assertThat(lowLevelPauseResponse.statusLine.statusCode).isEqualTo(200)
+        
+        // Verify that the replication is paused with default reason
+        assertBusy {
+            val statusResp = followerClient.replicationStatus(followerIndexName)
+            assertThat(statusResp.getValue("status")).isEqualTo("PAUSED")
+            assertThat(statusResp.getValue("reason")).isEqualTo(org.opensearch.replication.metadata.ReplicationMetadataManager.CUSTOMER_INITIATED_ACTION)
+        }
+        
+        // Clean up
+        followerClient.resumeReplication(followerIndexName)
     }
 }

@@ -4,11 +4,15 @@
 # Ignore Gradle build output directory
 build/
 
-# Ignore intellij files
+# Ignore intellij and eclipse files
 .idea/
+.project
 
 # Ignore Python virtualenv
 .venv/
 __pycache__/
 Pipfile
 Pipfile.lock
+bin/main/
+bin/test/
+.kotlin/

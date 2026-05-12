@@ -14,18 +14,27 @@ package org.opensearch.replication.util
 import org.apache.logging.log4j.LogManager
 import org.opensearch.ResourceNotFoundException
 import org.opensearch.Version
+import org.opensearch.action.admin.cluster.node.info.NodeInfo
+import org.opensearch.action.admin.cluster.node.info.NodesInfoResponse
+import org.opensearch.action.admin.cluster.node.info.PluginsAndModules
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.cluster.metadata.MetadataCreateIndexService
-import org.opensearch.common.Strings
+import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.ValidationException
 import org.opensearch.common.settings.Settings
+import org.opensearch.core.common.Strings
 import org.opensearch.env.Environment
 import org.opensearch.index.IndexNotFoundException
+import org.opensearch.node.Node
+import org.opensearch.node.remotestore.RemoteStoreNodeAttribute
+import org.opensearch.node.remotestore.RemoteStoreNodeService
+import org.opensearch.plugins.PluginInfo
 import java.io.UnsupportedEncodingException
 import java.nio.file.Files
 import java.nio.file.Path
-import java.util.Locale
+import java.util.*
+import java.util.function.Predicate
 
 object ValidationUtil {
 
@@ -69,7 +78,7 @@ object ValidationUtil {
      * Validate the name against the rules that we have for index name.
      */
     fun validateName(name: String, validationException: ValidationException) {
-        if (name.toLowerCase(Locale.ROOT) != name)
+        if (name.lowercase(Locale.ROOT) != name)
             validationException.addValidationError("Value $name must be lowercase")
 
         if (!Strings.validFileName(name))
@@ -97,6 +106,26 @@ object ValidationUtil {
         // Additionally we don't allow replication for system indices i.e. starts with '.'
         if(name.startsWith("."))
             validationException.addValidationError("Value $name must not start with '.'")
+    }
+
+    /**
+     * Validate the pattern against the rules that we have for indexPattern name.
+     */
+
+    fun validatePattern(pattern: String?, validationException: ValidationException) {
+
+        if (!Strings.validFileNameExcludingAsterisk(pattern))
+            validationException.addValidationError("Autofollow pattern: $pattern must not contain the following characters ${Strings.INVALID_FILENAME_CHARS}")
+
+        if (pattern.isNullOrEmpty() == true)
+            validationException.addValidationError("Autofollow pattern: $pattern must not be empty")
+
+        if ((pattern?.contains("#") ?: false)|| (pattern?.contains(":") ?: false))
+            validationException.addValidationError("Autofollow pattern: $pattern must not contain '#' or ':'")
+
+        if ((pattern?.startsWith('_') ?: false) || (pattern?.startsWith('-') ?: false))
+            validationException.addValidationError("Autofollow pattern: $pattern must not start with '_' or '-'")
+
     }
 
     /**
@@ -137,5 +166,28 @@ object ValidationUtil {
             validationException.addValidationError("Primary shards in the Index[${leaderAlias}:${leaderIndex}] are not active")
             throw validationException
         }
+    }
+
+    /**
+     * Throw exception if leader index is knn a knn is not installed
+     */
+    fun checkKNNEligibility(nodesInfoResponse: NodesInfoResponse, leaderIndex: String) {
+        if(!(nodesInfoResponse.getNodes().stream().flatMap {
+                nodeInfo: NodeInfo ->
+            nodeInfo.getInfo(
+                PluginsAndModules::class.java
+            ).pluginInfos.stream()
+        }.anyMatch( { pluginInfo: PluginInfo -> pluginInfo.classname == "org.opensearch.knn.plugin.KNNPlugin" }))) {
+            throw IllegalStateException("Cannot proceed with replication for k-NN enabled index ${leaderIndex} as knn plugin is not installed.")
+        }
+    }
+
+    fun isRemoteStoreEnabledCluster(clusterService: ClusterService): Boolean {
+        return clusterService.settings.getByPrefix(Node.NODE_ATTRIBUTES.key + RemoteStoreNodeAttribute.REMOTE_STORE_NODE_ATTRIBUTE_KEY_PREFIX).isEmpty == false
+    }
+
+    fun isRemoteEnabledOrMigrating(clusterService: ClusterService): Boolean {
+        return isRemoteStoreEnabledCluster(clusterService) ||
+                clusterService.clusterSettings.get(RemoteStoreNodeService.REMOTE_STORE_COMPATIBILITY_MODE_SETTING).equals(RemoteStoreNodeService.CompatibilityMode.MIXED)
     }
 }

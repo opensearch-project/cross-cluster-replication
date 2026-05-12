@@ -15,9 +15,9 @@ import org.opensearch.action.ActionType
 import org.opensearch.action.FailedNodeException
 import org.opensearch.action.TaskOperationFailure
 import org.opensearch.action.support.tasks.BaseTasksResponse
-import org.opensearch.common.io.stream.StreamInput
-import org.opensearch.common.io.stream.StreamOutput
-import org.opensearch.common.io.stream.Writeable
+import org.opensearch.core.common.io.stream.StreamInput
+import org.opensearch.core.common.io.stream.StreamOutput
+import org.opensearch.core.common.io.stream.Writeable
 import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.ToXContent.EMPTY_PARAMS
 import org.opensearch.core.xcontent.ToXContentObject
@@ -27,6 +27,9 @@ import java.io.IOException
 
 class AutoFollowStatsAction : ActionType<AutoFollowStatsResponses>(NAME, reader) {
     companion object {
+        // TODO: Rename to "cluster:admin/plugins/replication/autofollow/stats" in OpenSearch 4.0
+        // This is a cluster-level action but uses the indices: prefix for backward compatibility.
+        // See https://github.com/opensearch-project/security/pull/6038 for plugin-defined default roles.
         const val NAME = "indices:admin/plugins/replication/autofollow/stats"
         val INSTANCE = AutoFollowStatsAction()
         val reader = Writeable.Reader { inp -> AutoFollowStatsResponses(inp) }
@@ -60,7 +63,7 @@ class AutoFollowStatsResponse : Writeable , ToXContentObject {
 
 class AutoFollowStatsResponses : BaseTasksResponse, ToXContentObject {
     val statsResponses: List<AutoFollowStatsResponse>
-    var aggResponse = AutoFollowStat("", "")
+    var aggResponse = AutoFollowStat("", "", "")
 
     constructor(
             autoFollowStatsResponse: List<AutoFollowStatsResponse>,

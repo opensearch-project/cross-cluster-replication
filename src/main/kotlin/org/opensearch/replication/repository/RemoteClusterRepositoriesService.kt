@@ -13,6 +13,7 @@ package org.opensearch.replication.repository
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.settings.ClusterSettings
 import org.opensearch.repositories.RepositoriesService
+import org.opensearch.transport.ProxyConnectionStrategy.PROXY_ADDRESS
 import org.opensearch.transport.SniffConnectionStrategy.REMOTE_CLUSTER_SEEDS
 import java.util.function.Supplier
 
@@ -24,12 +25,12 @@ class RemoteClusterRepositoriesService(private val repositoriesService: Supplier
     }
 
     private fun listenForUpdates(clusterSettings: ClusterSettings) {
-        // TODO: Proxy support from ES 7.7. Needs additional handling based on those settings
-        clusterSettings.addAffixUpdateConsumer(REMOTE_CLUSTER_SEEDS, this::updateRepositoryDetails) { _, _ -> Unit }
+        clusterSettings.addAffixUpdateConsumer(REMOTE_CLUSTER_SEEDS, this::updateRepositoryDetailsForSeeds) { _, _ -> Unit }
+        clusterSettings.addAffixUpdateConsumer(PROXY_ADDRESS, this::updateRepositoryDetailsForProxy) { _, _ -> Unit }
     }
 
-    private fun updateRepositoryDetails(alias: String, seeds: List<String>?) {
-        if(seeds == null || seeds.isEmpty()) {
+    private fun updateRepositoryDetailsForSeeds(alias: String, seeds: List<String>?) {
+        if(seeds.isNullOrEmpty()) {
             repositoriesService.get().unregisterInternalRepository(REMOTE_REPOSITORY_PREFIX + alias)
             return
         }
@@ -37,4 +38,11 @@ class RemoteClusterRepositoriesService(private val repositoriesService: Supplier
         repositoriesService.get().registerInternalRepository(REMOTE_REPOSITORY_PREFIX + alias, REMOTE_REPOSITORY_TYPE)
     }
 
+    private fun updateRepositoryDetailsForProxy(alias: String, proxyIp: String?) {
+        if(proxyIp.isNullOrEmpty()) {
+            repositoriesService.get().unregisterInternalRepository(REMOTE_REPOSITORY_PREFIX + alias)
+            return
+        }
+        repositoriesService.get().registerInternalRepository(REMOTE_REPOSITORY_PREFIX + alias, REMOTE_REPOSITORY_TYPE)
+    }
 }

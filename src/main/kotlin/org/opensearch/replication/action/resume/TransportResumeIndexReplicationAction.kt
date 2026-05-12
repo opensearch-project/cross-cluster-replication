@@ -11,6 +11,33 @@
 
 package org.opensearch.replication.action.resume
 
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.launch
+import org.apache.logging.log4j.LogManager
+import org.opensearch.ResourceAlreadyExistsException
+import org.opensearch.ResourceNotFoundException
+import org.opensearch.action.admin.cluster.node.info.NodeInfo
+import org.opensearch.action.admin.cluster.node.info.NodesInfoRequest
+import org.opensearch.action.admin.cluster.node.info.PluginsAndModules
+import org.opensearch.action.admin.indices.settings.get.GetSettingsRequest
+import org.opensearch.action.support.ActionFilters
+import org.opensearch.action.support.IndicesOptions
+import org.opensearch.action.support.clustermanager.AcknowledgedResponse
+import org.opensearch.action.support.clustermanager.TransportClusterManagerNodeAction
+import org.opensearch.cluster.ClusterState
+import org.opensearch.cluster.block.ClusterBlockException
+import org.opensearch.cluster.block.ClusterBlockLevel
+import org.opensearch.cluster.metadata.IndexMetadata
+import org.opensearch.cluster.metadata.IndexNameExpressionResolver
+import org.opensearch.cluster.service.ClusterService
+import org.opensearch.common.inject.Inject
+import org.opensearch.core.action.ActionListener
+import org.opensearch.core.common.io.stream.StreamInput
+import org.opensearch.core.index.shard.ShardId
+import org.opensearch.env.Environment
+import org.opensearch.index.IndexNotFoundException
 import org.opensearch.replication.action.index.ReplicateIndexResponse
 import org.opensearch.replication.metadata.ReplicationMetadataManager
 import org.opensearch.replication.metadata.ReplicationOverallState
@@ -21,43 +48,14 @@ import org.opensearch.replication.task.ReplicationState
 import org.opensearch.replication.task.index.IndexReplicationExecutor
 import org.opensearch.replication.task.index.IndexReplicationParams
 import org.opensearch.replication.task.index.IndexReplicationState
-import org.opensearch.replication.util.ValidationUtil
-import org.opensearch.replication.util.completeWith
-import org.opensearch.replication.util.coroutineContext
-import org.opensearch.replication.util.persistentTasksService
-import org.opensearch.replication.util.startTask
-import org.opensearch.replication.util.suspending
-import org.opensearch.replication.util.waitForTaskCondition
-import kotlinx.coroutines.CoroutineScope
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.GlobalScope
-import kotlinx.coroutines.launch
-import org.apache.logging.log4j.LogManager
-import org.opensearch.ResourceAlreadyExistsException
-import org.opensearch.ResourceNotFoundException
-import org.opensearch.action.ActionListener
-import org.opensearch.action.admin.indices.settings.get.GetSettingsRequest
-import org.opensearch.action.support.ActionFilters
-import org.opensearch.action.support.IndicesOptions
-import org.opensearch.action.support.master.AcknowledgedResponse
-import org.opensearch.action.support.master.TransportMasterNodeAction
-import org.opensearch.client.Client
-import org.opensearch.cluster.ClusterState
-import org.opensearch.cluster.block.ClusterBlockException
-import org.opensearch.cluster.block.ClusterBlockLevel
-import org.opensearch.cluster.metadata.IndexMetadata
-import org.opensearch.cluster.metadata.IndexNameExpressionResolver
-import org.opensearch.cluster.service.ClusterService
-import org.opensearch.common.inject.Inject
-import org.opensearch.common.io.stream.StreamInput
-import org.opensearch.env.Environment
-import org.opensearch.index.IndexNotFoundException
-import org.opensearch.index.shard.ShardId
-import org.opensearch.replication.ReplicationPlugin.Companion.KNN_INDEX_SETTING
+import org.opensearch.replication.util.*
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
+import org.opensearch.transport.client.Client
 import java.io.IOException
-import java.lang.IllegalStateException
+import java.util.function.Function
+import java.util.stream.Collectors
+
 
 class TransportResumeIndexReplicationAction @Inject constructor(transportService: TransportService,
                                                                 clusterService: ClusterService,
@@ -67,7 +65,7 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
                                                                 val client: Client,
                                                                 val replicationMetadataManager: ReplicationMetadataManager,
                                                                 private val environment: Environment) :
-    TransportMasterNodeAction<ResumeIndexReplicationRequest, AcknowledgedResponse> (ResumeIndexReplicationAction.NAME,
+    TransportClusterManagerNodeAction<ResumeIndexReplicationRequest, AcknowledgedResponse> (ResumeIndexReplicationAction.NAME,
             transportService, clusterService, threadPool, actionFilters, ::ResumeIndexReplicationRequest,
             indexNameExpressionResolver), CoroutineScope by GlobalScope {
 
@@ -80,12 +78,16 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
     }
 
     @Throws(Exception::class)
-    override fun masterOperation(request: ResumeIndexReplicationRequest, state: ClusterState,
+    override fun clusterManagerOperation(request: ResumeIndexReplicationRequest, state: ClusterState,
                                  listener: ActionListener<AcknowledgedResponse>) {
         launch(Dispatchers.Unconfined + threadPool.coroutineContext()) {
             listener.completeWith {
                 log.info("Resuming index replication on index:" + request.indexName)
                 validateResumeReplicationRequest(request)
+
+                // Remove all existing tasks before resuming to ensure a clean slate
+                StaleTaskUtils.removeAllTasksForIndex(clusterService, client, request.indexName)
+
                 val replMetdata = replicationMetadataManager.getIndexReplicationMetadata(request.indexName)
                 val remoteMetadata = getLeaderIndexMetadata(replMetdata.connectionName, replMetdata.leaderContext.resource)
                 val params = IndexReplicationParams(replMetdata.connectionName, remoteMetadata.index, request.indexName)
@@ -102,11 +104,8 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
 
                 val leaderSettings = settingsResponse.indexToSettings.get(params.leaderIndex.name) ?: throw IndexNotFoundException(params.leaderIndex.name)
 
-                // k-NN Setting is a static setting. In case the setting is changed at the leader index before resume,
-                // block the resume.
-                if(leaderSettings.getAsBoolean(KNN_INDEX_SETTING, false)) {
-                    throw IllegalStateException("Cannot resume replication for k-NN enabled index ${params.leaderIndex.name}.")
-                }
+                // Disabling knn checks as new api call will require us add roles in security index which will be a breaking call.
+//                ValidationUtil.checkKNNEligibility(nodesInfoResponse, params.leaderIndex.name)
 
                 ValidationUtil.validateAnalyzerSettings(environment, leaderSettings, replMetdata.settings)
 
@@ -133,11 +132,12 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
     private suspend fun isResumable(params :IndexReplicationParams): Boolean {
         var isResumable = true
         val remoteClient = client.getRemoteClusterClient(params.leaderAlias)
-        val shards = clusterService.state().routingTable.indicesRouting().get(params.followerIndexName).shards()
-        val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
-        shards.forEach {
+        val shards = clusterService.state().routingTable.indicesRouting().get(params.followerIndexName)?.shards()
+        val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), clusterService.state().metadata.clusterUUID(), remoteClient)
+        shards?.forEach {
             val followerShardId = it.value.shardId
-            if  (!retentionLeaseHelper.verifyRetentionLeaseExist(ShardId(params.leaderIndex, followerShardId.id), followerShardId)) {
+            if (!retentionLeaseHelper.verifyRetentionLeaseExist(ShardId(params.leaderIndex, followerShardId.id), followerShardId)) {
+                log.info("Retention lease missing for follower=${params.followerIndexName}, followerShard=$followerShardId, leaderShard=${ShardId(params.leaderIndex, followerShardId.id)} - replication cannot be resumed")
                 isResumable = false
             }
         }
@@ -148,7 +148,7 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
 
         // clean up all retention leases we may have accidentally took while doing verifyRetentionLeaseExist .
         // Idempotent Op which does no harm
-        shards.forEach {
+        shards?.forEach {
             val followerShardId = it.value.shardId
             log.debug("Removing lease for $followerShardId.id ")
             retentionLeaseHelper.attemptRetentionLeaseRemoval(ShardId(params.leaderIndex, followerShardId.id), followerShardId)

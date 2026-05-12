@@ -12,7 +12,7 @@
 package org.opensearch.replication.action.setup
 
 import org.opensearch.action.ActionType
-import org.opensearch.action.support.master.AcknowledgedResponse
+import org.opensearch.action.support.clustermanager.AcknowledgedResponse
 
 class ValidatePermissionsAction private constructor(): ActionType<AcknowledgedResponse>(NAME, ::AcknowledgedResponse){
     companion object {

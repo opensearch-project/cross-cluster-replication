@@ -18,7 +18,7 @@ import org.opensearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_
 import org.opensearch.replication.metadata.state.getReplicationStateParamsForIndex
 import org.apache.logging.log4j.LogManager
 import org.opensearch.OpenSearchException
-import org.opensearch.client.Client
+import org.opensearch.transport.client.Client
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.persistent.AllocatedPersistentTask
@@ -26,7 +26,7 @@ import org.opensearch.persistent.PersistentTaskState
 import org.opensearch.persistent.PersistentTasksCustomMetadata.Assignment
 import org.opensearch.persistent.PersistentTasksCustomMetadata.PersistentTask
 import org.opensearch.persistent.PersistentTasksExecutor
-import org.opensearch.tasks.TaskId
+import org.opensearch.core.tasks.TaskId
 import org.opensearch.threadpool.ThreadPool
 
 class ShardReplicationExecutor(executor: String, private val clusterService : ClusterService,
@@ -56,9 +56,14 @@ class ShardReplicationExecutor(executor: String, private val clusterService : Cl
     }
 
     override fun getAssignment(params: ShardReplicationParams, clusterState: ClusterState) : Assignment {
-        val primaryShard = clusterState.routingTable().shardRoutingTable(params.followerShardId).primaryShard()
-        if (!primaryShard.active()) return SHARD_NOT_ACTIVE
-        return Assignment(primaryShard.currentNodeId(), "node with primary shard")
+        try {
+            val primaryShard = clusterState.routingTable().shardRoutingTable(params.followerShardId).primaryShard()
+            if (!primaryShard.active()) return SHARD_NOT_ACTIVE
+            return Assignment(primaryShard.currentNodeId(), "node with primary shard")
+        } catch (e: Exception) {
+            log.error("Failed to assign shard replication task with id  ${params.followerShardId}", e)
+            return SHARD_NOT_ACTIVE
+        }
     }
 
     override fun nodeOperation(task: AllocatedPersistentTask, params: ShardReplicationParams, state: PersistentTaskState?) {

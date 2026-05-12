@@ -17,15 +17,18 @@ import org.apache.logging.log4j.LogManager
 import org.opensearch.action.FailedNodeException
 import org.opensearch.action.support.ActionFilters
 import org.opensearch.action.support.nodes.TransportNodesAction
-import org.opensearch.client.node.NodeClient
+import org.opensearch.transport.client.node.NodeClient
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Inject
-import org.opensearch.common.io.stream.StreamInput
-import org.opensearch.index.shard.ShardId
+import org.opensearch.core.common.io.stream.StreamInput
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.indices.IndicesService
 import org.opensearch.replication.seqno.RemoteClusterRetentionLeaseHelper.Companion.RETENTION_LEASE_PREFIX
 import org.opensearch.replication.seqno.RemoteClusterStats
 import org.opensearch.threadpool.ThreadPool
+import org.opensearch.action.support.TransportIndicesResolvingAction
+import org.opensearch.cluster.metadata.OptionallyResolvedIndices
+import org.opensearch.cluster.metadata.ResolvedIndices
 import org.opensearch.transport.TransportService
 import java.util.concurrent.TimeUnit
 
@@ -38,7 +41,10 @@ class TransportLeaderStatsAction @Inject constructor(transportService: Transport
                                                      private val client: NodeClient) :
         TransportNodesAction<LeaderStatsRequest, LeaderStatsResponse, NodeStatsRequest, LeaderNodeStatsResponse>(LeaderStatsAction.NAME,
              threadPool, clusterService, transportService,  actionFilters, ::LeaderStatsRequest,  ::NodeStatsRequest, ThreadPool.Names.MANAGEMENT,
-                LeaderNodeStatsResponse::class.java), CoroutineScope by GlobalScope {
+                LeaderNodeStatsResponse::class.java), CoroutineScope by GlobalScope,
+        TransportIndicesResolvingAction<LeaderStatsRequest> {
+
+    override fun resolveIndices(request: LeaderStatsRequest): OptionallyResolvedIndices = ResolvedIndices.of(listOf<String>())
 
     companion object {
         private val log = LogManager.getLogger(TransportLeaderStatsAction::class.java)

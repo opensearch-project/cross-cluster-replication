@@ -18,7 +18,7 @@ import org.opensearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_
 import org.opensearch.replication.metadata.state.getReplicationStateParamsForIndex
 import org.opensearch.replication.util.persistentTasksService
 import org.apache.logging.log4j.LogManager
-import org.opensearch.client.Client
+import org.opensearch.transport.client.Client
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.ClusterStateObserver
 import org.opensearch.cluster.service.ClusterService
@@ -27,7 +27,7 @@ import org.opensearch.persistent.AllocatedPersistentTask
 import org.opensearch.persistent.PersistentTaskState
 import org.opensearch.persistent.PersistentTasksCustomMetadata.PersistentTask
 import org.opensearch.persistent.PersistentTasksExecutor
-import org.opensearch.tasks.TaskId
+import org.opensearch.core.tasks.TaskId
 import org.opensearch.threadpool.ThreadPool
 
 class IndexReplicationExecutor(executor: String, private val clusterService: ClusterService,

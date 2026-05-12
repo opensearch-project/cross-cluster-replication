@@ -30,14 +30,14 @@ import kotlinx.coroutines.Dispatchers
 import org.apache.logging.log4j.LogManager
 import org.apache.lucene.index.IndexCommit
 import org.opensearch.Version
-import org.opensearch.action.ActionListener
+import org.opensearch.core.action.ActionListener
 import org.opensearch.action.ActionRequest
-import org.opensearch.action.ActionResponse
+import org.opensearch.core.action.ActionResponse
 import org.opensearch.action.ActionType
 import org.opensearch.action.admin.indices.stats.IndicesStatsAction
 import org.opensearch.action.admin.indices.stats.IndicesStatsRequest
 import org.opensearch.action.support.IndicesOptions
-import org.opensearch.client.Client
+import org.opensearch.transport.client.Client
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.ClusterStateUpdateTask
 import org.opensearch.cluster.metadata.IndexMetadata
@@ -47,16 +47,17 @@ import org.opensearch.cluster.node.DiscoveryNode
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.Nullable
 import org.opensearch.common.UUIDs
-import org.opensearch.common.component.AbstractLifecycleComponent
+import org.opensearch.common.lifecycle.AbstractLifecycleComponent
 import org.opensearch.common.metrics.CounterMetric
 import org.opensearch.common.settings.Settings
 import org.opensearch.index.mapper.MapperService
-import org.opensearch.index.shard.ShardId
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.index.snapshots.IndexShardSnapshotStatus
 import org.opensearch.index.store.Store
 import org.opensearch.indices.recovery.RecoverySettings
 import org.opensearch.indices.recovery.RecoveryState
 import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING
+import org.opensearch.replication.seqno.RemoteClusterRetentionLeaseHelper
 import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.repositories.IndexId
 import org.opensearch.repositories.Repository
@@ -73,6 +74,7 @@ import java.util.UUID
 import java.util.function.Consumer
 import java.util.function.Function
 import kotlin.collections.ArrayList
+import org.opensearch.common.Priority
 
 const val REMOTE_REPOSITORY_PREFIX = "replication-remote-repo-"
 const val REMOTE_REPOSITORY_TYPE = "replication-remote-repository"
@@ -106,6 +108,18 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         return restoreRateLimitingTimeInNanos.count()
     }
 
+    override fun getRemoteUploadThrottleTimeInNanos(): Long {
+        throw UnsupportedOperationException("Operation not permitted")
+    }
+
+    override fun getRemoteDownloadThrottleTimeInNanos(): Long {
+        throw UnsupportedOperationException("Operation not permitted")
+    }
+
+    override fun getLowPriorityRemoteDownloadThrottleTimeInNanos(): Long {
+        throw UnsupportedOperationException("Operation not permitted")
+    }
+
     override fun finalizeSnapshot(shardGenerations: ShardGenerations?, repositoryStateId: Long, clusterMetadata: Metadata?,
                                   snapshotInfo: SnapshotInfo?, repositoryMetaVersion: Version?,
                                   stateTransformer: Function<ClusterState, ClusterState>?,
@@ -113,6 +127,13 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         throw UnsupportedOperationException("Operation not permitted")
     }
 
+    override fun finalizeSnapshot(shardGenerations: ShardGenerations?, repositoryStateId: Long, clusterMetadata: Metadata?,
+                                  snapshotInfo: SnapshotInfo?, repositoryMetaVersion: Version?,
+                                  stateTransformer: Function<ClusterState, ClusterState>?, repositoryUpdatePriority: Priority,
+                                  listener: ActionListener<RepositoryData>?) {
+        throw UnsupportedOperationException("Operation not permitted")
+    }
+    
     override fun deleteSnapshots(snapshotIds: MutableCollection<SnapshotId>?, repositoryStateId: Long,
                                  repositoryMetaVersion: Version?, listener: ActionListener<RepositoryData>?) {
         throw UnsupportedOperationException("Operation not permitted")
@@ -122,10 +143,11 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         throw UnsupportedOperationException("Operation not permitted")
     }
 
-    override fun snapshotShard(store: Store?, mapperService: MapperService?, snapshotId: SnapshotId?, indexId: IndexId?,
-                               snapshotIndexCommit: IndexCommit?, @Nullable shardStateIdentifier: String?,
-                               snapshotStatus: IndexShardSnapshotStatus?, repositoryMetaVersion: Version?,
-                               userMetadata: MutableMap<String, Any>?, listener: ActionListener<String>?) {
+    override fun snapshotShard(store: Store, mapperService: MapperService, snapshotId: SnapshotId, indexId: IndexId,
+                               snapshotIndexCommit: IndexCommit, @Nullable shardStateIdentifier: String?,
+                               snapshotStatus: IndexShardSnapshotStatus, repositoryMetaVersion: Version,
+                               userMetadata: MutableMap<String, Any>, listener: ActionListener<String>,
+                               indexMetadata: IndexMetadata?) {
         throw UnsupportedOperationException("Operation not permitted")
     }
 
@@ -188,15 +210,14 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
     override fun getRepositoryData(listener: ActionListener<RepositoryData>) {
         val clusterState = getLeaderClusterState(false, false)
         val shardGenerations = ShardGenerations.builder()
-        clusterState.metadata.indices.values()
-                .map { it.value }
-                .forEach { indexMetadata ->
-                    val indexId = IndexId(indexMetadata.index.name, indexMetadata.indexUUID)
-                    for (i in 0 until indexMetadata.numberOfShards) {
-                        // Generations only make sense for eventually consistent BlobStores so just use a dummy value here.
-                        shardGenerations.put(indexId, i, "dummy")
-                    }
+        clusterState.metadata.indices.values
+            .forEach { indexMetadata ->
+                val indexId = IndexId(indexMetadata.index.name, indexMetadata.indexUUID)
+                for (i in 0 until indexMetadata.numberOfShards) {
+                    // Generations only make sense for eventually consistent BlobStores so just use a dummy value here.
+                    shardGenerations.put(indexId, i, "dummy")
                 }
+            }
         val snapshotId = SnapshotId(REMOTE_SNAPSHOT_NAME, REMOTE_SNAPSHOT_NAME.asUUID())
         val repositoryData = RepositoryData.EMPTY
                 .addSnapshot(snapshotId, SnapshotState.SUCCESS, Version.CURRENT, shardGenerations.build(), null, null)
@@ -210,7 +231,7 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
     override fun getSnapshotInfo(snapshotId: SnapshotId): SnapshotInfo {
         val leaderClusterState = getLeaderClusterState(false, false)
         assert(REMOTE_SNAPSHOT_NAME.equals(snapshotId.name), { "SnapshotName differs" })
-        val indices = leaderClusterState.metadata().indices().keys().map { x -> x.value }
+        val indices = leaderClusterState.metadata().indices().keys.toList()
         return SnapshotInfo(snapshotId, indices, emptyList(), SnapshotState.SUCCESS, Version.CURRENT)
     }
 
@@ -237,9 +258,12 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
 
         // Remove translog pruning for the follower index
         builder.remove(REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING.key)
+        builder.remove(IndexMetadata.SETTING_REMOTE_STORE_ENABLED)
+        builder.remove(IndexMetadata.SETTING_REMOTE_SEGMENT_STORE_REPOSITORY)
+        builder.remove(IndexMetadata.SETTING_REMOTE_TRANSLOG_STORE_REPOSITORY)
 
         val indexMdBuilder = IndexMetadata.builder(indexMetadata).settings(builder)
-        indexMetadata.aliases.valuesIt().forEach {
+        indexMetadata.aliases.values.forEach {
             indexMdBuilder.putAlias(it)
         }
         return indexMdBuilder.build()
@@ -281,7 +305,8 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
                 snapshotShardId.id)
         restoreUUID = UUIDs.randomBase64UUID()
         val getStoreMetadataRequest = GetStoreMetadataRequest(restoreUUID, leaderShardNode, leaderShardId,
-                clusterService.clusterName.value(), followerShardId)
+            RemoteClusterRetentionLeaseHelper.getFollowerClusterNameWithUUID(clusterService.clusterName.value(), clusterService.state().metadata.clusterUUID()),
+             followerShardId)
 
         // Gets the remote store metadata
         val metadataResponse = executeActionOnRemote(GetStoreMetadataAction.INSTANCE, getStoreMetadataRequest, followerIndexName)
@@ -291,12 +316,14 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         // 2. Request for individual files from leader cluster for this shardId
         // make sure the store is not released until we are done.
         val fileMetadata = ArrayList(metadataSnapshot.asMap().values)
+        val totalSizeBytes = fileMetadata.sumOf { it.length() }
+        log.info("Starting bootstrap restore: follower=$followerIndexName, followerShard=$followerShardId, leaderShard=$leaderShardId, fileCount=${fileMetadata.size}, totalSizeBytes=$totalSizeBytes")
         multiChunkTransfer = RemoteClusterMultiChunkTransfer(log, clusterService.clusterName.value(), client.threadPool().threadContext,
                 store, replicationSettings.concurrentFileChunks, restoreUUID, replMetadata, leaderShardNode,
                 leaderShardId, fileMetadata, leaderClusterClient, recoveryState, replicationSettings.chunkSize,
                 object : ActionListener<Void> {
                     override fun onFailure(e: java.lang.Exception?) {
-                        log.error("Restore of ${store.shardId()} failed due to ${e?.stackTraceToString()}")
+                        log.error("Restore of ${store.shardId()} failed due to follower=$followerIndexName, leaderShard=$leaderShardId, error=${e?.stackTraceToString()}")
                         if (e is NodeDisconnectedException || e is NodeNotConnectedException || e is ConnectTransportException) {
                             log.info("Retrying restore shard for ${store.shardId()}")
                             Thread.sleep(1000) // to get updated leader cluster state
@@ -305,7 +332,7 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
                                         recoveryState, listener, ::restoreShardUsingMultiChunkTransfer, log = log)
                             }
                         } else {
-                            log.error("Not retrying restore shard for ${store.shardId()}")
+                            log.error("Not retrying restore shard for ${store.shardId()} follower=$followerIndexName, leaderShard=$leaderShardId")
                             store.decRef()
                             releaseLeaderResources(restoreUUID, leaderShardNode, leaderShardId, followerShardId, followerIndexName)
                             listener.onFailure(e)
@@ -348,6 +375,10 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
 
     override fun isReadOnly(): Boolean {
         return true
+    }
+
+    override fun isSystemRepository(): Boolean {
+        throw UnsupportedOperationException("Operation not permitted")
     }
 
 

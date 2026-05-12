@@ -13,7 +13,7 @@ package org.opensearch.replication.metadata
 
 import org.apache.logging.log4j.LogManager
 import org.apache.logging.log4j.message.ParameterizedMessage
-import org.opensearch.action.ActionListener
+import org.opensearch.core.action.ActionListener
 import org.opensearch.action.IndicesRequest
 import org.opensearch.action.admin.indices.alias.IndicesAliasesClusterStateUpdateRequest
 import org.opensearch.action.admin.indices.alias.IndicesAliasesRequest
@@ -30,7 +30,7 @@ import org.opensearch.action.admin.indices.settings.put.UpdateSettingsRequest
 import org.opensearch.action.support.ActionFilters
 import org.opensearch.action.support.IndicesOptions
 import org.opensearch.action.support.clustermanager.TransportClusterManagerNodeAction
-import org.opensearch.action.support.master.AcknowledgedResponse
+import org.opensearch.action.support.clustermanager.AcknowledgedResponse
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.ack.ClusterStateUpdateResponse
 import org.opensearch.cluster.ack.OpenIndexClusterStateUpdateResponse
@@ -40,8 +40,8 @@ import org.opensearch.cluster.metadata.*
 import org.opensearch.cluster.metadata.AliasAction.RemoveIndex
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Inject
-import org.opensearch.common.io.stream.StreamInput
-import org.opensearch.index.Index
+import org.opensearch.core.common.io.stream.StreamInput
+import org.opensearch.core.index.Index
 import org.opensearch.index.IndexNotFoundException
 import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.rest.action.admin.indices.AliasesNotFoundException
@@ -49,10 +49,12 @@ import org.opensearch.tasks.Task
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
 import java.util.*
+import org.opensearch.action.support.TransportIndicesResolvingAction
 
 /*
  This action allows the replication plugin to update the index metadata(mapping, setting & aliases) on the follower index
  when there is a metadata write block(added by the plugin).
+
  */
 class TransportUpdateMetadataAction @Inject constructor(
     transportService: TransportService, actionFilters: ActionFilters, threadPool: ThreadPool,
@@ -62,7 +64,12 @@ class TransportUpdateMetadataAction @Inject constructor(
     val indexAliasService: MetadataIndexAliasesService,
     val indexStateService: MetadataIndexStateService
 ) : TransportClusterManagerNodeAction<UpdateMetadataRequest, AcknowledgedResponse>(UpdateMetadataAction.NAME,
-    transportService, clusterService, threadPool, actionFilters, ::UpdateMetadataRequest, indexNameExpressionResolver) {
+    transportService, clusterService, threadPool, actionFilters, ::UpdateMetadataRequest, indexNameExpressionResolver),
+    TransportIndicesResolvingAction<UpdateMetadataRequest> {
+
+    override fun resolveIndices(request: UpdateMetadataRequest): OptionallyResolvedIndices {
+        return ResolvedIndices.of(request.indexName)
+    }
 
     companion object {
         private val log = LogManager.getLogger(TransportUpdateMetadataAction::class.java)
@@ -106,7 +113,7 @@ class TransportUpdateMetadataAction @Inject constructor(
                                  listener: ActionListener<AcknowledgedResponse>) {
         val openIndexRequest = request.request as OpenIndexRequest
         val updateRequest = OpenIndexClusterStateUpdateRequest()
-                .ackTimeout(openIndexRequest.timeout()).masterNodeTimeout(openIndexRequest.masterNodeTimeout())
+                .ackTimeout(openIndexRequest.timeout()).clusterManagerNodeTimeout(openIndexRequest.clusterManagerNodeTimeout())
                 .indices(concreteIndices).waitForActiveShards(openIndexRequest.waitForActiveShards())
 
         indexStateService.openIndex(updateRequest, object : ActionListener<OpenIndexClusterStateUpdateResponse> {
@@ -126,7 +133,7 @@ class TransportUpdateMetadataAction @Inject constructor(
         val openIndexRequest = request.request as CloseIndexRequest
         val closeRequest = CloseIndexClusterStateUpdateRequest(task.id)
                 .ackTimeout(openIndexRequest.timeout())
-                .masterNodeTimeout(openIndexRequest.masterNodeTimeout())
+                .clusterManagerNodeTimeout(openIndexRequest.clusterManagerNodeTimeout())
                 .waitForActiveShards(openIndexRequest.waitForActiveShards())
                 .indices(concreteIndices)
 
@@ -186,7 +193,7 @@ class TransportUpdateMetadataAction @Inject constructor(
 
         val updateRequest =
             IndicesAliasesClusterStateUpdateRequest(Collections.unmodifiableList(finalActions))
-                .ackTimeout(request.timeout()).masterNodeTimeout(request.masterNodeTimeout())
+                .ackTimeout(request.timeout()).clusterManagerNodeTimeout(request.clusterManagerNodeTimeout())
 
         indexAliasService.indicesAliases(
             updateRequest,
@@ -211,7 +218,7 @@ class TransportUpdateMetadataAction @Inject constructor(
             .settings(updateSettingsRequest.settings())
             .setPreserveExisting(updateSettingsRequest.isPreserveExisting)
             .ackTimeout(request.timeout())
-            .masterNodeTimeout(request.masterNodeTimeout())
+            .clusterManagerNodeTimeout(request.clusterManagerNodeTimeout())
 
 
         updateSettingsService.updateSettings(clusterStateUpdateRequest,
@@ -250,7 +257,7 @@ class TransportUpdateMetadataAction @Inject constructor(
     ) {
         val mappingRequest = request.request as PutMappingRequest
         val updateRequest = PutMappingClusterStateUpdateRequest(mappingRequest.source())
-            .ackTimeout(mappingRequest.timeout()).masterNodeTimeout(mappingRequest.masterNodeTimeout())
+            .ackTimeout(mappingRequest.timeout()).clusterManagerNodeTimeout(mappingRequest.clusterManagerNodeTimeout())
             .indices(concreteIndices)
 
         metadataMappingService.putMapping(updateRequest,
@@ -274,8 +281,8 @@ class TransportUpdateMetadataAction @Inject constructor(
             val indexAsArray = arrayOf(concreteIndex)
             val aliasMetadata = metadata.findAliases(action, indexAsArray)
             val finalAliases: MutableList<String> = ArrayList()
-            for (curAliases in aliasMetadata.values()) {
-                for (aliasMeta in curAliases.value) {
+            for (curAliases in aliasMetadata.values) {
+                for (aliasMeta in curAliases) {
                     finalAliases.add(aliasMeta.alias())
                 }
             }

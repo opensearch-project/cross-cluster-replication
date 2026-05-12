@@ -11,9 +11,9 @@
 
 package org.opensearch.replication.rest
 
-import org.opensearch.replication.action.stop.StopIndexReplicationAction
-import org.opensearch.replication.action.stop.StopIndexReplicationRequest
-import org.opensearch.client.node.NodeClient
+import org.opensearch.commons.replication.action.ReplicationActions.STOP_REPLICATION_ACTION_TYPE
+import org.opensearch.commons.replication.action.StopIndexReplicationRequest
+import org.opensearch.transport.client.node.NodeClient
 import org.opensearch.rest.BaseRestHandler
 import org.opensearch.rest.RestChannel
 import org.opensearch.rest.RestHandler
@@ -22,6 +22,7 @@ import org.opensearch.rest.action.RestToXContentListener
 import java.io.IOException
 
 class StopIndexReplicationHandler : BaseRestHandler() {
+
 
     override fun routes(): List<RestHandler.Route> {
         return listOf(RestHandler.Route(RestRequest.Method.POST, "/_plugins/_replication/{index}/_stop"))
@@ -36,9 +37,12 @@ class StopIndexReplicationHandler : BaseRestHandler() {
         request.contentOrSourceParamParser().use { parser ->
             val followIndex = request.param("index")
             val stopReplicationRequest = StopIndexReplicationRequest.fromXContent(parser, followIndex)
+            stopReplicationRequest.clusterManagerNodeTimeout(
+                request.paramAsTime("cluster_manager_timeout", stopReplicationRequest.clusterManagerNodeTimeout())
+            )
             return RestChannelConsumer { channel: RestChannel? ->
                 client.admin().cluster()
-                        .execute(StopIndexReplicationAction.INSTANCE, stopReplicationRequest, RestToXContentListener(channel))
+                        .execute(STOP_REPLICATION_ACTION_TYPE, stopReplicationRequest, RestToXContentListener(channel))
             }
         }
     }

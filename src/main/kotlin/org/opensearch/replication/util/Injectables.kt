@@ -11,7 +11,7 @@
 
 package org.opensearch.replication.util
 
-import org.opensearch.common.component.AbstractLifecycleComponent
+import org.opensearch.common.lifecycle.AbstractLifecycleComponent
 import org.opensearch.common.inject.Inject
 import org.opensearch.indices.IndicesService
 import org.opensearch.persistent.PersistentTasksService

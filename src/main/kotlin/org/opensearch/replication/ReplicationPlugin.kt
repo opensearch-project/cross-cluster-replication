@@ -41,8 +41,8 @@ import org.opensearch.replication.action.status.ReplicationStatusAction
 import org.opensearch.replication.action.status.ShardsInfoAction
 import org.opensearch.replication.action.status.TranportShardsInfoAction
 import org.opensearch.replication.action.status.TransportReplicationStatusAction
-import org.opensearch.replication.action.stop.StopIndexReplicationAction
 import org.opensearch.replication.action.stop.TransportStopIndexReplicationAction
+import org.opensearch.replication.action.stop.TransportInternalStopIndexReplicationAction
 import org.opensearch.replication.action.update.TransportUpdateIndexReplicationAction
 import org.opensearch.replication.action.update.UpdateIndexReplicationAction
 import org.opensearch.replication.metadata.ReplicationMetadataManager
@@ -73,8 +73,8 @@ import org.opensearch.replication.task.shard.ShardReplicationParams
 import org.opensearch.replication.task.shard.ShardReplicationState
 import org.opensearch.replication.util.Injectables
 import org.opensearch.action.ActionRequest
-import org.opensearch.action.ActionResponse
-import org.opensearch.client.Client
+import org.opensearch.core.action.ActionResponse
+import org.opensearch.transport.client.Client
 import org.opensearch.cluster.NamedDiff
 import org.opensearch.cluster.metadata.IndexNameExpressionResolver
 import org.opensearch.cluster.metadata.Metadata
@@ -83,22 +83,24 @@ import org.opensearch.cluster.node.DiscoveryNodes
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.CheckedFunction
 import org.opensearch.core.ParseField
-import org.opensearch.common.component.LifecycleComponent
-import org.opensearch.common.io.stream.NamedWriteableRegistry
-import org.opensearch.common.io.stream.Writeable
+import org.opensearch.common.lifecycle.LifecycleComponent
+import org.opensearch.core.common.io.stream.NamedWriteableRegistry
+import org.opensearch.core.common.io.stream.Writeable
 import org.opensearch.common.settings.ClusterSettings
 import org.opensearch.common.settings.IndexScopedSettings
 import org.opensearch.common.settings.Setting
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.settings.SettingsFilter
 import org.opensearch.common.settings.SettingsModule
-import org.opensearch.common.unit.ByteSizeUnit
-import org.opensearch.common.unit.ByteSizeValue
+import org.opensearch.core.common.unit.ByteSizeUnit
+import org.opensearch.core.common.unit.ByteSizeValue
 import org.opensearch.common.unit.TimeValue
 import org.opensearch.common.util.concurrent.OpenSearchExecutors
 import org.opensearch.core.xcontent.NamedXContentRegistry
 import org.opensearch.core.xcontent.XContentParser
 import org.opensearch.commons.utils.OpenForTesting
+import org.opensearch.commons.replication.action.ReplicationActions.INTERNAL_STOP_REPLICATION_ACTION_TYPE
+import org.opensearch.commons.replication.action.ReplicationActions.STOP_REPLICATION_ACTION_TYPE
 import org.opensearch.env.Environment
 import org.opensearch.env.NodeEnvironment
 import org.opensearch.index.IndexModule
@@ -114,6 +116,7 @@ import org.opensearch.plugins.ActionPlugin
 import org.opensearch.plugins.ActionPlugin.ActionHandler
 import org.opensearch.plugins.EnginePlugin
 import org.opensearch.plugins.PersistentTaskPlugin
+import org.opensearch.plugins.SystemIndexPlugin
 import org.opensearch.plugins.Plugin
 import org.opensearch.plugins.RepositoryPlugin
 import org.opensearch.replication.action.autofollow.*
@@ -144,25 +147,35 @@ import java.util.Optional
 import java.util.function.Supplier
 
 import org.opensearch.index.engine.NRTReplicationEngine
+import org.opensearch.indices.SystemIndexDescriptor
+import org.opensearch.replication.util.ValidationUtil
 
 
 @OpenForTesting
-internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin, RepositoryPlugin, EnginePlugin {
+internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
+    RepositoryPlugin, EnginePlugin, SystemIndexPlugin {
 
     private lateinit var client: Client
+    private lateinit var clusterService: ClusterService
     private lateinit var threadPool: ThreadPool
     private lateinit var replicationMetadataManager: ReplicationMetadataManager
     private lateinit var replicationSettings: ReplicationSettings
     private var followerClusterStats = FollowerClusterStats()
 
     companion object {
+        const val KNN_INDEX_SETTING = "index.knn"
+        const val KNN_PLUGIN_PRESENT_SETTING = "knn.plugin.enabled"
         const val REPLICATION_EXECUTOR_NAME_LEADER = "replication_leader"
         const val REPLICATION_EXECUTOR_NAME_FOLLOWER = "replication_follower"
-        const val KNN_INDEX_SETTING = "index.knn"
+        const val MIN_OPS_BATCH_SIZE = 16
         val REPLICATED_INDEX_SETTING: Setting<String> = Setting.simpleString("index.plugins.replication.follower.leader_index",
             Setting.Property.InternalIndex, Setting.Property.IndexScope)
-        val REPLICATION_FOLLOWER_OPS_BATCH_SIZE: Setting<Int> = Setting.intSetting("plugins.replication.follower.index.ops_batch_size", 50000, 16,
+        // Cluster-level batch size setting
+        val REPLICATION_FOLLOWER_OPS_BATCH_SIZE: Setting<Int> = Setting.intSetting("plugins.replication.follower.index.ops_batch_size", 50000, MIN_OPS_BATCH_SIZE,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
+        // Index-level batch size setting
+        val REPLICATION_FOLLOWER_OPS_BATCH_SIZE_INDEX: Setting<Int> = Setting.intSetting("index.plugins.replication.follower.ops_batch_size", 50000, MIN_OPS_BATCH_SIZE,
+            Setting.Property.Dynamic, Setting.Property.IndexScope)
         val REPLICATION_LEADER_THREADPOOL_SIZE: Setting<Int> = Setting.intSetting("plugins.replication.leader.thread_pool.size", 0, 0,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
         val REPLICATION_LEADER_THREADPOOL_QUEUE_SIZE: Setting<Int> = Setting.intSetting("plugins.replication.leader.thread_pool.queue_size", 1000, 0,
@@ -173,6 +186,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
         val REPLICATION_FOLLOWER_RECOVERY_PARALLEL_CHUNKS: Setting<Int> = Setting.intSetting("plugins.replication.follower.index.recovery.max_concurrent_file_chunks", 5, 1,
                 Setting.Property.Dynamic, Setting.Property.NodeScope)
         val REPLICATION_FOLLOWER_CONCURRENT_READERS_PER_SHARD = Setting.intSetting("plugins.replication.follower.concurrent_readers_per_shard", 2, 1,
+            Setting.Property.Dynamic, Setting.Property.NodeScope)
+        val REPLICATION_FOLLOWER_CONCURRENT_WRITERS_PER_SHARD = Setting.intSetting("plugins.replication.follower.concurrent_writers_per_shard", 2, 1,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
         val REPLICATION_PARALLEL_READ_POLL_INTERVAL = Setting.timeSetting ("plugins.replication.follower.poll_interval", TimeValue.timeValueMillis(50), TimeValue.timeValueMillis(1),
             TimeValue.timeValueSeconds(1), Setting.Property.Dynamic, Setting.Property.NodeScope)
@@ -191,7 +206,9 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             ByteSizeValue(512, ByteSizeUnit.MB), Setting.Property.Dynamic, Setting.Property.IndexScope)
         val REPLICATION_FOLLOWER_BLOCK_START: Setting<Boolean> = Setting.boolSetting("plugins.replication.follower.block.start", false,
                 Setting.Property.Dynamic, Setting.Property.NodeScope)
-        val REPLICATION_AUTOFOLLOW_CONCURRENT_REPLICATION_JOBS_TRIGGER_SIZE: Setting<Int> = Setting.intSetting("plugins.replication.autofollow.concurrent_replication_jobs_trigger_size", 3, 1, 10,
+        val REPLICATION_AUTOFOLLOW_CONCURRENT_REPLICATION_JOBS_TRIGGER_SIZE: Setting<Int> = Setting.intSetting("plugins.replication.autofollow.concurrent_replication_jobs_trigger_size", 3, 1, 100,
+            Setting.Property.Dynamic, Setting.Property.NodeScope)
+        val REPLICATION_REPLICATE_INDEX_DELETION: Setting<Boolean> = Setting.boolSetting("plugins.replication.replicate.delete_index", false,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
     }
 
@@ -204,6 +221,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                                   repositoriesService: Supplier<RepositoriesService>): Collection<Any> {
         this.client = client
         this.threadPool = threadPool
+        this.clusterService = clusterService
         this.replicationMetadataManager = ReplicationMetadataManager(clusterService, client,
                 ReplicationMetadataStore(client, clusterService, xContentRegistry))
         this.replicationSettings = ReplicationSettings(clusterService)
@@ -224,7 +242,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             ActionHandler(GetFileChunkAction.INSTANCE, TransportGetFileChunkAction::class.java),
             ActionHandler(UpdateAutoFollowPatternAction.INSTANCE, TransportUpdateAutoFollowPatternAction::class.java),
             ActionHandler(AutoFollowClusterManagerNodeAction.INSTANCE, TransportAutoFollowClusterManagerNodeAction::class.java),
-            ActionHandler(StopIndexReplicationAction.INSTANCE, TransportStopIndexReplicationAction::class.java),
+            ActionHandler(STOP_REPLICATION_ACTION_TYPE, TransportStopIndexReplicationAction::class.java),
+            ActionHandler(INTERNAL_STOP_REPLICATION_ACTION_TYPE, TransportInternalStopIndexReplicationAction::class.java),
             ActionHandler(PauseIndexReplicationAction.INSTANCE, TransportPauseIndexReplicationAction::class.java),
             ActionHandler(ResumeIndexReplicationAction.INSTANCE, TransportResumeIndexReplicationAction::class.java),
             ActionHandler(UpdateIndexReplicationAction.INSTANCE, TransportUpdateIndexReplicationAction::class.java),
@@ -344,15 +363,15 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
     }
 
     override fun getSettings(): List<Setting<*>> {
-        return listOf(REPLICATED_INDEX_SETTING, REPLICATION_FOLLOWER_OPS_BATCH_SIZE, REPLICATION_LEADER_THREADPOOL_SIZE,
-                REPLICATION_LEADER_THREADPOOL_QUEUE_SIZE, REPLICATION_FOLLOWER_CONCURRENT_READERS_PER_SHARD,
-                REPLICATION_FOLLOWER_RECOVERY_CHUNK_SIZE, REPLICATION_FOLLOWER_RECOVERY_PARALLEL_CHUNKS,
-                REPLICATION_PARALLEL_READ_POLL_INTERVAL, REPLICATION_AUTOFOLLOW_REMOTE_INDICES_POLL_INTERVAL,
-                REPLICATION_AUTOFOLLOW_REMOTE_INDICES_RETRY_POLL_INTERVAL, REPLICATION_METADATA_SYNC_INTERVAL,
-                REPLICATION_RETENTION_LEASE_MAX_FAILURE_DURATION, REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING,
-                REPLICATION_INDEX_TRANSLOG_RETENTION_SIZE, REPLICATION_FOLLOWER_BLOCK_START, REPLICATION_AUTOFOLLOW_CONCURRENT_REPLICATION_JOBS_TRIGGER_SIZE)
+        return listOf(REPLICATED_INDEX_SETTING, REPLICATION_FOLLOWER_OPS_BATCH_SIZE, REPLICATION_FOLLOWER_OPS_BATCH_SIZE_INDEX, REPLICATION_LEADER_THREADPOOL_SIZE,
+            REPLICATION_LEADER_THREADPOOL_QUEUE_SIZE, REPLICATION_FOLLOWER_CONCURRENT_READERS_PER_SHARD,
+            REPLICATION_FOLLOWER_RECOVERY_CHUNK_SIZE, REPLICATION_FOLLOWER_RECOVERY_PARALLEL_CHUNKS,
+            REPLICATION_PARALLEL_READ_POLL_INTERVAL, REPLICATION_AUTOFOLLOW_REMOTE_INDICES_POLL_INTERVAL,
+            REPLICATION_AUTOFOLLOW_REMOTE_INDICES_RETRY_POLL_INTERVAL, REPLICATION_METADATA_SYNC_INTERVAL,
+            REPLICATION_RETENTION_LEASE_MAX_FAILURE_DURATION, REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING,
+            REPLICATION_INDEX_TRANSLOG_RETENTION_SIZE, REPLICATION_FOLLOWER_BLOCK_START, REPLICATION_AUTOFOLLOW_CONCURRENT_REPLICATION_JOBS_TRIGGER_SIZE,
+            REPLICATION_FOLLOWER_CONCURRENT_WRITERS_PER_SHARD, REPLICATION_REPLICATE_INDEX_DELETION)
     }
-
     override fun getInternalRepositories(env: Environment, namedXContentRegistry: NamedXContentRegistry,
                                          clusterService: ClusterService, recoverySettings: RecoverySettings): Map<String, Repository.Factory> {
         val repoFactory = Repository.Factory { repoMetadata: RepositoryMetadata ->
@@ -376,9 +395,15 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
     }
 
     override fun getCustomTranslogDeletionPolicyFactory(): Optional<TranslogDeletionPolicyFactory> {
-       return Optional.of(TranslogDeletionPolicyFactory{
-               indexSettings, retentionLeasesSupplier -> ReplicationTranslogDeletionPolicy(indexSettings, retentionLeasesSupplier)
-       })
+        // We don't need a retention lease translog deletion policy for remote store enabled clusters as
+        // we fetch the operations directly from lucene in such cases.
+        return if (ValidationUtil.isRemoteEnabledOrMigrating(clusterService) == false) {
+            Optional.of(TranslogDeletionPolicyFactory { indexSettings, retentionLeasesSupplier ->
+                ReplicationTranslogDeletionPolicy(indexSettings, retentionLeasesSupplier)
+            })
+        } else {
+            Optional.empty()
+        }
     }
 
     override fun onIndexModule(indexModule: IndexModule) {
@@ -386,5 +411,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
         if (indexModule.settings.get(REPLICATED_INDEX_SETTING.key) != null) {
             indexModule.addIndexEventListener(IndexCloseListener)
         }
+    }
+    override fun getSystemIndexDescriptors(settings: Settings): Collection<SystemIndexDescriptor> {
+        return listOf(SystemIndexDescriptor(ReplicationMetadataStore.REPLICATION_CONFIG_SYSTEM_INDEX, "System Index for storing cross cluster replication configuration."))
     }
 }

@@ -20,16 +20,17 @@ import org.opensearch.replication.action.repository.GetFileChunkAction
 import org.opensearch.replication.action.repository.GetStoreMetadataAction
 import org.opensearch.replication.action.resume.ResumeIndexReplicationAction
 import org.opensearch.replication.action.status.ReplicationStatusAction
-import org.opensearch.replication.action.stop.StopIndexReplicationAction
 import org.opensearch.replication.action.update.UpdateIndexReplicationAction
 import org.opensearch.replication.metadata.ReplicationMetadataManager
 import org.opensearch.replication.metadata.store.ReplicationMetadata
 import org.opensearch.replication.metadata.store.ReplicationStoreMetadataType
 import org.opensearch.commons.ConfigConstants
 import org.opensearch.commons.authuser.User
+import org.opensearch.commons.replication.action.ReplicationActions.STOP_REPLICATION_ACTION_NAME
+import org.opensearch.commons.replication.action.ReplicationActions.INTERNAL_STOP_REPLICATION_ACTION_NAME
 import org.apache.logging.log4j.LogManager
 import org.opensearch.action.ActionRequest
-import org.opensearch.action.ActionResponse
+import org.opensearch.core.action.ActionResponse
 import org.opensearch.action.ActionType
 import org.opensearch.common.util.concurrent.ThreadContext
 import org.opensearch.transport.RemoteClusterAwareRequest
@@ -41,7 +42,7 @@ class SecurityContext {
         const val OPENDISTRO_SECURITY_INJECTED_ROLES_VALIDATION = "opendistro_security_injected_roles_validation"
         const val REPLICATION_PLUGIN_USER = "ccr_user"
 
-        val ADMIN_USER = User(REPLICATION_PLUGIN_USER, null, listOf("all_access"), null)
+        val ADMIN_USER = User(REPLICATION_PLUGIN_USER, null, listOf("all_access"), mapOf<String, String>())
 
         val ALL_TRANSIENTS = listOf(ConfigConstants.OPENSEARCH_SECURITY_INJECTED_ROLES,
                 ConfigConstants.INJECTED_USER, OPENDISTRO_SECURITY_USER)
@@ -49,7 +50,7 @@ class SecurityContext {
         val LEADER_USER_ACTIONS = listOf(GetChangesAction.NAME, GetFileChunkAction.NAME)
         val FOLLOWER_USER_ACTIONS = listOf(ReplayChangesAction.NAME,
                 ReplicateIndexAction.NAME, PauseIndexReplicationAction.NAME,
-                ResumeIndexReplicationAction.NAME, StopIndexReplicationAction.NAME,
+                ResumeIndexReplicationAction.NAME, STOP_REPLICATION_ACTION_NAME, INTERNAL_STOP_REPLICATION_ACTION_NAME,
                 UpdateIndexReplicationAction.NAME, ReplicationStatusAction.NAME,
                 UpdateAutoFollowPatternAction.NAME)
 

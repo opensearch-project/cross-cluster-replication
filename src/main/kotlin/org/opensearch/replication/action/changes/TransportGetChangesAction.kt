@@ -15,7 +15,7 @@ import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import org.apache.logging.log4j.LogManager
 import org.opensearch.OpenSearchTimeoutException
-import org.opensearch.action.ActionListener
+import org.opensearch.core.action.ActionListener
 import org.opensearch.action.support.ActionFilters
 import org.opensearch.action.support.single.shard.TransportSingleShardAction
 import org.opensearch.cluster.ClusterState
@@ -23,10 +23,11 @@ import org.opensearch.cluster.metadata.IndexNameExpressionResolver
 import org.opensearch.cluster.routing.ShardsIterator
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Inject
-import org.opensearch.common.io.stream.StreamInput
-import org.opensearch.common.io.stream.Writeable
+import org.opensearch.core.common.io.stream.StreamInput
+import org.opensearch.core.common.io.stream.Writeable
 import org.opensearch.common.unit.TimeValue
-import org.opensearch.index.shard.ShardId
+import org.opensearch.core.index.shard.ShardId
+import org.opensearch.index.shard.IndexShard
 import org.opensearch.index.translog.Translog
 import org.opensearch.indices.IndicesService
 import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING
@@ -34,10 +35,7 @@ import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATION_EXECUT
 import org.opensearch.replication.seqno.RemoteClusterStats
 import org.opensearch.replication.seqno.RemoteClusterTranslogService
 import org.opensearch.replication.seqno.RemoteShardMetric
-import org.opensearch.replication.util.completeWith
-import org.opensearch.replication.util.coroutineContext
-import org.opensearch.replication.util.stackTraceToString
-import org.opensearch.replication.util.waitForGlobalCheckpoint
+import org.opensearch.replication.util.*
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportActionProxy
 import org.opensearch.transport.TransportService
@@ -69,8 +67,10 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
 
     @Suppress("BlockingMethodInNonBlockingContext")
     override fun asyncShardOperation(request: GetChangesRequest, shardId: ShardId, listener: ActionListener<GetChangesResponse>) {
+        log.debug("calling asyncShardOperation method")
         GlobalScope.launch(threadPool.coroutineContext(REPLICATION_EXECUTOR_NAME_LEADER)) {
             // TODO: Figure out if we need to acquire a primary permit here
+            log.debug("$REPLICATION_EXECUTOR_NAME_LEADER coroutine has initiated")
             listener.completeWith {
                 var relativeStartNanos  = System.nanoTime()
                 remoteStatsService.stats[shardId] = remoteStatsService.stats.getOrDefault(shardId, RemoteShardMetric())
@@ -79,30 +79,35 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
                 indexMetric.lastFetchTime.set(relativeStartNanos)
 
                 val indexShard = indicesService.indexServiceSafe(shardId.index).getShard(shardId.id)
-                if (indexShard.lastSyncedGlobalCheckpoint < request.fromSeqNo) {
+                val isRemoteEnabledOrMigrating = ValidationUtil.isRemoteEnabledOrMigrating(clusterService)
+                if (lastGlobalCheckpoint(indexShard, isRemoteEnabledOrMigrating) < request.fromSeqNo) {
                     // There are no new operations to sync. Do a long poll and wait for GlobalCheckpoint to advance. If
                     // the checkpoint doesn't advance by the timeout this throws an ESTimeoutException which the caller
                     // should catch and start a new poll.
+                    log.trace("Waiting for global checkpoint to advance from ${request.fromSeqNo} Sequence Number")
                     val gcp = indexShard.waitForGlobalCheckpoint(request.fromSeqNo, WAIT_FOR_NEW_OPS_TIMEOUT)
-
+                    log.trace("Waiting for global checkpoint to advance is finished for ${request.fromSeqNo} Sequence Number")
                     // At this point indexShard.lastKnownGlobalCheckpoint  has advanced but it may not yet have been synced
                     // to the translog, which means we can't return those changes. Return to the caller to retry.
                     // TODO: Figure out a better way to wait for the global checkpoint to be synced to the translog
-                    if (indexShard.lastSyncedGlobalCheckpoint < request.fromSeqNo) {
-                        assert(gcp > indexShard.lastSyncedGlobalCheckpoint) { "Checkpoint didn't advance at all" }
-                        throw OpenSearchTimeoutException("global checkpoint not synced. Retry after a few miliseconds...")
+                    if (lastGlobalCheckpoint(indexShard, isRemoteEnabledOrMigrating) < request.fromSeqNo) {
+                        // Checkpoint may not have advanced if there's a race condition - this is retryable
+                        log.debug("Checkpoint didn't advance: gcp=$gcp, lastGlobalCheckpoint=${lastGlobalCheckpoint(indexShard, isRemoteEnabledOrMigrating)}")
+                        throw OpenSearchTimeoutException("global checkpoint not synced. Retry after a few milliseconds...")
                     }
                 }
 
                 relativeStartNanos  = System.nanoTime()
                 // At this point lastSyncedGlobalCheckpoint is at least fromSeqNo
-                val toSeqNo = min(indexShard.lastSyncedGlobalCheckpoint, request.toSeqNo)
+                val toSeqNo = min(lastGlobalCheckpoint(indexShard, isRemoteEnabledOrMigrating), request.toSeqNo)
 
                 var ops: List<Translog.Operation> = listOf()
-                var fetchFromTranslog = isTranslogPruningByRetentionLeaseEnabled(shardId)
+                var fetchFromTranslog = isTranslogPruningByRetentionLeaseEnabled(shardId) && isRemoteEnabledOrMigrating == false
                 if(fetchFromTranslog) {
                     try {
                         ops = translogService.getHistoryOfOperations(indexShard, request.fromSeqNo, toSeqNo)
+                        log.debug("Fetching changes from translog for ${request.shardId} " +
+                                "from: ${request.fromSeqNo} to: $toSeqNo")
                     } catch (e: Exception) {
                         log.debug("Fetching changes from translog for ${request.shardId} " +
                                 "- from:${request.fromSeqNo}, to:$toSeqNo failed with exception - ${e.stackTraceToString()}")
@@ -137,9 +142,19 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
                 indexMetric.ops.addAndGet(ops.size.toLong())
 
                 ops.stream().forEach{op -> indexMetric.bytesRead.addAndGet(op.estimateSize()) }
-
-                GetChangesResponse(ops, request.fromSeqNo, indexShard.maxSeqNoOfUpdatesOrDeletes, indexShard.lastSyncedGlobalCheckpoint)
+                GetChangesResponse(ops, request.fromSeqNo, indexShard.maxSeqNoOfUpdatesOrDeletes, lastGlobalCheckpoint(indexShard, isRemoteEnabledOrMigrating))
             }
+        }
+    }
+
+    private fun lastGlobalCheckpoint(indexShard: IndexShard, isRemoteEnabledOrMigrating: Boolean): Long {
+        // We rely on lastSyncedGlobalCheckpoint as it has been durably written to disk. In case of remote store
+        // enabled clusters, the semantics are slightly different, and we can't use lastSyncedGlobalCheckpoint. Falling back to
+        // lastKnownGlobalCheckpoint in such cases.
+        return if (isRemoteEnabledOrMigrating) {
+            indexShard.lastKnownGlobalCheckpoint
+        } else {
+            indexShard.lastSyncedGlobalCheckpoint
         }
     }
 
@@ -162,7 +177,9 @@ class TransportGetChangesAction @Inject constructor(threadPool: ThreadPool, clus
     }
 
     override fun shards(state: ClusterState, request: InternalRequest): ShardsIterator {
+        val shardIt = state.routingTable().shardRoutingTable(request.request().shardId)
         // Random active shards
-        return state.routingTable().shardRoutingTable(request.request().shardId).activeInitializingShardsRandomIt()
+        return if (ValidationUtil.isRemoteEnabledOrMigrating(clusterService)) shardIt.primaryShardIt()
+        else shardIt.activeInitializingShardsRandomIt()
     }
 }

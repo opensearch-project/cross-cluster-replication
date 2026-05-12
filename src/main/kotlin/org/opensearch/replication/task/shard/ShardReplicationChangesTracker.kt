@@ -37,7 +37,8 @@ class ShardReplicationChangesTracker(indexShard: IndexShard, private val replica
     private val missingBatches = Collections.synchronizedList(ArrayList<Pair<Long, Long>>())
     private val observedSeqNoAtLeader = AtomicLong(indexShard.localCheckpoint)
     private val seqNoAlreadyRequested = AtomicLong(indexShard.localCheckpoint)
-    private val batchSize = replicationSettings.batchSize
+    private val batchSizeSettings = BatchSizeSettings(indexShard.indexSettings(), replicationSettings)
+
 
     /**
      * Provides a range of operations to be fetched next.
@@ -67,12 +68,41 @@ class ShardReplicationChangesTracker(indexShard: IndexShard, private val replica
                 missingBatches.removeAt(0)
             } else {
                 // return the next batch to fetch and update seqNoAlreadyRequested.
-                val fromSeq = seqNoAlreadyRequested.getAndAdd(batchSize.toLong()) + 1
-                val toSeq = fromSeq + batchSize - 1
-                logDebug("Fetching the batch $fromSeq-$toSeq")
+                val currentBatchSize = batchSizeSettings.getEffectiveBatchSize()
+                val fromSeq = seqNoAlreadyRequested.getAndAdd(currentBatchSize.toLong()) + 1
+                val toSeq = fromSeq + currentBatchSize - 1
+                val sizeInfo = if (batchSizeSettings.isDynamicallyReduced()) {
+                    "reduced to $currentBatchSize"
+                } else {
+                    "$currentBatchSize from ${batchSizeSettings.getBatchSizeSource()}"
+                }
+                logDebug("Fetching the batch $fromSeq-$toSeq (batch size: $sizeInfo)")
                 Pair(fromSeq, toSeq)
             }
         }
+    }
+
+    /**
+     * Reduce batch size
+     */
+    fun reduceBatchSize() {
+        batchSizeSettings.reduceBatchSize()
+        logInfo("Batch size reduced to ${batchSizeSettings.getEffectiveBatchSize()}")
+    }
+
+    /**
+     * Reset batch size
+     */
+    fun resetBatchSize() {
+        batchSizeSettings.resetBatchSize()
+        logInfo("Batch size reset to ${batchSizeSettings.getEffectiveBatchSize()}")
+    }
+
+    /**
+     * Batch Size Settings
+     */
+    fun batchSizeSettings() : BatchSizeSettings {
+        return batchSizeSettings
     }
 
     /**
@@ -116,5 +146,9 @@ class ShardReplicationChangesTracker(indexShard: IndexShard, private val replica
 
     private fun logDebug(msg: String) {
         log.debug("${Thread.currentThread().name}: $msg")
+    }
+
+    private fun logInfo(msg: String) {
+        log.info("${Thread.currentThread().name}: $msg")
     }
 }

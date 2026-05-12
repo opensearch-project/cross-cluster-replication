@@ -50,7 +50,7 @@ while getopts ":h:b:p:t:e:s:c:v:" arg; do
             CREDENTIAL=$OPTARG
             ;;
         v)
-            # Do nothing as we're not consuming this param.
+            OPENSEARCH_VERSION=$OPTARG
             ;;
         :)
             echo "-${OPTARG} requires an argument"
@@ -70,9 +70,20 @@ then
   SECURITY_ENABLED="true"
 fi
 
+OPENSEARCH_REQUIRED_VERSION="2.12.0"
+
 if [ -z "$CREDENTIAL" ]
 then
-  CREDENTIAL="admin:admin"
+  # Starting in 2.12.0, security demo configuration script requires an initial admin password
+  # Pick the minimum of two versions
+  VERSION_TO_COMPARE=`echo $OPENSEARCH_REQUIRED_VERSION $OPENSEARCH_VERSION | tr ' ' '\n' | sort -V | uniq | head -n 1`
+  # Check if the compared version is not equal to the required version.
+  # If it is not equal, it means the current version is older.
+  if [ "$VERSION_TO_COMPARE" != "$OPENSEARCH_REQUIRED_VERSION" ]; then
+    CREDENTIAL="admin:admin"
+  else
+    CREDENTIAL="admin:myStrongPassword123!"
+  fi
 fi
 
 USERNAME=`echo $CREDENTIAL | awk -F ':' '{print $1}'`
@@ -92,15 +103,48 @@ then
     exit 1
   fi
 
-  data=$(python3 -c "import json; cluster=$ENDPOINT_LIST ; data_nodes=cluster; print(data_nodes[0][\"data_nodes\"][0][\"endpoint\"],':',data_nodes[0][\"data_nodes\"][0][\"port\"],':',data_nodes[0][\"data_nodes\"][0][\"transport\"],',',data_nodes[1][\"data_nodes\"][0][\"endpoint\"],':',data_nodes[1][\"data_nodes\"][0][\"port\"],':',data_nodes[1][\"data_nodes\"][0][\"transport\"])" | tr -d "[:blank:]")
+  extract_values() {
+      local cluster_name="$1"
+      local field="$2"
 
+      echo "$ENDPOINT_LIST" | awk -v cluster="$cluster_name" -v field="$field" '
+          BEGIN { RS=","; FS=":" }
+          $1 ~ "\"cluster_name\"" && $2 ~ "\"" cluster "\"" {
+              while (getline) {
+                  if ($1 ~ "\"" field "\"") {
+                      gsub(/"/, "", $2)
+                      gsub(/ /, "", $2)
+                      print $2
+                      exit
+                  }
+              }
+          }
+      ' | tr -d '{}'
+  }
 
-  leader=$(echo  $data | cut -d ',' -f1 | cut -d ':' -f1,2 )
-  follower=$(echo $data  |  cut -d ',' -f2 | cut -d ':' -f1,2 )
-  
-  LTRANSPORT_PORT=$(echo  $data | cut -d ',' -f1 | cut -d ':' -f1,3 )
-  FTRANSPORT_PORT=$(echo $data  |  cut -d ',' -f2 | cut -d ':' -f1,3 )
-  eval "./gradlew integTestRemote -Dleader.http_host=\"$leader\" -Dfollower.http_host=\"$follower\" -Dfollower.transport_host=\"$FTRANSPORT_PORT\"  -Dleader.transport_host=\"$LTRANSPORT_PORT\"  -Dsecurity_enabled=\"$SECURITY_ENABLED\" -Duser=\"$USERNAME\" -Dpassword=\"$PASSWORD\" --console=plain "
+  # Extract values for leader cluster
+  leader_endpoint=$(extract_values "leader" "endpoint")
+  leader_port=$(extract_values "leader" "port")
+  leader_transport=$(extract_values "leader" "transport")
+
+  # Extract values for follower cluster
+  follower_endpoint=$(extract_values "follower" "endpoint")
+  follower_port=$(extract_values "follower" "port")
+  follower_transport=$(extract_values "follower" "transport")
+
+  # Print extracted data
+  echo "Leader Endpoint: $leader_endpoint"
+  echo "Leader Port: $leader_port"
+  echo "Leader Transport: $leader_transport"
+  echo "Follower Endpoint: $follower_endpoint"
+  echo "Follower Port: $follower_port"
+  echo "Follower Transport: $follower_transport"
+
+  # Get number of nodes, assuming both leader and follower have same number of nodes
+  numNodes=$((${follower_port} - ${leader_port}))
+  echo "numNodes: $numNodes"
+  echo './gradlew --no-daemon integTestRemote -Dleader.http_host='"$leader_endpoint:$leader_port"' -Dfollower.http_host='"$follower_endpoint:$follower_port"' -Dfollower.transport_host='"$follower_endpoint:$follower_transport"'  -Dleader.transport_host='"$leader_endpoint:$leader_transport"'  -Dsecurity_enabled='"$SECURITY_ENABLED"' -Duser='"$USERNAME"' -Dpassword='"$PASSWORD"' -PnumNodes='"$numNodes"' --console=plain'
+  ./gradlew --no-daemon integTestRemote -Dleader.http_host=$leader_endpoint:$leader_port -Dfollower.http_host=$follower_endpoint:$follower_port -Dfollower.transport_host=$follower_endpoint:$follower_transport  -Dleader.transport_host=$leader_endpoint:$leader_transport  -Dsecurity_enabled=$SECURITY_ENABLED -Duser=$USERNAME -Dpassword=$PASSWORD -PnumNodes=$numNodes --console=plain
 
 else
   # Single cluster

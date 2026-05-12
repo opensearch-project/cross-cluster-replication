@@ -34,8 +34,8 @@ class TransportReplayChangesActionIT  : MultiClusterRestTestCase() {
         val leader = getClientForCluster(LEADER)
         createConnectionBetweenClusters(FOLL, LEADER)
         // Create a leader/follower index
-        val leaderIndex = randomAlphaOfLength(10).toLowerCase(Locale.ROOT)
-        val followerIndex = randomAlphaOfLength(10).toLowerCase(Locale.ROOT)
+        val leaderIndex = randomAlphaOfLength(10).lowercase(Locale.ROOT)
+        val followerIndex = randomAlphaOfLength(10).lowercase(Locale.ROOT)
         val doc1 = mapOf("name" to randomAlphaOfLength(20))
         // Create Leader Index
         val response = leader.index(IndexRequest(leaderIndex).id("1").source(doc1), RequestOptions.DEFAULT)

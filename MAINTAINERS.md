@@ -4,12 +4,11 @@ This document contains a list of maintainers in this repo. See [opensearch-proje
 
 ## Current Maintainers
 
-| Maintainer       | GitHub ID                                                 | Affiliation |
-| ---------------- | --------------------------------------------------------- | ----------- |
-| Gopala Krishna A | [krishna-ggk](https://github.com/krishna-ggk)             | Amazon      |
-| Ankit            | [ankitkala](https://github.com/ankitkala)                 | Amazon      |
-| Sai              | [saikaranam-amazon](https://github.com/saikaranam-amazon) | Amazon      |
+| Maintainer       | GitHub ID                                          | Affiliation |
+|------------------| -------------------------------------------------- | ----------- |
+| Gopala Krishna A | [krishna-ggk](https://github.com/krishna-ggk)      | Amazon      |
+| Ankit            | [ankitkala](https://github.com/ankitkala)          | Amazon      |
 | Sooraj Sinha     | [soosinha](https://github.com/soosinha)                   | Amazon      |
 | Gaurav Bafna     | [gbbafna](https://github.com/gbbafna)                     | Amazon      |
 | Monu Singh       | [monusingh-1](https://github.com/monusingh-1)             | Amazon      |
-| cwperks          | [cwperks](https://github.com/cwperks)                     | Amazon      |
+| Craig Perkins    | [cwperks](https://github.com/cwperks)                     | Amazon      |

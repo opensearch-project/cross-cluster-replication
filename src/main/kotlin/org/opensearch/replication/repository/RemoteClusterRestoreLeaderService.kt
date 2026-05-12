@@ -16,8 +16,8 @@ import org.opensearch.replication.seqno.RemoteClusterRetentionLeaseHelper
 import org.opensearch.replication.util.performOp
 import org.opensearch.OpenSearchException
 import org.opensearch.action.support.single.shard.SingleShardRequest
-import org.opensearch.client.node.NodeClient
-import org.opensearch.common.component.AbstractLifecycleComponent
+import org.opensearch.transport.client.node.NodeClient
+import org.opensearch.common.lifecycle.AbstractLifecycleComponent
 import org.opensearch.common.inject.Inject
 import org.opensearch.common.inject.Singleton
 import org.opensearch.common.lucene.store.InputStreamIndexInput
@@ -114,8 +114,8 @@ class RemoteClusterRestoreLeaderService @Inject constructor(private val indicesS
         var fromSeqNo = RetentionLeaseActions.RETAIN_ALL
 
         // Adds the retention lease for fromSeqNo for the next stage of the replication.
-        retentionLeaseHelper.addRetentionLease(request.leaderShardId, fromSeqNo,
-                request.followerShardId, RemoteClusterRepository.REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC)
+        retentionLeaseHelper.addRetentionLease(request.leaderShardId, fromSeqNo, request.followerShardId,
+                RemoteClusterRepository.REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC)
 
         /**
          * At this point, it should be safe to release retention lock as the retention lease

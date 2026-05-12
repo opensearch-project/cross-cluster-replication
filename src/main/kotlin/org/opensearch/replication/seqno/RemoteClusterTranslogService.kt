@@ -13,7 +13,7 @@ package org.opensearch.replication.seqno
 
 import org.apache.logging.log4j.LogManager
 import org.opensearch.ResourceNotFoundException
-import org.opensearch.common.component.AbstractLifecycleComponent
+import org.opensearch.common.lifecycle.AbstractLifecycleComponent
 import org.opensearch.common.inject.Singleton
 import org.opensearch.index.engine.Engine
 import org.opensearch.index.shard.IndexShard
@@ -55,6 +55,9 @@ class RemoteClusterTranslogService : AbstractLifecycleComponent(){
                 }
                 op = snapshot.next()
             }
+        }
+        if (filteredOpsFromTranslog != opsSize.toInt()) {
+            log.error("Translog operation count mismatch for shard=${indexShard.shardId()}: expected=$opsSize, got=$filteredOpsFromTranslog, range=$startSeqNo-$toSeqNo")
         }
         assert(filteredOpsFromTranslog == opsSize.toInt()) {"Missing operations while fetching from translog"}
 

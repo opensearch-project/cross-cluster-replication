@@ -16,10 +16,10 @@ import org.opensearch.replication.util.ValidationUtil.validateName
 import org.opensearch.action.ActionRequestValidationException
 import org.opensearch.action.IndicesRequest
 import org.opensearch.action.support.IndicesOptions
-import org.opensearch.action.support.master.AcknowledgedRequest
+import org.opensearch.action.support.clustermanager.AcknowledgedRequest
 import org.opensearch.core.ParseField
-import org.opensearch.common.io.stream.StreamInput
-import org.opensearch.common.io.stream.StreamOutput
+import org.opensearch.core.common.io.stream.StreamInput
+import org.opensearch.core.common.io.stream.StreamOutput
 import org.opensearch.common.settings.Settings
 import org.opensearch.core.xcontent.ObjectParser
 import org.opensearch.core.xcontent.ToXContent
@@ -92,10 +92,19 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
     override fun validate(): ActionRequestValidationException? {
 
         var validationException = ActionRequestValidationException()
-        if (!this::leaderAlias.isInitialized ||
-            !this::leaderIndex.isInitialized ||
-            !this::followerIndex.isInitialized) {
-            validationException.addValidationError("Mandatory params are missing for the request")
+        val missingFields: MutableList<String> = mutableListOf()
+        if (!this::leaderAlias.isInitialized){
+            missingFields.add("leader_alias")
+        }
+        if(!this::leaderIndex.isInitialized){
+            missingFields.add("leader_index")
+        }
+        if (!this::followerIndex.isInitialized){
+            missingFields.add("follower_index")
+        }
+        if(missingFields.isNotEmpty()){
+            validationException.addValidationError("Mandatory params $missingFields are missing for the request")
+            return validationException
         }
 
         validateName(leaderIndex, validationException)

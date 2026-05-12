@@ -12,9 +12,9 @@
 package org.opensearch.replication.action.replay
 
 import org.opensearch.action.support.replication.ReplicatedWriteRequest
-import org.opensearch.common.io.stream.StreamInput
-import org.opensearch.common.io.stream.StreamOutput
-import org.opensearch.index.shard.ShardId
+import org.opensearch.core.common.io.stream.StreamInput
+import org.opensearch.core.common.io.stream.StreamOutput
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.index.translog.Translog
 
 class ReplayChangesRequest : ReplicatedWriteRequest<ReplayChangesRequest> {

@@ -26,25 +26,28 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.GlobalScope
 import kotlinx.coroutines.launch
 import org.apache.logging.log4j.LogManager
-import org.opensearch.action.ActionListener
+import org.opensearch.action.admin.cluster.node.info.NodesInfoRequest
+import org.opensearch.action.admin.cluster.node.info.NodesInfoResponse
+import org.opensearch.core.action.ActionListener
 import org.opensearch.action.admin.indices.settings.get.GetSettingsRequest
 import org.opensearch.action.support.ActionFilters
 import org.opensearch.action.support.HandledTransportAction
 import org.opensearch.action.support.IndicesOptions
-import org.opensearch.client.Client
+import org.opensearch.transport.client.Client
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.metadata.MetadataCreateIndexService
 import org.opensearch.common.inject.Inject
 import org.opensearch.common.settings.Settings
+import org.opensearch.cluster.service.ClusterService
 import org.opensearch.env.Environment
 import org.opensearch.index.IndexNotFoundException
 import org.opensearch.index.IndexSettings
-import org.opensearch.replication.ReplicationPlugin.Companion.KNN_INDEX_SETTING
 import org.opensearch.tasks.Task
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
 
 class TransportReplicateIndexAction @Inject constructor(transportService: TransportService,
+                                                        private val clusterService: ClusterService,
                                                         val threadPool: ThreadPool,
                                                         actionFilters: ActionFilters,
                                                         private val client : Client,
@@ -84,10 +87,12 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
                 // Any checks on the settings is followed by setup checks to ensure all relevant changes are
                 // present across the plugins
                 // validate index metadata on the leader cluster
+                log.debug("Fetching leader cluster state for ${request.leaderIndex} index.")
                 val leaderClusterState = getLeaderClusterState(request.leaderAlias, request.leaderIndex)
                 ValidationUtil.validateLeaderIndexState(request.leaderAlias, request.leaderIndex, leaderClusterState)
 
                 val leaderSettings = getLeaderIndexSettings(request.leaderAlias, request.leaderIndex)
+                log.debug("Leader settings were fetched for ${request.leaderIndex} index.")
 
                 if (leaderSettings.keySet().contains(ReplicationPlugin.REPLICATED_INDEX_SETTING.key) and
                         !leaderSettings.get(ReplicationPlugin.REPLICATED_INDEX_SETTING.key).isNullOrBlank()) {
@@ -99,11 +104,8 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
                     throw IllegalArgumentException("Cannot Replicate an index where the setting ${IndexSettings.INDEX_SOFT_DELETES_SETTING.key} is disabled")
                 }
 
-                // For k-NN indices, k-NN loads its own engine and this conflicts with the replication follower engine
-                // Blocking k-NN indices for replication
-                if(leaderSettings.getAsBoolean(KNN_INDEX_SETTING, false)) {
-                    throw IllegalArgumentException("Cannot replicate k-NN index - ${request.leaderIndex}")
-                }
+                // Disabling knn checks as new api call will require us add roles in security index which will be a breaking call.
+//                ValidationUtil.checkKNNEligibility(getNodesInfoForPlugin(request.leaderAlias), request.leaderIndex)
 
                 ValidationUtil.validateIndexSettings(
                     environment,
@@ -116,7 +118,9 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
                 // Setup checks are successful and trigger replication for the index
                 // permissions evaluation to trigger replication is based on the current security context set
                 val internalReq = ReplicateIndexClusterManagerNodeRequest(user, request)
+                log.debug("Starting replication index action on current master node")
                 client.suspendExecute(ReplicateIndexClusterManagerNodeAction.INSTANCE, internalReq)
+                log.debug("Response of start replication action is returned")
                 ReplicateIndexResponse(true)
             }
         }
@@ -134,6 +138,14 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
                 .request()
         return remoteClusterClient.suspending(remoteClusterClient.admin().cluster()::state,
                 injectSecurityContext = true, defaultContext = true)(clusterStateRequest).state
+    }
+
+    private suspend fun getNodesInfoForPlugin(leaderAlias: String): NodesInfoResponse {
+        val remoteClient = client.getRemoteClusterClient(leaderAlias)
+        var nodesInfoRequest = NodesInfoRequest().addMetric(NodesInfoRequest.Metric.PLUGINS.metricName())
+        return remoteClient.suspending(
+            remoteClient.admin().cluster()::nodesInfo
+        )(nodesInfoRequest)
     }
 
     private suspend fun getLeaderIndexSettings(leaderAlias: String, leaderIndex: String): Settings {

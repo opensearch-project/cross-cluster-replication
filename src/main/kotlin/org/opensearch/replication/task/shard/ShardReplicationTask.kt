@@ -11,20 +11,6 @@
 
 package org.opensearch.replication.task.shard
 
-import org.opensearch.replication.ReplicationSettings
-import org.opensearch.replication.action.changes.GetChangesAction
-import org.opensearch.replication.action.changes.GetChangesRequest
-import org.opensearch.replication.action.changes.GetChangesResponse
-import org.opensearch.replication.metadata.ReplicationMetadataManager
-import org.opensearch.replication.metadata.ReplicationOverallState
-import org.opensearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
-import org.opensearch.replication.metadata.state.getReplicationStateParamsForIndex
-import org.opensearch.replication.seqno.RemoteClusterRetentionLeaseHelper
-import org.opensearch.replication.task.CrossClusterReplicationTask
-import org.opensearch.replication.task.ReplicationState
-import org.opensearch.replication.util.indicesService
-import org.opensearch.replication.util.stackTraceToString
-import org.opensearch.replication.util.suspendExecuteWithRetries
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineExceptionHandler
 import kotlinx.coroutines.CoroutineScope
@@ -39,21 +25,34 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
 import org.opensearch.OpenSearchException
 import org.opensearch.OpenSearchTimeoutException
-import org.opensearch.client.Client
 import org.opensearch.cluster.ClusterChangedEvent
 import org.opensearch.cluster.ClusterStateListener
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.logging.Loggers
-import org.opensearch.index.seqno.RetentionLeaseActions
+import org.opensearch.core.index.shard.ShardId
+import org.opensearch.core.rest.RestStatus
+import org.opensearch.core.tasks.TaskId
 import org.opensearch.index.seqno.RetentionLeaseInvalidRetainingSeqNoException
 import org.opensearch.index.seqno.RetentionLeaseNotFoundException
-import org.opensearch.index.shard.ShardId
 import org.opensearch.persistent.PersistentTaskState
 import org.opensearch.persistent.PersistentTasksNodeService
-import org.opensearch.rest.RestStatus
-import org.opensearch.tasks.TaskId
+import org.opensearch.replication.ReplicationSettings
+import org.opensearch.replication.action.changes.GetChangesAction
+import org.opensearch.replication.action.changes.GetChangesRequest
+import org.opensearch.replication.action.changes.GetChangesResponse
+import org.opensearch.replication.metadata.ReplicationMetadataManager
+import org.opensearch.replication.metadata.ReplicationOverallState
+import org.opensearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
+import org.opensearch.replication.metadata.state.getReplicationStateParamsForIndex
+import org.opensearch.replication.seqno.RemoteClusterRetentionLeaseHelper
+import org.opensearch.replication.task.CrossClusterReplicationTask
+import org.opensearch.replication.task.ReplicationState
+import org.opensearch.replication.util.indicesService
+import org.opensearch.replication.util.stackTraceToString
+import org.opensearch.replication.util.suspendExecuteWithRetries
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.NodeNotConnectedException
+import org.opensearch.transport.client.Client
 import java.time.Duration
 
 
@@ -69,7 +68,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     private val leaderShardId = params.leaderShardId
     private val followerShardId = params.followerShardId
     private val remoteClient = client.getRemoteClusterClient(leaderAlias)
-    private val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), remoteClient)
+    private val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), clusterService.state().metadata.clusterUUID(), remoteClient)
     private var lastLeaseRenewalMillis = System.currentTimeMillis()
 
     //Start backOff for exceptions with a second
@@ -127,7 +126,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                 val throwable: Throwable = downstreamException as Throwable
 
                 withContext(NonCancellable) {
-                    logInfo("Going to mark ShardReplicationTask as Failed with ${throwable.stackTraceToString()}")
+                    logInfo("Going to mark ShardReplicationTask as Failed: leaderShard=$leaderShardId, followerShard=$followerShardId, cause=${throwable.stackTraceToString()}")
                     try {
                         updateTaskState(FailedState(toESException(throwable)))
                     } catch (inner: Exception) {
@@ -179,6 +178,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
             logDebug("Cluster metadata listener invoked on shard task...")
             if (event.metadataChanged()) {
                 val replicationStateParams = getReplicationStateParamsForIndex(clusterService, followerShardId.indexName)
+                logDebug("Replication State Params are fetched from cluster state")
                 if (replicationStateParams == null) {
                     if (PersistentTasksNodeService.Status(State.STARTED) == status)
                         cancelTask("Shard replication task received an interrupt.")
@@ -197,15 +197,17 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         updateTaskState(FollowingState)
         val followerIndexService = indicesService.indexServiceSafe(followerShardId.index)
         val indexShard = followerIndexService.getShard(followerShardId.id)
+        logInfo("Shard replication started: leaderShard=$leaderShardId, followerShard=$followerShardId, localCheckpoint=${indexShard.localCheckpoint}, globalCheckpoint=${indexShard.lastSyncedGlobalCheckpoint}")
 
         try {
             //Retention leases preserve the operations including and starting from the retainingSequenceNumber we specify when we take the lease .
             //hence renew retention lease with lastSyncedGlobalCheckpoint + 1
             retentionLeaseHelper.renewRetentionLease(leaderShardId, indexShard.lastSyncedGlobalCheckpoint + 1, followerShardId)
+            log.debug("${Thread.currentThread().name}: Initial retention lease renewed: leaderShard=$leaderShardId, followerShard=$followerShardId, seqNo=${indexShard.lastSyncedGlobalCheckpoint + 1}")
         } catch (ex: Exception) {
             // In case of a failure, we just log it and move on. All failures scenarios are being handled below with
             // retries and backoff depending on exception.
-            log.error("Retention lease renewal failed: ${ex.stackTraceToString()}")
+            log.error("Retention lease renewal failed: leaderShard=$leaderShardId, followerShard=$followerShardId, error=${ex.stackTraceToString()}")
         }
 
         addListenerToInterruptTask()
@@ -214,10 +216,14 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         // Since this setting is not dynamic, setting update would only reflect after pause-resume or on a new replication job.
         val rateLimiter = Semaphore(replicationSettings.readersPerShard)
         val sequencer = TranslogSequencer(scope, replicationMetadata, followerShardId, leaderAlias, leaderShardId.indexName,
-                                          TaskId(clusterService.nodeName, id), client, indexShard.localCheckpoint, followerClusterStats)
+                                          TaskId(clusterService.nodeName, id), client, indexShard.localCheckpoint, followerClusterStats, replicationSettings.writersPerShard)
 
         val changeTracker = ShardReplicationChangesTracker(indexShard, replicationSettings)
         followerClusterStats.stats[followerShardId]!!.followerCheckpoint = indexShard.localCheckpoint
+        // In case the shard task starts on a new node and there are no active writes on the leader shard, leader checkpoint
+        // never gets initialized and defaults to 0. To get around this, we set the leaderCheckpoint to follower shard's
+        // localCheckpoint as the leader shard is guaranteed to equal or more.
+        followerClusterStats.stats[followerShardId]!!.leaderCheckpoint = indexShard.localCheckpoint
         coroutineScope {
             while (isActive) {
                 rateLimiter.acquire()
@@ -243,15 +249,26 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                         changeTracker.updateBatchFetched(false, fromSeqNo, toSeqNo, fromSeqNo - 1,-1)
                     } catch (e: NodeNotConnectedException) {
                         followerClusterStats.stats[followerShardId]!!.opsReadFailures.addAndGet(1)
-                        logInfo("Node not connected. Retrying request using a different node. ${e.stackTraceToString()}")
+                        logInfo("Node not connected to $leaderAlias, retrying with different node. followerShard=$followerShardId, seqNo=$fromSeqNo: ${e.message}")
                         delay(backOffForRetry)
                         backOffForRetry = (backOffForRetry * factor).toLong().coerceAtMost(maxTimeOut)
                         changeTracker.updateBatchFetched(false, fromSeqNo, toSeqNo, fromSeqNo - 1,-1)
                     } catch (e: Exception) {
                         followerClusterStats.stats[followerShardId]!!.opsReadFailures.addAndGet(1)
                         logInfo("Unable to get changes from seqNo: $fromSeqNo. ${e.stackTraceToString()}")
-                        changeTracker.updateBatchFetched(false, fromSeqNo, toSeqNo, fromSeqNo - 1,-1)
 
+                        // Handle 2GB limit exception specifically
+                        if (e is IllegalArgumentException &&
+                            e.message?.contains("ReleasableBytesStreamOutput cannot hold more than") == true) {
+                            logError("Hit 2GB limit with current batch size ${changeTracker.batchSizeSettings().getEffectiveBatchSize()}. Reducing batch size.")
+                            changeTracker.reduceBatchSize()
+                            logError("Reduced batch size to ${changeTracker.batchSizeSettings().getEffectiveBatchSize()}. Retrying immediately.")
+                            changeTracker.updateBatchFetched(false, fromSeqNo, toSeqNo, fromSeqNo - 1, -1)
+                            // No delay for 2GB limit - retry immediately with smaller batch
+                            return@launch
+                        }
+
+                        changeTracker.updateBatchFetched(false, fromSeqNo, toSeqNo, fromSeqNo - 1,-1)
                         // Propagate 4xx exceptions up the chain and halt replication as they are irrecoverable
                         val range4xx = 400.rangeTo(499)
                         if (e is OpenSearchException &&
@@ -275,9 +292,13 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                 try {
                     retentionLeaseHelper.renewRetentionLease(leaderShardId, indexShard.lastSyncedGlobalCheckpoint + 1, followerShardId)
                     lastLeaseRenewalMillis = System.currentTimeMillis()
+                    log.debug("${Thread.currentThread().name}: Retention lease renewed: leaderShard=$leaderShardId, followerShard=$followerShardId, seqNo=${indexShard.lastSyncedGlobalCheckpoint + 1}")
                 } catch (ex: Exception) {
                     when (ex) {
-                        is RetentionLeaseNotFoundException ->  throw ex
+                        is RetentionLeaseNotFoundException -> {
+                            logError("Retention lease not found for $leaderShardId/$followerShardId - replication cannot continue")
+                            throw ex
+                        }
                         is RetentionLeaseInvalidRetainingSeqNoException -> {
                             if (System.currentTimeMillis() - lastLeaseRenewalMillis >  replicationSettings.leaseRenewalMaxFailureDuration.millis) {
                                 log.error("Retention lease renewal has been failing for last " +
@@ -298,6 +319,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     private suspend fun getChanges(fromSeqNo: Long, toSeqNo: Long): GetChangesResponse {
         val remoteClient = client.getRemoteClusterClient(leaderAlias)
         val request = GetChangesRequest(leaderShardId, fromSeqNo, toSeqNo)
+
         var changesResp =  remoteClient.suspendExecuteWithRetries(replicationMetadata = replicationMetadata,
                 action = GetChangesAction.INSTANCE, req = request, log = log)
         followerClusterStats.stats[followerShardId]!!.leaderCheckpoint = changesResp.lastSyncedGlobalCheckpoint
@@ -309,6 +331,9 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     }
     private fun logInfo(msg: String) {
         log.info("${Thread.currentThread().name}: $msg")
+    }
+    private fun logWarn(msg: String) {
+        log.warn("${Thread.currentThread().name}: $msg")
     }
     private fun logError(msg: String) {
         log.error("${Thread.currentThread().name}: $msg")

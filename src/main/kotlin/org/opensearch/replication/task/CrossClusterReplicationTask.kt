@@ -30,25 +30,25 @@ import kotlinx.coroutines.withTimeoutOrNull
 import kotlinx.coroutines.ObsoleteCoroutinesApi
 import org.apache.logging.log4j.Logger
 import org.opensearch.OpenSearchException
-import org.opensearch.action.ActionListener
-import org.opensearch.action.ActionResponse
-import org.opensearch.client.Client
+import org.opensearch.core.action.ActionListener
+import org.opensearch.core.action.ActionResponse
+import org.opensearch.transport.client.Client
 import org.opensearch.cluster.service.ClusterService
-import org.opensearch.common.io.stream.StreamOutput
+import org.opensearch.core.common.io.stream.StreamOutput
 import org.opensearch.common.settings.Settings
 import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.ToXContentObject
 import org.opensearch.core.xcontent.XContentBuilder
 import org.opensearch.index.IndexService
 import org.opensearch.index.shard.IndexShard
-import org.opensearch.index.shard.ShardId
+import org.opensearch.core.index.shard.ShardId
 import org.opensearch.indices.cluster.IndicesClusterStateService
 import org.opensearch.persistent.AllocatedPersistentTask
 import org.opensearch.persistent.PersistentTaskState
 import org.opensearch.persistent.PersistentTasksService
 import org.opensearch.replication.util.stackTraceToString
-import org.opensearch.rest.RestStatus
-import org.opensearch.tasks.TaskId
+import org.opensearch.core.rest.RestStatus
+import org.opensearch.core.tasks.TaskId
 import org.opensearch.tasks.TaskManager
 import org.opensearch.threadpool.ThreadPool
 
@@ -98,7 +98,7 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
                 markAsCompleted()
             } catch (e: Exception) {
                 log.error(
-                    "Exception encountered in CrossClusterReplicationTask - coroutine:isActive=${isActive} Context=${coroutineContext}", e)
+                    "Exception encountered in CrossClusterReplicationTask - task=${this.javaClass.simpleName}, id=$id, follower=$followerIndexName, leader=$leaderAlias, coroutine:isActive=${isActive} Context=${coroutineContext}", e)
                 if (isCancelled || e is CancellationException) {
                     markAsCompleted()
                     log.info("Completed the task with id:$id")
@@ -211,7 +211,7 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
                     if(e.status().status < 500 && e.status() != RestStatus.TOO_MANY_REQUESTS) {
                         throw e
                     }
-                    log.error("Failed to fetch replication metadata due to ", e)
+                    log.error("Failed to fetch replication metadata due to task=${this.javaClass.simpleName}, id=$id, error=${e.message}", e)
                     delay(DEFAULT_WAIT_ON_ERRORS)
                 }
             }

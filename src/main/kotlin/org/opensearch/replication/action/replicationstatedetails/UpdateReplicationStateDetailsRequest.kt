@@ -13,9 +13,9 @@ package org.opensearch.replication.action.replicationstatedetails
 
 import org.opensearch.replication.metadata.state.ReplicationStateParams
 import org.opensearch.action.ActionRequestValidationException
-import org.opensearch.action.support.master.AcknowledgedRequest
-import org.opensearch.common.io.stream.StreamInput
-import org.opensearch.common.io.stream.StreamOutput
+import org.opensearch.action.support.clustermanager.AcknowledgedRequest
+import org.opensearch.core.common.io.stream.StreamInput
+import org.opensearch.core.common.io.stream.StreamOutput
 
 class UpdateReplicationStateDetailsRequest: AcknowledgedRequest<UpdateReplicationStateDetailsRequest> {
 
@@ -48,6 +48,7 @@ class UpdateReplicationStateDetailsRequest: AcknowledgedRequest<UpdateReplicatio
     override fun writeTo(out: StreamOutput) {
         super.writeTo(out)
         out.writeString(followIndexName)
-        out.writeMap(replicationStateParams)
+        out.writeMap(replicationStateParams, StreamOutput::writeString, StreamOutput::writeString)
+        out.writeEnum(updateType)
     }
 }

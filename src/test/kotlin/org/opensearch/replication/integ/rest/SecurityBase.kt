@@ -17,6 +17,9 @@ import org.apache.hc.core5.http.ContentType
 import org.apache.hc.core5.http.io.entity.StringEntity
 import org.opensearch.client.Request
 import org.junit.BeforeClass
+import org.opensearch.commons.replication.action.ReplicationActions.STOP_REPLICATION_ACTION_NAME
+
+const val INTEG_TEST_PASSWORD = "ccr-integ-test@123"
 
 abstract class SecurityBase : MultiClusterRestTestCase()   {
     companion object {
@@ -72,7 +75,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
                             "indices:admin/plugins/replication/index/start",
                             "indices:admin/plugins/replication/index/pause",
                             "indices:admin/plugins/replication/index/resume",
-                            "indices:admin/plugins/replication/index/stop",
+                            "$STOP_REPLICATION_ACTION_NAME",
                             "indices:admin/plugins/replication/index/update",
                             "indices:admin/plugins/replication/index/status_check"
                         ]
@@ -104,7 +107,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
                             "indices:admin/plugins/replication/index/start",
                             "indices:admin/plugins/replication/index/pause",
                             "indices:admin/plugins/replication/index/resume",
-                            "indices:admin/plugins/replication/index/stop",
+                            "$STOP_REPLICATION_ACTION_NAME",
                             "indices:admin/plugins/replication/index/update",
                             "indices:admin/plugins/replication/index/status_check"
                         ]
@@ -117,7 +120,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
                             "indices:admin/plugins/replication/index/start",
                             "indices:admin/plugins/replication/index/pause",
                             "indices:admin/plugins/replication/index/resume",
-                            "indices:admin/plugins/replication/index/stop",
+                            "$STOP_REPLICATION_ACTION_NAME",
                             "indices:admin/plugins/replication/index/update",
                             "indices:admin/plugins/replication/index/status_check"
                         ]
@@ -149,7 +152,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
                             "indices:admin/plugins/replication/index/start",
                             "indices:admin/plugins/replication/index/pause",
                             "indices:admin/plugins/replication/index/resume",
-                            "indices:admin/plugins/replication/index/stop",
+                            "$STOP_REPLICATION_ACTION_NAME",
                             "indices:admin/plugins/replication/index/update",
                             "indices:admin/plugins/replication/index/status_check"
                         ]
@@ -181,7 +184,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
                             "indices:admin/plugins/replication/index/start",
                             "indices:admin/plugins/replication/index/pause",
                             "indices:admin/plugins/replication/index/resume",
-                            "indices:admin/plugins/replication/index/stop",
+                            "$STOP_REPLICATION_ACTION_NAME",
                             "indices:admin/plugins/replication/index/update",
                             "indices:admin/plugins/replication/index/status_check"
                         ]
@@ -255,7 +258,7 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
                             "indices:admin/plugins/replication/index/start",
                             "indices:admin/plugins/replication/index/pause",
                             "indices:admin/plugins/replication/index/resume",
-                            "indices:admin/plugins/replication/index/stop",
+                            "$STOP_REPLICATION_ACTION_NAME",
                             "indices:admin/plugins/replication/index/update",
                             "indices:admin/plugins/replication/index/status_check"
                         ]
@@ -282,17 +285,17 @@ abstract class SecurityBase : MultiClusterRestTestCase()   {
         }
 
         private fun addUsers(){
-            addUserToCluster("testUser1","password", FOLLOWER)
-            addUserToCluster("testUser1","password", LEADER)
-            addUserToCluster("testUser2","password", FOLLOWER)
-            addUserToCluster("testUser2","password", LEADER)
-            addUserToCluster("testUser3","password", FOLLOWER)
-            addUserToCluster("testUser4","password", FOLLOWER)
-            addUserToCluster("testUser5","password", FOLLOWER)
-            addUserToCluster("testUser6","password", LEADER)
-            addUserToCluster("testUser6","password", FOLLOWER)
-            addUserToCluster("testUser7","password", LEADER)
-            addUserToCluster("testUser7","password", FOLLOWER)
+            addUserToCluster("testUser1", INTEG_TEST_PASSWORD, FOLLOWER)
+            addUserToCluster("testUser1", INTEG_TEST_PASSWORD, LEADER)
+            addUserToCluster("testUser2", INTEG_TEST_PASSWORD, FOLLOWER)
+            addUserToCluster("testUser2", INTEG_TEST_PASSWORD, LEADER)
+            addUserToCluster("testUser3", INTEG_TEST_PASSWORD, FOLLOWER)
+            addUserToCluster("testUser4", INTEG_TEST_PASSWORD, FOLLOWER)
+            addUserToCluster("testUser5", INTEG_TEST_PASSWORD, FOLLOWER)
+            addUserToCluster("testUser6", INTEG_TEST_PASSWORD, LEADER)
+            addUserToCluster("testUser6", INTEG_TEST_PASSWORD, FOLLOWER)
+            addUserToCluster("testUser7", INTEG_TEST_PASSWORD, LEADER)
+            addUserToCluster("testUser7", INTEG_TEST_PASSWORD, FOLLOWER)
         }
 
         private fun addUserToCluster(userName: String, password: String, clusterName: String) {
