@@ -166,6 +166,21 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         const val AUTOPAUSED_REASON_PREFIX = "AutoPaused: "
         const val TASK_CANCELLATION_REASON = AUTOPAUSED_REASON_PREFIX + "Index replication task was cancelled by user"
 
+        /**
+         * Determines whether a given setting key should be skipped during metadata sync
+         * from leader to follower. When auto_expand_replicas is active on the follower,
+         * number_of_replicas must not be synced because the follower computes it locally
+         * based on its own node count.
+         *
+         * See: https://github.com/opensearch-project/cross-cluster-replication/issues/1661
+         */
+        fun shouldSkipSettingSync(key: String, followerSettings: Settings): Boolean {
+            if (key != IndexMetadata.SETTING_NUMBER_OF_REPLICAS) {
+                return false
+            }
+            val autoExpandReplicas = followerSettings.get(IndexMetadata.SETTING_AUTO_EXPAND_REPLICAS)
+            return autoExpandReplicas != null && autoExpandReplicas != "false"
+        }
     }
 
     //only for testing
@@ -515,6 +530,11 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 for (settings in settingsList) {
                     for (key in settings.keySet()) {
                         if (indexScopedSettings.isPrivateSetting(key)) {
+                            continue
+                        }
+                        // Skip number_of_replicas when auto_expand_replicas is active on the follower.
+                        // See: https://github.com/opensearch-project/cross-cluster-replication/issues/1661
+                        if (shouldSkipSettingSync(key, followerSettings)) {
                             continue
                         }
                         val setting = indexScopedSettings[key]
