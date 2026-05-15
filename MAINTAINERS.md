@@ -8,8 +8,8 @@ This document contains a list of maintainers in this repo. See [opensearch-proje
 |------------------| -------------------------------------------------- | ----------- |
 | Gopala Krishna A | [krishna-ggk](https://github.com/krishna-ggk)      | Amazon      |
 | Ankit            | [ankitkala](https://github.com/ankitkala)          | Amazon      |
-| Sai              | [saikaranam-amazon](https://github.com/saikaranam-amazon) | Amazon      |
-| Sooraj Sinha     | [soosinha](https://github.com/soosinha)            | Amazon      |
-| Gaurav Bafna     | [gbbafna](https://github.com/gbbafna)              | Amazon      |
-| Monu Singh       | [monusingh-1](https://github.com/monusingh-1)          | Amazon      |
+| Sooraj Sinha     | [soosinha](https://github.com/soosinha)                   | Amazon      |
+| Gaurav Bafna     | [gbbafna](https://github.com/gbbafna)                     | Amazon      |
+| Monu Singh       | [monusingh-1](https://github.com/monusingh-1)             | Amazon      |
 | Mohit Kumar      | [mohit10011999](https://github.com/mohit10011999)          | Amazon      |
+| Craig Perkins    | [cwperks](https://github.com/cwperks)                     | Amazon      |
