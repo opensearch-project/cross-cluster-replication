@@ -31,6 +31,7 @@ import org.opensearch.cluster.node.DiscoveryNodes
 import org.opensearch.cluster.routing.RoutingTable
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.settings.SettingsModule
+import org.opensearch.index.IndexSettings
 import org.opensearch.common.unit.TimeValue
 import org.opensearch.core.xcontent.NamedXContentRegistry
 import org.opensearch.core.index.Index
@@ -385,5 +386,43 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
 
         val isMissingResult = replicationTask.isIndexClosed("non-existent-index")
         assertThat(isMissingResult).isTrue() // Should default to true for safety
+    }
+
+    fun testShouldSkipNumberOfReplicasWhenAutoExpandIsActive() {
+        // auto_expand_replicas = "0-all" → should skip number_of_replicas
+        val followerSettings = Settings.builder()
+            .put(IndexMetadata.SETTING_AUTO_EXPAND_REPLICAS, "0-all")
+            .build()
+        assertThat(IndexReplicationTask.shouldSkipSettingSync(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, followerSettings)).isTrue()
+    }
+
+    fun testShouldSkipNumberOfReplicasWhenAutoExpandIsRange() {
+        // auto_expand_replicas = "0-5" → should skip number_of_replicas
+        val followerSettings = Settings.builder()
+            .put(IndexMetadata.SETTING_AUTO_EXPAND_REPLICAS, "0-5")
+            .build()
+        assertThat(IndexReplicationTask.shouldSkipSettingSync(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, followerSettings)).isTrue()
+    }
+
+    fun testShouldNotSkipNumberOfReplicasWhenAutoExpandIsFalse() {
+        // auto_expand_replicas = "false" → should NOT skip number_of_replicas
+        val followerSettings = Settings.builder()
+            .put(IndexMetadata.SETTING_AUTO_EXPAND_REPLICAS, "false")
+            .build()
+        assertThat(IndexReplicationTask.shouldSkipSettingSync(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, followerSettings)).isFalse()
+    }
+
+    fun testShouldNotSkipNumberOfReplicasWhenAutoExpandIsAbsent() {
+        // auto_expand_replicas not set → should NOT skip number_of_replicas
+        val followerSettings = Settings.builder().build()
+        assertThat(IndexReplicationTask.shouldSkipSettingSync(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, followerSettings)).isFalse()
+    }
+
+    fun testShouldNotSkipOtherSettingsWhenAutoExpandIsActive() {
+        // auto_expand_replicas is active, but the key is NOT number_of_replicas → should NOT skip
+        val followerSettings = Settings.builder()
+            .put(IndexMetadata.SETTING_AUTO_EXPAND_REPLICAS, "0-all")
+            .build()
+        assertThat(IndexReplicationTask.shouldSkipSettingSync(IndexSettings.INDEX_REFRESH_INTERVAL_SETTING.key, followerSettings)).isFalse()
     }
 }
