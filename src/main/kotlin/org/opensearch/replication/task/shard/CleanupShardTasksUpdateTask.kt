@@ -19,7 +19,7 @@ import org.opensearch.common.Priority
 import org.opensearch.persistent.PersistentTasksCustomMetadata
 
 /**
- * One-shot cluster state update task that removes legacy [ShardReplicationExecutor.TASK_NAME]
+ * One-shot cluster state update task that removes legacy [LEGACY_SHARD_TASK_NAME]
  * entries from [PersistentTasksCustomMetadata] in a single batched mutation.
  *
  * Run on the cluster manager during plugin initialization. Idempotent: returns the input state
@@ -30,13 +30,19 @@ class CleanupShardTasksUpdateTask : ClusterStateUpdateTask(Priority.NORMAL) {
     companion object {
         private val log = LogManager.getLogger(CleanupShardTasksUpdateTask::class.java)
         const val SOURCE = "ccr-cleanup-shard-tasks"
+
+        /**
+         * Task name used by the now-removed [ShardReplicationExecutor] in older versions. Hard-coded here so
+         * we can identify and remove legacy entries from cluster state without depending on the deleted class.
+         */
+        const val LEGACY_SHARD_TASK_NAME = "cluster:indices/shards/replication"
     }
 
     override fun execute(currentState: ClusterState): ClusterState {
         val current = currentState.metadata().custom<PersistentTasksCustomMetadata>(PersistentTasksCustomMetadata.TYPE)
             ?: return currentState
 
-        val shardTaskCount = current.tasks().count { it.taskName == ShardReplicationExecutor.TASK_NAME }
+        val shardTaskCount = current.tasks().count { it.taskName == LEGACY_SHARD_TASK_NAME }
         if (shardTaskCount == 0) {
             log.debug("No legacy ShardReplicationTask entries to clean up")
             return currentState
@@ -45,10 +51,10 @@ class CleanupShardTasksUpdateTask : ClusterStateUpdateTask(Priority.NORMAL) {
         log.info("Removing $shardTaskCount legacy ShardReplicationTask entries from cluster state")
 
         // Build a new PersistentTasksCustomMetadata excluding any entries with taskName matching the legacy
-        // ShardReplicationExecutor.TASK_NAME. Use the builder so we don't depend on exact constructor signatures.
+        // LEGACY_SHARD_TASK_NAME. Use the builder so we don't depend on exact constructor signatures.
         val builder = PersistentTasksCustomMetadata.builder(current)
         current.tasks()
-            .filter { it.taskName == ShardReplicationExecutor.TASK_NAME }
+            .filter { it.taskName == LEGACY_SHARD_TASK_NAME }
             .forEach { builder.removeTask(it.id) }
 
         val updated = builder.build()

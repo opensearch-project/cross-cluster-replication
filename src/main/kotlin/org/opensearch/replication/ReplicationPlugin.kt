@@ -68,10 +68,13 @@ import org.opensearch.replication.task.autofollow.AutoFollowParams
 import org.opensearch.replication.task.index.IndexReplicationExecutor
 import org.opensearch.replication.task.index.IndexReplicationParams
 import org.opensearch.replication.task.index.IndexReplicationState
-import org.opensearch.replication.task.shard.ShardReplicationExecutor
-import org.opensearch.replication.task.shard.ShardReplicationParams
-import org.opensearch.replication.task.shard.ShardReplicationState
+import org.opensearch.replication.task.shard.CleanupShardTasksUpdateTask
+import org.opensearch.replication.task.shard.NodeReplicationController
 import org.opensearch.replication.util.Injectables
+import org.opensearch.cluster.ClusterChangedEvent
+import org.opensearch.cluster.ClusterStateListener
+import java.util.concurrent.atomic.AtomicBoolean
+import kotlinx.coroutines.ObsoleteCoroutinesApi
 import org.opensearch.action.ActionRequest
 import org.opensearch.core.action.ActionResponse
 import org.opensearch.transport.client.Client
@@ -225,7 +228,38 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
         this.replicationMetadataManager = ReplicationMetadataManager(clusterService, client,
                 ReplicationMetadataStore(client, clusterService, xContentRegistry))
         this.replicationSettings = ReplicationSettings(clusterService)
-        return listOf(RemoteClusterRepositoriesService(repositoriesService, clusterService), replicationMetadataManager, replicationSettings, followerClusterStats)
+
+        // Per-node controller replaces the per-shard ShardReplicationTask. Started here so it sees all subsequent
+        // cluster state changes; stopped automatically when the node shuts down.
+        @OptIn(ObsoleteCoroutinesApi::class)
+        val nodeController = NodeReplicationController(
+            clusterService, threadPool, client, replicationMetadataManager, replicationSettings, followerClusterStats
+        )
+        nodeController.start()
+
+        // One-shot cleanup of legacy ShardReplicationTask entries from cluster state. Runs only on the cluster
+        // manager. Self-deregisters after first successful execution.
+        clusterService.addListener(ShardTaskCleanupListener(clusterService))
+
+        return listOf(RemoteClusterRepositoriesService(repositoriesService, clusterService), replicationMetadataManager, replicationSettings, followerClusterStats, nodeController)
+    }
+
+    /**
+     * One-shot cluster state listener: when the local node observes itself as cluster manager, submits the
+     * batched cleanup task to remove legacy ShardReplicationTask entries from cluster state. Self-deregisters
+     * after submitting.
+     */
+    private class ShardTaskCleanupListener(private val cs: ClusterService) : ClusterStateListener {
+        private val submitted = AtomicBoolean(false)
+        override fun clusterChanged(event: ClusterChangedEvent) {
+            if (submitted.get()) return
+            if (event.localNodeClusterManager() || event.state().nodes().isLocalNodeElectedClusterManager) {
+                if (submitted.compareAndSet(false, true)) {
+                    cs.submitStateUpdateTask(CleanupShardTasksUpdateTask.SOURCE, CleanupShardTasksUpdateTask())
+                    cs.removeListener(this)
+                }
+            }
+        }
     }
 
     override fun getGuiceServiceClasses(): Collection<Class<out LifecycleComponent>> {
@@ -309,19 +343,12 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                                             expressionResolver: IndexNameExpressionResolver)
         : List<PersistentTasksExecutor<*>> {
         return listOf(
-            ShardReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager, replicationSettings, followerClusterStats),
             IndexReplicationExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager, replicationSettings, settingsModule),
             AutoFollowExecutor(REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService, threadPool, client, replicationMetadataManager, replicationSettings))
     }
 
     override fun getNamedWriteables(): List<NamedWriteableRegistry.Entry> {
         return listOf(
-            NamedWriteableRegistry.Entry(PersistentTaskParams::class.java, ShardReplicationParams.NAME,
-            // can't directly pass in ::ReplicationTaskParams due to https://youtrack.jetbrains.com/issue/KT-35912
-            Writeable.Reader { inp -> ShardReplicationParams(inp) }),
-            NamedWriteableRegistry.Entry(PersistentTaskState::class.java, ShardReplicationState.NAME,
-            Writeable.Reader { inp -> ShardReplicationState.reader(inp) }),
-
             NamedWriteableRegistry.Entry(PersistentTaskParams::class.java, IndexReplicationParams.NAME,
                 Writeable.Reader { inp -> IndexReplicationParams(inp) }),
             NamedWriteableRegistry.Entry(PersistentTaskState::class.java, IndexReplicationState.NAME,
@@ -347,12 +374,6 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             NamedXContentRegistry.Entry(PersistentTaskState::class.java,
                     ParseField(IndexReplicationState.NAME),
                     CheckedFunction { parser: XContentParser -> IndexReplicationState.fromXContent(parser)}),
-            NamedXContentRegistry.Entry(PersistentTaskParams::class.java,
-                    ParseField(ShardReplicationParams.NAME),
-                    CheckedFunction { parser: XContentParser -> ShardReplicationParams.fromXContent(parser)}),
-            NamedXContentRegistry.Entry(PersistentTaskState::class.java,
-                    ParseField(ShardReplicationState.NAME),
-                    CheckedFunction { parser: XContentParser -> ShardReplicationState.fromXContent(parser)}),
             NamedXContentRegistry.Entry(PersistentTaskParams::class.java,
                     ParseField(AutoFollowParams.NAME),
                     CheckedFunction { parser: XContentParser -> AutoFollowParams.fromXContent(parser)}),
