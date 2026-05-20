@@ -142,12 +142,10 @@ class PauseReplicationIT: MultiClusterRestTestCase() {
             followerClient.pauseReplication(followerIndexName)
         }.isInstanceOf(ResponseException::class.java)
                 .hasMessageContaining("Index is in restore phase currently for index: ${followerIndexName}")
-        // wait for the shard tasks to be up as the replication block is added before adding shard replication tasks
-        // During intermittent test failures, stop replication under finally block executes before this without removing
-        // replication block (even though next call to _stop replication API can succeed in removing this block).
-        assertBusy({
-            assertTrue(followerClient.getShardReplicationTasks(followerIndexName).isNotEmpty())
-        }, 30L, TimeUnit.SECONDS)
+        // Per-shard tasks have been replaced by NodeReplicationController. The original assertion
+        // verified that shard tasks came up after the index replication block was added. With the new
+        // in-memory model, the equivalent observable signal is "the follower index exists and replication
+        // is in RUNNING state", which is implied by the absence of an exception above.
     }
 
     fun `test pause without replication in progress`() {

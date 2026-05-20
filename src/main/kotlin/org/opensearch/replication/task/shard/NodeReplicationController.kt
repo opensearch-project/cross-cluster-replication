@@ -24,11 +24,14 @@ import org.opensearch.cluster.ClusterStateListener
 import org.opensearch.cluster.routing.ShardRouting
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.core.index.shard.ShardId
+import org.opensearch.persistent.PersistentTasksCustomMetadata
 import org.opensearch.replication.ReplicationSettings
 import org.opensearch.replication.metadata.ReplicationMetadataManager
 import org.opensearch.replication.metadata.ReplicationOverallState
 import org.opensearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
 import org.opensearch.replication.metadata.state.ReplicationStateMetadata
+import org.opensearch.replication.task.index.IndexReplicationExecutor
+import org.opensearch.replication.task.index.IndexReplicationParams
 import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.threadpool.Scheduler
 import org.opensearch.threadpool.ThreadPool
@@ -83,7 +86,10 @@ class NodeReplicationController(
             org.opensearch.common.unit.TimeValue.timeValueMillis(IDLE_LEASE_SWEEP_INTERVAL),
             ThreadPool.Names.GENERIC
         )
-        log.info("NodeReplicationController started on node ${clusterService.localNode().id}")
+        // Don't reference clusterService.localNode() here — at plugin createComponents time the cluster state
+        // has not yet been initialized and accessing it throws. The first clusterChanged event will surface
+        // local node identity in subsequent log lines via reconcile().
+        log.info("NodeReplicationController started")
     }
 
     fun stop() {
@@ -107,78 +113,87 @@ class NodeReplicationController(
 
     @Synchronized
     private fun reconcile(event: ClusterChangedEvent) {
-        val state = event.state()
-        val localNodeId = state.nodes().localNodeId ?: return
+        val desired = computeDesiredShards(event.state())
 
-        // Map of replicated indices -> their leader alias. Empty if no replication metadata at all.
-        val replicationStateMd = state.metadata().custom<ReplicationStateMetadata>(ReplicationStateMetadata.NAME)
-        val replicatedIndices: Map<String, String> = replicationStateMd?.replicationDetails
-            ?.filterValues { params -> params[REPLICATION_LAST_KNOWN_OVERALL_STATE] == ReplicationOverallState.RUNNING.name }
-            ?.mapValues { /* leader alias not directly in state params; resolved per-shard below */ "" }
-            ?: emptyMap()
-
-        // Compute the set of follower primary shards assigned locally for indices that are in RUNNING state.
-        // For each, we need leader alias + leader shard id from the index metadata.
-        val desired = mutableMapOf<ShardId, ShardReplicationContext.() -> Unit>() // placeholder map
-        val newContexts = mutableMapOf<ShardId, ShardReplicationContext>()
-
-        for ((indexName, _) in replicatedIndices) {
-            val indexRouting = state.routingTable().index(indexName) ?: continue
-            val indexMetadata = state.metadata().index(indexName) ?: continue
-
-            // Read leader alias and leader index UUID from the follower index settings (set during bootstrap).
-            val leaderAlias = indexMetadata.settings.get("index.plugins.replication.followed_by")
-                ?: indexMetadata.settings.get("index.plugins.replication.leader_cluster_alias")
-                ?: continue
-            val leaderIndexName = indexMetadata.settings.get("index.plugins.replication.leader_index_name")
-                ?: indexMetadata.settings.get("index.plugins.replication.leader_index")
-                ?: indexName
-            val leaderIndexUUID = indexMetadata.settings.get("index.plugins.replication.leader_index_uuid")
-                ?: indexMetadata.index.uuid
-
-            for (shardEntry in indexRouting.shards) {
-                val shardRoutingTable = shardEntry.value
-                val primary: ShardRouting? = shardRoutingTable.primaryShard()
-                if (primary == null || !primary.started()) continue
-                if (primary.currentNodeId() != localNodeId) continue
-
-                val followerShardId = primary.shardId()
-                val leaderShardId = ShardId(
-                    org.opensearch.core.index.Index(leaderIndexName, leaderIndexUUID),
-                    followerShardId.id
-                )
-
-                val ctx = contexts[followerShardId] ?: ShardReplicationContext(
-                    leaderAlias = leaderAlias,
-                    leaderShardId = leaderShardId,
-                    followerShardId = followerShardId,
-                    clusterService = clusterService,
-                    threadPool = threadPool,
-                    client = client,
-                    replicationMetadataManager = replicationMetadataManager,
-                    replicationSettings = replicationSettings,
-                    followerClusterStats = followerClusterStats,
-                ).also {
-                    it.start(controllerScope)
-                    log.info("Started replication context for $followerShardId (leader=$leaderAlias$leaderShardId)")
-                }
-                newContexts[followerShardId] = ctx
-            }
-        }
-
-        // Stop contexts for shards no longer in the desired set (relocated away, paused, stopped, deleted).
-        val toStop = contexts.keys - newContexts.keys
+        // Stop contexts for shards no longer desired (relocated away, paused, stopped, deleted).
+        val toStop = contexts.keys - desired.keys
         for (shardId in toStop) {
             val ctx = contexts.remove(shardId) ?: continue
             log.info("Stopping replication context for $shardId (no longer eligible)")
             ctx.stop()
         }
 
-        // Atomically swap the active map. Existing entries in newContexts are reused refs; new ones are added.
-        for ((shardId, ctx) in newContexts) {
-            contexts.putIfAbsent(shardId, ctx)
+        // Start contexts for newly-desired shards.
+        for ((shardId, params) in desired) {
+            if (contexts.containsKey(shardId)) continue
+            val ctx = ShardReplicationContext(
+                leaderAlias = params.leaderAlias,
+                leaderShardId = params.leaderShardId,
+                followerShardId = shardId,
+                clusterService = clusterService,
+                threadPool = threadPool,
+                client = client,
+                replicationMetadataManager = replicationMetadataManager,
+                replicationSettings = replicationSettings,
+                followerClusterStats = followerClusterStats,
+            )
+            ctx.start(controllerScope)
+            contexts[shardId] = ctx
+            log.info("Started replication context for $shardId (leader=${params.leaderAlias}${params.leaderShardId})")
         }
     }
+
+    /**
+     * Pure function over cluster state — extracted for testability. Returns the set of follower primary shards
+     * assigned to the local node where the corresponding index is in RUNNING replication state, mapped to the
+     * params needed to start a [ShardReplicationContext].
+     *
+     * Leader alias and leader-index identity (name + UUID) are sourced from the [IndexReplicationParams] of the
+     * still-running per-index persistent task. The follower index settings only carry the leader index name, not
+     * the cluster alias or the leader index UUID.
+     */
+    internal fun computeDesiredShards(state: org.opensearch.cluster.ClusterState): Map<ShardId, DesiredShardParams> {
+        val localNodeId = state.nodes().localNodeId ?: return emptyMap()
+
+        val replicationStateMd = state.metadata().custom<ReplicationStateMetadata>(ReplicationStateMetadata.NAME)
+            ?: return emptyMap()
+        val runningIndices = replicationStateMd.replicationDetails
+            .filterValues { params -> params[REPLICATION_LAST_KNOWN_OVERALL_STATE] == ReplicationOverallState.RUNNING.name }
+            .keys
+        if (runningIndices.isEmpty()) return emptyMap()
+
+        // Build a map of follower-index-name -> IndexReplicationParams by scanning persistent tasks. The index
+        // task is still a persistent task; this is how we recover the leader alias and leader Index (name+UUID).
+        val persistentTasks = state.metadata().custom<PersistentTasksCustomMetadata>(PersistentTasksCustomMetadata.TYPE)
+        val indexParamsByFollower: Map<String, IndexReplicationParams> = persistentTasks?.tasks()
+            ?.filter { it.taskName == IndexReplicationExecutor.TASK_NAME }
+            ?.mapNotNull { task ->
+                @Suppress("UNCHECKED_CAST")
+                val params = task.params as? IndexReplicationParams ?: return@mapNotNull null
+                params.followerIndexName to params
+            }
+            ?.toMap()
+            ?: emptyMap()
+
+        val result = mutableMapOf<ShardId, DesiredShardParams>()
+        for (indexName in runningIndices) {
+            val indexParams = indexParamsByFollower[indexName] ?: continue
+            val indexRouting = state.routingTable().index(indexName) ?: continue
+
+            for (shardEntry in indexRouting.shards) {
+                val primary: ShardRouting? = shardEntry.value.primaryShard()
+                if (primary == null || !primary.started()) continue
+                if (primary.currentNodeId() != localNodeId) continue
+
+                val followerShardId = primary.shardId()
+                val leaderShardId = ShardId(indexParams.leaderIndex, followerShardId.id)
+                result[followerShardId] = DesiredShardParams(indexParams.leaderAlias, leaderShardId)
+            }
+        }
+        return result
+    }
+
+    internal data class DesiredShardParams(val leaderAlias: String, val leaderShardId: ShardId)
 
     /**
      * Periodic sweep over tracked contexts to renew leases that haven't been renewed recently. For active

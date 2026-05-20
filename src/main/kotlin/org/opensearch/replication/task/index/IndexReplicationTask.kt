@@ -224,7 +224,13 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                             // Shard-level failures are handled by ShardReplicationContext via direct
                             // ReplicationMetadata mutation. The index task no longer polls shard task status;
                             // it just maintains metadata sync from the leader.
-                            updateMetadata()
+                            val next = updateMetadata()
+                            // Avoid a tight loop when there is nothing to do — match the cadence of the previous
+                            // pollShardTaskStatus path.
+                            if (next is MonitoringState) {
+                                delay(SLEEP_TIME_BETWEEN_POLL_MS)
+                            }
+                            next
                         }
                     }
                     ReplicationState.FAILED -> {

@@ -312,7 +312,8 @@ class StopReplicationIT: MultiClusterRestTestCase() {
         assertBusy({
             var statusResp = followerClient.replicationStatus(followerIndexName)
             `validate status syncing response`(statusResp)
-            assertThat(followerClient.getShardReplicationTasks(followerIndexName)).isNotEmpty()
+            // Per-shard persistent tasks no longer exist; shard work is in-memory.
+            // The status-syncing assertion above is sufficient.
         }, 60, TimeUnit.SECONDS)
         // Trigger snapshot on the follower cluster
         val createSnapshotRequest = CreateSnapshotRequest(TestCluster.FS_SNAPSHOT_REPO, "test-$snapshotSuffix")

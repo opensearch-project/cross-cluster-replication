@@ -40,6 +40,9 @@ import org.opensearch.replication.ReplicationSettings
 import org.opensearch.replication.action.changes.GetChangesAction
 import org.opensearch.replication.action.changes.GetChangesRequest
 import org.opensearch.replication.action.changes.GetChangesResponse
+import org.opensearch.commons.replication.action.ReplicationActions.INTERNAL_STOP_REPLICATION_ACTION_TYPE
+import org.opensearch.commons.replication.action.StopIndexReplicationRequest
+import org.opensearch.index.IndexNotFoundException
 import org.opensearch.replication.metadata.ReplicationMetadataManager
 import org.opensearch.replication.metadata.ReplicationOverallState
 import org.opensearch.replication.seqno.RemoteClusterRetentionLeaseHelper
@@ -341,7 +344,29 @@ class ShardReplicationContext(
     }
 
     private suspend fun pauseIndexOnFatalFailure(cause: Throwable) {
-        val reason = "Shard $followerShardId failed: ${cause.javaClass.simpleName} - ${cause.message ?: "no message"}"
+        // Use the fully-qualified class name in the reason so existing helpers/tests that grep for FQNs (e.g.
+        // "org.opensearch.indices.IndexClosedException") continue to match.
+        val reason = "Shard $followerShardId failed: ${cause.javaClass.name} - ${cause.message ?: "no message"}"
+
+        // If the failure is because the leader index no longer exists AND replicate-index-deletion is enabled,
+        // stop replication entirely (which cascades to follower index deletion via IndexReplicationTask). This
+        // preserves the cleanup path that used to live in IndexReplicationTask.MONITORING.
+        val replicateDelete = clusterService.clusterSettings.get(
+            org.opensearch.replication.ReplicationPlugin.REPLICATION_REPLICATE_INDEX_DELETION
+        )
+        if (replicateDelete && cause is IndexNotFoundException && cause.message?.contains(leaderShardId.indexName) == true) {
+            try {
+                log.warn("Leader index ${leaderShardId.indexName} unavailable; stopping replication on $followerIndexName")
+                client.execute(
+                    INTERNAL_STOP_REPLICATION_ACTION_TYPE,
+                    StopIndexReplicationRequest(followerIndexName)
+                ).actionGet()
+                return
+            } catch (e: Exception) {
+                log.warn("Stop-on-leader-deletion failed for $followerIndexName, falling through to pause: ${e.message}")
+            }
+        }
+
         try {
             log.warn("Pausing replication for index $followerIndexName due to fatal shard failure: $reason")
             replicationMetadataManager.updateIndexReplicationState(
