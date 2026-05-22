@@ -19,7 +19,6 @@ import org.opensearch.cluster.service.ClusterService
 import org.opensearch.persistent.PersistentTasksCustomMetadata
 import org.opensearch.persistent.RemovePersistentTaskAction
 import org.opensearch.replication.task.index.IndexReplicationParams
-import org.opensearch.replication.task.shard.ShardReplicationParams
 import org.opensearch.transport.client.Client
 
 /**
@@ -40,9 +39,9 @@ object StaleTaskUtils {
 
     /**
      * Shard task pattern: replication:[indexName][shardId]
-     * Captures the index name from the first bracket group.
+     * Captures the index name from the first bracket group and the shard id from the second.
      */
-    private val SHARD_TASK_PATTERN = Regex("^replication:\\[([^\\]]+)\\]\\[\\d+\\]$")
+    private val SHARD_TASK_PATTERN = Regex("^replication:\\[([^\\]]+)\\]\\[(\\d+)\\]$")
 
     //  Finds all replication tasks for the given index from the cluster state.
     private fun findReplicationTasksForIndex(
@@ -214,22 +213,28 @@ object StaleTaskUtils {
     /**
      * Checks if a persistent task is actually running on its assigned node by matching
      * the task's params against the running task descriptions from the task manager.
+     *
+     * Per-shard ShardReplicationParams was removed when shard replication moved to in-memory
+     * NodeReplicationController; legacy shard task entries can still appear in cluster state
+     * during the migration window before [CleanupShardTasksUpdateTask] runs. We detect those
+     * by task-id pattern and build the same regex the deleted ShardReplicationParams branch
+     * would have produced.
      */
     private fun isTaskRunningOnNode(
         persistentTask: PersistentTasksCustomMetadata.PersistentTask<*>,
         runningDescriptions: Set<String>
     ): Boolean {
         val params = persistentTask.params
-        val pattern = when (params) {
-            is IndexReplicationParams -> {
+        val pattern = when {
+            params is IndexReplicationParams ->
                 Regex("->\\s+${Regex.escape(params.followerIndexName)}\\s*$")
-            }
-            is ShardReplicationParams -> {
-                val followerIndex = params.followerShardId.indexName
-                val shardId = params.followerShardId.id
+            else -> {
+                // Fallback for legacy shard task entries: derive from task id.
+                val match = SHARD_TASK_PATTERN.find(persistentTask.id) ?: return true
+                val followerIndex = match.groupValues[1]
+                val shardId = match.groupValues[2]
                 Regex("->\\s+\\[${Regex.escape(followerIndex)}\\]\\[${shardId}\\]\\s*$")
             }
-            else -> return true // Unknown params type — assume running to be safe
         }
 
         return runningDescriptions.any { pattern.containsMatchIn(it) }

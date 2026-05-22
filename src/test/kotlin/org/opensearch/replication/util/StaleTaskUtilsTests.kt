@@ -29,21 +29,34 @@ import org.opensearch.cluster.node.DiscoveryNodes
 import org.opensearch.core.action.ActionListener
 import org.opensearch.core.action.ActionResponse
 import org.opensearch.core.index.Index
-import org.opensearch.core.index.shard.ShardId
 import org.opensearch.persistent.PersistentTaskParams
 import org.opensearch.persistent.PersistentTaskResponse
 import org.opensearch.persistent.PersistentTasksCustomMetadata
 import org.opensearch.persistent.RemovePersistentTaskAction
 import org.opensearch.replication.task.index.IndexReplicationExecutor
 import org.opensearch.replication.task.index.IndexReplicationParams
-import org.opensearch.replication.task.shard.ShardReplicationExecutor
-import org.opensearch.replication.task.shard.ShardReplicationParams
+import org.opensearch.replication.task.shard.CleanupShardTasksUpdateTask
 import org.opensearch.test.ClusterServiceUtils
 import org.opensearch.test.ClusterServiceUtils.setState
 import org.opensearch.test.OpenSearchTestCase
 import org.opensearch.test.client.NoOpNodeClient
 import org.opensearch.threadpool.TestThreadPool
 import java.util.Collections
+
+/**
+ * Stand-in for the deleted ShardReplicationParams. The PersistentTask constructor enforces
+ * `params.writeableName == taskName`, so we expose the legacy shard task name as the writeable
+ * name and accept arbitrary content for the test entries.
+ */
+private class LegacyShardParams(private val tag: String = "legacy") : PersistentTaskParams {
+    override fun getWriteableName(): String = CleanupShardTasksUpdateTask.LEGACY_SHARD_TASK_NAME
+    override fun writeTo(out: org.opensearch.core.common.io.stream.StreamOutput) { out.writeString(tag) }
+    override fun toXContent(
+        builder: org.opensearch.core.xcontent.XContentBuilder,
+        params: org.opensearch.core.xcontent.ToXContent.Params?
+    ) = builder.startObject().field("tag", tag).endObject()
+    override fun getMinimalSupportedVersion(): org.opensearch.Version = org.opensearch.Version.V_2_0_0
+}
 
 @ThreadLeakScope(ThreadLeakScope.Scope.NONE)
 class StaleTaskUtilsTests : OpenSearchTestCase() {
@@ -221,12 +234,13 @@ class StaleTaskUtilsTests : OpenSearchTestCase() {
             IndexReplicationParams("remote", Index(followerIndex, "_na_"), followerIndex),
             PersistentTasksCustomMetadata.INITIAL_ASSIGNMENT
         )
-        // Assigned shard task on valid node, not running
-        val shardId = ShardId(Index(followerIndex, "_na_"), 0)
+        // Assigned legacy shard task on valid node, not running. ShardReplicationParams was deleted
+        // when shard work moved to in-memory NodeReplicationController; we use a synthetic stand-in
+        // to construct cluster state that mimics a pre-migration entry.
         tasks.addTask<PersistentTaskParams>(
             "replication:[$followerIndex][0]",
-            ShardReplicationExecutor.TASK_NAME,
-            ShardReplicationParams("remote", shardId, shardId),
+            CleanupShardTasksUpdateTask.LEGACY_SHARD_TASK_NAME,
+            LegacyShardParams(),
             PersistentTasksCustomMetadata.Assignment("valid_node", "test")
         )
         // Task for a different index — should not be touched
@@ -297,12 +311,12 @@ class StaleTaskUtilsTests : OpenSearchTestCase() {
             IndexReplicationParams("remote", Index(followerIndex, "_na_"), followerIndex),
             PersistentTasksCustomMetadata.INITIAL_ASSIGNMENT
         )
-        // Assigned shard task on valid node
-        val shardId = ShardId(Index(followerIndex, "_na_"), 0)
+        // Assigned legacy shard task on valid node — see comment in mixed test above for context
+        // on why a stand-in params type is used.
         tasks.addTask<PersistentTaskParams>(
             "replication:[$followerIndex][0]",
-            ShardReplicationExecutor.TASK_NAME,
-            ShardReplicationParams("remote", shardId, shardId),
+            CleanupShardTasksUpdateTask.LEGACY_SHARD_TASK_NAME,
+            LegacyShardParams(),
             PersistentTasksCustomMetadata.Assignment("valid_node", "test")
         )
         // Task for a different index — should not be touched
