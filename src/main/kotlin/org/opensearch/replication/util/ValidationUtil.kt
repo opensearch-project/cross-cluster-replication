@@ -182,12 +182,8 @@ object ValidationUtil {
         }
     }
 
-    fun isRemoteStoreEnabledCluster(clusterService: ClusterService): Boolean {
-        return clusterService.settings.getByPrefix(Node.NODE_ATTRIBUTES.key + RemoteStoreNodeAttribute.REMOTE_STORE_NODE_ATTRIBUTE_KEY_PREFIX).isEmpty == false
-    }
-
     fun isRemoteEnabledOrMigrating(clusterService: ClusterService): Boolean {
-        return isRemoteStoreEnabledCluster(clusterService) ||
+        return RemoteStoreNodeAttribute.isRemoteDataAttributePresent(clusterService.settings) ||
                 clusterService.clusterSettings.get(RemoteStoreNodeService.REMOTE_STORE_COMPATIBILITY_MODE_SETTING).equals(RemoteStoreNodeService.CompatibilityMode.MIXED)
     }
 }
