@@ -29,6 +29,8 @@ import kotlinx.coroutines.sync.Semaphore
 import kotlinx.coroutines.withContext
 import org.opensearch.OpenSearchException
 import org.opensearch.OpenSearchTimeoutException
+import org.opensearch.action.admin.indices.delete.DeleteIndexAction
+import org.opensearch.action.admin.indices.delete.DeleteIndexRequest
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.logging.Loggers
 import org.opensearch.core.index.shard.ShardId
@@ -250,18 +252,22 @@ class ShardReplicationContext(
                             changesResponse.lastSyncedGlobalCheckpoint
                         )
                         backOffForRetry = initialBackoffMillis
+                    } catch (e: CancellationException) {
+                        // Cooperative cancellation — propagate without pausing the index.
+                        throw e
                     } catch (e: OpenSearchTimeoutException) {
                         // Long-poll timeout — leader had no new ops in 1 minute. Re-poll.
                         log.info("Timed out waiting for new changes. Current seqNo: $fromSeqNo. $e")
                         changeTracker.updateBatchFetched(false, fromSeqNo, toSeqNo, fromSeqNo - 1, -1)
                     } catch (e: NodeNotConnectedException) {
-                        followerClusterStats.stats[followerShardId]!!.opsReadFailures.addAndGet(1)
+                        // Stats entry may already be gone if stop() raced ahead — drop the metric in that case.
+                        followerClusterStats.stats[followerShardId]?.opsReadFailures?.addAndGet(1)
                         log.info("Node not connected to $leaderAlias, retrying with different node. seqNo=$fromSeqNo: ${e.message}")
                         delay(backOffForRetry)
                         backOffForRetry = (backOffForRetry * factor).toLong().coerceAtMost(maxTimeOut)
                         changeTracker.updateBatchFetched(false, fromSeqNo, toSeqNo, fromSeqNo - 1, -1)
                     } catch (e: Exception) {
-                        followerClusterStats.stats[followerShardId]!!.opsReadFailures.addAndGet(1)
+                        followerClusterStats.stats[followerShardId]?.opsReadFailures?.addAndGet(1)
                         log.info("Unable to get changes from seqNo: $fromSeqNo. ${e.stackTraceToString()}")
 
                         if (e is IllegalArgumentException &&
@@ -277,7 +283,7 @@ class ShardReplicationContext(
                         val range4xx = 400.rangeTo(499)
                         if (e is OpenSearchException && range4xx.contains(e.status().status)) {
                             if (e.status().status == RestStatus.TOO_MANY_REQUESTS.status) {
-                                followerClusterStats.stats[followerShardId]!!.opsReadThrottles.addAndGet(1)
+                                followerClusterStats.stats[followerShardId]?.opsReadThrottles?.addAndGet(1)
                             } else {
                                 throw e
                             }
@@ -338,8 +344,11 @@ class ShardReplicationContext(
             req = request,
             log = log
         )
-        followerClusterStats.stats[followerShardId]!!.leaderCheckpoint = resp.lastSyncedGlobalCheckpoint
-        followerClusterStats.stats[followerShardId]!!.opsRead.addAndGet(resp.changes.size.toLong())
+        // Stats entry may have been removed concurrently by stop() — skip the update in that case.
+        followerClusterStats.stats[followerShardId]?.let { stat ->
+            stat.leaderCheckpoint = resp.lastSyncedGlobalCheckpoint
+            stat.opsRead.addAndGet(resp.changes.size.toLong())
+        }
         return resp
     }
 
@@ -361,6 +370,22 @@ class ShardReplicationContext(
                     INTERNAL_STOP_REPLICATION_ACTION_TYPE,
                     StopIndexReplicationRequest(followerIndexName)
                 ).actionGet()
+                // The legacy IndexReplicationTask cleanup path used `isLeaderIndexDeleted` to drive a follow-on
+                // DeleteIndex when replicate-delete was enabled. With per-shard tasks gone, that flag never gets
+                // set, so we issue the delete here. Idempotent — a concurrent context on another shard may have
+                // already deleted the index, in which case IndexNotFoundException is benign.
+                try {
+                    val storedContext = client.threadPool().threadContext.stashContext()
+                    try {
+                        client.execute(DeleteIndexAction.INSTANCE, DeleteIndexRequest(followerIndexName)).actionGet()
+                    } finally {
+                        storedContext.close()
+                    }
+                } catch (e: IndexNotFoundException) {
+                    log.debug("Follower index $followerIndexName already deleted")
+                } catch (e: Exception) {
+                    log.warn("Failed to delete follower index $followerIndexName after leader-deletion stop: ${e.message}")
+                }
                 return
             } catch (e: Exception) {
                 log.warn("Stop-on-leader-deletion failed for $followerIndexName, falling through to pause: ${e.message}")

@@ -349,7 +349,7 @@ class StopReplicationIT: MultiClusterRestTestCase() {
         assertBusy({
             var statusResp = followerClient.replicationStatus("restored-$followerIndexName")
             `validate status syncing response`(statusResp)
-            assertThat(followerClient.getShardReplicationTasks("restored-$followerIndexName")).isNotEmpty()
+            // Per-shard persistent tasks no longer exist; the syncing-status assertion above is sufficient.
         }, 60, TimeUnit.SECONDS)
     }
 }
