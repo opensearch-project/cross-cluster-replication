@@ -70,6 +70,8 @@ import org.opensearch.replication.task.index.IndexReplicationParams
 import org.opensearch.replication.task.index.IndexReplicationState
 import org.opensearch.replication.task.shard.CleanupShardTasksUpdateTask
 import org.opensearch.replication.task.shard.NodeReplicationController
+import org.opensearch.replication.task.shard.ShardReplicationParams
+import org.opensearch.replication.task.shard.ShardReplicationState
 import org.opensearch.replication.util.Injectables
 import org.opensearch.cluster.ClusterChangedEvent
 import org.opensearch.cluster.ClusterStateListener
@@ -354,6 +356,15 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             NamedWriteableRegistry.Entry(PersistentTaskState::class.java, IndexReplicationState.NAME,
                 Writeable.Reader { inp -> IndexReplicationState.reader(inp) }),
 
+            // BWC stubs: legacy per-shard task entries persisted by older plugin versions must be
+            // deserializable so the new plugin can boot from existing on-disk cluster state. No
+            // executor is registered for this task name — entries are removed by
+            // CleanupShardTasksUpdateTask shortly after cluster manager init.
+            NamedWriteableRegistry.Entry(PersistentTaskParams::class.java, ShardReplicationParams.NAME,
+                Writeable.Reader { inp -> ShardReplicationParams(inp) }),
+            NamedWriteableRegistry.Entry(PersistentTaskState::class.java, ShardReplicationState.NAME,
+                Writeable.Reader { inp -> ShardReplicationState.reader(inp) }),
+
             NamedWriteableRegistry.Entry(PersistentTaskParams::class.java, AutoFollowParams.NAME,
                                          Writeable.Reader { inp -> AutoFollowParams(inp) }),
 
@@ -374,6 +385,14 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             NamedXContentRegistry.Entry(PersistentTaskState::class.java,
                     ParseField(IndexReplicationState.NAME),
                     CheckedFunction { parser: XContentParser -> IndexReplicationState.fromXContent(parser)}),
+            // BWC stubs: legacy per-shard task XContent entries from older plugin versions must be
+            // parseable. See note on the Writeable registrations above.
+            NamedXContentRegistry.Entry(PersistentTaskParams::class.java,
+                    ParseField(ShardReplicationParams.NAME),
+                    CheckedFunction { parser: XContentParser -> ShardReplicationParams.fromXContent(parser)}),
+            NamedXContentRegistry.Entry(PersistentTaskState::class.java,
+                    ParseField(ShardReplicationState.NAME),
+                    CheckedFunction { parser: XContentParser -> ShardReplicationState.fromXContent(parser)}),
             NamedXContentRegistry.Entry(PersistentTaskParams::class.java,
                     ParseField(AutoFollowParams.NAME),
                     CheckedFunction { parser: XContentParser -> AutoFollowParams.fromXContent(parser)}),
