@@ -253,6 +253,17 @@ fun RestHighLevelClient.resumeReplication(index: String, requestOptions: Request
     waitForReplicationStart(index, TimeValue.timeValueSeconds(10))
 }
 
+fun RestHighLevelClient.forceResumeReplication(index: String, requestOptions: RequestOptions = RequestOptions.DEFAULT) {
+    val url = REST_REPLICATION_RESUME.replace("{index}", index, true)
+    val lowLevelResumeRequest = Request("POST", url)
+    lowLevelResumeRequest.setJsonEntity("""{"force_resume": true}""")
+    lowLevelResumeRequest.setOptions(requestOptions)
+    val lowLevelResumeResponse = lowLevelClient.performRequest(lowLevelResumeRequest)
+    val response = getAckResponse(lowLevelResumeResponse)
+    assertThat(response.isAcknowledged).withFailMessage("Replication could not be force resumed").isTrue()
+    waitForReplicationStart(index, TimeValue.timeValueSeconds(60))
+}
+
 fun RestHighLevelClient.updateReplication(index: String, settings: Settings, requestOptions: RequestOptions = RequestOptions.DEFAULT,
                                           clusterManagerTimeout: String? = null) {
     var url = REST_REPLICATION_UPDATE.replace("{index}", index, true)
