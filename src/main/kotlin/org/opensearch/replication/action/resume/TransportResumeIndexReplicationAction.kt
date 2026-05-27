@@ -140,10 +140,18 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
                     listener.onResponse(ReplicateIndexResponse(false))
                 }
 
-                // Now wait for the replication to start and the follower index to get created before returning
+                // Wait for the replication task to start. For force resume (snapshot bootstrap),
+                // return once RESTORING state is reached — same as start replication — since
+                // bootstrap can take a long time for large indices. For normal resume, wait
+                // until FOLLOWING since no snapshot restore is needed.
                 persistentTasksService.waitForTaskCondition(task.id, request.timeout()) { t ->
                     val replicationState = (t.state as IndexReplicationState?)?.state
-                    replicationState == ReplicationState.FOLLOWING
+                    if (request.forceResume) {
+                        replicationState == ReplicationState.FOLLOWING ||
+                                replicationState == ReplicationState.RESTORING
+                    } else {
+                        replicationState == ReplicationState.FOLLOWING
+                    }
                 }
 
                 AcknowledgedResponse(true)

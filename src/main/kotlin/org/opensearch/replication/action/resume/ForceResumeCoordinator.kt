@@ -121,7 +121,7 @@ class ForceResumeCoordinator(
             val retainingSeqNo = getLeaderGlobalCheckpoint(remoteClient, params.leaderIndex.name, leaderShardId.id) + 1
 
             try {
-                retentionLeaseHelper.addRetentionLease(
+                retentionLeaseHelper.addRetentionLeaseAsync(
                     leaderShardId, retainingSeqNo, followerShardId
                 )
             } catch (e: RetentionLeaseAlreadyExistsException) {
