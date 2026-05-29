@@ -56,7 +56,7 @@ open class ReplicationMetadataManager constructor(private val clusterService: Cl
                 ReplicationContext(followerIndex, user?.overrideFgacRole(follower_cluster_role)),
                 ReplicationContext(leaderIndex, user?.overrideFgacRole(leader_cluster_role)), settings)
         addMetadata(AddReplicationMetadataRequest(replicationMetadata))
-        updateReplicationState(followerIndex, overallState)
+        updateReplicationState(followerIndex, overallState, connectionName)
     }
 
     suspend fun addAutofollowMetadata(patternName: String, connectionName: String, pattern: String,
@@ -180,9 +180,10 @@ open class ReplicationMetadataManager constructor(private val clusterService: Cl
         }, log, "Failed to fetch replication metadata") as ReplicationMetadata
     }
 
-    private suspend fun updateReplicationState(indexName: String, overallState: ReplicationOverallState) {
+    private suspend fun updateReplicationState(indexName: String, overallState: ReplicationOverallState, connectionName: String? = null) {
         val replicationStateParamMap = HashMap<String, String>()
         replicationStateParamMap[REPLICATION_LAST_KNOWN_OVERALL_STATE] = overallState.name
+        if (connectionName != null) replicationStateParamMap["connection_name"] = connectionName
         var updateType = UpdateReplicationStateDetailsRequest.UpdateType.ADD
         if(overallState == ReplicationOverallState.STOPPED) {
             updateType = UpdateReplicationStateDetailsRequest.UpdateType.REMOVE

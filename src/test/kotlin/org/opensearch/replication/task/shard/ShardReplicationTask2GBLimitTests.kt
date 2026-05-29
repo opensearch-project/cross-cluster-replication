@@ -58,7 +58,8 @@ class ShardReplicationTask2GBLimitTests : OpenSearchTestCase() {
                 ReplicationPlugin.REPLICATION_AUTOFOLLOW_CONCURRENT_REPLICATION_JOBS_TRIGGER_SIZE,
                 ReplicationPlugin.REPLICATION_REPLICATE_INDEX_DELETION,
                 ReplicationPlugin.REPLICATION_FOLLOWER_RECOVERY_CHUNK_SIZE,
-                ReplicationPlugin.REPLICATION_FOLLOWER_RECOVERY_PARALLEL_CHUNKS
+                ReplicationPlugin.REPLICATION_FOLLOWER_RECOVERY_PARALLEL_CHUNKS,
+                ReplicationPlugin.REPLICATION_FOLLOWER_BULK_BATCH_SIZE
             )
         )
         
