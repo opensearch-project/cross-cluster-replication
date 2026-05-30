@@ -115,20 +115,6 @@ class RemoteClusterRetentionLeaseHelper constructor(var followerClusterNameWithU
         }
     }
 
-    /**
-     * Non-blocking (suspend) version of addRetentionLease for use in coroutine contexts.
-     * The blocking overload [addRetentionLease(ShardId, Long, ShardId, Long)] uses actionGet()
-     * and is intended for synchronous callers (e.g., leader-side restore service).
-     * This suspend variant must NOT be called from transport threads directly — only from
-     * coroutine scopes (e.g., ForceResumeCoordinator).
-     */
-    public suspend fun addRetentionLeaseAsync(leaderShardId: ShardId, seqNo: Long, followerShardId: ShardId) {
-        val retentionLeaseId = retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)
-        val request = RetentionLeaseActions.AddRequest(leaderShardId, retentionLeaseId, seqNo, retentionLeaseSource)
-        log.info("Adding retention lease $retentionLeaseId (async)")
-        client.suspendExecute(RetentionLeaseActions.Add.INSTANCE, request)
-    }
-
     public suspend fun renewRetentionLease(leaderShardId: ShardId, seqNo: Long, followerShardId: ShardId) {
         val retentionLeaseId = retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)
         val request = RetentionLeaseActions.RenewRequest(leaderShardId, retentionLeaseId, seqNo, retentionLeaseSource)
@@ -208,6 +194,9 @@ class RemoteClusterRetentionLeaseHelper constructor(var followerClusterNameWithU
     }
 
 
+    /**
+     * Remove these once the callers are moved to above APIs
+     */
     public fun addRetentionLease(leaderShardId: ShardId, seqNo: Long,
                                          followerShardId: ShardId, timeout: Long) {
         val retentionLeaseId = retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)
