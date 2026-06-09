@@ -226,7 +226,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
         val REPLICATION_REPLICATE_INDEX_DELETION: Setting<Boolean> = Setting.boolSetting("plugins.replication.replicate.delete_index", false,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
-        val REPLICATION_FOLLOWER_BULK_BATCH_SIZE: Setting<Int> = Setting.intSetting("plugins.replication.follower.bulk_batch_size", 10, 1,
+        val REPLICATION_FOLLOWER_BULK_BATCH_SIZE: Setting<Int> = Setting.intSetting("plugins.replication.follower.bulk_batch_size", 10, 1, 100,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
     }
 

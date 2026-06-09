@@ -80,7 +80,7 @@ class TransportUpdateBulkTaskStateAction @Inject constructor(
             object : AckedClusterStateUpdateTask<AcknowledgedResponse>(request, listener) {
                 override fun execute(currentState: ClusterState): ClusterState {
                     // Guard against concurrent bulk task submissions. Only checked on the initial
-                    // claim (taskId is empty) , progress updates from the running task carry the
+                    // where taskId is empty, progress updates from the running task carry the
                     // real taskId and bypass this check.
                     if (request.taskState != null && request.taskState.taskId.isEmpty()) {
                         val existing = currentState.metadata

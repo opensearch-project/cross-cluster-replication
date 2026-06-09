@@ -75,12 +75,11 @@ class BulkReplicationStatusHandler @Inject constructor(
                         val status = results[index]
                         if (status != null) {
                             builder.field("status", status.status)
-                            try { if (status.reason.isNotEmpty()) builder.field("reason", status.reason) } catch (_: Exception) {}
-                            try { if (status.connectionAlias.isNotEmpty()) builder.field("leader_alias", status.connectionAlias) } catch (_: Exception) {}
-                            try { if (status.leaderIndexName.isNotEmpty()) builder.field("leader_index", status.leaderIndexName) } catch (_: Exception) {}
-                            try { if (status.followerIndexName.isNotEmpty()) builder.field("follower_index", status.followerIndexName) } catch (_: Exception) {}
-                            try { builder.field("syncing_details", status.aggregatedReplayDetails) } catch (_: Exception) {}
-                            try { builder.field("bootstrap_details", status.aggregatedRestoreDetails) } catch (_: Exception) {}
+                            try { if (status.reason.isNotEmpty()) builder.field("reason", status.reason) } catch (e: Exception) { log.debug("Failed to serialize field 'reason' for index=$index: ${e.message}") }
+                            try { if (status.connectionAlias.isNotEmpty()) builder.field("leader_alias", status.connectionAlias) } catch (e: Exception) { log.debug("Failed to serialize field 'leader_alias' for index=$index: ${e.message}") }
+                            try { if (status.leaderIndexName.isNotEmpty()) builder.field("leader_index", status.leaderIndexName) } catch (e: Exception) { log.debug("Failed to serialize field 'leader_index' for index=$index: ${e.message}") }
+                            try { if (status.followerIndexName.isNotEmpty()) builder.field("follower_index", status.followerIndexName) } catch (e: Exception) { log.debug("Failed to serialize field 'follower_index' for index=$index: ${e.message}") }
+                            try { builder.field("syncing_details", status.aggregatedReplayDetails) } catch (e: Exception) { log.debug("Failed to serialize field 'syncing_details' for index=$index: ${e.message}") }
                         }
                         builder.endObject()
                     }
