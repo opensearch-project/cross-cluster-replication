@@ -15,6 +15,7 @@ import org.opensearch.action.ActionRequestValidationException
 import org.opensearch.action.IndicesRequest
 import org.opensearch.action.support.IndicesOptions
 import org.opensearch.action.support.clustermanager.AcknowledgedRequest
+import org.opensearch.core.ParseField
 import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.core.common.io.stream.StreamOutput
 import org.opensearch.core.xcontent.*
@@ -22,9 +23,12 @@ import org.opensearch.core.xcontent.*
 class ResumeIndexReplicationRequest : AcknowledgedRequest<ResumeIndexReplicationRequest>, IndicesRequest.Replaceable, ToXContentObject {
 
     lateinit var indexName: String
+    @JvmField
+    var forceResume: Boolean = false
 
-    constructor(indexName: String) {
+    constructor(indexName: String, forceResume: Boolean = false) {
         this.indexName = indexName
+        this.forceResume = forceResume
     }
 
     private constructor() {
@@ -32,17 +36,24 @@ class ResumeIndexReplicationRequest : AcknowledgedRequest<ResumeIndexReplication
 
     constructor(inp: StreamInput): super(inp) {
         indexName = inp.readString()
+        forceResume = inp.readBoolean()
     }
 
     companion object {
+        private const val FORCE_RESUME_FIELD = "force_resume"
+
         private val PARSER = ObjectParser<ResumeIndexReplicationRequest, Void>("ResumeReplicationRequestParser") {
             ResumeIndexReplicationRequest()
         }
 
+        init {
+            PARSER.declareBoolean({ req, value -> req.forceResume = value }, ParseField(FORCE_RESUME_FIELD))
+        }
+
         fun fromXContent(parser: XContentParser, followerIndex: String): ResumeIndexReplicationRequest {
-            val ResumeIndexReplicationRequest = PARSER.parse(parser, null)
-            ResumeIndexReplicationRequest.indexName = followerIndex
-            return ResumeIndexReplicationRequest
+            val resumeRequest = PARSER.parse(parser, null)
+            resumeRequest.indexName = followerIndex
+            return resumeRequest
         }
     }
 
@@ -65,6 +76,7 @@ class ResumeIndexReplicationRequest : AcknowledgedRequest<ResumeIndexReplication
     override fun toXContent(builder: XContentBuilder, params: ToXContent.Params): XContentBuilder {
         builder.startObject()
         builder.field("indexName", indexName)
+        builder.field("force_resume", forceResume)
         builder.endObject()
         return builder
     }
@@ -72,6 +84,7 @@ class ResumeIndexReplicationRequest : AcknowledgedRequest<ResumeIndexReplication
     override fun writeTo(out: StreamOutput) {
         super.writeTo(out)
         out.writeString(indexName)
+        out.writeBoolean(forceResume)
     }
 
 }
