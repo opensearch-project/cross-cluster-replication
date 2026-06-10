@@ -87,7 +87,8 @@ class TransportAutoFollowClusterManagerNodeAction @Inject constructor(transportS
                             false)
 
                     metadataManager.addAutofollowMetadata(request.patternName, request.connection, request.pattern!!,
-                            ReplicationOverallState.RUNNING, user, followerClusterRole, leaderClusterRole, request.settings)
+                            ReplicationOverallState.RUNNING, user, followerClusterRole, leaderClusterRole, request.settings,
+                            request.followIndexPattern)
                     startAutoFollowTask(request.connection, request.patternName)
                 }
                 AcknowledgedResponse(true)

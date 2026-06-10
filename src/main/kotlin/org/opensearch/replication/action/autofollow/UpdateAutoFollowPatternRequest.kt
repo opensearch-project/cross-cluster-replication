@@ -13,8 +13,10 @@ package org.opensearch.replication.action.autofollow
 
 import org.opensearch.replication.action.index.ReplicateIndexRequest
 import org.opensearch.replication.metadata.store.KEY_SETTINGS
+import org.opensearch.replication.util.ValidationUtil
 import org.opensearch.replication.util.ValidationUtil.validateName
 import org.opensearch.replication.util.ValidationUtil.validatePattern
+import org.opensearch.Version
 import org.opensearch.action.ActionRequestValidationException
 import org.opensearch.action.support.clustermanager.AcknowledgedRequest
 import org.opensearch.core.ParseField
@@ -38,6 +40,7 @@ class UpdateAutoFollowPatternRequest: AcknowledgedRequest<UpdateAutoFollowPatter
     var pattern: String? = null
     var useRoles: HashMap<String, String>? = null // roles to use - {leader_fgac_role: role1, follower_fgac_role: role2}
     var settings : Settings = Settings.EMPTY
+    var followIndexPattern: String? = null
 
     enum class Action {
         ADD, REMOVE
@@ -60,6 +63,7 @@ class UpdateAutoFollowPatternRequest: AcknowledgedRequest<UpdateAutoFollowPatter
                 { request: UpdateAutoFollowPatternRequest, settings: Settings -> request.settings = settings},
                 { p: XContentParser?, _: Void? -> Settings.fromXContent(p) },
                     null, ParseField(KEY_SETTINGS))
+            AUTOFOLLOW_REQ_PARSER.declareStringOrNull(UpdateAutoFollowPatternRequest::followIndexPattern::set, ParseField("follow_index_pattern"))
         }
         fun fromXContent(xcp: XContentParser, action: Action) : UpdateAutoFollowPatternRequest {
             val updateAutofollowReq = AUTOFOLLOW_REQ_PARSER.parse(xcp, null)
@@ -92,6 +96,9 @@ class UpdateAutoFollowPatternRequest: AcknowledgedRequest<UpdateAutoFollowPatter
         if(leaderClusterRole != null) useRoles!![ReplicateIndexRequest.LEADER_CLUSTER_ROLE] = leaderClusterRole
         if(followerClusterRole != null) useRoles!![ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE] = followerClusterRole
         settings = Settings.readSettingsFromStream(inp)
+        if (inp.version.onOrAfter(Version.V_3_7_0)) {
+            followIndexPattern = inp.readOptionalString()
+        }
     }
 
 
@@ -114,11 +121,15 @@ class UpdateAutoFollowPatternRequest: AcknowledgedRequest<UpdateAutoFollowPatter
             if(pattern != null) {
                 validationException.addValidationError("Unexpected pattern")
             }
+            if(followIndexPattern != null) {
+                validationException.addValidationError("Unexpected follow_index_pattern for remove action")
+            }
         } else {
             if(pattern == null)
                validationException.addValidationError("Missing pattern")
             else
                validatePattern(pattern, validationException)
+            ValidationUtil.validateFollowIndexPattern(followIndexPattern, validationException)
         }
 
         return if(validationException.validationErrors().isEmpty()) return null else validationException
@@ -133,6 +144,9 @@ class UpdateAutoFollowPatternRequest: AcknowledgedRequest<UpdateAutoFollowPatter
         out.writeOptionalString(useRoles?.get(ReplicateIndexRequest.LEADER_CLUSTER_ROLE))
         out.writeOptionalString(useRoles?.get(ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE))
         Settings.writeSettingsToStream(settings, out)
+        if (out.version.onOrAfter(Version.V_3_7_0)) {
+            out.writeOptionalString(followIndexPattern)
+        }
     }
 
     override fun toXContent(builder: XContentBuilder, params: ToXContent.Params): XContentBuilder {
@@ -152,6 +166,10 @@ class UpdateAutoFollowPatternRequest: AcknowledgedRequest<UpdateAutoFollowPatter
         builder.startObject(KEY_SETTINGS)
         settings.toXContent(builder, ToXContent.MapParams(Collections.singletonMap("flat_settings", "true")));
         builder.endObject()
+
+        if (followIndexPattern != null) {
+            builder.field("follow_index_pattern", followIndexPattern)
+        }
 
         return builder.endObject()
     }

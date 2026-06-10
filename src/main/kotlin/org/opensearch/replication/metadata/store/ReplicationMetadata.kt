@@ -86,6 +86,7 @@ class ReplicationMetadata: ToXContent {
     lateinit var followerContext: ReplicationContext
     lateinit var leaderContext: ReplicationContext
     lateinit var settings: Settings
+    var followIndexPattern: String? = null
 
 
     constructor(connectionName: String,
@@ -94,7 +95,8 @@ class ReplicationMetadata: ToXContent {
                 reason: String,
                 followerContext: ReplicationContext,
                 leaderContext: ReplicationContext,
-                settings: Settings) {
+                settings: Settings,
+                followIndexPattern: String? = null) {
         this.connectionName = connectionName
         this.metadataType = metadataType
         this.overallState = overallState
@@ -102,6 +104,7 @@ class ReplicationMetadata: ToXContent {
         this.followerContext = followerContext
         this.leaderContext = leaderContext
         this.settings = settings
+        this.followIndexPattern = followIndexPattern
     }
 
     private constructor() {
@@ -121,6 +124,8 @@ class ReplicationMetadata: ToXContent {
             METADATA_PARSER.declareObject({ metadata: ReplicationMetadata, settings: Settings -> metadata.settings = settings},
                 { p: XContentParser?, _: Void? -> Settings.fromXContent(p) },
                     ParseField(KEY_SETTINGS))
+            METADATA_PARSER.declareStringOrNull({ metadata: ReplicationMetadata, value: String? -> metadata.followIndexPattern = value },
+                    ParseField("follow_index_pattern"))
         }
 
         @Throws(IOException::class)
@@ -154,6 +159,10 @@ class ReplicationMetadata: ToXContent {
         settings.toXContent(builder, ToXContent.MapParams(Collections.singletonMap("flat_settings", "true")));
         builder.endObject()
 
+        if (followIndexPattern != null) {
+            builder.field("follow_index_pattern", followIndexPattern)
+        }
+
         builder.endObject()
 
         return builder
@@ -162,6 +171,6 @@ class ReplicationMetadata: ToXContent {
     override fun toString(): String {
         return "ReplicationMetadata - [connection_name: $connectionName, metadata_type: $metadataType, " +
                 "overall_state: $overallState, reason: $reason, follower_context: ${followerContext.resource}, leader_context: ${leaderContext.resource}, " +
-                " settings: ${settings} ]"
+                " settings: ${settings}, follow_index_pattern: $followIndexPattern ]"
     }
 }

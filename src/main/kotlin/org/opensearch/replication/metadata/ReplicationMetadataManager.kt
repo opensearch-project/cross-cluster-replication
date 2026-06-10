@@ -61,11 +61,12 @@ open class ReplicationMetadataManager constructor(private val clusterService: Cl
 
     suspend fun addAutofollowMetadata(patternName: String, connectionName: String, pattern: String,
                                       overallState: ReplicationOverallState, user: User?,
-                                      follower_cluster_role: String?, leader_cluster_role: String?, settings: Settings) {
+                                      follower_cluster_role: String?, leader_cluster_role: String?, settings: Settings,
+                                      followIndexPattern: String? = null) {
         val replicationMetadata = ReplicationMetadata(connectionName,
                 ReplicationStoreMetadataType.AUTO_FOLLOW.name, overallState.name, CUSTOMER_INITIATED_ACTION,
                 ReplicationContext(patternName, user?.overrideFgacRole(follower_cluster_role)),
-                ReplicationContext(pattern, user?.overrideFgacRole(leader_cluster_role)), settings)
+                ReplicationContext(pattern, user?.overrideFgacRole(leader_cluster_role)), settings, followIndexPattern)
         addMetadata(AddReplicationMetadataRequest(replicationMetadata))
     }
 
