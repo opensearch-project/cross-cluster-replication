@@ -49,8 +49,6 @@ import org.opensearch.replication.metadata.store.ReplicationMetadataStore
 import org.opensearch.replication.metadata.store.ReplicationMetadataStore.Companion.REPLICATION_CONFIG_SYSTEM_INDEX
 import org.opensearch.replication.metadata.store.ReplicationStoreMetadataType
 import org.opensearch.replication.repository.REMOTE_REPOSITORY_PREFIX
-import org.opensearch.replication.task.shard.ShardReplicationExecutor
-import org.opensearch.replication.task.shard.ShardReplicationParams
 import org.opensearch.snapshots.Snapshot
 import org.opensearch.snapshots.SnapshotId
 import org.opensearch.core.tasks.TaskId.EMPTY_TASK_ID
@@ -152,66 +150,6 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
 
     }
 
-    fun testStartNewShardTasks() = runBlocking {
-        val replicationTask: IndexReplicationTask = spy(createIndexReplicationTask())
-        var taskManager = Mockito.mock(TaskManager::class.java)
-        replicationTask.setPersistent(taskManager)
-        var rc = ReplicationContext(followerIndex)
-        var rm = ReplicationMetadata(connectionName, ReplicationStoreMetadataType.INDEX.name, ReplicationOverallState.RUNNING.name, "reason", rc, rc, Settings.EMPTY)
-        replicationTask.setReplicationMetadata(rm)
-
-        // Build cluster state
-        val indices: MutableList<String> = ArrayList()
-        indices.add(followerIndex)
-        var metadata = Metadata.builder()
-            .put(IndexMetadata.builder(REPLICATION_CONFIG_SYSTEM_INDEX).settings(settings(Version.CURRENT)).numberOfShards(1).numberOfReplicas(0))
-            .put(IndexMetadata.builder(followerIndex).settings(settings(Version.CURRENT)).numberOfShards(2).numberOfReplicas(0))
-            .build()
-        var routingTableBuilder = RoutingTable.builder()
-            .addAsNew(metadata.index(REPLICATION_CONFIG_SYSTEM_INDEX))
-            .addAsNew(metadata.index(followerIndex))
-        var newClusterState = ClusterState.builder(clusterService.state()).routingTable(routingTableBuilder.build()).build()
-        setState(clusterService, newClusterState)
-
-        // Try starting shard tasks
-        val shardTasks = replicationTask.startNewOrMissingShardTasks()
-        assertThat(shardTasks.size == 2).isTrue
-    }
-
-
-    fun testStartMissingShardTasks() = runBlocking {
-        val replicationTask: IndexReplicationTask = spy(createIndexReplicationTask())
-        var taskManager = Mockito.mock(TaskManager::class.java)
-        replicationTask.setPersistent(taskManager)
-        var rc = ReplicationContext(followerIndex)
-        var rm = ReplicationMetadata(connectionName, ReplicationStoreMetadataType.INDEX.name, ReplicationOverallState.RUNNING.name, "reason", rc, rc, Settings.EMPTY)
-        replicationTask.setReplicationMetadata(rm)
-
-        // Build cluster state
-        val indices: MutableList<String> = ArrayList()
-        indices.add(followerIndex)
-
-        val tasks = PersistentTasksCustomMetadata.builder()
-        var sId = ShardId(Index(followerIndex, "_na_"), 0)
-        tasks.addTask<PersistentTaskParams>( "replication:0", ShardReplicationExecutor.TASK_NAME, ShardReplicationParams("remoteCluster", sId,  sId),
-            PersistentTasksCustomMetadata.Assignment("other_node_", "test assignment on other node"))
-
-        var metadata = Metadata.builder()
-            .put(IndexMetadata.builder(REPLICATION_CONFIG_SYSTEM_INDEX).settings(settings(Version.CURRENT)).numberOfShards(1).numberOfReplicas(0))
-            .put(IndexMetadata.builder(followerIndex).settings(settings(Version.CURRENT)).numberOfShards(2).numberOfReplicas(0))
-            .putCustom(PersistentTasksCustomMetadata.TYPE, tasks.build())
-            .build()
-        var routingTableBuilder = RoutingTable.builder()
-            .addAsNew(metadata.index(REPLICATION_CONFIG_SYSTEM_INDEX))
-            .addAsNew(metadata.index(followerIndex))
-        var newClusterState = ClusterState.builder(clusterService.state()).routingTable(routingTableBuilder.build()).build()
-        setState(clusterService, newClusterState)
-
-        // Try starting shard tasks
-        val shardTasks = replicationTask.startNewOrMissingShardTasks()
-        assertThat(shardTasks.size == 2).isTrue
-    }
-
     fun testIsTrackingTaskForIndex() = runBlocking {
         val replicationTask: IndexReplicationTask = spy(createIndexReplicationTask())
         var taskManager = Mockito.mock(TaskManager::class.java)
@@ -279,14 +217,7 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
                 ReplicationMetadataStore(spyClient, clusterService, NamedXContentRegistry.EMPTY))
         var persist = PersistentTasksService(clusterService, threadPool, spyClient)
         val state: ClusterState = clusterService.state()
-        val tasks = PersistentTasksCustomMetadata.builder()
-        var sId = ShardId(Index(followerIndex, "_na_"), 0)
-        tasks.addTask<PersistentTaskParams>( "replication:0", ShardReplicationExecutor.TASK_NAME, ShardReplicationParams("remoteCluster", sId,  sId),
-                PersistentTasksCustomMetadata.Assignment("other_node_", "test assignment on other node"))
-
-        val metadata = Metadata.builder(state.metadata())
-        metadata.putCustom(PersistentTasksCustomMetadata.TYPE, tasks.build())
-        val newClusterState: ClusterState = ClusterState.builder(state).metadata(metadata).build()
+        val newClusterState: ClusterState = ClusterState.builder(state).build()
 
         setState(clusterService, newClusterState)
 

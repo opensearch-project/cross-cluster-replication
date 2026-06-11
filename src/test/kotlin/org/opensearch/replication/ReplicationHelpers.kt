@@ -12,7 +12,6 @@
 package org.opensearch.replication
 
 import org.opensearch.replication.task.index.IndexReplicationExecutor
-import org.opensearch.replication.task.shard.ShardReplicationExecutor
 import org.assertj.core.api.Assertions.assertThat
 import org.opensearch.action.admin.cluster.health.ClusterHealthRequest
 import org.opensearch.action.admin.cluster.node.tasks.list.ListTasksRequest
@@ -279,9 +278,8 @@ fun RestHighLevelClient.updateReplication(index: String, settings: Settings, req
 fun RestHighLevelClient.waitForReplicationStart(index: String, waitFor : TimeValue = TimeValue.timeValueSeconds(10)) {
     assertBusy(
         {
-            // Persistent tasks service appends identifiers like '[c]' to indicate child task hence the '*' wildcard
-            val request = ListTasksRequest().setDetailed(true).setActions(ShardReplicationExecutor.TASK_NAME + "*",
-                                                                          IndexReplicationExecutor.TASK_NAME + "*")
+            // Only IndexReplicationTask is a persistent task now; per-shard work is in-memory on data nodes.
+            val request = ListTasksRequest().setDetailed(true).setActions(IndexReplicationExecutor.TASK_NAME + "*")
             val response = tasks().list(request,RequestOptions.DEFAULT)
             assertThat(response.tasks)
                 .withFailMessage("replication tasks not started")
@@ -289,16 +287,10 @@ fun RestHighLevelClient.waitForReplicationStart(index: String, waitFor : TimeVal
         }, waitFor.seconds, TimeUnit.SECONDS)
 }
 
+@Suppress("UNUSED_PARAMETER")
 fun RestHighLevelClient.waitForShardTaskStart(index: String, waitFor : TimeValue = TimeValue.timeValueSeconds(10)) {
-    assertBusy(
-            {
-                // Persistent tasks service appends identifiers like '[c]' to indicate child task hence the '*' wildcard
-                val request = ListTasksRequest().setDetailed(true).setActions(ShardReplicationExecutor.TASK_NAME + "*")
-                val response = tasks().list(request,RequestOptions.DEFAULT)
-                assertThat(response.tasks)
-                        .withFailMessage("replication shard tasks not started")
-                        .isNotEmpty
-            }, waitFor.seconds, TimeUnit.SECONDS)
+    // Per-shard tasks have been removed in favor of NodeReplicationController. Retained as a no-op for
+    // backward compatibility with test call sites; remove once test sites are updated.
 }
 
 fun RestHighLevelClient.leaderStats() : Map<String, Any>  {
@@ -334,9 +326,8 @@ fun RestHighLevelClient.waitForNoRelocatingShards() {
 fun RestHighLevelClient.waitForReplicationStop(index: String, waitFor : TimeValue = TimeValue.timeValueSeconds(30)) {
     assertBusy(
         {
-            // Persistent tasks service appends modifiers to task action hence the '*'
-            val request = ListTasksRequest().setDetailed(true).setActions(ShardReplicationExecutor.TASK_NAME + "*",
-                                                                          IndexReplicationExecutor.TASK_NAME + "*")
+            // Only IndexReplicationTask remains as a persistent task. Per-shard work has no persistent task entry.
+            val request = ListTasksRequest().setDetailed(true).setActions(IndexReplicationExecutor.TASK_NAME + "*")
 
             val response = tasks().list(request,RequestOptions.DEFAULT)
             //Index Task : "description" : "replication:source:[leader_index][0] -> [follower_index_3][0]",

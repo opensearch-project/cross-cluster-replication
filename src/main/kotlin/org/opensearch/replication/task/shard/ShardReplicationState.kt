@@ -11,7 +11,6 @@
 
 package org.opensearch.replication.task.shard
 
-import org.opensearch.replication.task.ReplicationState
 import org.opensearch.OpenSearchException
 import org.opensearch.core.ParseField
 import org.opensearch.core.common.io.stream.StreamInput
@@ -21,24 +20,41 @@ import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.XContentBuilder
 import org.opensearch.core.xcontent.XContentParser
 import org.opensearch.persistent.PersistentTaskState
+import org.opensearch.replication.task.ReplicationState
 import java.io.IOException
 import java.lang.IllegalArgumentException
 import java.lang.IllegalStateException
 
+/**
+ * Compatibility-only stub for legacy per-shard persistent task state.
+ *
+ * The shard replication work is now in-memory and managed by [NodeReplicationController];
+ * see `docs/remove-shard-tasks-design.md`. This sealed class is retained ONLY so that cluster
+ * state persisted by older versions deserializes successfully on plugin start. The deserialized
+ * entries are removed from cluster state by [CleanupShardTasksUpdateTask] shortly after cluster
+ * manager initialization, and no executor is registered for [NAME] — meaning the persistent task
+ * framework cannot allocate or schedule them in the new version.
+ *
+ * Field shape and wire format match the original deleted class exactly to preserve
+ * backward-compatible deserialization from prior releases.
+ */
 sealed class ShardReplicationState : PersistentTaskState {
 
     var state: ReplicationState
+
     companion object {
-        const val NAME = ShardReplicationExecutor.TASK_NAME
-        fun reader(inp : StreamInput): ShardReplicationState {
+        // Legacy task name - hard-coded because ShardReplicationExecutor was deleted in this PR.
+        const val NAME = CleanupShardTasksUpdateTask.LEGACY_SHARD_TASK_NAME
+
+        fun reader(inp: StreamInput): ShardReplicationState {
             val state = inp.readEnum(ReplicationState::class.java)!!
-            return when(state) {
+            return when (state) {
                 ReplicationState.INIT -> throw IllegalStateException("INIT - Illegal state for shard replication task")
                 ReplicationState.RESTORING -> throw IllegalStateException("RESTORING - Illegal state for shard replication task")
                 ReplicationState.INIT_FOLLOW -> throw IllegalStateException("INIT_FOLLOW - Illegal state for shard replication task")
-                ReplicationState.FOLLOWING -> FollowingState
-                ReplicationState.FAILED -> FailedState(inp)
-                ReplicationState.COMPLETED -> CompletedState
+                ReplicationState.FOLLOWING -> FollowingShardState
+                ReplicationState.FAILED -> FailedShardState(inp)
+                ReplicationState.COMPLETED -> CompletedShardState
                 else -> throw IllegalArgumentException("$state - Not a valid state for shard replication task")
             }
         }
@@ -62,14 +78,12 @@ sealed class ShardReplicationState : PersistentTaskState {
         out.writeEnum(state)
     }
 
-    override fun getWriteableName(): String {
-        return NAME
-    }
+    override fun getWriteableName(): String = NAME
 
     override fun toXContent(builder: XContentBuilder, params: ToXContent.Params?): XContentBuilder {
         return builder.startObject()
-                .field("state", state)
-                .endObject()
+            .field("state", state)
+            .endObject()
     }
 
     class Builder {
@@ -78,34 +92,39 @@ sealed class ShardReplicationState : PersistentTaskState {
         fun setShardTaskState(state: String) {
             this.state = state
         }
+
         fun build(): ShardReplicationState {
             // Issue details - https://github.com/opensearch-project/cross-cluster-replication/issues/223
-            state = if(!this::state.isInitialized) {
-                ReplicationState.FOLLOWING.name
-            } else {
-                state
-            }
+            state = if (!this::state.isInitialized) ReplicationState.FOLLOWING.name else state
             return when (state) {
                 ReplicationState.INIT.name -> throw IllegalArgumentException("INIT - Illegal state for shard replication task")
                 ReplicationState.RESTORING.name -> throw IllegalArgumentException("RESTORING - Illegal state for shard replication task")
                 ReplicationState.INIT_FOLLOW.name -> throw IllegalArgumentException("INIT_FOLLOW - Illegal state for shard replication task")
-                ReplicationState.FOLLOWING.name -> FollowingState
-                ReplicationState.COMPLETED.name -> CompletedState
-                ReplicationState.FAILED.name -> FailedState(null)
+                ReplicationState.FOLLOWING.name -> FollowingShardState
+                ReplicationState.COMPLETED.name -> CompletedShardState
+                ReplicationState.FAILED.name -> FailedShardState(null)
                 else -> throw IllegalArgumentException("$state - Not a valid state for shard replication task")
             }
         }
     }
 }
 
+/**
+ * Renamed from `FollowingState` to `FollowingShardState` to avoid collision with
+ * [org.opensearch.replication.task.index.FollowingState] (which has the same simple name in a
+ * sibling package). The wire format and writeable name are unchanged — both old and new
+ * deserialization paths produce the same on-the-wire bytes — so backward compatibility is
+ * preserved.
+ */
+object FollowingShardState : ShardReplicationState(ReplicationState.FOLLOWING)
 
-object FollowingState : ShardReplicationState(ReplicationState.FOLLOWING)
-object CompletedState : ShardReplicationState(ReplicationState.COMPLETED)
+object CompletedShardState : ShardReplicationState(ReplicationState.COMPLETED)
 
 /**
- * State when shard task is in failed state.
+ * Renamed from `FailedState` to `FailedShardState` to avoid collision with
+ * [org.opensearch.replication.task.index.FailedState].
  */
-data class FailedState(val exception: OpenSearchException?)
+data class FailedShardState(val exception: OpenSearchException?)
     : ShardReplicationState(ReplicationState.FAILED) {
     constructor(inp: StreamInput) : this(inp.readException<OpenSearchException>())
 
@@ -123,4 +142,3 @@ data class FailedState(val exception: OpenSearchException?)
         return builder.endObject()
     }
 }
-

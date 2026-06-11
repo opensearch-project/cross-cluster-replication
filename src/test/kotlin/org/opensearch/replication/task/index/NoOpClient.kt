@@ -48,8 +48,6 @@ import org.opensearch.replication.metadata.store.ReplicationContext
 import org.opensearch.replication.metadata.store.ReplicationMetadata
 import org.opensearch.replication.metadata.store.ReplicationMetadataStore
 import org.opensearch.replication.metadata.store.ReplicationStoreMetadataType
-import org.opensearch.replication.task.shard.ShardReplicationExecutor
-import org.opensearch.replication.task.shard.ShardReplicationParams
 import org.opensearch.snapshots.RestoreInfo
 import org.opensearch.test.OpenSearchTestCase
 import org.opensearch.test.client.NoOpNodeClient
@@ -92,14 +90,6 @@ open class NoOpClient(testName :String) : NoOpNodeClient(testName) {
             // applies index block
             var settingResponse = AcknowledgedResponse(true)
             listener.onResponse(settingResponse as Response)
-        }  else if (action == StartPersistentTaskAction.INSTANCE) {
-            var sId = ShardId(Index(IndexReplicationTaskTests.followerIndex, "_na_"), 0)
-            var t1 = PersistentTaskResponse(
-                    PersistentTasksCustomMetadata.PersistentTask<ShardReplicationParams>(UUIDs.base64UUID(), ShardReplicationExecutor.TASK_NAME,
-                            ShardReplicationParams(IndexReplicationTaskTests.remoteCluster, sId, sId),
-                            OpenSearchTestCase.randomLong(), PersistentTasksCustomMetadata.INITIAL_ASSIGNMENT))
-
-            listener.onResponse(t1 as Response)
         } else if (action == GetSettingsAction.INSTANCE) {
             //called in doesValidIndexExists after restore is complete
             val desiredSettingsBuilder = Settings.builder()

@@ -15,7 +15,6 @@ import org.opensearch.replication.ReplicationSettings
 import org.opensearch.replication.metadata.ReplicationMetadataManager
 import org.opensearch.replication.metadata.store.ReplicationMetadata
 import org.opensearch.replication.task.autofollow.AutoFollowTask
-import org.opensearch.replication.task.shard.ShardReplicationTask
 import org.opensearch.replication.util.coroutineContext
 import org.opensearch.replication.util.suspending
 import kotlinx.coroutines.CancellationException
