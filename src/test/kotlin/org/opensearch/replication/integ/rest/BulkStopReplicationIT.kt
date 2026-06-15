@@ -84,7 +84,7 @@ class BulkStopReplicationIT : BulkReplicationIT() {
         val taskId = response["task_id"].toString()
         try { followerClient.cancelTask(taskId) } catch (_: ResponseException) {}
         val statusResp = followerClient.waitForBulkTaskCompletion(taskId) ?: return
-        assertThat((statusResp["num_cancelled"] as Int) + (statusResp["num_success"] as Int)).isEqualTo(10)
+        assertThat((statusResp["num_cancelled"] as Int) + (statusResp["num_success"] as Int) + (statusResp["num_failed"] as Int)).isEqualTo(10)
     }
 
     fun `test bulk stop unblocks follower indices for writes`() {

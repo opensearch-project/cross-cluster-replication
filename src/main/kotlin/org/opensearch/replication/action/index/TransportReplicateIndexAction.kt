@@ -165,4 +165,39 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
         // and then the explicitly set ones to override the default settings.
         return Settings.builder().put(leaderDefaultSettings).put(leaderSettings).build()
     }
+
+    /**
+     * Fetches leader cluster state for multiple indices in ONE remote call for bulk API
+     */
+    internal suspend fun getLeaderClusterState(leaderAlias: String, indices: List<String>): ClusterState {
+        val remoteClusterClient = client.getRemoteClusterClient(leaderAlias)
+        val clusterStateRequest = remoteClusterClient.admin().cluster().prepareState()
+                .clear()
+                .setIndices(*indices.toTypedArray())
+                .setRoutingTable(true)
+                .setMetadata(true)
+                .setIndicesOptions(IndicesOptions.lenientExpandOpen())
+                .request()
+        return remoteClusterClient.suspending(remoteClusterClient.admin().cluster()::state,
+                injectSecurityContext = true, defaultContext = true)(clusterStateRequest).state
+    }
+
+    /**
+     * Fetches leader index settings for multiple indices in ONE remote call for bulk API
+     * Returns a map of index name with combined (default + explicit) settings.
+     */
+    internal suspend fun getLeaderIndexSettings(leaderAlias: String, indices: List<String>): Map<String, Settings> {
+        val remoteClient = client.getRemoteClusterClient(leaderAlias)
+        val getSettingsRequest = GetSettingsRequest().includeDefaults(true).indices(*indices.toTypedArray())
+        val settingsResponse = remoteClient.suspending(
+            remoteClient.admin().indices()::getSettings,
+            injectSecurityContext = true
+        )(getSettingsRequest)
+
+        return indices.associateWith { index ->
+            val leaderSettings = settingsResponse.indexToSettings.get(index) ?: Settings.EMPTY
+            val leaderDefaultSettings = settingsResponse.indexToDefaultSettings.get(index) ?: Settings.EMPTY
+            Settings.builder().put(leaderDefaultSettings).put(leaderSettings).build()
+        }
+    }
 }

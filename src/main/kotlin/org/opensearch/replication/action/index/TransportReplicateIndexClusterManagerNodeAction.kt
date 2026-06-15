@@ -166,4 +166,23 @@ class TransportReplicateIndexClusterManagerNodeAction @Inject constructor(transp
     override fun checkBlock(request: ReplicateIndexClusterManagerNodeRequest, state: ClusterState): ClusterBlockException? {
         return state.blocks.globalBlockedException(ClusterBlockLevel.METADATA_WRITE)
     }
+
+    /**
+     * Fetches remote index metadata for multiple indices in ONE remote call for bulk API
+     * Returns a map of index name -> IndexMetadata.
+     */
+    internal suspend fun getRemoteIndexMetadata(leaderAlias: String, indices: List<String>): Map<String, IndexMetadata> {
+        val remoteClusterClient = nodeClient.getRemoteClusterClient(leaderAlias)
+        val clusterStateRequest = remoteClusterClient.admin().cluster().prepareState()
+                .clear()
+                .setIndices(*indices.toTypedArray())
+                .setMetadata(true)
+                .setIndicesOptions(IndicesOptions.lenientExpandOpen())
+                .request()
+        val remoteState = remoteClusterClient.suspending(remoteClusterClient.admin().cluster()::state,
+                injectSecurityContext = true, defaultContext = true)(clusterStateRequest).state
+        return indices.mapNotNull { index ->
+            remoteState.metadata().index(index)?.let { index to it }
+        }.toMap()
+    }
 }

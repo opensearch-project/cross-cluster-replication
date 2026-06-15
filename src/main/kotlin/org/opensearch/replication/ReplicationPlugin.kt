@@ -228,6 +228,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
         val REPLICATION_FOLLOWER_BULK_BATCH_SIZE: Setting<Int> = Setting.intSetting("plugins.replication.follower.bulk_batch_size", 10, 1, 100,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
+        val REPLICATION_FOLLOWER_BULK_POLL_TIMEOUT: Setting<Int> = Setting.intSetting("plugins.replication.follower.bulk_poll_timeout", 15, 1, 60,
+            Setting.Property.Dynamic, Setting.Property.NodeScope)
     }
 
     override fun createComponents(client: Client, clusterService: ClusterService, threadPool: ThreadPool,
@@ -407,7 +409,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             REPLICATION_RETENTION_LEASE_MAX_FAILURE_DURATION, REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING,
             REPLICATION_INDEX_TRANSLOG_RETENTION_SIZE, REPLICATION_FOLLOWER_BLOCK_START, REPLICATION_AUTOFOLLOW_CONCURRENT_REPLICATION_JOBS_TRIGGER_SIZE,
             REPLICATION_FOLLOWER_CONCURRENT_WRITERS_PER_SHARD, REPLICATION_REPLICATE_INDEX_DELETION,
-            REPLICATION_FOLLOWER_BULK_BATCH_SIZE)
+            REPLICATION_FOLLOWER_BULK_BATCH_SIZE,
+            REPLICATION_FOLLOWER_BULK_POLL_TIMEOUT)
     }
     override fun getInternalRepositories(env: Environment, namedXContentRegistry: NamedXContentRegistry,
                                          clusterService: ClusterService, recoverySettings: RecoverySettings): Map<String, Repository.Factory> {

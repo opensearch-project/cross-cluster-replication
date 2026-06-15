@@ -80,6 +80,7 @@ class BulkReplicationStatusHandler @Inject constructor(
                             try { if (status.leaderIndexName.isNotEmpty()) builder.field("leader_index", status.leaderIndexName) } catch (e: Exception) { log.debug("Failed to serialize field 'leader_index' for index=$index: ${e.message}") }
                             try { if (status.followerIndexName.isNotEmpty()) builder.field("follower_index", status.followerIndexName) } catch (e: Exception) { log.debug("Failed to serialize field 'follower_index' for index=$index: ${e.message}") }
                             try { builder.field("syncing_details", status.aggregatedReplayDetails) } catch (e: Exception) { log.debug("Failed to serialize field 'syncing_details' for index=$index: ${e.message}") }
+                            try { if (status.aggregatedRestoreDetails != null) builder.field("bootstrap_details", status.aggregatedRestoreDetails) } catch (e: Exception) { log.debug("Failed to serialize field 'bootstrap_details' for index=$index: ${e.message}") }
                         }
                         builder.endObject()
                     }

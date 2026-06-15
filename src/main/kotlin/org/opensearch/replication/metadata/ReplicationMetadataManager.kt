@@ -129,6 +129,19 @@ open class ReplicationMetadataManager constructor(private val clusterService: Cl
         updateReplicationState(followerIndex, ReplicationOverallState.STOPPED)
     }
 
+    /**
+     * Deletes replication metadata for multiple indices in ONE Bulk call.
+     * Returns set of indices that were successfully deleted.
+     * Note: updateReplicationState(STOPPED) is called per-index since it's a cluster state update.
+     */
+    suspend fun deleteIndexReplicationMetadata(followerIndices: List<String>): Set<String> {
+        val deleted = replicaionMetadataStore.deleteMetadata(ReplicationStoreMetadataType.INDEX.name, followerIndices)
+        for (index in deleted) {
+            try { updateReplicationState(index, ReplicationOverallState.STOPPED) } catch (_: Exception) {}
+        }
+        return deleted
+    }
+
     suspend fun deleteAutofollowMetadata(patternName: String,
                                          connectionName: String) {
         val delReq = DeleteReplicationMetadataRequest(ReplicationStoreMetadataType.AUTO_FOLLOW.name, connectionName, patternName)
@@ -153,6 +166,14 @@ open class ReplicationMetadataManager constructor(private val clusterService: Cl
         return executeAndWrapExceptionIfAny({
             replicaionMetadataStore.getMetadata(getReq, fetch_from_primary).replicationMetadata
         }, log, "Failed to fetch replication metadata") as ReplicationMetadata
+    }
+
+    /**
+     * Fetches replication metadata for multiple follower indices in ONE call for bulk API
+     * Returns a map of follower index name -> ReplicationMetadata. Missing indices are omitted.
+     */
+    suspend fun getIndexReplicationMetadata(followerIndices: List<String>): Map<String, ReplicationMetadata> {
+        return replicaionMetadataStore.getMetadata(ReplicationStoreMetadataType.INDEX.name, followerIndices)
     }
 
     fun getIndexReplicationMetadata(followerIndex: String,

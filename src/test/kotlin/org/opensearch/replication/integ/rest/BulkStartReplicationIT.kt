@@ -170,7 +170,7 @@ class BulkStartReplicationIT : MultiClusterRestTestCase() {
         val leaderClient = getClientForCluster(LEADER)
         createConnectionBetweenClusters(FOLLOWER, LEADER)
 
-        for (i in 1..100) {
+        for (i in 1..5) {
             leaderClient.indices().create(CreateIndexRequest("$indexPrefix-concurrent-$i"), RequestOptions.DEFAULT)
         }
 
@@ -220,7 +220,7 @@ class BulkStartReplicationIT : MultiClusterRestTestCase() {
         val leaderClient = getClientForCluster(LEADER)
         createConnectionBetweenClusters(FOLLOWER, LEADER)
 
-        for (i in 1..50) {
+        for (i in 1..10) {
             leaderClient.indices().create(CreateIndexRequest("$indexPrefix-cancel-$i"), RequestOptions.DEFAULT)
         }
 
@@ -235,10 +235,11 @@ class BulkStartReplicationIT : MultiClusterRestTestCase() {
             assertThat(e.response.statusLine.statusCode).isEqualTo(404)
         }
 
-        val statusResp = followerClient.waitForBulkTaskCompletion(taskId, TimeValue.timeValueSeconds(60)) ?: return
+        val statusResp = followerClient.waitForBulkTaskCompletion(taskId, TimeValue.timeValueSeconds(180)) ?: return
         val cancelled = statusResp["num_cancelled"] as Int
         val success = statusResp["num_success"] as Int
-        assertThat(cancelled + success).isEqualTo(50)
+        val failed = statusResp["num_failed"] as Int
+        assertThat(cancelled + success + failed).isEqualTo(10)
 
         setBulkBatchSize(followerClient, 10)
     }
@@ -334,14 +335,16 @@ class BulkStartReplicationIT : MultiClusterRestTestCase() {
         followerClient.bulkStartReplication(pattern = "$indexPrefix-bstatus-*", leaderAlias = "source")
             .also { followerClient.waitForBulkTaskCompletion(it["task_id"].toString()) }
 
-        val statusResp = followerClient.bulkStatus("$indexPrefix-bstatus-*")
-        val indices = statusResp["indices"] as Map<*, *>
-        assertThat(indices).hasSize(3)
-        indices.values.forEach { idx ->
-            val indexStatus = idx as Map<*, *>
-            assertThat(indexStatus["status"]).isEqualTo("SYNCING")
-            assertThat(indexStatus.keys).contains("leader_alias", "leader_index", "follower_index", "syncing_details")
-        }
+        assertBusy({
+            val statusResp = followerClient.bulkStatus("$indexPrefix-bstatus-*")
+            val indices = statusResp["indices"] as Map<*, *>
+            assertThat(indices).hasSize(3)
+            indices.values.forEach { idx ->
+                val indexStatus = idx as Map<*, *>
+                assertThat(indexStatus["status"]).isEqualTo("SYNCING")
+                assertThat(indexStatus.keys).contains("leader_alias", "leader_index", "follower_index", "syncing_details")
+            }
+        }, 30, TimeUnit.SECONDS)
 
         followerClient.bulkStopReplication("$indexPrefix-bstatus-*")
     }

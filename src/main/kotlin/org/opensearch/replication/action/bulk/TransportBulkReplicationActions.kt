@@ -15,7 +15,10 @@ import org.opensearch.action.support.ActionFilters
 import org.opensearch.cluster.metadata.IndexNameExpressionResolver
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Inject
+import org.opensearch.persistent.PersistentTasksService
 import org.opensearch.replication.ReplicationSettings
+import org.opensearch.replication.action.index.TransportReplicateIndexAction
+import org.opensearch.replication.action.index.TransportReplicateIndexClusterManagerNodeAction
 import org.opensearch.replication.metadata.ReplicationMetadataManager
 import org.opensearch.replication.task.bulk.BulkOperationType
 import org.opensearch.threadpool.ThreadPool
@@ -27,11 +30,15 @@ class TransportBulkStartReplicationAction @Inject constructor(
     client: Client, clusterService: ClusterService, threadPool: ThreadPool,
     indexNameExpressionResolver: IndexNameExpressionResolver,
     replicationMetadataManager: ReplicationMetadataManager,
-    replicationSettings: ReplicationSettings
+    replicationSettings: ReplicationSettings,
+    persistentTasksService: PersistentTasksService,
+    replicateIndexAction: TransportReplicateIndexAction,
+    clusterManagerAction: TransportReplicateIndexClusterManagerNodeAction
 ) : TransportBulkReplicationAction(
     BulkStartReplicationAction.NAME, BulkOperationType.START,
     transportService, actionFilters, client, clusterService, threadPool,
-    indexNameExpressionResolver, replicationMetadataManager, replicationSettings
+    indexNameExpressionResolver, replicationMetadataManager, replicationSettings,
+    persistentTasksService, replicateIndexAction, clusterManagerAction
 )
 
 class TransportBulkStopReplicationAction @Inject constructor(
@@ -39,11 +46,15 @@ class TransportBulkStopReplicationAction @Inject constructor(
     client: Client, clusterService: ClusterService, threadPool: ThreadPool,
     indexNameExpressionResolver: IndexNameExpressionResolver,
     replicationMetadataManager: ReplicationMetadataManager,
-    replicationSettings: ReplicationSettings
+    replicationSettings: ReplicationSettings,
+    persistentTasksService: PersistentTasksService,
+    replicateIndexAction: TransportReplicateIndexAction,
+    clusterManagerAction: TransportReplicateIndexClusterManagerNodeAction
 ) : TransportBulkReplicationAction(
     BulkStopReplicationAction.NAME, BulkOperationType.STOP,
     transportService, actionFilters, client, clusterService, threadPool,
-    indexNameExpressionResolver, replicationMetadataManager, replicationSettings
+    indexNameExpressionResolver, replicationMetadataManager, replicationSettings,
+    persistentTasksService, replicateIndexAction, clusterManagerAction
 )
 
 class TransportBulkPauseReplicationAction @Inject constructor(
@@ -51,11 +62,15 @@ class TransportBulkPauseReplicationAction @Inject constructor(
     client: Client, clusterService: ClusterService, threadPool: ThreadPool,
     indexNameExpressionResolver: IndexNameExpressionResolver,
     replicationMetadataManager: ReplicationMetadataManager,
-    replicationSettings: ReplicationSettings
+    replicationSettings: ReplicationSettings,
+    persistentTasksService: PersistentTasksService,
+    replicateIndexAction: TransportReplicateIndexAction,
+    clusterManagerAction: TransportReplicateIndexClusterManagerNodeAction
 ) : TransportBulkReplicationAction(
     BulkPauseReplicationAction.NAME, BulkOperationType.PAUSE,
     transportService, actionFilters, client, clusterService, threadPool,
-    indexNameExpressionResolver, replicationMetadataManager, replicationSettings
+    indexNameExpressionResolver, replicationMetadataManager, replicationSettings,
+    persistentTasksService, replicateIndexAction, clusterManagerAction
 )
 
 class TransportBulkResumeReplicationAction @Inject constructor(
@@ -63,9 +78,13 @@ class TransportBulkResumeReplicationAction @Inject constructor(
     client: Client, clusterService: ClusterService, threadPool: ThreadPool,
     indexNameExpressionResolver: IndexNameExpressionResolver,
     replicationMetadataManager: ReplicationMetadataManager,
-    replicationSettings: ReplicationSettings
+    replicationSettings: ReplicationSettings,
+    persistentTasksService: PersistentTasksService,
+    replicateIndexAction: TransportReplicateIndexAction,
+    clusterManagerAction: TransportReplicateIndexClusterManagerNodeAction
 ) : TransportBulkReplicationAction(
     BulkResumeReplicationAction.NAME, BulkOperationType.RESUME,
     transportService, actionFilters, client, clusterService, threadPool,
-    indexNameExpressionResolver, replicationMetadataManager, replicationSettings
+    indexNameExpressionResolver, replicationMetadataManager, replicationSettings,
+    persistentTasksService, replicateIndexAction, clusterManagerAction
 )

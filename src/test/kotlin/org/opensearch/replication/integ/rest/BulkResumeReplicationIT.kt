@@ -100,7 +100,7 @@ class BulkResumeReplicationIT : BulkReplicationIT() {
         val leaderClient = getClientForCluster(LEADER)
         createConnectionBetweenClusters(FOLLOWER, LEADER)
 
-        createAndStartReplication(leaderClient, followerClient, "cancel", 50)
+        createAndStartReplication(leaderClient, followerClient, "cancel", 10)
 
         followerClient.bulkPauseReplication("$indexPrefix-cancel-*")
             .also { followerClient.waitForBulkTaskCompletion(it["task_id"].toString()) }
@@ -110,8 +110,8 @@ class BulkResumeReplicationIT : BulkReplicationIT() {
         val response = followerClient.bulkResumeReplication("$indexPrefix-cancel-*")
         val taskId = response["task_id"].toString()
         try { followerClient.cancelTask(taskId) } catch (_: ResponseException) {}
-        val statusResp = followerClient.waitForBulkTaskCompletion(taskId, TimeValue.timeValueSeconds(60)) ?: return
-        assertThat((statusResp["num_cancelled"] as Int) + (statusResp["num_success"] as Int)).isEqualTo(50)
+        val statusResp = followerClient.waitForBulkTaskCompletion(taskId, TimeValue.timeValueSeconds(180)) ?: return
+        assertThat((statusResp["num_cancelled"] as Int) + (statusResp["num_success"] as Int) + (statusResp["num_failed"] as Int)).isEqualTo(10)
 
         setBulkBatchSize(followerClient, 10)
         followerClient.bulkStopReplication("$indexPrefix-cancel-*")

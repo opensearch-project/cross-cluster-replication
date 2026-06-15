@@ -66,7 +66,6 @@ class BulkReplicationTaskMetadata(val taskState: BulkTaskState?) : Metadata.Cust
     companion object {
         const val NAME = "bulk_replication_task"
         val EMPTY = BulkReplicationTaskMetadata(null)
-        // Task state is not restored on restart; the executing coroutine is terminated and partial state is unsafe to resume.
         fun fromXContent(parser: XContentParser): BulkReplicationTaskMetadata = EMPTY
     }
 

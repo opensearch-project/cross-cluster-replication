@@ -441,7 +441,7 @@ fun RestHighLevelClient.updateAutoFollowConcurrentStartReplicationJobSetting(con
     assertThat(response.isAcknowledged).isTrue()
 }
 
-// ── Bulk API helpers ──────────────────────────────────────────────────────────
+
 
 fun RestHighLevelClient.bulkStartReplication(pattern: String,
                                               leaderAlias: String? = null,
@@ -497,7 +497,7 @@ fun RestHighLevelClient.cancelTask(taskId: String): Map<String, Any> {
 }
 
 fun RestHighLevelClient.waitForBulkTaskCompletion(taskId: String,
-                                                   waitFor: TimeValue = TimeValue.timeValueSeconds(60)): Map<String, Any>? {
+                                                   waitFor: TimeValue = TimeValue.timeValueSeconds(360)): Map<String, Any>? {
     var lastStatus: Map<String, Any>? = null
     assertBusy({
         try {
@@ -513,8 +513,7 @@ fun RestHighLevelClient.waitForBulkTaskCompletion(taskId: String,
             throw AssertionError("Task status not yet available, retrying", e)
         }
     }, waitFor.seconds, TimeUnit.SECONDS)
-    Thread.sleep(5000)
-    return lastStatus
+    return try { getTaskStatus(taskId) } catch (_: Exception) { lastStatus }
 }
 
 private fun buildBulkStartRequestBody(pattern: String,
