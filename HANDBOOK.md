@@ -221,7 +221,7 @@ curl -k -u testuser:testuser -XPOST \
 
 AutoFollow API helps to automatically start replication on indices matching a pattern.
 
-Optionally, provide `follow_index_pattern` with the `{{leader_index}}` placeholder to create follower indices under a different name. The placeholder is replaced with each matching leader index name at replication time. When omitted, the follower index uses the same name as the leader index.
+Optionally, provide `follower_index_pattern` with the `{{leader_index}}` placeholder to create follower indices under a different name. The placeholder is replaced with each matching leader index name at replication time. When omitted, the follower index uses the same name as the leader index.
 
 **Signature**
 
@@ -231,7 +231,7 @@ Optionally, provide `follow_index_pattern` with the `{{leader_index}}` placehold
 POST localhost:{{foll_port}}/_plugins/_replication/_autofollow
 Content-Type: application/json
 
-{"leader_alias" : "<remote cluster connection name>",  "pattern": "<index pattern>", "name": "<name to identify autofollow task>", "follow_index_pattern": "<optional follower index name pattern with {{leader_index}} placeholder>"}
+{"leader_alias" : "<remote cluster connection name>",  "pattern": "<index pattern>", "name": "<name to identify autofollow task>", "follower_index_pattern": "<optional follower index name pattern with {{leader_index}} placeholder>"}
 
 # RESPONSE
 
@@ -254,7 +254,7 @@ curl -k -u testuser:testuser -XPOST \
 curl -k -u testuser:testuser -XPOST \
 "https://${FOLLOWER}/_plugins/_replication/_autofollow?pretty" \
 -H 'Content-type: application/json' \
--d'{"leader_alias":"leader-cluster","pattern":"leader-*", "name":"my-replication", "follow_index_pattern":"{{leader_index}}-replica"}'
+-d'{"leader_alias":"leader-cluster","pattern":"leader-*", "name":"my-replication", "follower_index_pattern":"{{leader_index}}-replica"}'
 ```
 
 ## Stop AutoFollow

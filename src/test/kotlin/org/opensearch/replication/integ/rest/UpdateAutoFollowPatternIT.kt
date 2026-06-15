@@ -113,13 +113,13 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
         }
     }
 
-    fun `test auto follow pattern with follow_index_pattern renames follower`() {
+    fun `test auto follow pattern with follower_index_pattern renames follower`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
         createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
         try {
             followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern,
-                    followIndexPattern = "{{leader_index}}-replica")
+                    followerIndexPattern = "{{leader_index}}-replica")
             val leaderIndexName = createRandomIndex(leaderClient)
             // Verify the follower index is created with the renamed name
             assertBusy({
@@ -136,7 +136,7 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
         }
     }
 
-    fun `test auto follow pattern follow_index_pattern avoids collision with existing index`() {
+    fun `test auto follow pattern follower_index_pattern avoids collision with existing index`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
         createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
@@ -147,7 +147,7 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
             // Same-named index on leader
             leaderClient.indices().create(CreateIndexRequest(existingIndex), RequestOptions.DEFAULT)
             followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern,
-                    followIndexPattern = "{{leader_index}}-replica")
+                    followerIndexPattern = "{{leader_index}}-replica")
             // The renamed follower index is created (no collision with the local index)
             assertBusy({
                 Assertions.assertThat(followerClient.indices()
@@ -159,17 +159,17 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
         }
     }
 
-    fun `test auto follow pattern follow_index_pattern validation rejects missing placeholder`() {
+    fun `test auto follow pattern follower_index_pattern validation rejects missing placeholder`() {
         val followerClient = getClientForCluster(FOLLOWER)
         createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
         Assertions.assertThatThrownBy {
             followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern,
-                    followIndexPattern = "static-name-no-placeholder")
+                    followerIndexPattern = "static-name-no-placeholder")
         }.isInstanceOf(ResponseException::class.java)
-                .hasMessageContaining("follow_index_pattern must contain")
+                .hasMessageContaining("follower_index_pattern must contain")
     }
 
-    fun `test auto follow pattern without follow_index_pattern preserves backward compat`() {
+    fun `test auto follow pattern without follower_index_pattern preserves backward compat`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
         createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)

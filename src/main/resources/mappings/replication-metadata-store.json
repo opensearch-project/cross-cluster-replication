@@ -108,7 +108,7 @@
       "dynamic": true,
       "properties": {}
     },
-    "follow_index_pattern": {
+    "follower_index_pattern": {
       "type": "keyword"
     },
     "leader_context": {

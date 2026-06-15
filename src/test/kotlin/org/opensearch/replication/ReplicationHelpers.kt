@@ -351,7 +351,7 @@ fun RestHighLevelClient.waitForReplicationStop(index: String, waitFor : TimeValu
 fun RestHighLevelClient.updateAutoFollowPattern(connection: String, patternName: String, pattern: String,
                                                 settings: Settings = Settings.EMPTY,
                                                 useRoles: UseRoles = UseRoles(),
-                                                followIndexPattern: String? = null,
+                                                followerIndexPattern: String? = null,
                                                 requestOptions: RequestOptions = RequestOptions.DEFAULT,
                                                 ignoreIfExists: Boolean = false,
                                                 clusterManagerTimeout: String? = null) {
@@ -367,8 +367,8 @@ fun RestHighLevelClient.updateAutoFollowPattern(connection: String, patternName:
                                         "follower_cluster_role": "${useRoles.followerClusterRole}"
                                        }"""
     )
-    if (followIndexPattern != null) {
-        bodyParts.add(""""follow_index_pattern": "${followIndexPattern}"""")
+    if (followerIndexPattern != null) {
+        bodyParts.add(""""follower_index_pattern": "${followerIndexPattern}"""")
     }
     if (settings != Settings.EMPTY) {
         bodyParts.add(""""settings": $settings""")

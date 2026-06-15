@@ -73,34 +73,34 @@ class ValidationUtilTests : OpenSearchTestCase() {
         return clusterService
     }
 
-    fun testValidateFollowIndexPattern_nullIsValid() {
+    fun testValidateFollowerIndexPattern_nullIsValid() {
         val validationException = ValidationException()
-        ValidationUtil.validateFollowIndexPattern(null, validationException)
+        ValidationUtil.validateFollowerIndexPattern(null, validationException)
         assertThat(validationException.validationErrors()).isEmpty()
     }
 
-    fun testValidateFollowIndexPattern_validPatternPasses() {
+    fun testValidateFollowerIndexPattern_validPatternPasses() {
         val validationException = ValidationException()
-        ValidationUtil.validateFollowIndexPattern("{{leader_index}}-replica", validationException)
+        ValidationUtil.validateFollowerIndexPattern("{{leader_index}}-replica", validationException)
         assertThat(validationException.validationErrors()).isEmpty()
     }
 
-    fun testValidateFollowIndexPattern_missingPlaceholderIsInvalid() {
+    fun testValidateFollowerIndexPattern_missingPlaceholderIsInvalid() {
         val validationException = ValidationException()
-        ValidationUtil.validateFollowIndexPattern("static-name", validationException)
+        ValidationUtil.validateFollowerIndexPattern("static-name", validationException)
         assertThat(validationException.validationErrors()).isNotEmpty()
         assertThat(validationException.validationErrors()[0]).contains("{{leader_index}}")
     }
 
-    fun testValidateFollowIndexPattern_invalidCharsInStaticPortion() {
+    fun testValidateFollowerIndexPattern_invalidCharsInStaticPortion() {
         val validationException = ValidationException()
-        ValidationUtil.validateFollowIndexPattern("{{leader_index}}:invalid", validationException)
+        ValidationUtil.validateFollowerIndexPattern("{{leader_index}}:invalid", validationException)
         assertThat(validationException.validationErrors()).isNotEmpty()
     }
 
-    fun testValidateFollowIndexPattern_prefixWithDotIsInvalid() {
+    fun testValidateFollowerIndexPattern_prefixWithDotIsInvalid() {
         val validationException = ValidationException()
-        ValidationUtil.validateFollowIndexPattern(".{{leader_index}}-replica", validationException)
+        ValidationUtil.validateFollowerIndexPattern(".{{leader_index}}-replica", validationException)
         assertThat(validationException.validationErrors()).isNotEmpty()
     }
 }

@@ -165,11 +165,11 @@ Content-Type: application/json
   "leader_alias": "leader-cluster",
   "name": "test",
   "pattern": "*customer*",
-  "follow_index_pattern": "{{leader_index}}-replica"
+  "follower_index_pattern": "{{leader_index}}-replica"
 }
 ```
 
-The optional `follow_index_pattern` field renames follower indices using the `{{leader_index}}` placeholder, which is substituted with each matching leader index name at replication time. When omitted, the follower index uses the same name as the leader index.
+The optional `follower_index_pattern` field renames follower indices using the `{{leader_index}}` placeholder, which is substituted with each matching leader index name at replication time. When omitted, the follower index uses the same name as the leader index.
 
 ### Remove AutoFollow
 

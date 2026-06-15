@@ -37,6 +37,7 @@ import java.util.*
 import java.util.function.Predicate
 
 const val LEADER_INDEX_PLACEHOLDER = "{{leader_index}}"
+const val KEY_FOLLOWER_INDEX_PATTERN = "follower_index_pattern"
 
 object ValidationUtil {
 
@@ -131,19 +132,19 @@ object ValidationUtil {
     }
 
     /**
-     * Validate the follow_index_pattern used for renaming follower indices in autofollow.
+     * Validate the follower_index_pattern used for renaming follower indices in autofollow.
      * The pattern must contain the {{leader_index}} placeholder, and the static portion
      * (with the placeholder substituted) must form a valid index name.
      */
-    fun validateFollowIndexPattern(followIndexPattern: String?, validationException: ValidationException) {
-        if (followIndexPattern == null) return
+    fun validateFollowerIndexPattern(followerIndexPattern: String?, validationException: ValidationException) {
+        if (followerIndexPattern == null) return
 
-        if (!followIndexPattern.contains(LEADER_INDEX_PLACEHOLDER)) {
-            validationException.addValidationError("follow_index_pattern must contain the $LEADER_INDEX_PLACEHOLDER placeholder")
+        if (!followerIndexPattern.contains(LEADER_INDEX_PLACEHOLDER)) {
+            validationException.addValidationError("$KEY_FOLLOWER_INDEX_PATTERN must contain the $LEADER_INDEX_PLACEHOLDER placeholder")
         }
 
         // Validate that the static portion produces a valid index name
-        val sampleResolved = followIndexPattern.replace(LEADER_INDEX_PLACEHOLDER, "sample")
+        val sampleResolved = followerIndexPattern.replace(LEADER_INDEX_PLACEHOLDER, "sample")
         validateName(sampleResolved, validationException)
     }
 

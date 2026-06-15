@@ -116,12 +116,12 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
     }
 
     /**
-     * Resolves the follower index name for a given leader index. When a follow_index_pattern
+     * Resolves the follower index name for a given leader index. When a follower_index_pattern
      * is configured on the autofollow rule, the {{leader_index}} placeholder is substituted
      * with the leader index name. Otherwise the leader index name is returned unchanged.
      */
     private fun getFollowerIndexName(leaderIndex: String): String {
-        val pattern = replicationMetadata.followIndexPattern
+        val pattern = replicationMetadata.followerIndexPattern
         return if (pattern != null) {
             pattern.replace(LEADER_INDEX_PLACEHOLDER, leaderIndex)
         } else {
@@ -154,17 +154,18 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
 
         var currentIndices = clusterService.state().metadata().concreteAllIndices.asIterable() // All indices - open and closed on the cluster
         val currentIndicesSet = currentIndices.toSet()
-        val collidingIndices = remoteIndices.filter { currentIndicesSet.contains(getFollowerIndexName(it)) }
+        val followerIndexByLeader = remoteIndices.associateWith { getFollowerIndexName(it) }
+        val collidingIndices = remoteIndices.filter { currentIndicesSet.contains(followerIndexByLeader.getValue(it)) }
         if (collidingIndices.isNotEmpty()) {
             // Log this once when we see any update on indices on the follower cluster to prevent log flood
             if (currentIndicesSet != trackingIndicesOnTheCluster) {
                 log.info("Cannot initiate replication for the following indices from leader ($leaderAlias) as " +
                         "follower indices already exist on the cluster: " +
-                        collidingIndices.joinToString { "$it -> ${getFollowerIndexName(it)}" })
+                        collidingIndices.joinToString { "$it -> ${followerIndexByLeader.getValue(it)}" })
                 trackingIndicesOnTheCluster = currentIndicesSet
             }
         }
-        remoteIndices = remoteIndices.filter { !currentIndicesSet.contains(getFollowerIndexName(it)) }
+        remoteIndices = remoteIndices.filter { !currentIndicesSet.contains(followerIndexByLeader.getValue(it)) }
                 .minus(stat.failedIndices).minus(replicationJobsQueue)
 
         stat.failCounterForRun = 0
