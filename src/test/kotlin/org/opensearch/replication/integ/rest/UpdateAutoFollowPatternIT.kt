@@ -113,6 +113,80 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
         }
     }
 
+    fun `test auto follow pattern with follower_index_pattern renames follower`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
+        try {
+            followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern,
+                    followerIndexPattern = "{{leader_index}}-replica")
+            val leaderIndexName = createRandomIndex(leaderClient)
+            // Verify the follower index is created with the renamed name
+            assertBusy({
+                Assertions.assertThat(followerClient.indices()
+                        .exists(GetIndexRequest("${leaderIndexName}-replica"), RequestOptions.DEFAULT))
+                        .isEqualTo(true)
+            }, 60, TimeUnit.SECONDS)
+            // Verify the un-renamed name does NOT exist on the follower
+            Assertions.assertThat(followerClient.indices()
+                    .exists(GetIndexRequest(leaderIndexName), RequestOptions.DEFAULT))
+                    .isEqualTo(false)
+        } finally {
+            followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
+        }
+    }
+
+    fun `test auto follow pattern follower_index_pattern avoids collision with existing index`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
+        val existingIndex = "${indexPrefix}existing"
+        try {
+            // Local index on follower with the same name as the leader index
+            followerClient.indices().create(CreateIndexRequest(existingIndex), RequestOptions.DEFAULT)
+            // Same-named index on leader
+            leaderClient.indices().create(CreateIndexRequest(existingIndex), RequestOptions.DEFAULT)
+            followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern,
+                    followerIndexPattern = "{{leader_index}}-replica")
+            // The renamed follower index is created (no collision with the local index)
+            assertBusy({
+                Assertions.assertThat(followerClient.indices()
+                        .exists(GetIndexRequest("${existingIndex}-replica"), RequestOptions.DEFAULT))
+                        .isEqualTo(true)
+            }, 60, TimeUnit.SECONDS)
+        } finally {
+            followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
+        }
+    }
+
+    fun `test auto follow pattern follower_index_pattern validation rejects missing placeholder`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
+        Assertions.assertThatThrownBy {
+            followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern,
+                    followerIndexPattern = "static-name-no-placeholder")
+        }.isInstanceOf(ResponseException::class.java)
+                .hasMessageContaining("follower_index_pattern must contain")
+    }
+
+    fun `test auto follow pattern without follower_index_pattern preserves backward compat`() {
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
+        try {
+            followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern)
+            val leaderIndexName = createRandomIndex(leaderClient)
+            // Without a pattern, follower index name equals leader index name
+            assertBusy({
+                Assertions.assertThat(followerClient.indices()
+                        .exists(GetIndexRequest(leaderIndexName), RequestOptions.DEFAULT))
+                        .isEqualTo(true)
+            }, 60, TimeUnit.SECONDS)
+        } finally {
+            followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
+        }
+    }
+
     fun `test auto follow pattern with updated delay for poll`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)

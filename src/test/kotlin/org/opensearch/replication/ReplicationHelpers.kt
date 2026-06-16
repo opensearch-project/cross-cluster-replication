@@ -351,34 +351,29 @@ fun RestHighLevelClient.waitForReplicationStop(index: String, waitFor : TimeValu
 fun RestHighLevelClient.updateAutoFollowPattern(connection: String, patternName: String, pattern: String,
                                                 settings: Settings = Settings.EMPTY,
                                                 useRoles: UseRoles = UseRoles(),
+                                                followerIndexPattern: String? = null,
                                                 requestOptions: RequestOptions = RequestOptions.DEFAULT,
                                                 ignoreIfExists: Boolean = false,
                                                 clusterManagerTimeout: String? = null) {
     var url = REST_AUTO_FOLLOW_PATTERN
     if (clusterManagerTimeout != null) url += "?cluster_manager_timeout=$clusterManagerTimeout"
     val lowLevelRequest = Request("POST", url)
-    if (settings == Settings.EMPTY) {
-        lowLevelRequest.setJsonEntity("""{
-                                       "leader_alias" : "${connection}",
-                                       "name" : "${patternName}",
-                                       "pattern": "${pattern}",
-                                       "use_roles": {
+    val bodyParts = mutableListOf(
+        """"leader_alias" : "${connection}"""",
+        """"name" : "${patternName}"""",
+        """"pattern": "${pattern}"""",
+        """"use_roles": {
                                         "leader_cluster_role": "${useRoles.leaderClusterRole}",
                                         "follower_cluster_role": "${useRoles.followerClusterRole}"
-                                       }
-                                     }""")
-    } else {
-        lowLevelRequest.setJsonEntity("""{
-                                       "leader_alias" : "${connection}",
-                                       "name" : "${patternName}",
-                                       "pattern": "${pattern}",
-                                       "use_roles": {
-                                        "leader_cluster_role": "${useRoles.leaderClusterRole}",
-                                        "follower_cluster_role": "${useRoles.followerClusterRole}"
-                                       },
-                                       "settings": $settings
-                                     }""")
+                                       }"""
+    )
+    if (followerIndexPattern != null) {
+        bodyParts.add(""""follower_index_pattern": "${followerIndexPattern}"""")
     }
+    if (settings != Settings.EMPTY) {
+        bodyParts.add(""""settings": $settings""")
+    }
+    lowLevelRequest.setJsonEntity("{${bodyParts.joinToString(",")}}")
     lowLevelRequest.setOptions(requestOptions)
     try {
         val lowLevelResponse = lowLevelClient.performRequest(lowLevelRequest)

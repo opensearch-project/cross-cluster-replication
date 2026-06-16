@@ -152,6 +152,17 @@ Content-Type: application/json
   "pattern": "*customer*"
 }
 
+### Add auto follow actions with follower_index_pattern (rename follower indices)
+POST localhost:{{foll_port}}/_plugins/_replication/_autofollow
+Content-Type: application/json
+
+{
+  "leader_alias": "source",
+  "name": "test",
+  "pattern": "*customer*",
+  "follower_index_pattern": "{{leader_index}}-replica"
+}
+
 ### Add auto follow actions with Security plugin
 POST localhost:{{foll_port}}/_plugins/_replication/_autofollow
 Content-Type: application/json

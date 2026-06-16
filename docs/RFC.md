@@ -154,6 +154,23 @@ Content-Type: application/json
 }
 ```
 
+With follower index renaming:
+
+```bash
+Request
+POST $FOLLOWER/_plugins/_replication/_autofollow
+Content-Type: application/json
+
+{
+  "leader_alias": "leader-cluster",
+  "name": "test",
+  "pattern": "*customer*",
+  "follower_index_pattern": "{{leader_index}}-replica"
+}
+```
+
+The optional `follower_index_pattern` field renames follower indices using the `{{leader_index}}` placeholder, which is substituted with each matching leader index name at replication time. When omitted, the follower index uses the same name as the leader index.
+
 ### Remove AutoFollow
 
 AutoFollow can be removed by invoking API on the follower as follows. Invocation of the API is only to stop any new auto-follow activity and does NOT stop replication of indices already initiated by the auto-follow.

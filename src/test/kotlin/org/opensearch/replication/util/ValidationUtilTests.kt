@@ -18,6 +18,7 @@ import org.assertj.core.api.Assertions.assertThat
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.settings.ClusterSettings
 import org.opensearch.common.settings.Settings
+import org.opensearch.common.ValidationException
 import org.opensearch.test.OpenSearchTestCase
 
 @ThreadLeakScope(ThreadLeakScope.Scope.NONE)
@@ -70,5 +71,36 @@ class ValidationUtilTests : OpenSearchTestCase() {
         whenever(clusterService.settings).thenReturn(settings)
         whenever(clusterService.clusterSettings).thenReturn(clusterSettings)
         return clusterService
+    }
+
+    fun testValidateFollowerIndexPattern_nullIsValid() {
+        val validationException = ValidationException()
+        ValidationUtil.validateFollowerIndexPattern(null, validationException)
+        assertThat(validationException.validationErrors()).isEmpty()
+    }
+
+    fun testValidateFollowerIndexPattern_validPatternPasses() {
+        val validationException = ValidationException()
+        ValidationUtil.validateFollowerIndexPattern("{{leader_index}}-replica", validationException)
+        assertThat(validationException.validationErrors()).isEmpty()
+    }
+
+    fun testValidateFollowerIndexPattern_missingPlaceholderIsInvalid() {
+        val validationException = ValidationException()
+        ValidationUtil.validateFollowerIndexPattern("static-name", validationException)
+        assertThat(validationException.validationErrors()).isNotEmpty()
+        assertThat(validationException.validationErrors()[0]).contains("{{leader_index}}")
+    }
+
+    fun testValidateFollowerIndexPattern_invalidCharsInStaticPortion() {
+        val validationException = ValidationException()
+        ValidationUtil.validateFollowerIndexPattern("{{leader_index}}:invalid", validationException)
+        assertThat(validationException.validationErrors()).isNotEmpty()
+    }
+
+    fun testValidateFollowerIndexPattern_prefixWithDotIsInvalid() {
+        val validationException = ValidationException()
+        ValidationUtil.validateFollowerIndexPattern(".{{leader_index}}-replica", validationException)
+        assertThat(validationException.validationErrors()).isNotEmpty()
     }
 }

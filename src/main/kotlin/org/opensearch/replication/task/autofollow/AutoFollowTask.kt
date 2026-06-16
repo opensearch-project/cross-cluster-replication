@@ -20,6 +20,7 @@ import org.opensearch.replication.task.ReplicationState
 import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.replication.util.suspendExecute
 import org.opensearch.replication.util.suspending
+import org.opensearch.replication.util.LEADER_INDEX_PLACEHOLDER
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
@@ -114,6 +115,20 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
         retryScheduler?.cancel()
     }
 
+    /**
+     * Resolves the follower index name for a given leader index. When a follower_index_pattern
+     * is configured on the autofollow rule, the {{leader_index}} placeholder is substituted
+     * with the leader index name. Otherwise the leader index name is returned unchanged.
+     */
+    private fun getFollowerIndexName(leaderIndex: String): String {
+        val pattern = replicationMetadata.followerIndexPattern
+        return if (pattern != null) {
+            pattern.replace(LEADER_INDEX_PLACEHOLDER, leaderIndex)
+        } else {
+            leaderIndex
+        }
+    }
+
     private suspend fun pollForIndices() {
         log.debug("Checking $leaderAlias under pattern name $patternName for new indices to auto follow")
         log.debug("Polling for indices: leaderAlias=$leaderAlias, pattern=$patternName")
@@ -138,15 +153,20 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
         }
 
         var currentIndices = clusterService.state().metadata().concreteAllIndices.asIterable() // All indices - open and closed on the cluster
-        if(remoteIndices.intersect(currentIndices).isNotEmpty()) {
+        val currentIndicesSet = currentIndices.toSet()
+        val followerIndexByLeader = remoteIndices.associateWith { getFollowerIndexName(it) }
+        val collidingIndices = remoteIndices.filter { currentIndicesSet.contains(followerIndexByLeader.getValue(it)) }
+        if (collidingIndices.isNotEmpty()) {
             // Log this once when we see any update on indices on the follower cluster to prevent log flood
-            if(currentIndices.toSet() != trackingIndicesOnTheCluster) {
-                log.info("Cannot initiate replication for the following indices from leader ($leaderAlias) as indices with " +
-                        "same name already exists on the cluster ${remoteIndices.intersect(currentIndices)}")
-                trackingIndicesOnTheCluster = currentIndices.toSet()
+            if (currentIndicesSet != trackingIndicesOnTheCluster) {
+                log.info("Cannot initiate replication for the following indices from leader ($leaderAlias) as " +
+                        "follower indices already exist on the cluster: " +
+                        collidingIndices.joinToString { "$it -> ${followerIndexByLeader.getValue(it)}" })
+                trackingIndicesOnTheCluster = currentIndicesSet
             }
         }
-        remoteIndices = remoteIndices.minus(currentIndices).minus(stat.failedIndices).minus(replicationJobsQueue)
+        remoteIndices = remoteIndices.filter { !currentIndicesSet.contains(followerIndexByLeader.getValue(it)) }
+                .minus(stat.failedIndices).minus(replicationJobsQueue)
 
         stat.failCounterForRun = 0
         startReplicationJobs(remoteIndices)
@@ -156,7 +176,8 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
     private suspend fun startReplicationJobs(remoteIndices: Iterable<String>) {
         val completedJobs = ConcurrentSkipListSet<String>()
         for(index in replicationJobsQueue) {
-            val statusReq = ShardInfoRequest(index, false)
+            val followerIdx = getFollowerIndexName(index)
+            val statusReq = ShardInfoRequest(followerIdx, false)
             try {
                 val statusRes = client.suspendExecute(ReplicationStatusAction.INSTANCE, statusReq, injectSecurityContext = true)
                 if(statusRes.status != ShardInfoResponse.BOOTSTRAPPING) {
@@ -187,17 +208,17 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
     }
 
     private suspend fun startReplication(leaderIndex: String) {
-        if (clusterService.state().metadata().hasIndex(leaderIndex)) {
-            log.info("""Cannot replicate $leaderAlias:$leaderIndex as an index with the same name already 
-                        |exists.""".trimMargin())
+        val followerIndex = getFollowerIndexName(leaderIndex)
+        if (clusterService.state().metadata().hasIndex(followerIndex)) {
+            log.info("Cannot replicate $leaderAlias:$leaderIndex -> $followerIndex as follower index already exists.")
             return
         }
 
         var successStart = false
 
         try {
-            log.info("Auto follow starting replication from ${leaderAlias}:$leaderIndex -> $leaderIndex")
-            val request = ReplicateIndexRequest(leaderIndex, leaderAlias, leaderIndex )
+            log.info("Auto follow starting replication from ${leaderAlias}:$leaderIndex -> $followerIndex")
+            val request = ReplicateIndexRequest(followerIndex, leaderAlias, leaderIndex )
             request.isAutoFollowRequest = true
             val followerRole = replicationMetadata.followerContext.user?.roles?.get(0)
             val leaderRole = replicationMetadata.leaderContext.user?.roles?.get(0)
@@ -212,13 +233,13 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
                 throw ReplicationException("Failed to auto follow leader index $leaderIndex")
             }
             successStart = true
-            log.debug("Auto follow has started replication from ${leaderAlias}:$leaderIndex -> $leaderIndex")
+            log.debug("Auto follow has started replication from ${leaderAlias}:$leaderIndex -> $followerIndex")
         } catch (e: OpenSearchSecurityException) {
             // For permission related failures, Adding as part of failed indices as autofollow role doesn't have required permissions.
             log.trace("Cannot start replication on $leaderIndex due to missing permissions $e")
         } catch (e: Exception) {
             // Any failure other than security exception can be safely retried and not adding to the failed indices
-            log.warn("Failed to start replication for $leaderAlias:$leaderIndex -> $leaderIndex.", e)
+            log.warn("Failed to start replication for $leaderAlias:$leaderIndex -> $followerIndex.", e)
         } finally {
             if (successStart) {
                 stat.successCount++

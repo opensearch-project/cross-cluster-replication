@@ -36,6 +36,9 @@ import java.nio.file.Path
 import java.util.*
 import java.util.function.Predicate
 
+const val LEADER_INDEX_PLACEHOLDER = "{{leader_index}}"
+const val KEY_FOLLOWER_INDEX_PATTERN = "follower_index_pattern"
+
 object ValidationUtil {
 
     private val log = LogManager.getLogger(ValidationUtil::class.java)
@@ -126,6 +129,23 @@ object ValidationUtil {
         if ((pattern?.startsWith('_') ?: false) || (pattern?.startsWith('-') ?: false))
             validationException.addValidationError("Autofollow pattern: $pattern must not start with '_' or '-'")
 
+    }
+
+    /**
+     * Validate the follower_index_pattern used for renaming follower indices in autofollow.
+     * The pattern must contain the {{leader_index}} placeholder, and the static portion
+     * (with the placeholder substituted) must form a valid index name.
+     */
+    fun validateFollowerIndexPattern(followerIndexPattern: String?, validationException: ValidationException) {
+        if (followerIndexPattern == null) return
+
+        if (!followerIndexPattern.contains(LEADER_INDEX_PLACEHOLDER)) {
+            validationException.addValidationError("$KEY_FOLLOWER_INDEX_PATTERN must contain the $LEADER_INDEX_PLACEHOLDER placeholder")
+        }
+
+        // Validate that the static portion produces a valid index name
+        val sampleResolved = followerIndexPattern.replace(LEADER_INDEX_PLACEHOLDER, "sample")
+        validateName(sampleResolved, validationException)
     }
 
     /**
