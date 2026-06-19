@@ -12,6 +12,7 @@
 package org.opensearch.replication.rest
 
 import org.opensearch.ResourceNotFoundException
+import org.apache.logging.log4j.LogManager
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Inject
 import org.opensearch.common.xcontent.XContentFactory
@@ -48,16 +49,7 @@ class BulkTaskStatusHandler @Inject constructor(private val clusterService: Clus
                 channel.sendResponse(BytesRestResponse(RestStatus.OK, builder))
             }
 
-            // 1. completed task cache
-            TransportBulkReplicationAction.getCompletedStatus(taskId)?.let { respond(it); return@RestChannelConsumer }
-
-            // 2. cluster state
-            clusterService.state().metadata
-                .custom<BulkReplicationTaskMetadata>(BulkReplicationTaskMetadata.NAME)?.taskState
-                ?.takeIf { it.taskId == taskId }
-                ?.let { respond(BulkReplicationTaskStatus.fromTaskState(it)); return@RestChannelConsumer }
-
-            // 3. TaskManager — task still running on this node
+            // 1. Local TaskManager — live counters if task is running on this node
             val numericId = taskId.split(":").getOrNull(1)?.toLongOrNull()
             if (numericId != null) {
                 taskManager.getCancellableTasks().values
@@ -66,7 +58,16 @@ class BulkTaskStatusHandler @Inject constructor(private val clusterService: Clus
                     ?.let { respond(it.getStatus() as BulkReplicationTaskStatus); return@RestChannelConsumer }
             }
 
-            // 4. not found
+            // 2. Completed task cache (node-local, available after task finishes on this node)
+            TransportBulkReplicationAction.getCompletedStatus(taskId)?.let { respond(it); return@RestChannelConsumer }
+
+            // 3. Cluster state — works cross-node for both running and completed tasks
+            clusterService.state().metadata
+                .custom<BulkReplicationTaskMetadata>(BulkReplicationTaskMetadata.NAME)?.taskState
+                ?.takeIf { it.taskId == taskId }
+                ?.let { respond(BulkReplicationTaskStatus.fromTaskState(it)); return@RestChannelConsumer }
+
+            // 4. Not found
             channel.sendResponse(BytesRestResponse(channel, ResourceNotFoundException("Task $taskId not found or already completed")))
         }
     }

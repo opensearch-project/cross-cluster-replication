@@ -12,6 +12,7 @@
 package org.opensearch.replication.action.bulk
 
 import org.opensearch.action.ActionType
+import org.opensearch.action.support.clustermanager.AcknowledgedResponse
 
 class BulkStartReplicationAction private constructor() :
     ActionType<BulkReplicationResponse>(NAME, ::BulkReplicationResponse) {
@@ -42,5 +43,13 @@ class BulkResumeReplicationAction private constructor() :
     companion object {
         const val NAME = "cluster:admin/plugins/replication/bulk/resume"
         val INSTANCE = BulkResumeReplicationAction()
+    }
+}
+
+class BatchStopClusterStateAction private constructor() :
+    ActionType<AcknowledgedResponse>(NAME, ::AcknowledgedResponse) {
+    companion object {
+        const val NAME = "indices:admin/plugins/replication/bulk/stop_cs"
+        val INSTANCE = BatchStopClusterStateAction()
     }
 }

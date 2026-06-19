@@ -513,7 +513,9 @@ fun RestHighLevelClient.waitForBulkTaskCompletion(taskId: String,
             throw AssertionError("Task status not yet available, retrying", e)
         }
     }, waitFor.seconds, TimeUnit.SECONDS)
-    return try { getTaskStatus(taskId) } catch (_: Exception) { lastStatus }
+    // Return the lastStatus that passed assertions — avoids multi-node round-robin
+    // returning stale cluster state from a node that didn't run the task.
+    return lastStatus
 }
 
 private fun buildBulkStartRequestBody(pattern: String,

@@ -80,12 +80,12 @@ class TransportUpdateBulkTaskStateAction @Inject constructor(
             object : AckedClusterStateUpdateTask<AcknowledgedResponse>(request, listener) {
                 override fun execute(currentState: ClusterState): ClusterState {
                     // Guard against concurrent bulk task submissions. Only checked on the initial
-                    // where taskId is empty, progress updates from the running task carry the
+                    // claim where taskId is empty. Progress updates from the running task carry the
                     // real taskId and bypass this check.
                     if (request.taskState != null && request.taskState.taskId.isEmpty()) {
                         val existing = currentState.metadata
                             .custom<BulkReplicationTaskMetadata>(BulkReplicationTaskMetadata.NAME)?.taskState
-                        if (existing != null && existing.numPending > 0) {
+                        if (existing != null && existing.numPending > 0 && existing.taskId.isEmpty()) {
                             throw ResourceAlreadyExistsException(
                                 "A bulk replication task is already running. Only one bulk task is allowed at a time.")
                         }

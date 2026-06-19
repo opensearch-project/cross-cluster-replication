@@ -130,6 +130,8 @@ import org.opensearch.replication.action.bulk.BulkPauseReplicationAction
 import org.opensearch.replication.action.bulk.BulkResumeReplicationAction
 import org.opensearch.replication.action.bulk.BulkStartReplicationAction
 import org.opensearch.replication.action.bulk.BulkStopReplicationAction
+import org.opensearch.replication.action.bulk.BatchStopClusterStateAction
+import org.opensearch.replication.action.bulk.TransportBulkClusterManagerNodeAction
 import org.opensearch.replication.action.bulk.TransportBulkPauseReplicationAction
 import org.opensearch.replication.action.bulk.TransportBulkResumeReplicationAction
 import org.opensearch.replication.action.bulk.TransportBulkStartReplicationAction
@@ -228,7 +230,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
         val REPLICATION_FOLLOWER_BULK_BATCH_SIZE: Setting<Int> = Setting.intSetting("plugins.replication.follower.bulk_batch_size", 10, 1, 100,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
-        val REPLICATION_FOLLOWER_BULK_POLL_TIMEOUT: Setting<Int> = Setting.intSetting("plugins.replication.follower.bulk_poll_timeout", 15, 1, 60,
+        val REPLICATION_FOLLOWER_BULK_POLL_TIMEOUT: Setting<Int> = Setting.intSetting("plugins.replication.follower.bulk_poll_timeout", 15, 1, 30,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
     }
 
@@ -280,6 +282,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             ActionHandler(AutoFollowStatsAction.INSTANCE, TransportAutoFollowStatsAction::class.java),
             ActionHandler(BulkStartReplicationAction.INSTANCE, TransportBulkStartReplicationAction::class.java),
             ActionHandler(BulkStopReplicationAction.INSTANCE, TransportBulkStopReplicationAction::class.java),
+            ActionHandler(BatchStopClusterStateAction.INSTANCE, TransportBulkClusterManagerNodeAction::class.java),
             ActionHandler(BulkPauseReplicationAction.INSTANCE, TransportBulkPauseReplicationAction::class.java),
             ActionHandler(BulkResumeReplicationAction.INSTANCE, TransportBulkResumeReplicationAction::class.java),
             ActionHandler(UpdateBulkTaskStateAction.INSTANCE, TransportUpdateBulkTaskStateAction::class.java)

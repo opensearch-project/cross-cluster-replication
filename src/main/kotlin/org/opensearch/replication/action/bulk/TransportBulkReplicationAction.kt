@@ -20,9 +20,7 @@ import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.launch
 import org.opensearch.replication.util.coroutineContext
 import org.apache.logging.log4j.LogManager
-import org.opensearch.OpenSearchStatusException
 import org.opensearch.ResourceNotFoundException
-import org.opensearch.core.rest.RestStatus
 import org.opensearch.action.ActionRequestValidationException
 import org.opensearch.action.admin.indices.get.GetIndexRequest
 import org.opensearch.action.support.ActionFilters
@@ -35,7 +33,6 @@ import org.opensearch.core.tasks.TaskId
 import org.opensearch.replication.ReplicationSettings
 import org.opensearch.replication.metadata.ReplicationMetadataManager
 import org.opensearch.replication.metadata.ReplicationOverallState
-import org.opensearch.replication.metadata.state.BulkReplicationTaskMetadata
 import org.opensearch.replication.metadata.state.BulkTaskState
 import org.opensearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
 import org.opensearch.replication.metadata.state.getReplicationStateParamsForIndex
@@ -76,14 +73,9 @@ import org.opensearch.transport.client.Client
 import org.opensearch.transport.client.Requests
 import org.opensearch.action.admin.indices.open.OpenIndexRequest
 import org.opensearch.action.support.clustermanager.AcknowledgedResponse
-import org.opensearch.commons.replication.action.StopIndexReplicationRequest
 import org.opensearch.replication.action.index.block.IndexBlockUpdateType
 import org.opensearch.replication.action.index.block.UpdateIndexBlockAction
 import org.opensearch.replication.action.index.block.UpdateIndexBlockRequest
-import org.opensearch.replication.action.stop.TransportStopIndexReplicationAction.StopReplicationTask
-import org.opensearch.replication.action.status.ReplicationStatusAction
-import org.opensearch.replication.action.status.ShardInfoRequest
-import org.opensearch.replication.action.status.ShardInfoResponse
 import org.opensearch.replication.metadata.UpdateMetadataAction
 import org.opensearch.replication.metadata.UpdateMetadataRequest
 import java.util.concurrent.ConcurrentHashMap
@@ -119,15 +111,6 @@ open class TransportBulkReplicationAction(
     // Checks cluster lock, resolves indices, spawns async task, returns task_id immediately.
     override fun doExecute(task: Task, request: BulkReplicationRequest, listener: ActionListener<BulkReplicationResponse>) {
         log.info("Received bulk ${operationType.label} request for pattern=${request.pattern}, excludeIndices=${request.excludeIndices.size}")
-
-        val existing = clusterService.state().metadata
-            .custom<BulkReplicationTaskMetadata>(BulkReplicationTaskMetadata.NAME)?.taskState
-        if (existing != null && existing.numPending > 0) {
-            log.warn("Rejected bulk ${operationType.label} request: another bulk task is already running (op=${existing.operationType}, pending=${existing.numPending})")
-            listener.onFailure(OpenSearchStatusException(
-                "A bulk replication task is already running. Only one bulk task is allowed at a time.", RestStatus.CONFLICT))
-            return
-        }
 
         launch(Dispatchers.Unconfined) {
             try {
@@ -273,8 +256,6 @@ open class TransportBulkReplicationAction(
             BulkOperationType.PAUSE -> when {
                 stateParams == null -> "No replication in progress for index:$index"
                 stateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE] == ReplicationOverallState.PAUSED.name -> "Index $index is already paused"
-                stateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE] != ReplicationOverallState.RUNNING.name ->
-                    "Cannot pause when in ${stateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE]} state"
                 else -> null
             }
             BulkOperationType.RESUME -> when {
@@ -401,14 +382,14 @@ open class TransportBulkReplicationAction(
             launch(threadPool.coroutineContext(ThreadPool.Names.GENERIC)) {
                 bulkTask.run(object : ActionListener<BulkReplicationTaskStatus> {
                     override fun onResponse(status: BulkReplicationTaskStatus) {
-                        log.info("Task completed for ${opType.label} taskId=$taskId: success=${status.numSuccess} failed=${status.numFailed}")
-                        putCompletedStatus(taskId, status)
+                        log.info("spawnTask callback onResponse for ${opType.label} taskId=$taskId: success=${status.numSuccess} failed=${status.numFailed} pending=${status.numPending}")
                         taskManager.unregister(bulkTask)
+                        putCompletedStatus(taskId, status)
                     }
                     override fun onFailure(e: Exception) {
-                        log.error("Task failed for ${opType.label} taskId=$taskId: ${e.message}")
-                        putCompletedStatus(taskId, bulkTask.getStatus() as BulkReplicationTaskStatus)
+                        log.error("spawnTask callback onFailure for ${opType.label} taskId=$taskId: ${e.javaClass.simpleName}: ${e.message}")
                         taskManager.unregister(bulkTask)
+                        putCompletedStatus(taskId, bulkTask.getStatus() as BulkReplicationTaskStatus)
                     }
                 }, taskId)
             }
@@ -510,61 +491,72 @@ open class TransportBulkReplicationAction(
         }.toMutableList()
         if (remaining.isEmpty()) return emptyList<String>() to failures.toList()
 
+        // Step 8: Remove stale tasks (all parallel)
         coroutineScope {
-            remaining.map { index ->
-                async {
-                    try {
-                        StaleTaskUtils.removeAllTasksForIndex(clusterService, client, index)
-                    } catch (e: Exception) {
-                        log.debug("Failed to clean stale tasks for bulk_start for index=$index (non-fatal): ${e.message}")
-                    }
-                }
-            }.awaitAll()
+            remaining.map { index -> async {
+                try { StaleTaskUtils.removeAllTasksForIndex(clusterService, client, index) }
+                catch (e: Exception) { log.debug("Failed to clean stale tasks for index=$index: ${e.message}") }
+            }}.awaitAll()
         }
 
-        log.debug("Starting parallel writes for bulk_start for ${remaining.size} indices")
-        val succeeded = CopyOnWriteArrayList<String>()
+        // Step 9: Write replication metadata (all parallel, with retries)
+        log.debug("Writing metadata for bulk_start for ${remaining.size} indices")
+        val metadataWritten = CopyOnWriteArrayList<String>()
         var toAttempt = remaining.toList()
-
         for (attempt in 1..3) {
             val failedThisAttempt = CopyOnWriteArrayList<FailedIndex>()
             coroutineScope {
-                toAttempt.map { index ->
-                    async {
-                        try {
-                            val metadata = metadataMap[index]
-                                ?: throw IllegalStateException("No metadata found for leader index: $index")
-
-                            replicationMetadataManager.addIndexReplicationMetadata(
-                                index, alias, index, ReplicationOverallState.RUNNING,
-                                user, followerRole, leaderRole, Settings.EMPTY
-                            )
-
-                            try {
-                                val params = IndexReplicationParams(alias, metadata.index, index)
-                                persistentTasksService.startTask(
-                                    "replication:index:$index", IndexReplicationExecutor.TASK_NAME, params
-                                )
-                            } catch (e: Exception) {
-                                try { replicationMetadataManager.deleteIndexReplicationMetadata(index) } catch (e: Exception) { log.debug("Rollback: failed to delete metadata for index=$index: ${e.message}") }
-                                throw e
-                            }
-
-                            succeeded.add(index)
-                            log.debug("Successfully initiated replication for bulk_start for index=$index")
-                        } catch (e: Exception) {
-                            log.debug("Failed to start replication for bulk_start for index=$index (attempt $attempt/3): ${e.message}")
-                            failedThisAttempt.add(FailedIndex(index, e.message ?: "unknown error"))
-                        }
+                toAttempt.map { index -> async {
+                    try {
+                        replicationMetadataManager.addIndexReplicationMetadata(
+                            index, alias, index, ReplicationOverallState.RUNNING,
+                            user, followerRole, leaderRole, Settings.EMPTY
+                        )
+                        metadataWritten.add(index)
+                    } catch (e: Exception) {
+                        log.debug("Failed to write metadata for index=$index (attempt $attempt/3): ${e.message}")
+                        failedThisAttempt.add(FailedIndex(index, e.message ?: "Failed to write metadata"))
                     }
-                }.awaitAll()
+                }}.awaitAll()
             }
-
             toAttempt = failedThisAttempt.map { it.index }
             if (toAttempt.isEmpty()) break
             if (attempt < 3) kotlinx.coroutines.delay(2000)
             else failedThisAttempt.forEach { failures.add(it) }
         }
+
+        // Step 10: Start IndexReplicationTask (all parallel, with retries)
+        log.debug("Starting tasks for bulk_start for ${metadataWritten.size} indices")
+        val succeeded = CopyOnWriteArrayList<String>()
+        toAttempt = metadataWritten.toList()
+        for (attempt in 1..3) {
+            val failedThisAttempt = CopyOnWriteArrayList<FailedIndex>()
+            coroutineScope {
+                toAttempt.map { index -> async {
+                    try {
+                        val metadata = metadataMap[index]!!
+                        val params = IndexReplicationParams(alias, metadata.index, index)
+                        persistentTasksService.startTask(
+                            "replication:index:$index", IndexReplicationExecutor.TASK_NAME, params
+                        )
+                        succeeded.add(index)
+                    } catch (e: Exception) {
+                        log.debug("Failed to start task for index=$index (attempt $attempt/3): ${e.message}")
+                        failedThisAttempt.add(FailedIndex(index, e.message ?: "Failed to start task"))
+                    }
+                }}.awaitAll()
+            }
+            toAttempt = failedThisAttempt.map { it.index }
+            if (toAttempt.isEmpty()) break
+            if (attempt < 3) kotlinx.coroutines.delay(2000)
+            else {
+                failedThisAttempt.forEach { fi ->
+                    failures.add(fi)
+                    try { replicationMetadataManager.deleteIndexReplicationMetadata(fi.index) } catch (_: Exception) {}
+                }
+            }
+        }
+
         log.debug("Batch complete for bulk_start: ${succeeded.size} initiated, ${failures.size - (indices.size - remaining.size)} failed")
 
         return succeeded.toList() to failures.toList()
@@ -576,7 +568,7 @@ open class TransportBulkReplicationAction(
         reason: String = "bulk_pause"
     ): Pair<List<String>, List<FailedIndex>> {
         if (indices.isEmpty()) return emptyList<String>() to emptyList()
-        log.debug("Processing batch of ${indices.size} indices for bulk_pause")
+        log.info("executeBatchPause: received ${indices.size} indices: $indices")
 
         val failures = CopyOnWriteArrayList<FailedIndex>()
 
@@ -584,23 +576,29 @@ open class TransportBulkReplicationAction(
         val blockException = state.blocks().globalBlockedException(ClusterBlockLevel.METADATA_WRITE)
         if (blockException != null) {
             indices.forEach { failures.add(FailedIndex(it, "Cluster metadata write block is active: ${blockException.message}")) }
-            log.debug("Metadata write block is active for bulk_pause, failing entire batch")
+            log.info("executeBatchPause: metadata write block active, failing entire batch")
             return emptyList<String>() to failures.toList()
         }
 
         val restoreInProgress = state.custom<RestoreInProgress>(RestoreInProgress.TYPE, RestoreInProgress.EMPTY)
         val restoringIndices = restoreInProgress.flatMap { it.indices() }.toSet()
+        if (restoringIndices.isNotEmpty()) {
+            log.info("executeBatchPause: restoreInProgress indices=$restoringIndices")
+        }
 
         val remaining = indices.filter { index ->
             if (index in restoringIndices) {
                 failures.add(FailedIndex(index, "Index is in restore phase. You can pause after restore completes."))
-                log.debug("Skipping index=$index for bulk_pause: currently restoring")
+                log.info("executeBatchPause: skipping index=$index (currently restoring)")
                 false
             } else true
         }
-        if (remaining.isEmpty()) return emptyList<String>() to failures.toList()
+        if (remaining.isEmpty()) {
+            log.info("executeBatchPause: all indices restoring, returning 0 succeeded, ${failures.size} failed")
+            return emptyList<String>() to failures.toList()
+        }
 
-        log.debug("Updating state to PAUSED for bulk_pause for ${remaining.size} indices in parallel")
+        log.info("executeBatchPause: updating state to PAUSED for ${remaining.size} indices")
         val succeeded = CopyOnWriteArrayList<String>()
         var toAttempt = remaining.toList()
 
@@ -613,7 +611,7 @@ open class TransportBulkReplicationAction(
                             replicationMetadataManager.updateIndexReplicationState(index, ReplicationOverallState.PAUSED, reason)
                             succeeded.add(index)
                         } catch (e: Exception) {
-                            log.debug("Failed to pause for bulk_pause for index=$index (attempt $attempt/3): ${e.message}")
+                            log.info("executeBatchPause: failed index=$index (attempt $attempt/3): ${e.javaClass.simpleName}: ${e.message}")
                             failedThisAttempt.add(FailedIndex(index, e.message ?: "Failed to pause"))
                         }
                     }
@@ -625,7 +623,7 @@ open class TransportBulkReplicationAction(
             if (attempt < 3) kotlinx.coroutines.delay(2000)
             else failedThisAttempt.forEach { failures.add(it) }
         }
-        log.debug("Batch complete for bulk_pause: ${succeeded.size} paused, ${failures.size} failed")
+        log.info("executeBatchPause: DONE succeeded=${succeeded.size} failed=${failures.size} succeededIndices=$succeeded failedIndices=${failures.map { it.index + ':' + it.reason.take(60) }}")
 
         return succeeded.toList() to failures.toList()
     }
@@ -728,7 +726,10 @@ open class TransportBulkReplicationAction(
                                     "replication:index:${ctx.index}", IndexReplicationExecutor.TASK_NAME, params
                                 )
                             } catch (e: Exception) {
-                                try { replicationMetadataManager.updateIndexReplicationState(ctx.index, ReplicationOverallState.PAUSED, "rollback: task start failed") } catch (e: Exception) { log.debug("Rollback: failed to reset state to PAUSED for index=${ctx.index}: ${e.message}") }
+                                for (attempt in 1..3) {
+                                    try { replicationMetadataManager.updateIndexReplicationState(ctx.index, ReplicationOverallState.PAUSED, "rollback: task start failed"); break }
+                                    catch (re: Exception) { if (attempt < 3) kotlinx.coroutines.delay(1000) else log.error("Rollback failed for index=${ctx.index} after 3 attempts: ${re.message}") }
+                                }
                                 throw e
                             }
 
@@ -752,9 +753,10 @@ open class TransportBulkReplicationAction(
         return succeeded.toList() to failures.toList()
     }
 
-    // Stops replication for a batch: checks metadata write block (local), then 7 sequential phases
-    // each parallel across all indices. Step 4 uses the single-index stop action to route the
-    // cluster state update to cluster-manager (steps 1-3 pre-work makes it fast, steps 5-7 are no-ops inside it).
+    // Stops replication for a batch: checks metadata write block (local), then sequential phases
+    // each parallel across all indices — remove block, close, remove retention lease, batched
+    // cluster state update (routes to cluster-manager, single update for all indices), reopen,
+    // remove stale tasks, delete metadata.
     internal suspend fun executeBatchStop(
         indices: List<String>
     ): Pair<List<String>, List<FailedIndex>> {
@@ -794,26 +796,19 @@ open class TransportBulkReplicationAction(
             } catch (e: Exception) { log.debug("Failed to remove retention lease for index=$index: ${e.message}") }
         }}.awaitAll() }
 
-        val semaphore = kotlinx.coroutines.sync.Semaphore(20)
-        coroutineScope { indices.map { index -> async {
-            semaphore.acquire()
-            try {
-                val res = client.suspendExecute(
-                    org.opensearch.commons.replication.action.ReplicationActions.STOP_REPLICATION_ACTION_TYPE,
-                    StopIndexReplicationRequest(index),
-                    injectSecurityContext = true
-                )
-                if (res.isAcknowledged) succeeded.add(index)
-                else { failures.add(FailedIndex(index, "Stop not acknowledged")); failedSet.add(index) }
-            } catch (e: Exception) {
-                failures.add(FailedIndex(index, e.message ?: "Stop failed"))
-                failedSet.add(index)
-            } finally { semaphore.release() }
-        }}.awaitAll() }
+        try {
+            val res = client.suspendExecute(BatchStopClusterStateAction.INSTANCE,
+                BulkStopClusterManagerRequest(indices), injectSecurityContext = true)
+            if (res.isAcknowledged) succeeded.addAll(indices)
+            else { indices.forEach { failures.add(FailedIndex(it, "Batch stop not acknowledged")); failedSet.add(it) } }
+        } catch (e: Exception) {
+            indices.forEach { failures.add(FailedIndex(it, e.message ?: "Batch stop failed")); failedSet.add(it) }
+        }
 
         val stopped = indices.filter { it !in failedSet }
 
-        val reopenable = closeable.filter { it in stopped && clusterService.state().routingTable.hasIndex(it) }
+        // Reopen ALL closed indices — even if batch update failed, don't leave them closed
+        val reopenable = closeable.filter { clusterService.state().routingTable.hasIndex(it) }
         coroutineScope { reopenable.map { index -> async {
             try { client.suspending(client.admin().indices()::open, injectSecurityContext = true)(OpenIndexRequest(index))
             } catch (e: Exception) { log.debug("Failed to reopen index=$index: ${e.message}") }

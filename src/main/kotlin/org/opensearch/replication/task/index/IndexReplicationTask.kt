@@ -954,6 +954,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         val replMetadata = replicationMetadataManager.getIndexReplicationMetadata(this.followerIndexName)
         restoreRequest.indexSettings(replMetadata.settings)
         restoreRequest.aliasWriteIndexPolicy(RestoreSnapshotRequest.AliasWriteIndexPolicy.STRIP_WRITE_INDEX)
+        restoreRequest.clusterManagerNodeTimeout(org.opensearch.common.unit.TimeValue.timeValueSeconds(60))
 
 
         try {

@@ -12,12 +12,14 @@
 package org.opensearch.replication.rest
 
 import org.opensearch.ResourceNotFoundException
+import org.opensearch.action.admin.cluster.node.tasks.cancel.CancelTasksRequest
+import org.opensearch.action.admin.cluster.node.tasks.cancel.CancelTasksResponse
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Inject
 import org.opensearch.common.xcontent.XContentFactory
+import org.opensearch.core.action.ActionListener
 import org.opensearch.core.rest.RestStatus
-import org.opensearch.replication.task.bulk.BulkReplicationTask
-import org.opensearch.replication.util.taskManager
+import org.opensearch.core.tasks.TaskId
 import org.opensearch.rest.BaseRestHandler
 import org.opensearch.rest.BytesRestResponse
 import org.opensearch.rest.RestHandler
@@ -25,10 +27,6 @@ import org.opensearch.rest.RestRequest
 import org.opensearch.transport.client.node.NodeClient
 
 class BulkTaskCancelHandler @Inject constructor(private val clusterService: ClusterService) : BaseRestHandler() {
-
-    companion object {
-        private val log = org.apache.logging.log4j.LogManager.getLogger(BulkTaskCancelHandler::class.java)
-    }
 
     override fun routes(): List<RestHandler.Route> =
         listOf(RestHandler.Route(RestRequest.Method.POST, "/_plugins/_replication/_task_cancel/{task_id}"))
@@ -41,24 +39,31 @@ class BulkTaskCancelHandler @Inject constructor(private val clusterService: Clus
                 channel.sendResponse(BytesRestResponse(RestStatus.BAD_REQUEST, "task_id parameter is required"))
             }
         return RestChannelConsumer { channel ->
-            val task = taskManager.getCancellableTasks().values
-                .filterIsInstance<BulkReplicationTask>()
-                .firstOrNull { taskId.endsWith(":${it.id}") }
-
-            if (task == null) {
-                channel.sendResponse(BytesRestResponse(channel, ResourceNotFoundException("Task $taskId not found or already completed")))
+            val parts = taskId.split(":")
+            if (parts.size != 2 || parts[1].toLongOrNull() == null) {
+                channel.sendResponse(BytesRestResponse(RestStatus.BAD_REQUEST, "Invalid task_id format"))
                 return@RestChannelConsumer
             }
 
-            if (task.isCancelled) {
-                channel.sendResponse(BytesRestResponse(channel, ResourceNotFoundException("Task $taskId is already cancelled")))
-                return@RestChannelConsumer
-            }
+            val cancelRequest = CancelTasksRequest()
+            cancelRequest.setTaskId(TaskId(parts[0], parts[1].toLong()))
+            cancelRequest.setReason("cancelled via _task_cancel API")
 
-            taskManager.cancel(task, "cancelled via _task_cancel API") {}
-            val builder = XContentFactory.jsonBuilder()
-            builder.startObject().field("acknowledged", true).endObject()
-            channel.sendResponse(BytesRestResponse(RestStatus.OK, builder))
+            client.admin().cluster().cancelTasks(cancelRequest, object : ActionListener<CancelTasksResponse> {
+                override fun onResponse(response: CancelTasksResponse) {
+                    if (response.tasks.isEmpty()) {
+                        channel.sendResponse(BytesRestResponse(channel,
+                            ResourceNotFoundException("Task $taskId not found or already completed")))
+                    } else {
+                        val builder = XContentFactory.jsonBuilder()
+                        builder.startObject().field("acknowledged", true).endObject()
+                        channel.sendResponse(BytesRestResponse(RestStatus.OK, builder))
+                    }
+                }
+                override fun onFailure(e: Exception) {
+                    channel.sendResponse(BytesRestResponse(channel, e))
+                }
+            })
         }
     }
 }
