@@ -126,7 +126,25 @@ import org.opensearch.replication.action.stats.LeaderStatsAction
 import org.opensearch.replication.action.stats.TransportAutoFollowStatsAction
 import org.opensearch.replication.action.stats.TransportFollowerStatsAction
 import org.opensearch.replication.action.stats.TransportLeaderStatsAction
+import org.opensearch.replication.action.bulk.BulkPauseReplicationAction
+import org.opensearch.replication.action.bulk.BulkResumeReplicationAction
+import org.opensearch.replication.action.bulk.BulkStartReplicationAction
+import org.opensearch.replication.action.bulk.BulkStopReplicationAction
+import org.opensearch.replication.action.bulk.BatchStopClusterStateAction
+import org.opensearch.replication.action.bulk.TransportBulkClusterManagerNodeAction
+import org.opensearch.replication.action.bulk.TransportBulkPauseReplicationAction
+import org.opensearch.replication.action.bulk.TransportBulkResumeReplicationAction
+import org.opensearch.replication.action.bulk.TransportBulkStartReplicationAction
+import org.opensearch.replication.action.bulk.TransportBulkStopReplicationAction
+import org.opensearch.replication.metadata.state.BulkReplicationTaskMetadata
+import org.opensearch.replication.task.bulk.BulkReplicationTaskStatus
+import org.opensearch.replication.action.bulk.TransportUpdateBulkTaskStateAction
+import org.opensearch.replication.action.bulk.UpdateBulkTaskStateAction
 import org.opensearch.replication.rest.AutoFollowStatsHandler
+import org.opensearch.replication.rest.BulkReplicationStatusHandler
+import org.opensearch.replication.rest.BulkTaskCancelHandler
+import org.opensearch.replication.rest.BulkTaskStatusHandler
+import org.opensearch.replication.rest.bulkReplicationHandlers
 import org.opensearch.replication.rest.FollowerStatsHandler
 import org.opensearch.replication.rest.LeaderStatsHandler
 import org.opensearch.replication.seqno.RemoteClusterStats
@@ -210,6 +228,10 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
         val REPLICATION_REPLICATE_INDEX_DELETION: Setting<Boolean> = Setting.boolSetting("plugins.replication.replicate.delete_index", false,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
+        val REPLICATION_FOLLOWER_BULK_BATCH_SIZE: Setting<Int> = Setting.intSetting("plugins.replication.follower.bulk_batch_size", 10, 1, 100,
+            Setting.Property.Dynamic, Setting.Property.NodeScope)
+        val REPLICATION_FOLLOWER_BULK_POLL_TIMEOUT: Setting<Int> = Setting.intSetting("plugins.replication.follower.bulk_poll_timeout", 15, 1, 30,
+            Setting.Property.Dynamic, Setting.Property.NodeScope)
     }
 
     override fun createComponents(client: Client, clusterService: ClusterService, threadPool: ThreadPool,
@@ -257,7 +279,13 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             ActionHandler(ReplicationStatusAction.INSTANCE,TransportReplicationStatusAction::class.java),
             ActionHandler(LeaderStatsAction.INSTANCE, TransportLeaderStatsAction::class.java),
             ActionHandler(FollowerStatsAction.INSTANCE, TransportFollowerStatsAction::class.java),
-            ActionHandler(AutoFollowStatsAction.INSTANCE, TransportAutoFollowStatsAction::class.java)
+            ActionHandler(AutoFollowStatsAction.INSTANCE, TransportAutoFollowStatsAction::class.java),
+            ActionHandler(BulkStartReplicationAction.INSTANCE, TransportBulkStartReplicationAction::class.java),
+            ActionHandler(BulkStopReplicationAction.INSTANCE, TransportBulkStopReplicationAction::class.java),
+            ActionHandler(BatchStopClusterStateAction.INSTANCE, TransportBulkClusterManagerNodeAction::class.java),
+            ActionHandler(BulkPauseReplicationAction.INSTANCE, TransportBulkPauseReplicationAction::class.java),
+            ActionHandler(BulkResumeReplicationAction.INSTANCE, TransportBulkResumeReplicationAction::class.java),
+            ActionHandler(UpdateBulkTaskStateAction.INSTANCE, TransportUpdateBulkTaskStateAction::class.java)
         )
     }
 
@@ -275,7 +303,11 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             ReplicationStatusHandler(),
             LeaderStatsHandler(),
             FollowerStatsHandler(),
-            AutoFollowStatsHandler())
+            AutoFollowStatsHandler(),
+            BulkTaskStatusHandler(clusterService),
+            BulkTaskCancelHandler(clusterService),
+            BulkReplicationStatusHandler(clusterService, indexNameExpressionResolver)) +
+            bulkReplicationHandlers()
     }
 
     override fun getExecutorBuilders(settings: Settings): List<ExecutorBuilder<*>> {
@@ -334,8 +366,14 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                 Writeable.Reader { inp -> ReplicationStateMetadata(inp) }),
             NamedWriteableRegistry.Entry(NamedDiff::class.java, ReplicationStateMetadata.NAME,
                 Writeable.Reader { inp -> ReplicationStateMetadata.Diff(inp) }),
+            NamedWriteableRegistry.Entry(Metadata.Custom::class.java, BulkReplicationTaskMetadata.NAME,
+                Writeable.Reader { inp -> BulkReplicationTaskMetadata(inp) }),
+            NamedWriteableRegistry.Entry(NamedDiff::class.java, BulkReplicationTaskMetadata.NAME,
+                Writeable.Reader { inp -> BulkReplicationTaskMetadata.Diff(inp) }),
             NamedWriteableRegistry.Entry(Task.Status::class.java, AutoFollowStat.NAME,
-                    Writeable.Reader { inp -> AutoFollowStat(inp) })
+                    Writeable.Reader { inp -> AutoFollowStat(inp) }),
+            NamedWriteableRegistry.Entry(Task.Status::class.java, BulkReplicationTaskStatus.NAME,
+                    Writeable.Reader { inp -> BulkReplicationTaskStatus(inp) })
         )
     }
 
@@ -357,6 +395,9 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                     ParseField(AutoFollowParams.NAME),
                     CheckedFunction { parser: XContentParser -> AutoFollowParams.fromXContent(parser)}),
             NamedXContentRegistry.Entry(Metadata.Custom::class.java,
+                    ParseField(BulkReplicationTaskMetadata.NAME),
+                    CheckedFunction { parser: XContentParser -> BulkReplicationTaskMetadata.fromXContent(parser)}),
+            NamedXContentRegistry.Entry(Metadata.Custom::class.java,
                     ParseField(ReplicationStateMetadata.NAME),
                     CheckedFunction { parser: XContentParser -> ReplicationStateMetadata.fromXContent(parser)})
         )
@@ -370,7 +411,9 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             REPLICATION_AUTOFOLLOW_REMOTE_INDICES_RETRY_POLL_INTERVAL, REPLICATION_METADATA_SYNC_INTERVAL,
             REPLICATION_RETENTION_LEASE_MAX_FAILURE_DURATION, REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING,
             REPLICATION_INDEX_TRANSLOG_RETENTION_SIZE, REPLICATION_FOLLOWER_BLOCK_START, REPLICATION_AUTOFOLLOW_CONCURRENT_REPLICATION_JOBS_TRIGGER_SIZE,
-            REPLICATION_FOLLOWER_CONCURRENT_WRITERS_PER_SHARD, REPLICATION_REPLICATE_INDEX_DELETION)
+            REPLICATION_FOLLOWER_CONCURRENT_WRITERS_PER_SHARD, REPLICATION_REPLICATE_INDEX_DELETION,
+            REPLICATION_FOLLOWER_BULK_BATCH_SIZE,
+            REPLICATION_FOLLOWER_BULK_POLL_TIMEOUT)
     }
     override fun getInternalRepositories(env: Environment, namedXContentRegistry: NamedXContentRegistry,
                                          clusterService: ClusterService, recoverySettings: RecoverySettings): Map<String, Repository.Factory> {

@@ -22,9 +22,12 @@ import org.opensearch.action.admin.cluster.health.ClusterHealthRequest
 import org.opensearch.action.admin.indices.create.CreateIndexRequest
 import org.opensearch.action.admin.indices.create.CreateIndexResponse
 import org.opensearch.action.admin.indices.mapping.put.PutMappingRequest
+import org.opensearch.action.bulk.BulkRequest
+import org.opensearch.action.bulk.BulkResponse
 import org.opensearch.action.delete.DeleteRequest
 import org.opensearch.action.delete.DeleteResponse
 import org.opensearch.action.get.GetRequest
+import org.opensearch.action.get.MultiGetRequest
 import org.opensearch.action.index.IndexResponse
 import org.opensearch.transport.client.Client
 import org.opensearch.cluster.health.ClusterHealthStatus
@@ -194,6 +197,35 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
     }
 
     /**
+     * Fetches replication metadata for multiple indices in ONE call using MultiGet.
+     * Returns a map of follower index name -> ReplicationMetadata. Missing indices are omitted.
+     */
+    suspend fun getMetadata(metadataType: String, indices: List<String>): Map<String, ReplicationMetadata> {
+        if (indices.isEmpty()) return emptyMap()
+        if (!configStoreExists()) return emptyMap()
+
+        checkAndWaitForStoreHealth()
+
+        val multiGetReq = MultiGetRequest().realtime(true)
+        for (index in indices) {
+            val id = getId(metadataType, null, index)
+            multiGetReq.add(MultiGetRequest.Item(REPLICATION_CONFIG_SYSTEM_INDEX, id))
+        }
+
+        val multiGetRes = client.suspending(client::multiGet, defaultContext = true)(multiGetReq)
+        val result = mutableMapOf<String, ReplicationMetadata>()
+        for ((i, response) in multiGetRes.responses.withIndex()) {
+            if (response.isFailed || response.response?.sourceAsBytesRef == null) continue
+            val parser = XContentHelper.createParser(
+                namedXContentRegistry, LoggingDeprecationHandler.INSTANCE,
+                response.response.sourceAsBytesRef, XContentType.JSON
+            )
+            result[indices[i]] = ReplicationMetadata.fromXContent(parser)
+        }
+        return result
+    }
+
+    /**
      * Preference to set for the getMetadata requests
      * - Fetch from the primary shards
      */
@@ -222,6 +254,30 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
 
         val delReq = DeleteRequest(REPLICATION_CONFIG_SYSTEM_INDEX, id)
         return client.suspending(client::delete, defaultContext = true)(delReq)
+    }
+
+    /**
+     * Deletes replication metadata for multiple indices in ONE call using Bulk API.
+     * Returns set of indices that were successfully deleted.
+     */
+    suspend fun deleteMetadata(metadataType: String, indices: List<String>): Set<String> {
+        if (indices.isEmpty()) return emptySet()
+        if (!configStoreExists()) return emptySet()
+
+        checkAndWaitForStoreHealth()
+
+        val bulkReq = BulkRequest()
+        for (index in indices) {
+            val id = getId(metadataType, null, index)
+            bulkReq.add(DeleteRequest(REPLICATION_CONFIG_SYSTEM_INDEX, id))
+        }
+
+        val bulkRes = client.suspending(client::bulk, defaultContext = true)(bulkReq)
+        val succeeded = mutableSetOf<String>()
+        for ((i, item) in bulkRes.items.withIndex()) {
+            if (!item.isFailed) succeeded.add(indices[i])
+        }
+        return succeeded
     }
 
     suspend fun updateMetadata(updateMetadataReq: UpdateReplicationMetadataRequest): IndexResponse {

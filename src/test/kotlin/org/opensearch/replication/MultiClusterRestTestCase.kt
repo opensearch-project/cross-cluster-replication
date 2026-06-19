@@ -271,6 +271,11 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
             registerSnapshotRepository(it)
             if(it.securityEnabled && !it.defaultSecuritySetupCompleted)
                 setupDefaultSecurityRoles(it)
+            try {
+                val req = Request("PUT", "/_cluster/settings")
+                req.setJsonEntity("""{"persistent":{"plugins.replication.follower.bulk_poll_timeout":5}}""")
+                it.lowLevelClient.performRequest(req)
+            } catch (_: Exception) {}
         }
     }
 
@@ -376,7 +381,28 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
 
     @After
     fun wipeClusters() {
+        testClusters.values.forEach { cancelBulkTask(it) }
         testClusters.values.forEach { wipeCluster(it) }
+        testClusters.values.forEach { cancelBulkTask(it) }
+    }
+
+    private fun cancelBulkTask(testCluster: TestCluster) {
+        try {
+            fun getBulkMeta() = ((OpenSearchRestTestCase.entityAsMap(testCluster.lowLevelClient.performRequest(
+                Request("GET", "/_cluster/state/metadata")))["metadata"] as? Map<*, *>)
+                ?.get("bulk_replication_task") as? Map<*, *>)
+
+            val meta = getBulkMeta() ?: return
+            val pending = meta["num_pending"] as? Int ?: 0
+            val taskId = meta["task_id"] as? String ?: return
+            if (pending == 0 || taskId.isEmpty()) return
+
+            try { testCluster.lowLevelClient.performRequest(Request("POST", "/_plugins/_replication/_task_cancel/$taskId")) } catch (_: Exception) {}
+
+            val deadline = System.currentTimeMillis() + 30_000L
+            while (System.currentTimeMillis() < deadline && (getBulkMeta()?.get("num_pending") as? Int ?: 0) > 0)
+                Thread.sleep(2000)
+        } catch (_: Exception) {}
     }
 
     private fun wipeCluster(testCluster: TestCluster) {
