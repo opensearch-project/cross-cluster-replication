@@ -24,7 +24,7 @@ jobs:
     steps:
       # This step uses the checkout Github action: https://github.com/actions/checkout
       - name: Checkout Branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - id: plugin-availability-check
         name: "plugin check"
         run: |
@@ -68,20 +68,20 @@ jobs:
         run: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-start-command }}
       # This step uses the setup-java Github action: https://github.com/actions/setup-java
       - name: Set Up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
         with:
           java-version: 21
           distribution: 'temurin'
       # This step uses the checkout Github action: https://github.com/actions/checkout
       - name: Checkout Branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Build and run Replication tests
         run: |
           chown -R 1000:1000 `pwd`
           ls -al src/test/resources/security/plugin
           su `id -un 1000` -c "whoami && java -version && ./gradlew --refresh-dependencies clean release -Dbuild.snapshot=true -Psecurity=true"
       - name: Upload failed logs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: failure()
         with:
           name: logs
@@ -96,7 +96,7 @@ jobs:
       - name: Uploads coverage
         with:
           fetch-depth: 2
-        uses: codecov/codecov-action@v1.2.1
+        uses: codecov/codecov-action@6b64100093a52bba848a483c1f4a456109d4e261 # v1.2.1
 
   knn-build-linux:
     needs: [req, Get-CI-Image-Tag]
@@ -116,19 +116,19 @@ jobs:
         run: ${{ needs.Get-CI-Image-Tag.outputs.ci-image-start-command }}
       # This step uses the setup-java Github action: https://github.com/actions/setup-java
       - name: Set Up JDK 21
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@c1e323688fd81a25caa38c78aa6df2d33d3e20d9 # v4
         with:
           java-version: 21
           distribution: 'temurin'
       # This step uses the checkout Github action: https://github.com/actions/checkout
       - name: Checkout Branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5 # v4
       - name: Build and run Replication tests
         run: |
           chown -R 1000:1000 `pwd`
           su `id -un 1000` -c 'whoami && java -version && ./gradlew --refresh-dependencies clean release -Dbuild.snapshot=true -PnumNodes=1  -Dtests.class=org.opensearch.replication.BasicReplicationIT   -Dtests.method="test knn index replication"  -Pknn=true'
       - name: Upload failed logs
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         if: failure()
         with:
           name: logs
@@ -143,4 +143,4 @@ jobs:
       - name: Uploads coverage
         with:
           fetch-depth: 2
-        uses: codecov/codecov-action@v1.2.1
+        uses: codecov/codecov-action@6b64100093a52bba848a483c1f4a456109d4e261 # v1.2.1
