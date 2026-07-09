@@ -37,6 +37,7 @@ import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.replication.util.startTask
 import org.opensearch.replication.util.suspendExecute
 import org.opensearch.replication.util.suspending
+import org.opensearch.replication.util.waitForClusterStateUpdate
 import org.opensearch.replication.util.waitForNextChange
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -48,6 +49,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.opensearch.OpenSearchException
 import org.opensearch.OpenSearchTimeoutException
+import org.opensearch.action.support.clustermanager.AcknowledgedResponse
+import org.opensearch.cluster.AckedClusterStateUpdateTask
+import org.opensearch.cluster.metadata.Metadata
+import org.opensearch.common.Priority
 import org.opensearch.core.action.ActionListener
 import org.opensearch.action.admin.indices.alias.IndicesAliasesRequest
 import org.opensearch.action.admin.indices.alias.IndicesAliasesRequest.AliasActions
@@ -74,6 +79,7 @@ import org.opensearch.common.logging.Loggers
 import org.opensearch.common.settings.Setting
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.settings.SettingsModule
+import org.opensearch.common.unit.TimeValue
 import org.opensearch.core.common.unit.ByteSizeUnit
 import org.opensearch.core.common.unit.ByteSizeValue
 import org.opensearch.core.xcontent.ToXContent
@@ -108,6 +114,7 @@ import kotlin.coroutines.suspendCoroutine
 import org.opensearch.commons.replication.action.ReplicationActions.INTERNAL_STOP_REPLICATION_ACTION_TYPE
 import org.opensearch.commons.replication.action.StopIndexReplicationRequest
 import org.opensearch.replication.ReplicationPlugin
+import org.opensearch.replication.task.shard.FollowerClusterStats
 import kotlin.streams.toList
 import org.opensearch.cluster.DiffableUtils
 import org.opensearch.common.util.concurrent.ThreadContext
@@ -123,7 +130,8 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                            replicationMetadataManager: ReplicationMetadataManager,
                            replicationSettings: ReplicationSettings,
                            val settingsModule: SettingsModule,
-                           val cso: ClusterStateObserver)
+                           val cso: ClusterStateObserver,
+                           private val followerClusterStats: FollowerClusterStats)
     : CrossClusterReplicationTask(id, type, action, description, parentTask, emptyMap(), executor,
                                   clusterService, threadPool, client, replicationMetadataManager, replicationSettings), ClusterStateListener
     {
@@ -142,6 +150,10 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
     private var isLeaderIndexDeleted = false
     private var updateSettingsContinuousFailCount = 0
     private var updateAliasContinousFailCount = 0
+
+    // Checkpoint persistence: update every CHECKPOINT_PERSIST_INTERVAL polls (~60s at 5s/poll)
+    private var checkpointPollCounter = 0
+    private val CHECKPOINT_PERSIST_INTERVAL = 12
 
     private var metadataUpdate :MetadataUpdate? = null
     private var metadataPoller: Job? = null
@@ -181,15 +193,53 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         while (scope.isActive) {
             try {
                 val newState = when (currentTaskState.state) {
-                    ReplicationState.INIT -> {
-                        addListenerToInterruptTask()
-                        if (isResumed()) {
-                            log.debug("Resuming tasks now.")
-                            InitFollowState
-                        } else {
-                            setupAndStartRestore()
+                ReplicationState.INIT -> {
+                    addListenerToInterruptTask()
+                    if (isResumed()) {
+                        // Warm-attach (role-transition resume): the follower index already exists locally.
+                        // If REPLICATED_INDEX_SETTING is not yet set (this was previously a leader/regular index),
+                        // apply it now so the index is properly identified as a CCR follower throughout the plugin.
+                        val currentSetting = clusterService.state().metadata()
+                            .index(followerIndexName)?.settings?.get(REPLICATED_INDEX_SETTING.key)
+                        if (currentSetting.isNullOrBlank()) {
+                            // REPLICATED_INDEX_SETTING is InternalIndex — cannot be set via UpdateSettingsRequest.
+                            // Use a direct cluster state update (same approach as StopReplicationTask uses to remove it).
+                            log.info("Warm-attach role transition: stamping REPLICATED_INDEX_SETTING " +
+                                    "on $followerIndexName via cluster state update")
+                            clusterService.waitForClusterStateUpdate(
+                                    "warm-attach-replicated-setting-$followerIndexName") { listener ->
+                                object : AckedClusterStateUpdateTask<AcknowledgedResponse>(
+                                        Priority.NORMAL, null, listener) {
+                                    // AckedClusterStateUpdateTask.timeout() calls request.clusterManagerNodeTimeout()
+                                    // which NPEs when request is null. Override to provide a safe default.
+                                    override fun timeout(): TimeValue = TimeValue.timeValueSeconds(60)
+                                    override fun execute(currentState: ClusterState): ClusterState {
+                                        val idxMeta = currentState.metadata().index(followerIndexName)
+                                            ?: return currentState
+                                        val newSettings = Settings.builder()
+                                            .put(idxMeta.settings)
+                                            .put(REPLICATED_INDEX_SETTING.key,
+                                                "$leaderAlias:${leaderIndex.name}")
+                                            .build()
+                                        val newIdxMeta = IndexMetadata.builder(idxMeta)
+                                            .settings(newSettings)
+                                            .settingsVersion(idxMeta.settingsVersion + 1)
+                                        val mdBuilder = Metadata.builder(currentState.metadata())
+                                            .put(newIdxMeta)
+                                        return ClusterState.builder(currentState).metadata(mdBuilder).build()
+                                    }
+                                    override fun newResponse(acknowledged: Boolean) =
+                                        AcknowledgedResponse(acknowledged)
+                                }
+                            }
                         }
+                        log.info("Skipping snapshot restore for $followerIndexName — " +
+                                "index exists locally (warm-attach), shard tasks will resume from checkpoint")
+                        InitFollowState
+                    } else {
+                        setupAndStartRestore()
                     }
+                }
                     ReplicationState.RESTORING -> {
                         log.info("In restoring state for $followerIndexName")
                         waitForRestore()
@@ -319,8 +369,46 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
             }
             return FailedState(failedShardTasks, msg)
         }
+
+        // Persist checkpoint sequences every CHECKPOINT_PERSIST_INTERVAL polls (~60s)
+        if (++checkpointPollCounter >= CHECKPOINT_PERSIST_INTERVAL) {
+            checkpointPollCounter = 0
+            persistCheckpointSequences()
+        }
+
         delay(SLEEP_TIME_BETWEEN_POLL_MS)
         return MonitoringState
+    }
+
+    /**
+     * Aggregates leader and follower checkpoints across all shards for this index from the live
+     * FollowerClusterStats, then persists them to the replication metadata store.
+     * Called every ~60 seconds so a role transition can resume from the latest known position.
+     */
+    private suspend fun persistCheckpointSequences() {
+        try {
+            val followerShardIds = clusterService.state().routingTable.indicesRouting()[followerIndexName]
+                ?.shards()?.map { it.value.shardId }?.toSet()
+            if (followerShardIds.isNullOrEmpty()) return
+
+            var maxLeaderCheckpoint = -1L
+            var maxFollowerCheckpoint = -1L
+            for (shardId in followerShardIds) {
+                val metric = followerClusterStats.stats[shardId] ?: continue
+                if (metric.leaderCheckpoint > maxLeaderCheckpoint)   maxLeaderCheckpoint = metric.leaderCheckpoint
+                if (metric.followerCheckpoint > maxFollowerCheckpoint) maxFollowerCheckpoint = metric.followerCheckpoint
+            }
+
+            // Only persist if we have real checkpoint data from at least one active shard task
+            if (maxLeaderCheckpoint >= 0) {
+                replicationMetadataManager.updateIndexCheckpointSequences(
+                    followerIndexName, maxLeaderCheckpoint, maxFollowerCheckpoint)
+                log.debug("Checkpoint persisted for $followerIndexName — " +
+                        "leader=$maxLeaderCheckpoint follower=$maxFollowerCheckpoint")
+            }
+        } catch (e: Exception) {
+            log.warn("Failed to persist checkpoint sequences for $followerIndexName: ${e.message}")
+        }
     }
 
     fun isTrackingTaskForIndex(): Boolean {

@@ -61,12 +61,67 @@ open class ReplicationMetadataManager constructor(private val clusterService: Cl
 
     suspend fun addAutofollowMetadata(patternName: String, connectionName: String, pattern: String,
                                       overallState: ReplicationOverallState, user: User?,
-                                      follower_cluster_role: String?, leader_cluster_role: String?, settings: Settings) {
+                                      follower_cluster_role: String?, leader_cluster_role: String?,
+                                      settings: Settings,
+                                      // Point 1 & 3 & 5: Checkpoint configuration forwarded from the autofollow request
+                                      checkpointPersistenceEnabled: Boolean = true,
+                                      checkpointRetentionPeriod: String = "24h",
+                                      roleTransitionResumeMode: String = "CHECKPOINT") {
         val replicationMetadata = ReplicationMetadata(connectionName,
                 ReplicationStoreMetadataType.AUTO_FOLLOW.name, overallState.name, CUSTOMER_INITIATED_ACTION,
                 ReplicationContext(patternName, user?.overrideFgacRole(follower_cluster_role)),
-                ReplicationContext(pattern, user?.overrideFgacRole(leader_cluster_role)), settings)
+                ReplicationContext(pattern, user?.overrideFgacRole(leader_cluster_role)),
+                settings,
+                checkpointPersistenceEnabled,
+                checkpointRetentionPeriod,
+                roleTransitionResumeMode)
         addMetadata(AddReplicationMetadataRequest(replicationMetadata))
+    }
+
+    /**
+     * Point 2: Update persisted leader and follower checkpoint sequences for a given autofollow pattern.
+     * Called periodically during active replication so that a role transition can resume from the
+     * last known position rather than performing a full re-sync.
+     */
+    suspend fun updateCheckpointSequences(patternName: String, connectionName: String,
+                                          leaderSequenceNumber: Long, followerAppliedSequence: Long) {
+        executeAndWrapExceptionIfAny({
+            val getReq = GetReplicationMetadataRequest(ReplicationStoreMetadataType.AUTO_FOLLOW.name, connectionName, patternName)
+            val getRes = replicaionMetadataStore.getMetadata(getReq, false)
+            val metadata = getRes.replicationMetadata
+            if (metadata.checkpointPersistenceEnabled) {
+                metadata.leaderSequenceNumber = leaderSequenceNumber
+                metadata.followerAppliedSequence = followerAppliedSequence
+                replicaionMetadataStore.updateMetadata(UpdateReplicationMetadataRequest(metadata))
+                log.debug("Updated checkpoint sequences for $connectionName:$patternName — " +
+                        "leader=$leaderSequenceNumber follower=$followerAppliedSequence")
+            }
+        }, log, "Error updating checkpoint sequences for $patternName")
+    }
+
+    /**
+     * Update persisted leader and follower checkpoint sequences for a specific replicated index (INDEX type).
+     * Called periodically from ShardReplicationTask (co-located with the shard) so role transitions
+     * can resume from the last known position.
+     * No optimistic locking — multiple shard tasks for the same index may call this concurrently;
+     * last write wins, which is acceptable since all writes carry approximately correct values.
+     */
+    suspend fun updateIndexCheckpointSequences(followerIndex: String,
+                                               leaderSequenceNumber: Long,
+                                               followerAppliedSequence: Long) {
+        executeAndWrapExceptionIfAny({
+            val getReq = GetReplicationMetadataRequest(ReplicationStoreMetadataType.INDEX.name, null, followerIndex)
+            val getRes = replicaionMetadataStore.getMetadata(getReq, false)
+            val metadata = getRes.replicationMetadata
+            if (metadata.checkpointPersistenceEnabled) {
+                metadata.leaderSequenceNumber = leaderSequenceNumber
+                metadata.followerAppliedSequence = followerAppliedSequence
+                // No seqNo/primaryTerm → no optimistic locking → concurrent shard-task writes are safe
+                replicaionMetadataStore.updateMetadata(UpdateReplicationMetadataRequest(metadata))
+                log.debug("Persisted checkpoint for index $followerIndex — " +
+                        "leader=$leaderSequenceNumber follower=$followerAppliedSequence")
+            }
+        }, log, "Error persisting checkpoint sequences for index $followerIndex")
     }
 
     private suspend fun addMetadata(metadataReq: AddReplicationMetadataRequest) {
@@ -123,9 +178,47 @@ open class ReplicationMetadataManager constructor(private val clusterService: Cl
         updateMetadata(UpdateReplicationMetadataRequest(metadata, getRes.seqNo, getRes.primaryTerm))
     }
 
+    /**
+     * Called when replication is explicitly stopped. Instead of deleting the INDEX metadata document,
+     * we mark it as STOPPED while preserving the checkpoint fields (leaderSequenceNumber,
+     * followerAppliedSequence). This allows a subsequent role transition to resume from the last
+     * known checkpoint rather than performing a full re-sync.
+     *
+     * When replication is re-started fresh (not a role transition), addIndexReplicationMetadata()
+     * overwrites this STOPPED document with a new RUNNING state, so there is no data leak.
+     */
     suspend fun deleteIndexReplicationMetadata(followerIndex: String) {
-        val delReq = DeleteReplicationMetadataRequest(ReplicationStoreMetadataType.INDEX.name, null, followerIndex)
-        deleteMetadata(delReq)
+        try {
+            val getReq = GetReplicationMetadataRequest(ReplicationStoreMetadataType.INDEX.name, null, followerIndex)
+            val getRes = replicaionMetadataStore.getMetadata(getReq, false)
+            val metadata = getRes.replicationMetadata
+            if (metadata.leaderSequenceNumber > ReplicationMetadata.UNASSIGNED_SEQ_NO) {
+                // Checkpoint exists — preserve it by transitioning to STOPPED state
+                metadata.overallState = ReplicationOverallState.STOPPED.name
+                metadata.reason = CUSTOMER_INITIATED_ACTION
+                replicaionMetadataStore.updateMetadata(
+                    UpdateReplicationMetadataRequest(metadata, getRes.seqNo, getRes.primaryTerm))
+                log.info("Preserved checkpoint for $followerIndex on stop — " +
+                        "leaderSeqNo=${metadata.leaderSequenceNumber}, followerSeqNo=${metadata.followerAppliedSequence}. " +
+                        "Role transition can resume from this checkpoint.")
+            } else {
+                // No checkpoint recorded — safe to delete (nothing useful to preserve)
+                val delReq = DeleteReplicationMetadataRequest(ReplicationStoreMetadataType.INDEX.name, null, followerIndex)
+                deleteMetadata(delReq)
+                log.debug("Deleted INDEX metadata for $followerIndex (no checkpoint to preserve)")
+            }
+        } catch (e: ResourceNotFoundException) {
+            log.debug("INDEX metadata for $followerIndex not found during stop — already cleaned up")
+        } catch (e: Exception) {
+            // Fall back to delete so stop replication doesn't get stuck
+            log.warn("Failed to preserve checkpoint for $followerIndex, falling back to delete: ${e.message}")
+            try {
+                val delReq = DeleteReplicationMetadataRequest(ReplicationStoreMetadataType.INDEX.name, null, followerIndex)
+                deleteMetadata(delReq)
+            } catch (ex: Exception) {
+                log.error("Failed to clean up metadata for $followerIndex: ${ex.message}")
+            }
+        }
         updateReplicationState(followerIndex, ReplicationOverallState.STOPPED)
     }
 

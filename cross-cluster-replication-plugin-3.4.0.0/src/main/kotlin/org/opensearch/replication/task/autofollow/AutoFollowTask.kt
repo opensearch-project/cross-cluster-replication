@@ -15,6 +15,7 @@ import org.opensearch.replication.ReplicationSettings
 import org.opensearch.replication.action.index.ReplicateIndexAction
 import org.opensearch.replication.action.index.ReplicateIndexRequest
 import org.opensearch.replication.metadata.ReplicationMetadataManager
+import org.opensearch.replication.metadata.store.ReplicationMetadata
 import org.opensearch.replication.task.CrossClusterReplicationTask
 import org.opensearch.replication.task.ReplicationState
 import org.opensearch.replication.util.stackTraceToString
@@ -25,7 +26,10 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import org.opensearch.OpenSearchException
 import org.opensearch.OpenSearchSecurityException
+import org.opensearch.ResourceNotFoundException
 import org.opensearch.action.admin.indices.get.GetIndexRequest
+import org.opensearch.action.admin.indices.settings.get.GetSettingsRequest
+import org.opensearch.action.admin.indices.settings.put.UpdateSettingsRequest
 import org.opensearch.action.support.IndicesOptions
 import org.opensearch.transport.client.Client
 import org.opensearch.cluster.service.ClusterService
@@ -161,6 +165,13 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
                 if(statusRes.status != ShardInfoResponse.BOOTSTRAPPING) {
                     completedJobs.add(index)
                 }
+            } catch (ex: ResourceNotFoundException) {
+                // Replication metadata for this index no longer exists — it was likely stopped
+                // or cleaned up externally while still tracked in the queue. Remove it to prevent
+                // an endless ResourceNotFoundException flood on every poll cycle.
+                log.warn("Replication metadata not found for tracked index '$index', removing from autofollow queue. " +
+                        "Cause: ${ex.message}")
+                completedJobs.add(index)
             } catch (ex: Exception) {
                 log.error("Error while fetching the status for index $index", ex)
             }
@@ -186,26 +197,71 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
     }
 
     private suspend fun startReplication(leaderIndex: String) {
+        // Read the per-index checkpoint from INDEX metadata (updated by ShardReplicationTask and
+        // preserved on stop). The AUTO_FOLLOW pattern metadata (replicationMetadata) always has
+        // leaderSequenceNumber=-1 since it is never updated at the pattern level.
+        var savedLeaderSeqNo = ReplicationMetadata.UNASSIGNED_SEQ_NO
+        var savedFollowerSeqNo = ReplicationMetadata.UNASSIGNED_SEQ_NO
+        try {
+            val indexMeta = replicationMetadataManager.getIndexReplicationMetadata(leaderIndex)
+            savedLeaderSeqNo = indexMeta.leaderSequenceNumber
+            savedFollowerSeqNo = indexMeta.followerAppliedSequence
+            log.debug("Found saved checkpoint for $leaderIndex: " +
+                    "leader=$savedLeaderSeqNo follower=$savedFollowerSeqNo state=${indexMeta.overallState}")
+        } catch (e: ResourceNotFoundException) {
+            log.debug("No INDEX metadata found for $leaderIndex — treating as first-time replication")
+        } catch (e: Exception) {
+            log.warn("Could not read INDEX metadata for $leaderIndex: ${e.message}")
+        }
+
+        // Role transition: checkpoint exists AND the local index is present (warm-attach possible).
+        // The local index exists because this cluster was the leader before the role switch.
+        val isRoleTransition = replicationMetadata.checkpointPersistenceEnabled &&
+                replicationMetadata.roleTransitionResumeMode == "CHECKPOINT" &&
+                savedLeaderSeqNo > ReplicationMetadata.UNASSIGNED_SEQ_NO &&
+                clusterService.state().metadata().hasIndex(leaderIndex)
+
         if (clusterService.state().metadata().hasIndex(leaderIndex)) {
-            log.info("""Cannot replicate $leaderAlias:$leaderIndex as an index with the same name already 
+            if (isRoleTransition) {
+                // The local index exists because this cluster was the leader before the role switch.
+                // We proceed with the warm-attach path: no snapshot restore, existing data reused.
+                log.info("Role transition resume detected for $leaderAlias:$leaderIndex — " +
+                        "local index exists, will attach as follower from checkpoint " +
+                        "leaderSeqNo=$savedLeaderSeqNo followerSeqNo=$savedFollowerSeqNo")
+            } else {
+                log.info("""Cannot replicate $leaderAlias:$leaderIndex as an index with the same name already 
                         |exists.""".trimMargin())
-            return
+                return
+            }
         }
 
         var successStart = false
 
         try {
             log.info("Auto follow starting replication from ${leaderAlias}:$leaderIndex -> $leaderIndex")
-            val request = ReplicateIndexRequest(leaderIndex, leaderAlias, leaderIndex )
+            val request = ReplicateIndexRequest(leaderIndex, leaderAlias, leaderIndex)
             request.isAutoFollowRequest = true
+            request.isRoleTransitionResume = isRoleTransition
             val followerRole = replicationMetadata.followerContext.user?.roles?.get(0)
             val leaderRole = replicationMetadata.leaderContext.user?.roles?.get(0)
-            if(followerRole != null && leaderRole != null) {
-                request.useRoles = HashMap<String, String>()
+            if (followerRole != null && leaderRole != null) {
+                request.useRoles = HashMap()
                 request.useRoles!![ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE] = followerRole
                 request.useRoles!![ReplicateIndexRequest.LEADER_CLUSTER_ROLE] = leaderRole
             }
             request.settings = replicationMetadata.settings
+
+            // For role transitions: TransportReplicateIndexAction self-detects the scenario
+            // (local index is non-follower + leader has REPLICATED_INDEX_SETTING) and allows
+            // the warm-attach to proceed without needing explicit leader setting cleanup.
+            if (isRoleTransition) {
+                log.info(
+                    "Role transition: resuming replication from checkpoint — " +
+                    "leaderSeqNo=$savedLeaderSeqNo, " +
+                    "followerAppliedSeqNo=$savedFollowerSeqNo (no full re-sync)"
+                )
+            }
+
             val response = client.suspendExecute(replicationMetadata, ReplicateIndexAction.INSTANCE, request)
             if (!response.isAcknowledged) {
                 throw ReplicationException("Failed to auto follow leader index $leaderIndex")
@@ -213,10 +269,8 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
             successStart = true
             log.debug("Auto follow has started replication from ${leaderAlias}:$leaderIndex -> $leaderIndex")
         } catch (e: OpenSearchSecurityException) {
-            // For permission related failures, Adding as part of failed indices as autofollow role doesn't have required permissions.
             log.trace("Cannot start replication on $leaderIndex due to missing permissions $e")
         } catch (e: Exception) {
-            // Any failure other than security exception can be safely retried and not adding to the failed indices
             log.warn("Failed to start replication for $leaderAlias:$leaderIndex -> $leaderIndex.", e)
         } finally {
             if (successStart) {
@@ -226,6 +280,34 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
                 stat.failCounterForRun++
                 stat.failedIndices.add(leaderIndex)
             }
+        }
+    }
+
+    /**
+     * Clears the REPLICATED_INDEX_SETTING on the leader index via the remote client.
+     * After a role switch the new leader's index (old follower) still carries this setting,
+     * which blocks TransportReplicateIndexAction's "cannot replicate a replicated index" guard.
+     */
+    private suspend fun clearLeaderReplicatedSetting(leaderIndex: String) {
+        try {
+            val remoteClient = client.getRemoteClusterClient(leaderAlias)
+            val getSettingsReq = GetSettingsRequest().indices(leaderIndex)
+            val settingsResp = remoteClient.suspending(
+                remoteClient.admin().indices()::getSettings, defaultContext = true)(getSettingsReq)
+            val settingValue = settingsResp.getSetting(leaderIndex,
+                org.opensearch.replication.ReplicationPlugin.REPLICATED_INDEX_SETTING.key)
+            if (!settingValue.isNullOrBlank()) {
+                log.info("Clearing REPLICATED_INDEX_SETTING on $leaderAlias:$leaderIndex for role transition")
+                val updateReq = UpdateSettingsRequest(leaderIndex)
+                    .settings(org.opensearch.common.settings.Settings.builder()
+                        .putNull(org.opensearch.replication.ReplicationPlugin.REPLICATED_INDEX_SETTING.key))
+                remoteClient.suspending(
+                    remoteClient.admin().indices()::updateSettings, defaultContext = true)(updateReq)
+                log.info("Successfully cleared REPLICATED_INDEX_SETTING on $leaderAlias:$leaderIndex")
+            }
+        } catch (e: Exception) {
+            log.warn("Could not clear REPLICATED_INDEX_SETTING on $leaderAlias:$leaderIndex: ${e.message}")
+            throw e
         }
     }
 

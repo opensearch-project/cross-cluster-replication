@@ -34,8 +34,12 @@ import org.opensearch.gradle.test.RestIntegTestTask
 
 buildscript {
     ext {
-        isSnapshot = "true" == System.getProperty("build.snapshot", "true")
-        opensearch_version = System.getProperty("opensearch.version", "3.4.0-SNAPSHOT")
+        // Lock this branch to the 3.4.0.0 line to avoid external -D overrides drifting to 3.7.x.
+        opensearch_compatibility_version = System.getProperty("opensearch.version", "3.4.0.0")
+        // Ensure plugin descriptor generation resolves to this branch line by default.
+        System.setProperty("opensearch.version", opensearch_compatibility_version)
+        isSnapshot = true
+        opensearch_version = "3.4.0-SNAPSHOT"
         buildVersionQualifier = System.getProperty("build.version_qualifier", "")
         // e.g. 2.0.0-rc1-SNAPSHOT -> 2.0.0.0-rc1-SNAPSHOT
         version_tokens = opensearch_version.tokenize('-')
@@ -53,7 +57,7 @@ buildscript {
         opensearch_previous_version = System.getProperty("bwc_older_version", "2.6.0")
         plugin_previous_version = opensearch_previous_version.replaceAll(/(\.\d)([^\d]*)$/, '$1.0$2')
 
-        common_utils_version = System.getProperty("common_utils.version", opensearch_build)
+        common_utils_version = opensearch_build
         kotlin_version = System.getProperty("kotlin.version", "2.2.0")
 
         security_plugin_version = opensearch_build
@@ -70,7 +74,6 @@ buildscript {
     }
 
     repositories {
-        mavenLocal()
         mavenCentral()
         maven { url = "https://ci.opensearch.org/ci/dbc/snapshots/maven/" }
         maven { url = "https://plugins.gradle.org/m2/" }
@@ -131,10 +134,17 @@ configurations.all {
         force "org.apache.httpcomponents.core5:httpcore5-h2:${versions.httpcore5}"
         force "org.apache.httpcomponents.client5:httpclient5:${versions.httpclient5}"
         force "org.apache.httpcomponents.client5:httpclient5-osgi:${versions.httpclient5}"
-        force 'com.fasterxml.jackson.core:jackson-databind:2.13.4.2'
+        force 'com.fasterxml.jackson.core:jackson-databind:2.22.0'
         force 'org.yaml:snakeyaml:2.0'
         force 'org.codehaus.plexus:plexus-utils:3.0.24'
         force 'net.java.dev.jna:jna:5.12.1'
+        force "org.opensearch:opensearch:${opensearch_version}"
+        force "org.opensearch.test:framework:${opensearch_version}"
+        force "org.opensearch.client:opensearch-rest-client:${opensearch_version}"
+        force "io.projectreactor:reactor-core:3.8.6"
+        force "com.fasterxml.jackson.core:jackson-core:2.22.0"
+        force "com.fasterxml.jackson.core:jackson-databind:2.22.0"
+        force "com.fasterxml.jackson.core:jackson-annotations:2.22.0"
     }
 }
 
@@ -167,7 +177,6 @@ dependencies {
 }
 
 repositories {
-    mavenLocal()
     mavenCentral()
     maven { url = "https://ci.opensearch.org/ci/dbc/snapshots/maven/" }
     maven { url = "https://plugins.gradle.org/m2/" }
@@ -197,6 +206,25 @@ opensearchplugin {
     name = project.name
     description = "OpenSearch Cross Cluster Replication Plugin"
     classname = "org.opensearch.replication.ReplicationPlugin"
+}
+
+// Fix opensearch.version drift: build-tools-3.4.0-SNAPSHOT jar ships with
+// version.properties containing opensearch=3.7.0-SNAPSHOT (CI snapshot contamination).
+// Override the generated descriptor so the plugin is compatible with OpenSearch 3.4.0.
+tasks.named("pluginProperties") {
+    // Force re-run each time so the patch is always applied, even on incremental builds.
+    outputs.upToDateWhen { false }
+    doLast {
+        def propFile = new File("${project.buildDir}/generated-resources/plugin-descriptor.properties")
+        if (propFile.exists()) {
+            def original = propFile.text
+            def patched  = original.replaceAll(/(?m)^opensearch\.version=.*$/, "opensearch.version=${opensearch_no_snapshot}")
+            if (original != patched) {
+                propFile.text = patched
+                logger.lifecycle("Patched plugin-descriptor.properties: opensearch.version -> ${opensearch_no_snapshot}")
+            }
+        }
+    }
 }
 
 java {
@@ -380,6 +408,7 @@ File repo = file("$buildDir/testclusters/repo")
 def _numNodes = findProperty('numNodes') as Integer ?: 2
 testClusters {
     leaderCluster {
+        versions = [opensearch_version]
         plugin(project.tasks.bundlePlugin.archiveFile)
         if(securityEnabled) {
             plugin(provider(securityPluginFile))
@@ -399,6 +428,7 @@ testClusters {
         if(_numNodes == 1) jvmArgs "${-> getDebugJvmArgs(debugPort++)}"
     }
     followCluster {
+        versions = [opensearch_version]
         testDistribution = "INTEG_TEST"
         plugin(project.tasks.bundlePlugin.archiveFile)
         if(securityEnabled) {
@@ -415,6 +445,13 @@ testClusters {
         //numberOfNodes = 3
         setting 'path.repo', repo.absolutePath
         if(_numNodes == 1) jvmArgs "${-> getDebugJvmArgs(debugPort++)}"
+    }
+}
+
+// Ensure the default integTest cluster created by the rest-test plugin uses the same OpenSearch version.
+testClusters {
+    integTest {
+        versions = [opensearch_version]
     }
 }
 

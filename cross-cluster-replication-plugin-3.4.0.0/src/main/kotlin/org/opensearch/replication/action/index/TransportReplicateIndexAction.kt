@@ -94,9 +94,24 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
                 val leaderSettings = getLeaderIndexSettings(request.leaderAlias, request.leaderIndex)
                 log.debug("Leader settings were fetched for ${request.leaderIndex} index.")
 
-                if (leaderSettings.keySet().contains(ReplicationPlugin.REPLICATED_INDEX_SETTING.key) and
+                if (leaderSettings.keySet().contains(ReplicationPlugin.REPLICATED_INDEX_SETTING.key) &&
                         !leaderSettings.get(ReplicationPlugin.REPLICATED_INDEX_SETTING.key).isNullOrBlank()) {
-                    throw IllegalArgumentException("Cannot Replicate a Replicated Index ${request.leaderIndex}")
+                    // The leader index has REPLICATED_INDEX_SETTING — normally means circular replication.
+                    // EXCEPTION: if the local cluster has this index as a regular (non-follower) index,
+                    // this is a role-transition — the new leader's index still carries the stale setting
+                    // from when it was a follower. Allow the warm-attach to proceed.
+                    // Note: we do NOT try to clear the leader's setting here because REPLICATED_INDEX_SETTING
+                    // is InternalIndex and cannot be modified via UpdateSettingsRequest. It will be cleared
+                    // when StopIndexReplicationAction is eventually called on the (new) leader cluster.
+                    val localIndex = clusterService.state().metadata().index(request.followerIndex)
+                    val localFollowerSetting = localIndex?.settings?.get(ReplicationPlugin.REPLICATED_INDEX_SETTING.key)
+                    val localIndexIsRegular = localIndex != null && localFollowerSetting.isNullOrBlank()
+                    if (localIndexIsRegular) {
+                        log.info("Role transition detected for ${request.leaderAlias}:${request.leaderIndex} — " +
+                                "local index exists as regular (non-follower) index, allowing warm-attach")
+                    } else {
+                        throw IllegalArgumentException("Cannot Replicate a Replicated Index ${request.leaderIndex}")
+                    }
                 }
 
                 // Soft deletes should be enabled for replication to work.

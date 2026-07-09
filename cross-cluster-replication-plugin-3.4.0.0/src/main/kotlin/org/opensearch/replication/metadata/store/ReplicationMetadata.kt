@@ -87,6 +87,14 @@ class ReplicationMetadata: ToXContent {
     lateinit var leaderContext: ReplicationContext
     lateinit var settings: Settings
 
+    // Point 1 & 2: Bidirectional checkpoint tracking — persisted so role transitions can resume
+    var leaderSequenceNumber: Long = UNASSIGNED_SEQ_NO
+    var followerAppliedSequence: Long = UNASSIGNED_SEQ_NO
+
+    // Point 3 & 5: Checkpoint configuration stored alongside metadata
+    var checkpointPersistenceEnabled: Boolean = true
+    var checkpointRetentionPeriod: String = "24h"
+    var roleTransitionResumeMode: String = "CHECKPOINT"
 
     constructor(connectionName: String,
                 metadataType: String,
@@ -94,7 +102,10 @@ class ReplicationMetadata: ToXContent {
                 reason: String,
                 followerContext: ReplicationContext,
                 leaderContext: ReplicationContext,
-                settings: Settings) {
+                settings: Settings,
+                checkpointPersistenceEnabled: Boolean = true,
+                checkpointRetentionPeriod: String = "24h",
+                roleTransitionResumeMode: String = "CHECKPOINT") {
         this.connectionName = connectionName
         this.metadataType = metadataType
         this.overallState = overallState
@@ -102,12 +113,17 @@ class ReplicationMetadata: ToXContent {
         this.followerContext = followerContext
         this.leaderContext = leaderContext
         this.settings = settings
+        this.checkpointPersistenceEnabled = checkpointPersistenceEnabled
+        this.checkpointRetentionPeriod = checkpointRetentionPeriod
+        this.roleTransitionResumeMode = roleTransitionResumeMode
     }
 
     private constructor() {
     }
 
     companion object {
+        const val UNASSIGNED_SEQ_NO = -1L
+
         private val METADATA_PARSER = ObjectParser<ReplicationMetadata, Void>("ReplicationMetadataParser") { ReplicationMetadata() }
         init {
             METADATA_PARSER.declareString(ReplicationMetadata::connectionName::set, ParseField( "connection_name"))
@@ -121,6 +137,13 @@ class ReplicationMetadata: ToXContent {
             METADATA_PARSER.declareObject({ metadata: ReplicationMetadata, settings: Settings -> metadata.settings = settings},
                 { p: XContentParser?, _: Void? -> Settings.fromXContent(p) },
                     ParseField(KEY_SETTINGS))
+            // Point 1 & 2: Checkpoint sequence tracking fields
+            METADATA_PARSER.declareLong(ReplicationMetadata::leaderSequenceNumber::set, ParseField("leader_sequence_number"))
+            METADATA_PARSER.declareLong(ReplicationMetadata::followerAppliedSequence::set, ParseField("follower_applied_sequence"))
+            // Point 3 & 5: Checkpoint configuration fields
+            METADATA_PARSER.declareBoolean(ReplicationMetadata::checkpointPersistenceEnabled::set, ParseField("checkpoint_persistence_enabled"))
+            METADATA_PARSER.declareString(ReplicationMetadata::checkpointRetentionPeriod::set, ParseField("checkpoint_retention_period"))
+            METADATA_PARSER.declareString(ReplicationMetadata::roleTransitionResumeMode::set, ParseField("role_transition_resume_mode"))
         }
 
         @Throws(IOException::class)
@@ -153,6 +176,14 @@ class ReplicationMetadata: ToXContent {
         builder.startObject(KEY_SETTINGS)
         settings.toXContent(builder, ToXContent.MapParams(Collections.singletonMap("flat_settings", "true")));
         builder.endObject()
+
+        // Point 1 & 2: Persist bidirectional checkpoint sequences
+        builder.field("leader_sequence_number", leaderSequenceNumber)
+        builder.field("follower_applied_sequence", followerAppliedSequence)
+        // Point 3 & 5: Persist checkpoint configuration
+        builder.field("checkpoint_persistence_enabled", checkpointPersistenceEnabled)
+        builder.field("checkpoint_retention_period", checkpointRetentionPeriod)
+        builder.field("role_transition_resume_mode", roleTransitionResumeMode)
 
         builder.endObject()
 

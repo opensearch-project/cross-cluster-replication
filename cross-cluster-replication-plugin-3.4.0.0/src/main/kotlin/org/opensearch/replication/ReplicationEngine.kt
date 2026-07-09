@@ -11,7 +11,9 @@
 
 package org.opensearch.replication
 
+import org.opensearch.index.engine.DeletionStrategy
 import org.opensearch.index.engine.EngineConfig
+import org.opensearch.index.engine.IndexingStrategy
 import org.opensearch.index.engine.InternalEngine
 import org.opensearch.index.seqno.SequenceNumbers
 

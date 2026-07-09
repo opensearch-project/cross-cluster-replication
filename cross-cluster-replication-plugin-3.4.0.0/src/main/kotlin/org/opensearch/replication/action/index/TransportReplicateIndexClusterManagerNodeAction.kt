@@ -18,6 +18,7 @@ import org.opensearch.replication.task.index.IndexReplicationExecutor
 import org.opensearch.replication.task.index.IndexReplicationParams
 import org.opensearch.replication.task.index.IndexReplicationState
 import org.opensearch.replication.util.coroutineContext
+import org.opensearch.replication.util.removeTask
 import org.opensearch.replication.util.startTask
 import org.opensearch.replication.util.suspending
 import org.opensearch.replication.util.waitForTaskCondition
@@ -43,6 +44,7 @@ import org.opensearch.common.inject.Inject
 import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.common.settings.IndexScopedSettings
 import org.opensearch.index.IndexNotFoundException
+import org.opensearch.persistent.PersistentTasksCustomMetadata
 import org.opensearch.persistent.PersistentTasksService
 import org.opensearch.replication.ReplicationPlugin
 import org.opensearch.replication.util.stackTraceToString
@@ -102,8 +104,21 @@ class TransportReplicateIndexClusterManagerNodeAction @Inject constructor(transp
                 log.debug("Response returned of the request made to get metadata of ${replicateIndexReq.leaderIndex} index on remote cluster")
 
                 if (state.routingTable.hasIndex(replicateIndexReq.followerIndex)) {
-                    throw IllegalArgumentException("Cant use same index again for replication. " +
-                    "Delete the index:${replicateIndexReq.followerIndex}")
+                    // If the index is already a CCR follower (REPLICATED_INDEX_SETTING is set),
+                    // reject — the user must stop replication first.
+                    // If the index exists but is NOT a follower (e.g. it was previously the leader
+                    // in a role-transition scenario), allow it to proceed as a warm-attach:
+                    // IndexReplicationTask.isResumed() will detect the existing index and skip the
+                    // snapshot restore, letting shard tasks resume from the local checkpoint.
+                    val existingFollowerSetting = state.metadata()
+                        .index(replicateIndexReq.followerIndex)
+                        ?.settings?.get(ReplicationPlugin.REPLICATED_INDEX_SETTING.key)
+                    if (!existingFollowerSetting.isNullOrBlank()) {
+                        throw IllegalArgumentException("Cant use same index again for replication. " +
+                                "Delete the index:${replicateIndexReq.followerIndex}")
+                    }
+                    log.info("Index ${replicateIndexReq.followerIndex} exists locally but is not a " +
+                            "current follower — proceeding as warm-attach role-transition resume")
                 }
 
                 indexScopedSettings.validate(replicateIndexReq.settings,
@@ -118,6 +133,22 @@ class TransportReplicateIndexClusterManagerNodeAction @Inject constructor(transp
                         replicateIndexReq.useRoles?.getOrDefault(ReplicateIndexRequest.LEADER_CLUSTER_ROLE, null), replicateIndexReq.settings)
 
                 log.debug("Starting index replication task in persistent task service with name: replication:index:${replicateIndexReq.followerIndex}")
+
+                // For warm-attach (role-transition), a previous failed attempt may have left a stale
+                // persistent task in the cluster state. Remove it before starting a fresh one to avoid
+                // ResourceAlreadyExistsException.
+                val staleTaskId = "replication:index:${replicateIndexReq.followerIndex}"
+                val existingTask = PersistentTasksCustomMetadata.getTaskWithId<IndexReplicationParams>(state, staleTaskId)
+                if (existingTask != null) {
+                    log.info("Found existing replication task $staleTaskId — removing before warm-attach restart")
+                    try {
+                        persistentTasksService.removeTask(staleTaskId)
+                        log.info("Removed stale task $staleTaskId")
+                    } catch (e: Exception) {
+                        log.warn("Could not remove stale task $staleTaskId: ${e.message}")
+                    }
+                }
+
                 val task = persistentTasksService.startTask("replication:index:${replicateIndexReq.followerIndex}",
                         IndexReplicationExecutor.TASK_NAME, params)
 
@@ -127,11 +158,18 @@ class TransportReplicateIndexClusterManagerNodeAction @Inject constructor(transp
                 }
 
                 log.debug("Waiting for persistent task to move to following state")
-                // Now wait for the replication to start and the follower index to get created before returning
+                // Wait until replication is effectively started.
+                // During role-switch/warm-attach, task state can transition through INIT -> INIT_FOLLOW -> MONITORING
+                // and may not hit FOLLOWING within the request timeout even though replication has started.
                 persistentTasksService.waitForTaskCondition(task.id, replicateIndexReq.timeout()) { t ->
-                    val replicationState = (t.state as IndexReplicationState?)?.state
-                    replicationState == ReplicationState.FOLLOWING ||
-                            (!replicateIndexReq.waitForRestore && replicationState == ReplicationState.RESTORING)
+                    val replicationState = (t?.state as? IndexReplicationState)?.state
+                    when (replicationState) {
+                        ReplicationState.FOLLOWING -> true
+                        ReplicationState.RESTORING -> !replicateIndexReq.waitForRestore
+                        ReplicationState.INIT_FOLLOW,
+                        ReplicationState.MONITORING -> true
+                        else -> false
+                    }
                 }
                 log.debug("Persistent task is moved to following replication state")
                 listener.onResponse(AcknowledgedResponse(true))

@@ -116,7 +116,7 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
 
                 // Now wait for the replication to start and the follower index to get created before returning
                 persistentTasksService.waitForTaskCondition(task.id, request.timeout()) { t ->
-                    val replicationState = (t.state as IndexReplicationState?)?.state
+                    val replicationState = (t?.state as? IndexReplicationState)?.state
                     replicationState == ReplicationState.FOLLOWING
                 }
 

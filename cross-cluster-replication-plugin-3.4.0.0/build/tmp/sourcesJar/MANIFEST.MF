@@ -1,0 +1,21 @@
+Manifest-Version: 1.0
+Module-Origin: unknown
+Change: unknown
+X-Compile-OpenSearch-Version: 3.7.0-SNAPSHOT
+X-Compile-Lucene-Version: 10.4.0
+X-Compile-OpenSearch-Snapshot: true
+Implementation-Title: org.opensearch#opensearch-cross-cluster-replicatio
+ n;3.4.0.0-SNAPSHOT
+Implementation-Version: 3.4.0.0-SNAPSHOT
+Built-Status: integration
+Built-By: g0c01kb
+Built-OS: Mac OS X
+Build-Timezone: Asia/Kolkata
+Build-Date-UTC: 2026-07-09T05:45:09.748229Z
+Build-Date: 2026-07-09T05:45:09.744794Z
+Gradle-Version: 9.4.1
+Created-By: 21.0.7+6-LTS (Azul Systems, Inc.)
+X-Compile-Target-JDK: 21
+X-Compile-Source-JDK: 21
+Build-Java-Version: 21
+
