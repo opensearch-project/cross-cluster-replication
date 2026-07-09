@@ -1,0 +1,1017 @@
+/*
+ * SPDX-License-Identifier: Apache-2.0
+ *
+ * The OpenSearch Contributors require contributions made to
+ * this file be licensed under the Apache-2.0 license or a
+ * compatible open source license.
+ *
+ * Modifications Copyright OpenSearch Contributors. See
+ * GitHub history for details.
+ */
+
+
+import javax.management.ObjectName
+import javax.management.remote.JMXConnectorFactory
+import javax.management.remote.JMXServiceURL
+import javax.management.MBeanServerInvocationHandler
+import javax.net.ssl.HostnameVerifier
+import javax.net.ssl.HttpsURLConnection
+import javax.net.ssl.SSLContext
+import javax.net.ssl.SSLSession
+import javax.net.ssl.TrustManager
+import javax.net.ssl.X509TrustManager
+import java.nio.charset.StandardCharsets
+import java.nio.file.Files
+import java.security.GeneralSecurityException
+import java.security.cert.X509Certificate
+import java.util.concurrent.Callable
+import java.util.function.Predicate
+import java.util.concurrent.TimeUnit
+import java.util.stream.Collectors
+import org.opensearch.gradle.testclusters.OpenSearchCluster
+import org.opensearch.gradle.testclusters.OpenSearchNode
+import org.opensearch.gradle.test.RestIntegTestTask
+
+buildscript {
+    ext {
+        isSnapshot = "true" == System.getProperty("build.snapshot", "true")
+        opensearch_version = System.getProperty("opensearch.version", "3.4.0-SNAPSHOT")
+        buildVersionQualifier = System.getProperty("build.version_qualifier", "")
+        // e.g. 2.0.0-rc1-SNAPSHOT -> 2.0.0.0-rc1-SNAPSHOT
+        version_tokens = opensearch_version.tokenize('-')
+        opensearch_version_no_qualifier = version_tokens[0]
+        opensearch_build = version_tokens[0] + '.0'
+        if (buildVersionQualifier) {
+            opensearch_build += "-${buildVersionQualifier}"
+        }
+        if (isSnapshot) {
+            opensearch_build += "-SNAPSHOT"
+        }
+
+
+        // for bwc tests
+        opensearch_previous_version = System.getProperty("bwc_older_version", "2.6.0")
+        plugin_previous_version = opensearch_previous_version.replaceAll(/(\.\d)([^\d]*)$/, '$1.0$2')
+
+        common_utils_version = System.getProperty("common_utils.version", opensearch_build)
+        kotlin_version = System.getProperty("kotlin.version", "2.2.0")
+
+        security_plugin_version = opensearch_build
+        if (!isSnapshot) {
+            security_plugin_version = opensearch_build.replace("-SNAPSHOT","")
+        }
+
+        opensearch_no_snapshot = opensearch_version.replace("-SNAPSHOT","")
+        security_no_snapshot = opensearch_build.replace("-SNAPSHOT","")
+        knn_plugin_path = "build/dependencies/knn"
+        knn_plugin_download_url = 'https://ci.opensearch.org/ci/dbc/distribution-build-opensearch/' + opensearch_no_snapshot +
+                '/latest/linux/x64/tar/builds/opensearch/plugins/opensearch-knn-' + security_no_snapshot + '.zip'
+
+    }
+
+    repositories {
+        mavenLocal()
+        mavenCentral()
+        maven { url = "https://ci.opensearch.org/ci/dbc/snapshots/maven/" }
+        maven { url = "https://plugins.gradle.org/m2/" }
+        maven { url = "https://ci.opensearch.org/ci/dbc/snapshots/lucene/" }
+    }
+
+    dependencies {
+        classpath "org.opensearch.gradle:build-tools:${opensearch_version}"
+        classpath "org.jetbrains.kotlin:kotlin-gradle-plugin:${kotlin_version}"
+        classpath "org.jetbrains.kotlin:kotlin-allopen:${kotlin_version}"
+        classpath "io.gitlab.arturbosch.detekt:detekt-gradle-plugin:1.0.0-RC15"
+        classpath "org.jacoco:org.jacoco.agent:0.8.12"
+    }
+}
+
+plugins {
+    id 'com.netflix.nebula.ospackage' version "12.0.0"
+    id "com.dorongold.task-tree" version "1.5"
+    id "jacoco"
+}
+
+allprojects {
+    group = "org.opensearch"
+    version = "${opensearch_build}"
+    plugins.withId('org.jetbrains.kotlin.jvm') {
+        compileJava.sourceCompatibility = compileJava.targetCompatibility = JavaVersion.VERSION_21
+        compileTestJava.sourceCompatibility = compileTestJava.targetCompatibility = JavaVersion.VERSION_21
+    }
+}
+
+apply plugin: 'java'
+apply plugin: 'jacoco'
+apply plugin: 'idea'
+apply plugin: 'opensearch.opensearchplugin'
+apply plugin: 'opensearch.testclusters'
+apply plugin: 'opensearch.rest-test'
+apply plugin: 'org.jetbrains.kotlin.jvm'
+apply plugin: 'org.jetbrains.kotlin.plugin.allopen'
+apply plugin: 'opensearch.pluginzip'
+apply plugin: 'opensearch.java-agent'
+
+forbiddenApisTest.ignoreFailures = true
+forbiddenApisMain.ignoreFailures = true
+
+configurations.all {
+    if (it.state != Configuration.State.UNRESOLVED) return
+    resolutionStrategy {
+        force "org.jetbrains.kotlin:kotlin-stdlib:${kotlin_version}"
+        force "org.jetbrains.kotlin:kotlin-stdlib-common:${kotlin_version}"
+        force 'junit:junit:4.13.1'
+        force 'commons-beanutils:commons-beanutils:1.9.4'
+        force 'com.google.guava:guava:30.1.1-jre'
+        force 'com.puppycrawl.tools:checkstyle:8.29'
+        force 'commons-codec:commons-codec:1.13'
+        force 'org.apache.httpcomponents:httpclient:4.5.13'
+        force 'org.apache.httpcomponents:httpclient-osgi:4.5.13'
+        force "org.apache.httpcomponents.core5:httpcore5:${versions.httpcore5}"
+        force "org.apache.httpcomponents.core5:httpcore5-h2:${versions.httpcore5}"
+        force "org.apache.httpcomponents.client5:httpclient5:${versions.httpclient5}"
+        force "org.apache.httpcomponents.client5:httpclient5-osgi:${versions.httpclient5}"
+        force 'com.fasterxml.jackson.core:jackson-databind:2.13.4.2'
+        force 'org.yaml:snakeyaml:2.0'
+        force 'org.codehaus.plexus:plexus-utils:3.0.24'
+        force 'net.java.dev.jna:jna:5.12.1'
+    }
+}
+
+configurations {
+    opensearchPlugin
+}
+
+dependencies {
+    runtimeOnly "org.opensearch:opensearch:${opensearch_version}"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk8"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-jdk7"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib:${kotlin_version}"
+    implementation "org.jetbrains.kotlin:kotlin-stdlib-common:${kotlin_version}"
+    implementation "org.jetbrains:annotations:13.0"
+    implementation "com.github.seancfoley:ipaddress:5.4.1"
+    implementation "org.jetbrains.kotlinx:kotlinx-coroutines-core:1.6.0" // Moving away from kotlin_version
+    implementation "org.opensearch:common-utils:${common_utils_version}"
+    implementation "org.apache.httpcomponents.client5:httpclient5:${versions.httpclient5}"
+    implementation "org.apache.httpcomponents.core5:httpcore5:${versions.httpcore5}"
+    implementation "org.apache.httpcomponents.core5:httpcore5-h2:${versions.httpcore5}"
+
+    testImplementation "org.opensearch.test:framework:${opensearch_version}"
+    testImplementation "org.assertj:assertj-core:3.17.2"
+    testImplementation "org.opensearch.client:opensearch-rest-high-level-client:${opensearch_version}"
+    testImplementation "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.6.0" // Moving away from kotlin_version
+    testImplementation "org.jetbrains.kotlin:kotlin-test:${kotlin_version}"
+    testImplementation "com.nhaarman.mockitokotlin2:mockito-kotlin:2.2.0"
+
+    opensearchPlugin "org.opensearch.plugin:opensearch-security:${security_plugin_version}@zip"
+}
+
+repositories {
+    mavenLocal()
+    mavenCentral()
+    maven { url = "https://ci.opensearch.org/ci/dbc/snapshots/maven/" }
+    maven { url = "https://plugins.gradle.org/m2/" }
+    maven { url = "https://ci.opensearch.org/ci/dbc/snapshots/lucene/" }
+}
+
+compileKotlin {
+    kotlinOptions {
+        jvmTarget = "21"
+        freeCompilerArgs = ['-Xjsr305=strict'] // Handle OpenSearch @Nullable annotation correctly
+    }
+}
+
+compileTestKotlin {
+    kotlinOptions {
+        jvmTarget = "21"
+        freeCompilerArgs = ['-Xjsr305=strict']
+    }
+}
+
+ext {
+    licenseFile = rootProject.file('LICENSE')
+    noticeFile = rootProject.file('NOTICE')
+}
+
+opensearchplugin {
+    name = project.name
+    description = "OpenSearch Cross Cluster Replication Plugin"
+    classname = "org.opensearch.replication.ReplicationPlugin"
+}
+
+java {
+    if (!isSnapshot) {
+        withJavadocJar()
+        withSourcesJar()
+    }
+}
+
+javadoc.enabled = false
+licenseHeaders.enabled = false
+dependencyLicenses.enabled = false
+thirdPartyAudit.enabled = false
+validateNebulaPom.enabled = false
+loggerUsageCheck.enabled = false
+
+test {
+    systemProperty 'tests.security.manager', 'false'
+    if (System.getProperty("tests.debug") == "true") {
+        debug true
+        debugOptions {
+            port = 8000
+            suspend = false
+        }
+    }
+    finalizedBy jacocoTestReport
+}
+
+// Setting RunTask.debug = true configures the JVM to use a debugger in listen mode (server=n,suspend=y).  This is a
+// pain for multi node clusters since the node startup fails if it can't connect to a debugger. So instead we manually
+// configure the debugger in attach mode (server=y) so that we can attach to a specific node after it has been started.
+static String getDebugJvmArgs(int debugPort) {
+    return " -agentlib:jdwp=transport=dt_socket,server=y,suspend=n,address=${debugPort}"
+}
+
+def securityPluginFile = new Callable<RegularFile>() {
+        @Override
+        RegularFile call() throws Exception {
+            return new RegularFile() {
+                @Override
+                File getAsFile() {
+                    return configurations.opensearchPlugin.resolvedConfiguration.resolvedArtifacts
+                        .find { ResolvedArtifact f -> f.name.contains('opensearch-security') }
+                        .file
+                }
+            }
+        }
+    }
+
+def knnEnabled = findProperty("knn") == "true"
+
+def knnPluginFile = new Callable<RegularFile>() {
+    @Override
+    RegularFile call() throws Exception {
+        return new RegularFile() {
+            @Override
+            File getAsFile() {
+                if (new File("$project.rootDir/$knn_plugin_path").exists()) {
+                    project.delete(files("$project.rootDir/$knn_plugin_path"))
+                }
+                project.mkdir knn_plugin_path
+                ant.get(src: knn_plugin_download_url,
+                        dest: knn_plugin_path,
+                        httpusecaches: false)
+                return fileTree(knn_plugin_path).getSingleFile()
+            }
+        }
+    }
+}
+
+
+// Clone of WaitForHttpResource with updated code to support Cross cluster usecase
+class CrossClusterWaitForHttpResource {
+
+    private URL url;
+    private String username;
+    private String password;
+    Set<Integer> validResponseCodes = Collections.singleton(200);
+
+    CrossClusterWaitForHttpResource(String protocol, String host, int numberOfNodes) throws MalformedURLException {
+        this(new URL(protocol + "://" + host + "/_cluster/health?wait_for_nodes=>=" + numberOfNodes + "&wait_for_status=yellow"));
+    }
+
+    CrossClusterWaitForHttpResource(URL url) {
+        this.url = url;
+    }
+
+    boolean wait(int durationInMs) throws GeneralSecurityException, InterruptedException, IOException {
+        final long waitUntil = System.nanoTime() + TimeUnit.MILLISECONDS.toNanos(durationInMs);
+        final long sleep = 100;
+
+        IOException failure = null;
+        while (true) {
+            try {
+                checkResource();
+                return true;
+            } catch (IOException e) {
+                failure = e;
+            }
+            if (System.nanoTime() < waitUntil) {
+                Thread.sleep(sleep);
+            } else {
+                throw failure;
+            }
+        }
+    }
+
+    void setUsername(String username) {
+        this.username = username;
+    }
+
+    void setPassword(String password) {
+        this.password = password;
+    }
+
+    void checkResource() throws IOException {
+        final HttpURLConnection connection = buildConnection()
+        connection.connect();
+        final Integer response = connection.getResponseCode();
+        if (validResponseCodes.contains(response)) {
+            return;
+        } else {
+            throw new IOException(response + " " + connection.getResponseMessage());
+        }
+    }
+
+    HttpURLConnection buildConnection() throws IOException {
+        final HttpURLConnection connection = (HttpURLConnection) this.@url.openConnection();
+
+        if (connection instanceof HttpsURLConnection) {
+            TrustManager[] trustAllCerts = [ new X509TrustManager() {
+                    X509Certificate[] getAcceptedIssuers() {
+                        return null;
+                    }
+
+                    void checkClientTrusted(X509Certificate[] certs, String authType) {
+                    }
+
+                    void checkServerTrusted(X509Certificate[] certs, String authType) {
+                    }
+                }
+            ] as TrustManager[];
+            SSLContext sc = SSLContext.getInstance("SSL");
+            sc.init(null, trustAllCerts, new java.security.SecureRandom());
+            connection.setSSLSocketFactory(sc.getSocketFactory());
+            // Create all-trusting host name verifier
+            HostnameVerifier allHostsValid = new HostnameVerifier() {
+                boolean verify(String hostname, SSLSession session) {
+                    return true;
+                }
+            };
+            // Install the all-trusting host verifier
+            connection.setHostnameVerifier(allHostsValid);
+        }
+
+        configureBasicAuth(connection);
+        connection.setRequestMethod("GET");
+        return connection;
+    }
+
+    void configureBasicAuth(HttpURLConnection connection) {
+        if (username != null) {
+            if (password == null) {
+                throw new IllegalStateException("Basic Auth user [" + username + "] has been set, but no password has been configured");
+            }
+            connection.setRequestProperty(
+                    "Authorization",
+                    "Basic " + Base64.getEncoder().encodeToString((username + ":" + password).getBytes(StandardCharsets.UTF_8))
+            );
+        }
+    }
+
+}
+
+/*
+* To run security tests
+*/
+def securityEnabled = findProperty("security") == "true"
+
+File repo = file("$buildDir/testclusters/repo")
+def _numNodes = findProperty('numNodes') as Integer ?: 2
+testClusters {
+    leaderCluster {
+        plugin(project.tasks.bundlePlugin.archiveFile)
+        if(securityEnabled) {
+            plugin(provider(securityPluginFile))
+        }
+        testDistribution = "INTEG_TEST"
+        if(knnEnabled) {
+            plugin(provider(knnPluginFile))
+            testDistribution = "ARCHIVE"
+            systemProperty "java.library.path", "${buildDir}/testclusters/leaderCluster-0/distro/${opensearch_version_no_qualifier}-ARCHIVE/plugins/opensearch-knn/lib"
+            environment "LD_LIBRARY_PATH", "${buildDir}/testclusters/leaderCluster-0/distro/${opensearch_version_no_qualifier}-ARCHIVE/plugins/opensearch-knn/lib"
+        }
+        int debugPort = 5005
+
+        if (_numNodes > 1) numberOfNodes = _numNodes
+        //numberOfNodes = 3
+        setting 'path.repo', repo.absolutePath
+        if(_numNodes == 1) jvmArgs "${-> getDebugJvmArgs(debugPort++)}"
+    }
+    followCluster {
+        testDistribution = "INTEG_TEST"
+        plugin(project.tasks.bundlePlugin.archiveFile)
+        if(securityEnabled) {
+            plugin(provider(securityPluginFile))
+        }
+        if(knnEnabled) {
+            plugin(provider(knnPluginFile))
+            testDistribution = "ARCHIVE"
+            systemProperty "java.library.path", "${buildDir}/testclusters/followCluster-0/distro/${opensearch_version_no_qualifier}-ARCHIVE/plugins/opensearch-knn/lib"
+            environment "LD_LIBRARY_PATH", "${buildDir}/testclusters/followCluster-0/distro/${opensearch_version_no_qualifier}-ARCHIVE/plugins/opensearch-knn/lib"
+        }
+        int debugPort = 5010
+        if (_numNodes > 1) numberOfNodes = _numNodes
+        //numberOfNodes = 3
+        setting 'path.repo', repo.absolutePath
+        if(_numNodes == 1) jvmArgs "${-> getDebugJvmArgs(debugPort++)}"
+    }
+}
+
+def configureCluster(OpenSearchCluster cluster, Boolean securityEnabled) {
+    // clear existing health checks as we will need custom handling based on
+    // security plugin installation
+    cluster.@waitConditions.clear()
+    String unicastUris = cluster.nodes.stream().flatMap { node ->
+        node.getAllTransportPortURI().stream()
+    }.collect(Collectors.joining("\n"))
+    cluster.nodes.forEach {node ->
+        try {
+            // Manually write the unicast hosts as we are not depending on the internal method
+            Files.write(node.getConfigDir().resolve("unicast_hosts.txt"), unicastUris.getBytes(StandardCharsets.UTF_8));
+        } catch (IOException e) {
+            throw new java.io.UncheckedIOException("Failed to write configuation files for " + this, e);
+        }
+    }
+
+    // Health check based on security plugin installation
+    Predicate pred = { OpenSearchCluster c ->
+        String protocol = "http"
+        if(securityEnabled && !c.name.equalsIgnoreCase("integTest")) {
+            protocol = "https"
+        }
+        CrossClusterWaitForHttpResource wait = new CrossClusterWaitForHttpResource(protocol, cluster.getFirstNode().getHttpSocketURI(), cluster.nodes.size())
+        wait.setUsername("admin")
+        wait.setPassword("admin")
+        return wait.wait(500)
+    }
+
+    cluster.@waitConditions.put("cluster health yellow", pred)
+    cluster.waitForAllConditions()
+}
+
+interface IProxy {
+    byte[] getExecutionData(boolean reset);
+
+    void dump(boolean reset);
+
+    void reset();
+}
+
+
+int startJmxPort=7777
+int endJmxPort = startJmxPort
+integTest {
+    useCluster testClusters.leaderCluster
+    useCluster testClusters.followCluster
+    systemProperty 'testclusters.dir', project.layout.buildDirectory.get().file("testclusters").asFile.absolutePath
+    systemProperty "password", "admin" // setting it to `admin` explicitly since its a custom security setup
+
+    if(knnEnabled){
+        nonInputProperties.systemProperty('tests.knn_plugin_enabled', "true")
+    }
+
+    // We skip BWC test here as those get run as part of separate target `bwcTestSuite`.
+    filter {
+        excludeTestsMatching "org.opensearch.replication.bwc.*IT"
+        excludeTestsMatching "org.opensearch.replication.singleCluster.SingleClusterSanityIT"
+    }
+
+    /*
+        Jacoco doesn't work with TestClusters as it doesn't rely on JavaForkOption to spin up the clusters. So it
+        requires some workaround to make it work. These are the steps:
+        1. Attach jacoco java agent to all the nodes in every cluster: Jacoco adds task extension for every gradle task
+            of type "Test" which adds the jvmArgs to the attach the agent. We read the arguments and pass it to test
+            cluster's jvm Args. Since test clusters are started even before the task starts, this needs to be setup before
+            task is initialized.
+        2. Enable JMX on all nodes(on different ports) and set jmx=true for jacoco as well.
+        3. After the integ tests are complete, Fetch the execution data from each node and append it to the jacoco exec
+            file. This data is then picked up by "jacocoTestReport" to generate coverage report.
+    */
+    setBeforeStart {
+        String jvmArgs = getExtensions().getByType(JacocoTaskExtension.class).getAsJvmArg()
+        // Change to absolute path.
+        String newArgs = jvmArgs.replace("../..", "${buildDir}")
+        getClusters().forEach { cluster ->
+            cluster.jvmArgs(newArgs)
+            cluster.nodes.each { node ->
+                node.systemProperty('com.sun.management.jmxremote.port', "${-> endJmxPort++}")
+                node.systemProperty('com.sun.management.jmxremote', "true")
+                node.systemProperty('com.sun.management.jmxremote.authenticate', "false")
+                node.systemProperty('com.sun.management.jmxremote.ssl', "false")
+                node.systemProperty('java.rmi.server.hostname', "127.0.0.1")
+                node.systemProperty('tests.security.manager', 'false')
+            }
+        }
+    }
+    jacoco {
+        jmx = true
+    }
+
+    doFirst {
+        getClusters().forEach { cluster ->
+            String alltransportSocketURI = cluster.nodes.stream().flatMap { node ->
+                node.getAllTransportPortURI().stream()
+            }.collect(Collectors.joining(","))
+            String allHttpSocketURI = cluster.nodes.stream().flatMap { node ->
+                node.getAllHttpSocketURI().stream()
+            }.collect(Collectors.joining(","))
+
+            systemProperty "tests.cluster.${cluster.name}.http_hosts", "${-> allHttpSocketURI}"
+            systemProperty "tests.cluster.${cluster.name}.transport_hosts", "${-> alltransportSocketURI}"
+            systemProperty "tests.cluster.${cluster.name}.security_enabled", "${-> securityEnabled.toString()}"
+            systemProperty "tests.cluster.${cluster.name}.total_nodes", "${-> _numNodes.toString()}"
+            configureCluster(cluster, securityEnabled)
+        }
+    }
+
+    doLast {
+        for (int port=startJmxPort; port<endJmxPort; port++) {
+            def serverUrl = "service:jmx:rmi:///jndi/rmi://127.0.0.1:" + port + "/jmxrmi"
+
+            try(def connector = JMXConnectorFactory.connect(new JMXServiceURL(serverUrl))) {
+                def proxy = MBeanServerInvocationHandler.newProxyInstance(
+                        connector.getMBeanServerConnection(), new ObjectName("org.jacoco:type=Runtime"), IProxy.class,
+                        false)
+                byte[] data = proxy.getExecutionData(false)
+                file(jacoco.destinationFile).append(data)
+            } catch (Exception e) {
+                throw new RuntimeException("Failed to fetch coverage data " , e)
+            }
+        }
+    }
+
+    systemProperty "build.dir", "${buildDir}"
+    systemProperty "java.security.policy", "file://${projectDir}/src/test/resources/plugin-security.policy"
+    finalizedBy jacocoTestReport
+}
+
+jacocoTestReport {
+    dependsOn test
+    dependsOn integTest
+    reports {
+        xml.required.set(true)
+    }
+    // We're combining the coverage data for both test and integ tests.
+    getExecutionData().setFrom(fileTree(buildDir).include("/jacoco/*.exec"))
+}
+
+def addSecurityConfig(OpenSearchNode node, Boolean securityEnabled) {
+    if(securityEnabled) {
+        // Security plugin doesn't have the executable to write demo certs based on relative path
+        // writing config files manually till then
+        node.extraConfigFile("kirk.pem", fileTree("$projectDir/src/test/resources/security/plugin/kirk.pem").getSingleFile())
+        node.extraConfigFile("kirk-key.pem", fileTree("$projectDir/src/test/resources/security/plugin/kirk-key.pem").getSingleFile())
+        node.extraConfigFile("esnode.pem", fileTree("$projectDir/src/test/resources/security/plugin/esnode.pem").getSingleFile())
+        node.extraConfigFile("esnode-key.pem", fileTree("$projectDir/src/test/resources/security/plugin/esnode-key.pem").getSingleFile())
+        node.extraConfigFile("root-ca.pem", fileTree("$projectDir/src/test/resources/security/plugin/root-ca.pem").getSingleFile())
+        //node.setting("plugins.security.ssl_only", "false")
+        //node.setting("plugins.security.ssl.transport.server.pemcert_filepath", "esnode-key.pem")
+        //node.setting("plugins.security.ssl.transport.client.pemcert_filepath", "esnode.pem")
+        node.setting("plugins.security.ssl.transport.pemcert_filepath", "esnode.pem")
+        node.setting("plugins.security.ssl.transport.pemkey_filepath", "esnode-key.pem")
+        node.setting("plugins.security.ssl.transport.pemtrustedcas_filepath", "root-ca.pem")
+        node.setting("plugins.security.ssl.transport.enforce_hostname_verification", "false")
+        node.setting("plugins.security.ssl.http.enabled", "true")
+        node.setting("plugins.security.ssl.http.pemcert_filepath", "esnode.pem")
+        node.setting("plugins.security.ssl.http.pemkey_filepath", "esnode-key.pem")
+        node.setting("plugins.security.ssl.http.pemtrustedcas_filepath", "root-ca.pem")
+        node.setting("plugins.security.allow_unsafe_democertificates", "true")
+        node.setting("plugins.security.allow_default_init_securityindex", "true")
+        node.setting("plugins.security.authcz.admin_dn", "CN=kirk,OU=client,O=client,L=test,C=de")
+        node.setting("plugins.security.audit.type", "internal_opensearch")
+        node.setting("plugins.security.enable_snapshot_restore_privilege", "true")
+        node.setting("plugins.security.check_snapshot_restore_write_privileges", "true")
+        node.setting("plugins.security.restapi.roles_enabled", "[\"all_access\", \"security_rest_api_access\"]")
+        node.setting("plugins.security.system_indices.enabled", "true")
+        node.setting("plugins.security.system_indices.indices", "[\".replication-metadata-store\"]")
+    }
+}
+
+afterEvaluate {
+    testClusters.leaderCluster.nodes.each { node ->
+        addSecurityConfig(node, securityEnabled)
+    }
+
+    testClusters.followCluster.nodes.each { node ->
+        addSecurityConfig(node, securityEnabled)
+    }
+}
+check.dependsOn jacocoTestReport
+
+run {
+    useCluster testClusters.leaderCluster
+    useCluster testClusters.followCluster
+    doFirst {
+        getClusters().forEach { cluster ->
+            configureCluster(cluster, securityEnabled)
+        }
+    }
+}
+
+task initializeSecurityIndex {
+    doLast {
+        exec {
+            executable "src/test/resources/security/scripts/SecurityAdminWrapper.sh"
+            args "${buildDir}"
+        }
+    }
+}
+
+testingConventions {
+    naming {
+        IT {
+            baseClass 'org.opensearch.replication.MultiClusterRestTestCase'
+        }
+    }
+}
+
+task release {
+    dependsOn 'build'
+}
+
+//========================== BWC Test setup ======================================================
+
+
+def tmp_dir = project.file('build/private/artifact_tmp').absoluteFile
+tmp_dir.mkdirs()
+
+// Task to pull ccr plugin from archive
+task pullBwcPlugin {
+    doFirst {
+        delete java.nio.file.Path.of(tmp_dir.absolutePath, "opensearch-*")
+    }
+
+    doLast {
+        ant.get(
+                src: "https://artifacts.opensearch.org/releases/bundle/opensearch/${opensearch_previous_version}/opensearch-${opensearch_previous_version}-linux-x64.tar.gz",
+                dest: tmp_dir.absolutePath,
+                httpusecaches: false
+        )
+        copy {
+            from tarTree(java.nio.file.Path.of(tmp_dir.absolutePath, "opensearch-${opensearch_previous_version}-linux-x64.tar.gz"))
+            into tmp_dir.absolutePath
+        }
+        copy {
+            from(java.nio.file.Path.of(tmp_dir.absolutePath, "opensearch-${opensearch_previous_version}", "plugins", "opensearch-cross-cluster-replication"))
+            into java.nio.file.Path.of(tmp_dir.absolutePath, "opensearch-cross-cluster-replication")
+        }
+        delete java.nio.file.Path.of(tmp_dir.absolutePath, "opensearch-${opensearch_previous_version}"), java.nio.file.Path.of(tmp_dir.absolutePath, "opensearch-${opensearch_previous_version}-linux-x64.tar.gz")
+    }
+}
+
+// Task to zip plugin from archive
+task zipBwcPlugin(type: Zip) {
+    dependsOn "pullBwcPlugin"
+    from(java.nio.file.Path.of(tmp_dir.absolutePath, "opensearch-cross-cluster-replication"))
+    destinationDirectory = tmp_dir
+    archiveFileName = "opensearch-cross-cluster-replication-${opensearch_previous_version}.zip"
+    doLast {
+        delete java.nio.file.Path.of(tmp_dir.absolutePath, "opensearch-cross-cluster-replication")
+    }
+}
+
+
+
+def securityPluginOld = new Callable<RegularFile>() {
+    @Override
+    RegularFile call() throws Exception {
+        return new RegularFile() {
+            @Override
+            File getAsFile() {
+                return fileTree("$projectDir/src/test/resources/security/plugin/opensearch-security-${plugin_previous_version}.zip").getSingleFile()
+            }
+        }
+    }
+}
+
+// We maintain 2 set of clusters here. One for full cluster restart and one for rolling restart + mixed cluster.
+List<String> clusters = ["bwcLeader0", "bwcFollower0", "bwcLeader1", "bwcFollower1"]
+// TODO: Make BWC test work with security plugin
+clusters.each { name ->
+    testClusters {
+        "$name" {
+            versions = [opensearch_previous_version, opensearch_version]
+            plugin(project.tasks.zipBwcPlugin.archiveFile)
+
+            if (securityEnabled) {
+                plugin(provider(securityPluginOld))
+                cliSetup("opensearch-security/install_demo_configuration.sh", "-y")
+            }
+            // Currently fetching the ARCHIVE distribution fails on mac as it tries to fetch the Mac specific "DARWIN" distribution
+            // for Opensearch which is not publish yet. Changing this to INTEG_TEST to make it work on mac.
+            if (System.getProperty("os.name").startsWith("Mac")) {
+                testDistribution = "INTEG_TEST"
+            } else {
+                testDistribution = "ARCHIVE"
+            }
+
+            if (_numNodes != 3) numberOfNodes = 3
+            setting 'path.repo', repo.absolutePath
+        }
+    }
+}
+
+List<Provider<RegularFile>> replPluginProvider = [
+    provider(new Callable<RegularFile>(){
+        @Override
+        RegularFile call() throws Exception {
+            return new RegularFile() {
+                @Override
+                File getAsFile() {
+                    return fileTree("$projectDir/build/distributions/opensearch-cross-cluster-replication-${opensearch_build}.zip").getSingleFile()
+                }
+            }
+        }
+    })
+]
+
+/*
+    Sets up and runs sanity test on older version clusters. We maintain 2 set of tasks here with.
+    One for full cluster restart and one for rolling restart + mixed cluster.
+ */
+2.times { i ->
+    task "oldVersionClusterTask$i" (type: RestIntegTestTask) {
+        useCluster testClusters."bwcLeader$i"
+        useCluster testClusters."bwcFollower$i"
+        doFirst {
+            getClusters().forEach { cluster ->
+                String alltransportSocketURI = cluster.nodes.stream().flatMap { node ->
+                    node.getAllTransportPortURI().stream()
+                }.collect(Collectors.joining(","))
+                String allHttpSocketURI = cluster.nodes.stream().flatMap { node ->
+                    node.getAllHttpSocketURI().stream()
+                }.collect(Collectors.joining(","))
+
+                systemProperty "tests.cluster.${cluster.name}.http_hosts", "${-> allHttpSocketURI}"
+                systemProperty "tests.cluster.${cluster.name}.transport_hosts", "${-> alltransportSocketURI}"
+                systemProperty "tests.cluster.${cluster.name}.security_enabled", "${-> securityEnabled.toString()}"
+                configureCluster(cluster, securityEnabled)
+            }
+        }
+        systemProperty "build.dir", "${buildDir}"
+        systemProperty "java.security.policy", "file://${projectDir}/src/test/resources/plugin-security.policy"
+        nonInputProperties.systemProperty('tests.cluster_suffix', i)
+        nonInputProperties.systemProperty('tests.bwcTask', "oldVersionClusterTask")
+        filter {
+            setIncludePatterns("org.opensearch.replication.bwc.BackwardsCompatibilityIT")
+        }
+    }
+}
+
+/*
+    Can be executed with `./gradlew mixedClusterTask`
+
+    Upgrades one node of the old cluster to new OpenSearch version with upgraded plugin version
+    This results in a mixed cluster with 2 nodes on the old version and 1 upgraded node.
+    This is also used as a one third upgraded cluster for a rolling upgrade.
+ */
+task "mixedClusterTask"(type: RestIntegTestTask) {
+    dependsOn "oldVersionClusterTask0"
+    useCluster testClusters.bwcLeader0
+    useCluster testClusters.bwcFollower0
+
+    doFirst {
+        testClusters.bwcLeader0.upgradeNodeAndPluginToNextVersion(replPluginProvider)
+        testClusters.bwcFollower0.upgradeNodeAndPluginToNextVersion(replPluginProvider)
+        getClusters().forEach { cluster ->
+            String alltransportSocketURI = cluster.nodes.stream().flatMap { node ->
+                node.getAllTransportPortURI().stream()
+            }.collect(Collectors.joining(","))
+            String allHttpSocketURI = cluster.nodes.stream().flatMap { node ->
+                node.getAllHttpSocketURI().stream()
+            }.collect(Collectors.joining(","))
+
+            systemProperty "tests.cluster.${cluster.name}.http_hosts", "${-> allHttpSocketURI}"
+            systemProperty "tests.cluster.${cluster.name}.transport_hosts", "${-> alltransportSocketURI}"
+            systemProperty "tests.cluster.${cluster.name}.security_enabled", "${-> securityEnabled.toString()}"
+            configureCluster(cluster, securityEnabled)
+        }
+    }
+    nonInputProperties.systemProperty('tests.bwcTask', "mixedClusterTask")
+    nonInputProperties.systemProperty('tests.cluster_suffix', "0")
+    filter {
+        setIncludePatterns("org.opensearch.replication.bwc.BackwardsCompatibilityIT")
+    }
+}
+
+// Upgrades the second node to new OpenSearch version with upgraded plugin version after the first node is upgraded.
+// This results in a mixed cluster with 1 node on the old version and 2 upgraded nodes.
+// This is used for rolling upgrade.
+task "twoThirdsUpgradedClusterTask"(type: RestIntegTestTask) {
+    dependsOn "mixedClusterTask"
+    useCluster testClusters.bwcLeader0
+    useCluster testClusters.bwcFollower0
+    doFirst {
+        testClusters.bwcLeader0.upgradeNodeAndPluginToNextVersion(replPluginProvider)
+        testClusters.bwcFollower0.upgradeNodeAndPluginToNextVersion(replPluginProvider)
+        getClusters().forEach { cluster ->
+            String alltransportSocketURI = cluster.nodes.stream().flatMap { node ->
+                node.getAllTransportPortURI().stream()
+            }.collect(Collectors.joining(","))
+            String allHttpSocketURI = cluster.nodes.stream().flatMap { node ->
+                node.getAllHttpSocketURI().stream()
+            }.collect(Collectors.joining(","))
+
+            systemProperty "tests.cluster.${cluster.name}.http_hosts", "${-> allHttpSocketURI}"
+            systemProperty "tests.cluster.${cluster.name}.transport_hosts", "${-> alltransportSocketURI}"
+            systemProperty "tests.cluster.${cluster.name}.security_enabled", "${-> securityEnabled.toString()}"
+            configureCluster(cluster, securityEnabled)
+        }
+    }
+    nonInputProperties.systemProperty('tests.bwcTask', "twoThirdsUpgradedClusterTask")
+    nonInputProperties.systemProperty('tests.cluster_suffix', "0")
+    filter {
+        setIncludePatterns("org.opensearch.replication.bwc.BackwardsCompatibilityIT")
+    }
+}
+
+/*
+    Can be executed with `./gradlew rollingUpgradeClusterTask`
+
+    Upgrades the third node to new OpenSearch version with upgraded plugin version after the second node is upgraded.
+    This results in a fully upgraded cluster.
+    This is used for rolling upgrade.
+*/
+task "rollingUpgradeClusterTask"(type: RestIntegTestTask) {
+    dependsOn "twoThirdsUpgradedClusterTask"
+    useCluster testClusters.bwcLeader0
+    useCluster testClusters.bwcFollower0
+    doFirst {
+        testClusters.bwcLeader0.upgradeNodeAndPluginToNextVersion(replPluginProvider)
+        testClusters.bwcFollower0.upgradeNodeAndPluginToNextVersion(replPluginProvider)
+        getClusters().forEach { cluster ->
+            String alltransportSocketURI = cluster.nodes.stream().flatMap { node ->
+                node.getAllTransportPortURI().stream()
+            }.collect(Collectors.joining(","))
+            String allHttpSocketURI = cluster.nodes.stream().flatMap { node ->
+                node.getAllHttpSocketURI().stream()
+            }.collect(Collectors.joining(","))
+
+            systemProperty "tests.cluster.${cluster.name}.http_hosts", "${-> allHttpSocketURI}"
+            systemProperty "tests.cluster.${cluster.name}.transport_hosts", "${-> alltransportSocketURI}"
+            systemProperty "tests.cluster.${cluster.name}.security_enabled", "${-> securityEnabled.toString()}"
+            configureCluster(cluster, securityEnabled)
+        }
+    }
+    nonInputProperties.systemProperty('tests.cluster_suffix', "0")
+    nonInputProperties.systemProperty('tests.bwcTask', "rollingUpgradeClusterTask")
+    filter {
+        setIncludePatterns("org.opensearch.replication.bwc.BackwardsCompatibilityIT")
+    }
+}
+
+/*
+    Can be executed with `./gradlew fullRestartClusterTask`
+
+    Upgrades all the nodes of the old cluster to new OpenSearch version with upgraded plugin version
+    at the same time resulting in a fully upgraded cluster.
+*/
+task "fullRestartClusterTask"(type: RestIntegTestTask) {
+    dependsOn "oldVersionClusterTask1"
+    useCluster testClusters.bwcLeader1
+    useCluster testClusters.bwcFollower1
+    doFirst {
+        testClusters.bwcLeader1.upgradeAllNodesAndPluginsToNextVersion(replPluginProvider)
+        testClusters.bwcFollower1.upgradeAllNodesAndPluginsToNextVersion(replPluginProvider)
+        getClusters().forEach { cluster ->
+            String alltransportSocketURI = cluster.nodes.stream().flatMap { node ->
+                node.getAllTransportPortURI().stream()
+            }.collect(Collectors.joining(","))
+            String allHttpSocketURI = cluster.nodes.stream().flatMap { node ->
+                node.getAllHttpSocketURI().stream()
+            }.collect(Collectors.joining(","))
+
+            systemProperty "tests.cluster.${cluster.name}.http_hosts", "${-> allHttpSocketURI}"
+            systemProperty "tests.cluster.${cluster.name}.transport_hosts", "${-> alltransportSocketURI}"
+            systemProperty "tests.cluster.${cluster.name}.security_enabled", "${-> securityEnabled.toString()}"
+            configureCluster(cluster, securityEnabled)
+        }
+    }
+    nonInputProperties.systemProperty('tests.cluster_suffix', "1")
+    nonInputProperties.systemProperty('tests.bwcTask', "fullRestartClusterTask")
+    filter {
+        setIncludePatterns("org.opensearch.replication.bwc.BackwardsCompatibilityIT")
+    }
+}
+
+/*
+    Can be executed with `./gradlew bwcTestSuite`
+
+    Executes all 3 following upgrade scenarios as part of this test suite.
+    - mixed cluster:  oldVersionClusterTask0 --> mixedClusterTask
+    - rolling restart:  oldVersionClusterTask0 --> mixedClusterTask -> twoThirdsUpgradedClusterTask -> rollingUpgradeClusterTask
+    - full cluster restart:  oldVersionClusterTask1 --> fullRestartClusterTask
+ */
+task "bwcTestSuite"(type: RestIntegTestTask) {
+    // Disabling the bwcLeader0 & bwcFollower0 as rolling upgrade has been disabled.
+    //useCluster testClusters.bwcLeader0
+    //useCluster testClusters.bwcFollower0
+    useCluster testClusters.bwcLeader1
+    useCluster testClusters.bwcFollower1
+    doFirst {
+        getClusters().forEach { cluster ->
+            String alltransportSocketURI = cluster.nodes.stream().flatMap { node ->
+                node.getAllTransportPortURI().stream()
+            }.collect(Collectors.joining(","))
+            String allHttpSocketURI = cluster.nodes.stream().flatMap { node ->
+                node.getAllHttpSocketURI().stream()
+            }.collect(Collectors.joining(","))
+
+            systemProperty "tests.cluster.${cluster.name}.http_hosts", "${-> allHttpSocketURI}"
+            systemProperty "tests.cluster.${cluster.name}.transport_hosts", "${-> alltransportSocketURI}"
+            systemProperty "tests.cluster.${cluster.name}.security_enabled", "${-> securityEnabled.toString()}"
+            configureCluster(cluster, securityEnabled)
+        }
+    }
+    filter {
+        setIncludePatterns("org.opensearch.replication.bwc.BackwardsCompatibilityIT")
+    }
+    nonInputProperties.systemProperty('tests.cluster_suffix', "1")
+    nonInputProperties.systemProperty('tests.bwcTask', "bwcTestSuite")
+    // Disabling the rolling upgrade bwc tests as 2.x -> 3.0 is not supported yet.
+    //dependsOn tasks.named("mixedClusterTask")
+    //dependsOn tasks.named("rollingUpgradeClusterTask")
+    dependsOn tasks.named("fullRestartClusterTask")
+}
+
+task integTestRemote (type: Test) {
+    doFirst {
+        systemProperty "tests.cluster.followCluster.http_hosts", System.getProperty("follower.http_host")
+        systemProperty "tests.cluster.followCluster.transport_hosts", System.getProperty("follower.transport_host")
+        systemProperty "tests.cluster.followCluster.security_enabled", System.getProperty("security_enabled")
+
+        systemProperty "tests.cluster.leaderCluster.http_hosts", System.getProperty("leader.http_host")
+        systemProperty "tests.cluster.leaderCluster.transport_hosts", System.getProperty("leader.transport_host")
+        systemProperty "tests.cluster.leaderCluster.security_enabled", System.getProperty("security_enabled")
+
+        nonInputProperties.systemProperty('tests.integTestRemote', "true")
+        var numberOfNodes = findProperty('numNodes') as Integer
+        systemProperty "tests.cluster.followCluster.total_nodes", "${-> numberOfNodes.toString()}"
+        systemProperty "tests.cluster.leaderCluster.total_nodes", "${-> numberOfNodes.toString()}"
+        systemProperty "build.dir", "${buildDir}"
+        systemProperty "tests.security.manager", "false"
+
+    }
+    filter {
+            setExcludePatterns("org.opensearch.replication.bwc.BackwardsCompatibilityIT","org.opensearch.replication.singleCluster.SingleClusterSanityIT")
+    }
+}
+
+task singleClusterSanityTest (type: RestIntegTestTask) {
+    doFirst {
+        systemProperty "tests.cluster.followCluster.http_hosts", System.getProperty("follower.http_host")
+        systemProperty "tests.cluster.followCluster.transport_hosts", System.getProperty("follower.transport_host")
+        systemProperty "tests.cluster.followCluster.security_enabled", System.getProperty("security_enabled")
+    }
+    filter {
+            setIncludePatterns("org.opensearch.replication.singleCluster.SingleClusterSanityIT")
+    }
+    nonInputProperties.systemProperty('tests.sanitySingleCluster', "integTestSingleCluster")
+}
+
+publishing {
+    publications {
+        pluginZip(MavenPublication) { publication ->
+            pom {
+                name = opensearchplugin.name
+                description = opensearchplugin.description
+                groupId = "org.opensearch.plugin"
+                licenses {
+                    license {
+                        name = "The Apache License, Version 2.0"
+                        url = "http://www.apache.org/licenses/LICENSE-2.0.txt"
+                    }
+                }
+                developers {
+                    developer {
+                        name = "OpenSearch"
+                        url = "https://github.com/opensearch-project/cross-cluster-replication"
+                    }
+                }
+            }
+        }
+    }
+    repositories {
+        maven {
+            name = "Snapshots"
+            url = System.getenv("MAVEN_SNAPSHOTS_S3_REPO")
+            credentials(AwsCredentials) {
+                accessKey = System.getenv("AWS_ACCESS_KEY_ID")
+                secretKey = System.getenv("AWS_SECRET_ACCESS_KEY")
+                sessionToken = System.getenv("AWS_SESSION_TOKEN")
+            }
+        }
+    }
+}
+
+// updateVersion: Task to auto increment to the next development iteration
+task updateVersion {
+    onlyIf { System.getProperty('newVersion') }
+    doLast {
+        ext.newVersion = System.getProperty('newVersion')
+        println "Setting version to ${newVersion}."
+        // String tokenization to support -SNAPSHOT
+        ant.replaceregexp(file:'build.gradle', match: '"opensearch.version", "\\d.*"', replace: '"opensearch.version", "' + newVersion.tokenize('-')[0] + '-SNAPSHOT"', flags:'g', byline:true)
+    }
+}
