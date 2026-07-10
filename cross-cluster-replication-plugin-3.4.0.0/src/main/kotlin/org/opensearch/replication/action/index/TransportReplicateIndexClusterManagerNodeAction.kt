@@ -103,6 +103,7 @@ class TransportReplicateIndexClusterManagerNodeAction @Inject constructor(transp
                 val remoteMetadata = getRemoteIndexMetadata(replicateIndexReq.leaderAlias, replicateIndexReq.leaderIndex)
                 log.debug("Response returned of the request made to get metadata of ${replicateIndexReq.leaderIndex} index on remote cluster")
 
+                var isWarmAttach = false
                 if (state.routingTable.hasIndex(replicateIndexReq.followerIndex)) {
                     // If the index is already a CCR follower (REPLICATED_INDEX_SETTING is set),
                     // reject — the user must stop replication first.
@@ -117,6 +118,7 @@ class TransportReplicateIndexClusterManagerNodeAction @Inject constructor(transp
                         throw IllegalArgumentException("Cant use same index again for replication. " +
                                 "Delete the index:${replicateIndexReq.followerIndex}")
                     }
+                    isWarmAttach = true
                     log.info("Index ${replicateIndexReq.followerIndex} exists locally but is not a " +
                             "current follower — proceeding as warm-attach role-transition resume")
                 }
@@ -155,12 +157,23 @@ class TransportReplicateIndexClusterManagerNodeAction @Inject constructor(transp
                 if (!task.isAssigned) {
                     log.error("Failed to assign task")
                     listener.onResponse(ReplicateIndexResponse(false))
+                    return@launch
+                }
+
+                // For warm-attach (role-transition), the index already exists locally and the task
+                // will stamp REPLICATED_INDEX_SETTING and start shard tasks asynchronously.
+                // Stamping requires a cluster state update that can take longer than the default 30s
+                // request timeout, causing a spurious timeout even though replication is progressing.
+                // Since the task is assigned and running, return success immediately and let it
+                // proceed asynchronously — use _status to track progress.
+                if (isWarmAttach) {
+                    log.info("Warm-attach role-transition: task ${task.id} assigned — returning success asynchronously")
+                    listener.onResponse(AcknowledgedResponse(true))
+                    return@launch
                 }
 
                 log.debug("Waiting for persistent task to move to following state")
-                // Wait until replication is effectively started.
-                // During role-switch/warm-attach, task state can transition through INIT -> INIT_FOLLOW -> MONITORING
-                // and may not hit FOLLOWING within the request timeout even though replication has started.
+                // Normal start: wait until replication is effectively started.
                 persistentTasksService.waitForTaskCondition(task.id, replicateIndexReq.timeout()) { t ->
                     val replicationState = (t?.state as? IndexReplicationState)?.state
                     when (replicationState) {
