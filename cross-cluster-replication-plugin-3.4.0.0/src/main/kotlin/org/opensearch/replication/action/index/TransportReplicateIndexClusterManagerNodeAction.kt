@@ -21,7 +21,9 @@ import org.opensearch.replication.util.coroutineContext
 import org.opensearch.replication.util.removeTask
 import org.opensearch.replication.util.startTask
 import org.opensearch.replication.util.suspending
+import org.opensearch.replication.util.waitForClusterStateUpdate
 import org.opensearch.replication.util.waitForTaskCondition
+import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATED_INDEX_SETTING
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
@@ -34,10 +36,15 @@ import org.opensearch.action.support.IndicesOptions
 import org.opensearch.action.support.clustermanager.AcknowledgedResponse
 import org.opensearch.action.support.clustermanager.TransportClusterManagerNodeAction
 import org.opensearch.transport.client.node.NodeClient
+import org.opensearch.cluster.AckedClusterStateUpdateTask
 import org.opensearch.cluster.ClusterState
+import org.opensearch.common.Priority
+import org.opensearch.common.unit.TimeValue
 import org.opensearch.cluster.block.ClusterBlockException
 import org.opensearch.cluster.block.ClusterBlockLevel
 import org.opensearch.cluster.metadata.IndexMetadata
+import org.opensearch.cluster.metadata.Metadata
+import org.opensearch.common.settings.Settings
 import org.opensearch.cluster.metadata.IndexNameExpressionResolver
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Inject
@@ -133,6 +140,38 @@ class TransportReplicateIndexClusterManagerNodeAction @Inject constructor(transp
                         replicateIndexReq.leaderAlias, replicateIndexReq.leaderIndex,
                         ReplicationOverallState.RUNNING, user, replicateIndexReq.useRoles?.getOrDefault(ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE, null),
                         replicateIndexReq.useRoles?.getOrDefault(ReplicateIndexRequest.LEADER_CLUSTER_ROLE, null), replicateIndexReq.settings)
+
+                if (isWarmAttach) {
+                    log.info("Warm-attach role-transition: stamping REPLICATED_INDEX_SETTING on " +
+                            "${replicateIndexReq.followerIndex} from cluster manager before starting task")
+                    val stampResponse = clusterService.waitForClusterStateUpdate<AcknowledgedResponse>(
+                            "warm-attach-replicated-setting-${replicateIndexReq.followerIndex}") { l ->
+                        object : AckedClusterStateUpdateTask<AcknowledgedResponse>(Priority.NORMAL, null, l) {
+                            override fun timeout(): TimeValue = TimeValue.timeValueSeconds(60)
+                            override fun ackTimeout(): TimeValue = TimeValue.timeValueSeconds(60)
+                            override fun execute(currentState: ClusterState): ClusterState {
+                                val idxMeta = currentState.metadata().index(replicateIndexReq.followerIndex)
+                                    ?: return currentState
+                                val newSettings = Settings.builder()
+                                    .put(idxMeta.settings)
+                                    .put(REPLICATED_INDEX_SETTING.key,
+                                        "${replicateIndexReq.leaderAlias}:${replicateIndexReq.leaderIndex}")
+                                    .build()
+                                val newIdxMeta = IndexMetadata.builder(idxMeta)
+                                    .settings(newSettings)
+                                    .settingsVersion(idxMeta.settingsVersion + 1)
+                                val mdBuilder = Metadata.builder(currentState.metadata()).put(newIdxMeta)
+                                return ClusterState.builder(currentState).metadata(mdBuilder).build()
+                            }
+                            override fun newResponse(acknowledged: Boolean) = AcknowledgedResponse(acknowledged)
+                        }
+                    }
+                    if (!stampResponse.isAcknowledged) {
+                        log.warn("REPLICATED_INDEX_SETTING stamp was not acknowledged for ${replicateIndexReq.followerIndex} — continuing anyway")
+                    } else {
+                        log.info("REPLICATED_INDEX_SETTING successfully stamped on ${replicateIndexReq.followerIndex}")
+                    }
+                }
 
                 log.debug("Starting index replication task in persistent task service with name: replication:index:${replicateIndexReq.followerIndex}")
 

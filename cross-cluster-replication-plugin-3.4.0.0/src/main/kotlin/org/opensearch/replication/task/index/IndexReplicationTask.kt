@@ -194,49 +194,25 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
             try {
                 val newState = when (currentTaskState.state) {
                 ReplicationState.INIT -> {
-                    addListenerToInterruptTask()
                     if (isResumed()) {
                         // Warm-attach (role-transition resume): the follower index already exists locally.
-                        // If REPLICATED_INDEX_SETTING is not yet set (this was previously a leader/regular index),
-                        // apply it now so the index is properly identified as a CCR follower throughout the plugin.
+                        // REPLICATED_INDEX_SETTING was stamped on the cluster manager in
+                        // TransportReplicateIndexClusterManagerNodeAction before this task was started.
+                        // Register the interrupt listener and proceed directly to InitFollowState.
                         val currentSetting = clusterService.state().metadata()
                             .index(followerIndexName)?.settings?.get(REPLICATED_INDEX_SETTING.key)
                         if (currentSetting.isNullOrBlank()) {
-                            // REPLICATED_INDEX_SETTING is InternalIndex — cannot be set via UpdateSettingsRequest.
-                            // Use a direct cluster state update (same approach as StopReplicationTask uses to remove it).
-                            log.info("Warm-attach role transition: stamping REPLICATED_INDEX_SETTING " +
-                                    "on $followerIndexName via cluster state update")
-                            clusterService.waitForClusterStateUpdate(
-                                    "warm-attach-replicated-setting-$followerIndexName") { listener ->
-                                object : AckedClusterStateUpdateTask<AcknowledgedResponse>(
-                                        Priority.NORMAL, null, listener) {
-                                    // AckedClusterStateUpdateTask.timeout() calls request.clusterManagerNodeTimeout()
-                                    // which NPEs when request is null. Override to provide a safe default.
-                                    override fun timeout(): TimeValue = TimeValue.timeValueSeconds(60)
-                                    override fun execute(currentState: ClusterState): ClusterState {
-                                        val idxMeta = currentState.metadata().index(followerIndexName)
-                                            ?: return currentState
-                                        val newSettings = Settings.builder()
-                                            .put(idxMeta.settings)
-                                            .put(REPLICATED_INDEX_SETTING.key,
-                                                "$leaderAlias:${leaderIndex.name}")
-                                            .build()
-                                        val newIdxMeta = IndexMetadata.builder(idxMeta)
-                                            .settings(newSettings)
-                                            .settingsVersion(idxMeta.settingsVersion + 1)
-                                        val mdBuilder = Metadata.builder(currentState.metadata())
-                                            .put(newIdxMeta)
-                                        return ClusterState.builder(currentState).metadata(mdBuilder).build()
-                                    }
-                                    override fun newResponse(acknowledged: Boolean) =
-                                        AcknowledgedResponse(acknowledged)
-                                }
-                            }
+                            log.warn("Warm-attach: REPLICATED_INDEX_SETTING not yet visible on this node for " +
+                                    "$followerIndexName — cluster state propagation may be delayed, retrying")
+                            // Throw to trigger the outer retry loop (5s delay) until the setting propagates.
+                            throw OpenSearchException("REPLICATED_INDEX_SETTING not yet propagated for $followerIndexName")
                         }
-                        log.info("Skipping snapshot restore for $followerIndexName — " +
-                                "index exists locally (warm-attach), shard tasks will resume from checkpoint")
+                        addListenerToInterruptTask()
+                        log.info("Warm-attach resume for $followerIndexName — REPLICATED_INDEX_SETTING=$currentSetting, " +
+                                "shard tasks will resume from local checkpoint")
                         InitFollowState
                     } else {
+                        addListenerToInterruptTask()
                         setupAndStartRestore()
                     }
                 }
@@ -859,12 +835,23 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
             }
 
             // if cancelled and not in paused state.
+            // Guard: do NOT auto-pause when the task was cancelled during INIT state.
+            // In the warm-attach (role-transition) path the task may be cancelled by the clusterChanged()
+            // race before replication has actually started (REPLICATED_INDEX_SETTING not yet stamped,
+            // no write block applied). Pausing in that situation sets PAUSED in the cluster state, which
+            // causes every subsequent start-replication attempt to be immediately cancelled by
+            // clusterChanged() with "received a pause" — making the index permanently stuck until both
+            // clusters are restarted (which clears the stale in-flight pause updates).
             val replicationStateParams = getReplicationStateParamsForIndex(clusterService, followerIndexName)
+            val cancelledAfterReplicationStarted = currentTaskState.state != ReplicationState.INIT
             if(isCancelled && replicationStateParams != null
-                    && replicationStateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE] == ReplicationOverallState.RUNNING.name) {
+                    && replicationStateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE] == ReplicationOverallState.RUNNING.name
+                    && cancelledAfterReplicationStarted) {
                 log.info("Task is cancelled. Moving the index to auto-pause state")
                 client.execute(PauseIndexReplicationAction.INSTANCE,
                         PauseIndexReplicationRequest(followerIndexName, TASK_CANCELLATION_REASON))
+            } else if (isCancelled && !cancelledAfterReplicationStarted) {
+                log.info("Task cancelled during INIT (warm-attach race) — skipping auto-pause to allow clean retry")
             }
 
             // Deleting the follower index if replication is stopped because of leader index deletion
