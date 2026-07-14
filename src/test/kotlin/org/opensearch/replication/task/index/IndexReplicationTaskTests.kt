@@ -31,7 +31,6 @@ import org.opensearch.cluster.node.DiscoveryNodes
 import org.opensearch.cluster.routing.RoutingTable
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.settings.SettingsModule
-import org.opensearch.index.IndexSettings
 import org.opensearch.common.unit.TimeValue
 import org.opensearch.core.xcontent.NamedXContentRegistry
 import org.opensearch.core.index.Index
@@ -49,6 +48,7 @@ import org.opensearch.replication.metadata.store.ReplicationMetadataStore
 import org.opensearch.replication.metadata.store.ReplicationMetadataStore.Companion.REPLICATION_CONFIG_SYSTEM_INDEX
 import org.opensearch.replication.metadata.store.ReplicationStoreMetadataType
 import org.opensearch.replication.repository.REMOTE_REPOSITORY_PREFIX
+import org.opensearch.replication.task.shard.FollowerClusterStats
 import org.opensearch.replication.task.shard.ShardReplicationExecutor
 import org.opensearch.replication.task.shard.ShardReplicationParams
 import org.opensearch.snapshots.Snapshot
@@ -296,133 +296,11 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
         val replicationSettings = Mockito.mock(ReplicationSettings::class.java)
         replicationSettings.metadataSyncInterval = TimeValue(100, TimeUnit.MILLISECONDS)
         val cso = ClusterStateObserver(clusterService, logger, threadPool.threadContext)
+        val followerClusterStats = FollowerClusterStats()
         val indexReplicationTask = IndexReplicationTask(1, "type", "action", "description" , EMPTY_TASK_ID,
                 ReplicationPlugin.REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService , threadPool, spyClient, IndexReplicationParams(connectionName, Index(followerIndex, "0"), followerIndex),
-                persist, replicationMetadataManager, replicationSettings, settingsModule,cso)
+                persist, replicationMetadataManager, replicationSettings, settingsModule, cso, followerClusterStats)
 
         return indexReplicationTask
-    }
-
-    fun testConditionallyOpenIndex() = runBlocking {
-        val replicationTask: IndexReplicationTask = spy(createIndexReplicationTask())
-        val taskManager = Mockito.mock(TaskManager::class.java)
-        replicationTask.setPersistent(taskManager)
-        val rc = ReplicationContext(followerIndex)
-        val rm = ReplicationMetadata(connectionName, ReplicationStoreMetadataType.INDEX.name, ReplicationOverallState.RUNNING.name, "reason", rc, rc, Settings.EMPTY)
-        replicationTask.setReplicationMetadata(rm)
-
-        // Test case 1: Index is closed - should trigger open operation
-        var metadata = Metadata.builder()
-            .put(IndexMetadata.builder(REPLICATION_CONFIG_SYSTEM_INDEX).settings(settings(Version.CURRENT)).numberOfShards(1).numberOfReplicas(0))
-            .put(IndexMetadata.builder(followerIndex).settings(settings(Version.CURRENT)).numberOfShards(1).numberOfReplicas(0).state(IndexMetadata.State.CLOSE))
-            .build()
-        var routingTableBuilder = RoutingTable.builder()
-            .addAsNew(metadata.index(REPLICATION_CONFIG_SYSTEM_INDEX))
-        var newClusterState = ClusterState.builder(clusterService.state()).metadata(metadata).routingTable(routingTableBuilder.build()).build()
-        setState(clusterService, newClusterState)
-
-        // Test with closed index - should return true
-        val isClosedResult = replicationTask.isIndexClosed(followerIndex)
-        assertThat(isClosedResult).isTrue()
-
-        // Test case 2: Index is open - should return false
-        metadata = Metadata.builder()
-            .put(IndexMetadata.builder(REPLICATION_CONFIG_SYSTEM_INDEX).settings(settings(Version.CURRENT)).numberOfShards(1).numberOfReplicas(0))
-            .put(IndexMetadata.builder(followerIndex).settings(settings(Version.CURRENT)).numberOfShards(1).numberOfReplicas(0).state(IndexMetadata.State.OPEN))
-            .build()
-        routingTableBuilder = RoutingTable.builder()
-            .addAsNew(metadata.index(REPLICATION_CONFIG_SYSTEM_INDEX))
-        newClusterState = ClusterState.builder(clusterService.state()).metadata(metadata).routingTable(routingTableBuilder.build()).build()
-        setState(clusterService, newClusterState)
-
-        val isOpenResult = replicationTask.isIndexClosed(followerIndex)
-        assertThat(isOpenResult).isFalse()
-        
-        // Test case 3: Index metadata not found - should default to true (safe fallback)
-        metadata = Metadata.builder()
-            .put(IndexMetadata.builder(REPLICATION_CONFIG_SYSTEM_INDEX).settings(settings(Version.CURRENT)).numberOfShards(1).numberOfReplicas(0))
-            .build()
-        routingTableBuilder = RoutingTable.builder()
-            .addAsNew(metadata.index(REPLICATION_CONFIG_SYSTEM_INDEX))
-        newClusterState = ClusterState.builder(clusterService.state()).metadata(metadata).routingTable(routingTableBuilder.build()).build()
-        setState(clusterService, newClusterState)
-
-        val isMissingResult = replicationTask.isIndexClosed("non-existent-index")
-        assertThat(isMissingResult).isTrue() // Should default to true for safety
-    }
-
-    fun testIsIndexClosedMethod() = runBlocking {
-        val replicationTask: IndexReplicationTask = spy(createIndexReplicationTask())
-        val taskManager = Mockito.mock(TaskManager::class.java)
-        replicationTask.setPersistent(taskManager)
-        val rc = ReplicationContext(followerIndex)
-        val rm = ReplicationMetadata(connectionName, ReplicationStoreMetadataType.INDEX.name, ReplicationOverallState.RUNNING.name, "reason", rc, rc, Settings.EMPTY)
-        replicationTask.setReplicationMetadata(rm)
-
-        // Test case 1: Index is closed
-        var metadata = Metadata.builder()
-            .put(IndexMetadata.builder(followerIndex).settings(settings(Version.CURRENT)).numberOfShards(1).numberOfReplicas(0).state(IndexMetadata.State.CLOSE))
-            .build()
-        var newClusterState = ClusterState.builder(clusterService.state()).metadata(metadata).build()
-        setState(clusterService, newClusterState)
-
-        val isClosedResult = replicationTask.isIndexClosed(followerIndex)
-        assertThat(isClosedResult).isTrue()
-
-        // Test case 2: Index is open
-        metadata = Metadata.builder()
-            .put(IndexMetadata.builder(followerIndex).settings(settings(Version.CURRENT)).numberOfShards(1).numberOfReplicas(0).state(IndexMetadata.State.OPEN))
-            .build()
-        newClusterState = ClusterState.builder(clusterService.state()).metadata(metadata).build()
-        setState(clusterService, newClusterState)
-
-        val isOpenResult = replicationTask.isIndexClosed(followerIndex)
-        assertThat(isOpenResult).isFalse()
-
-        // Test case 3: Index metadata not found - should return true (safe fallback)
-        metadata = Metadata.builder().build()
-        newClusterState = ClusterState.builder(clusterService.state()).metadata(metadata).build()
-        setState(clusterService, newClusterState)
-
-        val isMissingResult = replicationTask.isIndexClosed("non-existent-index")
-        assertThat(isMissingResult).isTrue() // Should default to true for safety
-    }
-
-    fun testShouldSkipNumberOfReplicasWhenAutoExpandIsActive() {
-        // auto_expand_replicas = "0-all" → should skip number_of_replicas
-        val followerSettings = Settings.builder()
-            .put(IndexMetadata.SETTING_AUTO_EXPAND_REPLICAS, "0-all")
-            .build()
-        assertThat(IndexReplicationTask.shouldSkipSettingSync(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, followerSettings)).isTrue()
-    }
-
-    fun testShouldSkipNumberOfReplicasWhenAutoExpandIsRange() {
-        // auto_expand_replicas = "0-5" → should skip number_of_replicas
-        val followerSettings = Settings.builder()
-            .put(IndexMetadata.SETTING_AUTO_EXPAND_REPLICAS, "0-5")
-            .build()
-        assertThat(IndexReplicationTask.shouldSkipSettingSync(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, followerSettings)).isTrue()
-    }
-
-    fun testShouldNotSkipNumberOfReplicasWhenAutoExpandIsFalse() {
-        // auto_expand_replicas = "false" → should NOT skip number_of_replicas
-        val followerSettings = Settings.builder()
-            .put(IndexMetadata.SETTING_AUTO_EXPAND_REPLICAS, "false")
-            .build()
-        assertThat(IndexReplicationTask.shouldSkipSettingSync(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, followerSettings)).isFalse()
-    }
-
-    fun testShouldNotSkipNumberOfReplicasWhenAutoExpandIsAbsent() {
-        // auto_expand_replicas not set → should NOT skip number_of_replicas
-        val followerSettings = Settings.builder().build()
-        assertThat(IndexReplicationTask.shouldSkipSettingSync(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, followerSettings)).isFalse()
-    }
-
-    fun testShouldNotSkipOtherSettingsWhenAutoExpandIsActive() {
-        // auto_expand_replicas is active, but the key is NOT number_of_replicas → should NOT skip
-        val followerSettings = Settings.builder()
-            .put(IndexMetadata.SETTING_AUTO_EXPAND_REPLICAS, "0-all")
-            .build()
-        assertThat(IndexReplicationTask.shouldSkipSettingSync(IndexSettings.INDEX_REFRESH_INTERVAL_SETTING.key, followerSettings)).isFalse()
     }
 }

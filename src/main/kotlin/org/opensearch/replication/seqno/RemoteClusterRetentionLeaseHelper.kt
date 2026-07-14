@@ -107,11 +107,30 @@ class RemoteClusterRetentionLeaseHelper constructor(var followerClusterNameWithU
         val request = RetentionLeaseActions.AddRequest(leaderShardId, retentionLeaseId, seqNo, retentionLeaseSource)
         try {
             client.suspendExecute(RetentionLeaseActions.Add.INSTANCE, request)
-            log.info("Added new retention lease: id=$retentionLeaseId, leaderShard=$leaderShardId, seqNo=$seqNo")
             return true
         } catch (e: Exception) {
-            log.info("Failed to add new retention lease: id=$retentionLeaseId, leaderShard=$leaderShardId, seqNo=$seqNo, error=${e.message}")
+            log.info("Exception while adding new retention lease with i: $retentionLeaseId")
             return false
+        }
+    }
+
+    /**
+     * Renews the retention lease if it exists, or creates a fresh one if it is not found.
+     * Used for the warm-attach (role-transition resume) path where the snapshot restore is skipped
+     * and therefore no retention lease was created on the new leader.
+     */
+    public suspend fun addOrRenewRetentionLease(leaderShardId: ShardId, seqNo: Long, followerShardId: ShardId) {
+        try {
+            renewRetentionLease(leaderShardId, seqNo, followerShardId)
+        } catch (ex: RetentionLeaseNotFoundException) {
+            log.info("Retention lease not found for $followerShardId — creating new lease (warm-attach resume)")
+            val added = addNewRetentionLease(leaderShardId, seqNo, followerShardId,
+                RemoteClusterRepository.REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC)
+            if (!added) {
+                log.error("Failed to create retention lease for $followerShardId in warm-attach path")
+                throw ex
+            }
+            log.info("Successfully created retention lease for $followerShardId (warm-attach)")
         }
     }
 

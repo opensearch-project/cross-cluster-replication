@@ -94,9 +94,24 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
                 val leaderSettings = getLeaderIndexSettings(request.leaderAlias, request.leaderIndex)
                 log.debug("Leader settings were fetched for ${request.leaderIndex} index.")
 
-                if (leaderSettings.keySet().contains(ReplicationPlugin.REPLICATED_INDEX_SETTING.key) and
+                if (leaderSettings.keySet().contains(ReplicationPlugin.REPLICATED_INDEX_SETTING.key) &&
                         !leaderSettings.get(ReplicationPlugin.REPLICATED_INDEX_SETTING.key).isNullOrBlank()) {
-                    throw IllegalArgumentException("Cannot Replicate a Replicated Index ${request.leaderIndex}")
+                    // The leader index has REPLICATED_INDEX_SETTING — normally means circular replication.
+                    // EXCEPTION: if the local cluster has this index as a regular (non-follower) index,
+                    // this is a role-transition — the new leader's index still carries the stale setting
+                    // from when it was a follower. Allow the warm-attach to proceed.
+                    // Note: we do NOT try to clear the leader's setting here because REPLICATED_INDEX_SETTING
+                    // is InternalIndex and cannot be modified via UpdateSettingsRequest. It will be cleared
+                    // when StopIndexReplicationAction is eventually called on the (new) leader cluster.
+                    val localIndex = clusterService.state().metadata().index(request.followerIndex)
+                    val localFollowerSetting = localIndex?.settings?.get(ReplicationPlugin.REPLICATED_INDEX_SETTING.key)
+                    val localIndexIsRegular = localIndex != null && localFollowerSetting.isNullOrBlank()
+                    if (localIndexIsRegular) {
+                        log.info("Role transition detected for ${request.leaderAlias}:${request.leaderIndex} — " +
+                                "local index exists as regular (non-follower) index, allowing warm-attach")
+                    } else {
+                        throw IllegalArgumentException("Cannot Replicate a Replicated Index ${request.leaderIndex}")
+                    }
                 }
 
                 // Soft deletes should be enabled for replication to work.
@@ -164,40 +179,5 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
         // Since we want user configured as well as default settings, we combine both by putting default settings
         // and then the explicitly set ones to override the default settings.
         return Settings.builder().put(leaderDefaultSettings).put(leaderSettings).build()
-    }
-
-    /**
-     * Fetches leader cluster state for multiple indices in ONE remote call for bulk API
-     */
-    internal suspend fun getLeaderClusterState(leaderAlias: String, indices: List<String>): ClusterState {
-        val remoteClusterClient = client.getRemoteClusterClient(leaderAlias)
-        val clusterStateRequest = remoteClusterClient.admin().cluster().prepareState()
-                .clear()
-                .setIndices(*indices.toTypedArray())
-                .setRoutingTable(true)
-                .setMetadata(true)
-                .setIndicesOptions(IndicesOptions.lenientExpandOpen())
-                .request()
-        return remoteClusterClient.suspending(remoteClusterClient.admin().cluster()::state,
-                injectSecurityContext = true, defaultContext = true)(clusterStateRequest).state
-    }
-
-    /**
-     * Fetches leader index settings for multiple indices in ONE remote call for bulk API
-     * Returns a map of index name with combined (default + explicit) settings.
-     */
-    internal suspend fun getLeaderIndexSettings(leaderAlias: String, indices: List<String>): Map<String, Settings> {
-        val remoteClient = client.getRemoteClusterClient(leaderAlias)
-        val getSettingsRequest = GetSettingsRequest().includeDefaults(true).indices(*indices.toTypedArray())
-        val settingsResponse = remoteClient.suspending(
-            remoteClient.admin().indices()::getSettings,
-            injectSecurityContext = true
-        )(getSettingsRequest)
-
-        return indices.associateWith { index ->
-            val leaderSettings = settingsResponse.indexToSettings.get(index) ?: Settings.EMPTY
-            val leaderDefaultSettings = settingsResponse.indexToDefaultSettings.get(index) ?: Settings.EMPTY
-            Settings.builder().put(leaderDefaultSettings).put(leaderSettings).build()
-        }
     }
 }

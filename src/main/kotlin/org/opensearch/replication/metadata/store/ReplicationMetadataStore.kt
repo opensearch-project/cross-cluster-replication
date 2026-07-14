@@ -22,14 +22,13 @@ import org.opensearch.action.admin.cluster.health.ClusterHealthRequest
 import org.opensearch.action.admin.indices.create.CreateIndexRequest
 import org.opensearch.action.admin.indices.create.CreateIndexResponse
 import org.opensearch.action.admin.indices.mapping.put.PutMappingRequest
-import org.opensearch.action.bulk.BulkRequest
-import org.opensearch.action.bulk.BulkResponse
 import org.opensearch.action.delete.DeleteRequest
 import org.opensearch.action.delete.DeleteResponse
 import org.opensearch.action.get.GetRequest
-import org.opensearch.action.get.MultiGetRequest
 import org.opensearch.action.index.IndexResponse
 import org.opensearch.transport.client.Client
+import org.opensearch.cluster.ClusterChangedEvent
+import org.opensearch.cluster.ClusterStateListener
 import org.opensearch.cluster.health.ClusterHealthStatus
 import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.cluster.service.ClusterService
@@ -44,9 +43,14 @@ import org.opensearch.core.xcontent.NamedXContentRegistry
 import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.XContentParser
 import org.opensearch.replication.util.suspendExecuteWithRetries
+import org.opensearch.threadpool.ThreadPool
 
 class ReplicationMetadataStore constructor(val client: Client, val clusterService: ClusterService,
                                val namedXContentRegistry: NamedXContentRegistry): AbstractLifecycleComponent() {
+
+    // True once we have confirmed or applied the latest schema_version mapping in this JVM lifecycle.
+    // Avoids a cluster-state read on every getMetadata/addMetadata call after the first check.
+    @Volatile private var mappingUpToDate = false
 
     companion object {
         const val REPLICATION_CONFIG_SYSTEM_INDEX = ".replication-metadata-store"
@@ -113,23 +117,42 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
         return client.suspending(indexReqBuilder::execute, defaultContext = true)("replication")
     }
 
-    private suspend fun checkAndUpdateMapping() {
-        var currentSchemaVersion = DEFAULT_SCHEMA_VERSION
-        val indexMetadata = clusterService.state().metadata.indices.getOrDefault(REPLICATION_CONFIG_SYSTEM_INDEX, null)
-                ?: throw ResourceNotFoundException("Index metadata doesn't exist for $REPLICATION_CONFIG_SYSTEM_INDEX")
-        val mappingMetadata = indexMetadata.mapping()?.sourceAsMap?.get(MAPPING_META)
-        if(mappingMetadata != null && mappingMetadata is HashMap<*,*>) {
-            currentSchemaVersion = mappingMetadata.get(MAPPING_SCHEMA_VERSION) as Int
-        }
+    /**
+     * Reads the current schema_version stored in the live index mapping (cluster state).
+     * Returns DEFAULT_SCHEMA_VERSION if the index or its mapping meta does not exist.
+     * This is a pure cluster-state read — no network call, safe to call from any thread.
+     */
+    private fun getCurrentSchemaVersion(): Int {
+        val idxMeta = clusterService.state().metadata.indices
+            .getOrDefault(REPLICATION_CONFIG_SYSTEM_INDEX, null) ?: return DEFAULT_SCHEMA_VERSION
+        val metaMap = idxMeta.mapping()?.sourceAsMap?.get(MAPPING_META)
+        return if (metaMap is HashMap<*, *>) {
+            (metaMap[MAPPING_SCHEMA_VERSION] as? Int) ?: DEFAULT_SCHEMA_VERSION
+        } else DEFAULT_SCHEMA_VERSION
+    }
 
-        if(REPLICATION_STORE_MAPPING_VERSION > currentSchemaVersion) {
+    private suspend fun checkAndUpdateMapping() {
+        // Skip the cluster-state read if we already confirmed the mapping is current in this JVM.
+        if (mappingUpToDate) return
+
+        // If the index doesn't exist yet, there is nothing to migrate — return gracefully.
+        if (!configStoreExists()) return
+
+        val currentSchemaVersion = getCurrentSchemaVersion()
+
+        if (REPLICATION_STORE_MAPPING_VERSION > currentSchemaVersion) {
+            log.info("Updating replication metadata store mapping from schema_version " +
+                    "$currentSchemaVersion to $REPLICATION_STORE_MAPPING_VERSION")
             val putMappingReq = PutMappingRequest(REPLICATION_CONFIG_SYSTEM_INDEX)
                     .source(REPLICATION_CONFIG_SYSTEM_INDEX_MAPPING, XContentType.JSON)
             val putMappingRes = client.suspending(client.admin().indices()::putMapping, defaultContext = true)(putMappingReq)
-            if(!putMappingRes.isAcknowledged) {
+            if (!putMappingRes.isAcknowledged) {
                 log.error("Mapping update failed for replication store - $REPLICATION_CONFIG_SYSTEM_INDEX")
+                return  // Do not set the flag — retry on next call
             }
+            log.info("Successfully updated replication metadata store mapping to schema_version $REPLICATION_STORE_MAPPING_VERSION")
         }
+        mappingUpToDate = true
     }
 
     suspend fun getMetadata(getMetadataReq: GetReplicationMetadataRequest,
@@ -141,6 +164,9 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
         }
 
         checkAndWaitForStoreHealth()
+        // Ensure the mapping is up-to-date before every read so checkpoint fields are available
+        // even on clusters that haven't had a write since the plugin was upgraded.
+        checkAndUpdateMapping()
 
         val getReq = GetRequest(REPLICATION_CONFIG_SYSTEM_INDEX, id)
         getReq.realtime(true)
@@ -197,35 +223,6 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
     }
 
     /**
-     * Fetches replication metadata for multiple indices in ONE call using MultiGet.
-     * Returns a map of follower index name -> ReplicationMetadata. Missing indices are omitted.
-     */
-    suspend fun getMetadata(metadataType: String, indices: List<String>): Map<String, ReplicationMetadata> {
-        if (indices.isEmpty()) return emptyMap()
-        if (!configStoreExists()) return emptyMap()
-
-        checkAndWaitForStoreHealth()
-
-        val multiGetReq = MultiGetRequest().realtime(true)
-        for (index in indices) {
-            val id = getId(metadataType, null, index)
-            multiGetReq.add(MultiGetRequest.Item(REPLICATION_CONFIG_SYSTEM_INDEX, id))
-        }
-
-        val multiGetRes = client.suspending(client::multiGet, defaultContext = true)(multiGetReq)
-        val result = mutableMapOf<String, ReplicationMetadata>()
-        for ((i, response) in multiGetRes.responses.withIndex()) {
-            if (response.isFailed || response.response?.sourceAsBytesRef == null) continue
-            val parser = XContentHelper.createParser(
-                namedXContentRegistry, LoggingDeprecationHandler.INSTANCE,
-                response.response.sourceAsBytesRef, XContentType.JSON
-            )
-            result[indices[i]] = ReplicationMetadata.fromXContent(parser)
-        }
-        return result
-    }
-
-    /**
      * Preference to set for the getMetadata requests
      * - Fetch from the primary shards
      */
@@ -254,30 +251,6 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
 
         val delReq = DeleteRequest(REPLICATION_CONFIG_SYSTEM_INDEX, id)
         return client.suspending(client::delete, defaultContext = true)(delReq)
-    }
-
-    /**
-     * Deletes replication metadata for multiple indices in ONE call using Bulk API.
-     * Returns set of indices that were successfully deleted.
-     */
-    suspend fun deleteMetadata(metadataType: String, indices: List<String>): Set<String> {
-        if (indices.isEmpty()) return emptySet()
-        if (!configStoreExists()) return emptySet()
-
-        checkAndWaitForStoreHealth()
-
-        val bulkReq = BulkRequest()
-        for (index in indices) {
-            val id = getId(metadataType, null, index)
-            bulkReq.add(DeleteRequest(REPLICATION_CONFIG_SYSTEM_INDEX, id))
-        }
-
-        val bulkRes = client.suspending(client::bulk, defaultContext = true)(bulkReq)
-        val succeeded = mutableSetOf<String>()
-        for ((i, item) in bulkRes.items.withIndex()) {
-            if (!item.isFailed) succeeded.add(indices[i])
-        }
-        return succeeded
     }
 
     suspend fun updateMetadata(updateMetadataReq: UpdateReplicationMetadataRequest): IndexResponse {
@@ -326,6 +299,72 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
 
 
     override fun doStart() {
+        // We need a cluster manager to be elected before we can create/migrate the system index.
+        // If one is already available (single-node or restart), submit the work immediately.
+        // Otherwise register a one-shot ClusterStateListener that fires the moment a master is elected.
+        if (clusterService.state().nodes().clusterManagerNodeId != null) {
+            client.threadPool().executor(ThreadPool.Names.GENERIC).execute { ensureSystemIndexReady() }
+        } else {
+            val listener = object : ClusterStateListener {
+                override fun clusterChanged(event: ClusterChangedEvent) {
+                    if (event.state().nodes().clusterManagerNodeId != null) {
+                        clusterService.removeListener(this)
+                        client.threadPool().executor(ThreadPool.Names.GENERIC).execute { ensureSystemIndexReady() }
+                    }
+                }
+            }
+            clusterService.addListener(listener)
+        }
+    }
+
+    /**
+     * Creates the system index if it does not exist, or upgrades the mapping if the stored
+     * schema_version is older than REPLICATION_STORE_MAPPING_VERSION.
+     * Runs on the GENERIC thread pool — safe to call with actionGet().
+     */
+    private fun ensureSystemIndexReady() {
+        var storedContext: ThreadContext.StoredContext? = null
+        try {
+            storedContext = client.threadPool().threadContext.stashContext()
+
+            if (!configStoreExists()) {
+                try {
+                    val createIndexReq = CreateIndexRequest(REPLICATION_CONFIG_SYSTEM_INDEX, configStoreSettings())
+                        .mapping(REPLICATION_CONFIG_SYSTEM_INDEX_MAPPING, XContentType.JSON)
+                    client.admin().indices().create(createIndexReq).actionGet()
+                    log.info("Created [$REPLICATION_CONFIG_SYSTEM_INDEX] with schema_version $REPLICATION_STORE_MAPPING_VERSION")
+                    mappingUpToDate = true
+                    return
+                } catch (ex: ResourceAlreadyExistsException) {
+                    // Another node created it concurrently — fall through to mapping check.
+                    log.debug("[$REPLICATION_CONFIG_SYSTEM_INDEX] already exists (concurrent creation), checking mapping version.")
+                }
+            }
+
+            // Index exists — upgrade mapping if needed.
+            if (!mappingUpToDate) {
+                val currentVersion = getCurrentSchemaVersion()
+                if (REPLICATION_STORE_MAPPING_VERSION > currentVersion) {
+                    val putMappingReq = PutMappingRequest(REPLICATION_CONFIG_SYSTEM_INDEX)
+                        .source(REPLICATION_CONFIG_SYSTEM_INDEX_MAPPING, XContentType.JSON)
+                    val res = client.admin().indices().putMapping(putMappingReq).actionGet()
+                    if (res.isAcknowledged) {
+                        log.info("Upgraded [$REPLICATION_CONFIG_SYSTEM_INDEX] mapping: " +
+                                "schema_version $currentVersion → $REPLICATION_STORE_MAPPING_VERSION")
+                        mappingUpToDate = true
+                    } else {
+                        log.warn("PutMapping not acknowledged for [$REPLICATION_CONFIG_SYSTEM_INDEX] — will retry on next CCR operation")
+                    }
+                } else {
+                    log.debug("[$REPLICATION_CONFIG_SYSTEM_INDEX] mapping is current at schema_version $currentVersion")
+                    mappingUpToDate = true
+                }
+            }
+        } catch (ex: Exception) {
+            log.warn("Failed to initialise [$REPLICATION_CONFIG_SYSTEM_INDEX] at startup (will retry on next CCR operation): ${ex.message}")
+        } finally {
+            storedContext?.close()
+        }
     }
 
     override fun doStop() {

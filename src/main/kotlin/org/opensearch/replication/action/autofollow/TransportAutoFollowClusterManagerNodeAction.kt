@@ -88,7 +88,10 @@ class TransportAutoFollowClusterManagerNodeAction @Inject constructor(transportS
 
                     metadataManager.addAutofollowMetadata(request.patternName, request.connection, request.pattern!!,
                             ReplicationOverallState.RUNNING, user, followerClusterRole, leaderClusterRole, request.settings,
-                            request.followerIndexPattern)
+                            // Point 1, 3, 5: Forward checkpoint configuration from the REST request
+                            request.checkpointPersistenceEnabled,
+                            request.checkpointRetentionPeriod.stringRep,
+                            request.roleTransitionResumeMode.name)
                     startAutoFollowTask(request.connection, request.patternName)
                 }
                 AcknowledgedResponse(true)

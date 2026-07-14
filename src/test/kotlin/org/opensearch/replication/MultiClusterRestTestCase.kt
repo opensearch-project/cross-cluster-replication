@@ -84,7 +84,6 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
                       val preserveClusterSettings: Boolean,
                       val securityEnabled: Boolean) {
         val restClient : RestHighLevelClient
-        private val connectionManager: org.apache.hc.client5.http.impl.nio.PoolingAsyncClientConnectionManager
         init {
             val trustCerts = arrayOf<TrustManager>(object: X509TrustManager {
                 override fun checkClientTrusted(chain: Array<out java.security.cert.X509Certificate>?, authType: String?) {
@@ -103,10 +102,10 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
             val tlsStrategy = ClientTlsStrategyBuilder.create().setSslContext(sslContext)
                 .setHostnameVerifier { _, _ -> true } // Disable hostname verification for local cluster
                 .build()
-            connectionManager = PoolingAsyncClientConnectionManagerBuilder.create().setTlsStrategy(tlsStrategy).build()
+            val connManager = PoolingAsyncClientConnectionManagerBuilder.create().setTlsStrategy(tlsStrategy).build()
 
             val builder = RestClient.builder(*httpHosts.toTypedArray()).setHttpClientConfigCallback { httpAsyncClientBuilder ->
-                httpAsyncClientBuilder.setConnectionManager(connectionManager)
+                httpAsyncClientBuilder.setConnectionManager(connManager)
                 httpAsyncClientBuilder.setVersionPolicy(HttpVersionPolicy.FORCE_HTTP_1)
             }
             configureClient(builder, getClusterSettings(clusterName), securityEnabled)
@@ -114,11 +113,6 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
             restClient = RestHighLevelClient(builder)
         }
         val lowLevelClient = restClient.lowLevelClient!!
-
-        fun close() {
-            restClient.close()
-            connectionManager.close()
-        }
 
         var defaultSecuritySetupCompleted = false
         companion object {
@@ -185,7 +179,7 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
         @AfterClass @JvmStatic
         fun cleanUpRestClients() {
             testClusters.values.forEach {
-                it.close()
+                it.restClient.close()
             }
         }
 
@@ -271,11 +265,6 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
             registerSnapshotRepository(it)
             if(it.securityEnabled && !it.defaultSecuritySetupCompleted)
                 setupDefaultSecurityRoles(it)
-            try {
-                val req = Request("PUT", "/_cluster/settings")
-                req.setJsonEntity("""{"persistent":{"plugins.replication.follower.bulk_poll_timeout":5}}""")
-                it.lowLevelClient.performRequest(req)
-            } catch (_: Exception) {}
         }
     }
 
@@ -381,28 +370,7 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
 
     @After
     fun wipeClusters() {
-        testClusters.values.forEach { cancelBulkTask(it) }
         testClusters.values.forEach { wipeCluster(it) }
-        testClusters.values.forEach { cancelBulkTask(it) }
-    }
-
-    private fun cancelBulkTask(testCluster: TestCluster) {
-        try {
-            fun getBulkMeta() = ((OpenSearchRestTestCase.entityAsMap(testCluster.lowLevelClient.performRequest(
-                Request("GET", "/_cluster/state/metadata")))["metadata"] as? Map<*, *>)
-                ?.get("bulk_replication_task") as? Map<*, *>)
-
-            val meta = getBulkMeta() ?: return
-            val pending = meta["num_pending"] as? Int ?: 0
-            val taskId = meta["task_id"] as? String ?: return
-            if (pending == 0 || taskId.isEmpty()) return
-
-            try { testCluster.lowLevelClient.performRequest(Request("POST", "/_plugins/_replication/_task_cancel/$taskId")) } catch (_: Exception) {}
-
-            val deadline = System.currentTimeMillis() + 30_000L
-            while (System.currentTimeMillis() < deadline && (getBulkMeta()?.get("num_pending") as? Int ?: 0) > 0)
-                Thread.sleep(2000)
-        } catch (_: Exception) {}
     }
 
     private fun wipeCluster(testCluster: TestCluster) {
@@ -474,9 +442,7 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
                 val response=testCluster.lowLevelClient.performRequest(stopRequest)
             }
             catch (e:ResponseException){
-                // 400 = index not being replicated, 500 = internal error (e.g., missing synonym files)
-                // Both are acceptable during cleanup - we just want to ensure indices can be deleted
-                if(e.response.statusLine.statusCode != 400 && e.response.statusLine.statusCode != 500) {
+                if(e.response.statusLine.statusCode!=400) {
                     throw e
                 }
             }
@@ -713,12 +679,6 @@ abstract class MultiClusterRestTestCase : OpenSearchTestCase() {
             return false
         }
         return true
-    }
-
-    protected fun clusterNodes(clusterName: String): Int {
-        val systemProperties = BootstrapInfo.getSystemProperties()
-        val totalNodes = systemProperties.get("tests.cluster.${clusterName}.total_nodes") as String?
-        return totalNodes?.toIntOrNull() ?: 1
     }
 
     protected fun docCount(cluster: RestHighLevelClient, indexName: String) : Int {

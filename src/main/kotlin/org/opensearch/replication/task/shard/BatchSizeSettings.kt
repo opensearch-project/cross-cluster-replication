@@ -15,7 +15,6 @@ import org.opensearch.index.IndexSettings
 import org.opensearch.replication.ReplicationPlugin
 import org.opensearch.replication.ReplicationPlugin.Companion.MIN_OPS_BATCH_SIZE
 import org.opensearch.replication.ReplicationSettings
-import java.util.concurrent.atomic.AtomicInteger
 
 /**
  * Helper class to manage batch size settings with fallback from index-level to cluster-level
@@ -51,37 +50,35 @@ class BatchSizeSettings(
     }
 
     // For dynamic batch size adjustment (2GB fix)
-    private val dynamicBatchSize = AtomicInteger(-1)
+    @Volatile
+    private var dynamicBatchSize: Int? = null
 
     /**
      * Get effective batch size considering dynamic adjustments
      */
     fun getEffectiveBatchSize(): Int {
-        val dynamic = dynamicBatchSize.get()
-        return if (dynamic > 0) dynamic else getBatchSize()
+        return dynamicBatchSize ?: getBatchSize()
     }
 
     /**
-     * Reduce batch size for 2GB limit handling (thread-safe)
+     * Reduce batch size for 2GB limit handling
      */
     fun reduceBatchSize() {
-        dynamicBatchSize.updateAndGet { current ->
-            val effectiveSize = if (current > 0) current else getBatchSize()
-            maxOf(effectiveSize / 2, MIN_OPS_BATCH_SIZE)
-        }
+        val currentSize = getEffectiveBatchSize()
+        dynamicBatchSize = maxOf(currentSize / 2, MIN_OPS_BATCH_SIZE)
     }
 
     /**
      * Reset to original batch size after successful operations
      */
     fun resetBatchSize() {
-        dynamicBatchSize.set(-1)
+        dynamicBatchSize = null
     }
 
     /**
      * Check if batch size has been dynamically reduced
      */
     fun isDynamicallyReduced(): Boolean {
-        return dynamicBatchSize.get() > 0
+        return dynamicBatchSize != null
     }
 }

@@ -131,12 +131,11 @@ object MonitoringState : IndexReplicationState(ReplicationState.MONITORING)
  */
 data class FailedState(val failedShards: Map<ShardId, PersistentTask<ShardReplicationParams>>, val errorMsg: String)
     : IndexReplicationState(ReplicationState.FAILED) {
-    constructor(inp: StreamInput) : this(inp.readMap(::ShardId, ::PersistentTask), inp.readString())
+    constructor(inp: StreamInput) : this(inp.readMap(::ShardId, ::PersistentTask), "")
 
     override fun writeTo(out: StreamOutput) {
         super.writeTo(out)
         out.writeMap(failedShards, { o, k -> k.writeTo(o) }, { o, v -> v.writeTo(o) })
-        out.writeString(errorMsg)
     }
 
     override fun toXContent(builder: XContentBuilder, params: ToXContent.Params?): XContentBuilder {

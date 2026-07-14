@@ -28,7 +28,6 @@ import java.io.IOException
 
 class UpdateIndexHandler : BaseRestHandler() {
 
-
     override fun routes(): List<RestHandler.Route> {
         return listOf(RestHandler.Route(RestRequest.Method.PUT, "/_plugins/_replication/{index}/_update"))
     }
@@ -46,10 +45,7 @@ class UpdateIndexHandler : BaseRestHandler() {
         updateSettingsRequest.clusterManagerNodeTimeout(request.paramAsTime("master_timeout", updateSettingsRequest.clusterManagerNodeTimeout()))
         updateSettingsRequest.indicesOptions(IndicesOptions.fromRequest(request, updateSettingsRequest.indicesOptions()))
         updateSettingsRequest.fromXContent(request.contentParser())
-        val updateIndexReplicationRequest = UpdateIndexReplicationRequest(followIndex, updateSettingsRequest.settings())
-        updateIndexReplicationRequest.clusterManagerNodeTimeout(
-            request.paramAsTime("cluster_manager_timeout", updateIndexReplicationRequest.clusterManagerNodeTimeout())
-        )
+        val updateIndexReplicationRequest = UpdateIndexReplicationRequest(followIndex, updateSettingsRequest.settings() )
         return RestChannelConsumer { channel: RestChannel? ->
             client.admin().cluster()
                     .execute(UpdateIndexReplicationAction.INSTANCE, updateIndexReplicationRequest, RestToXContentListener(channel))

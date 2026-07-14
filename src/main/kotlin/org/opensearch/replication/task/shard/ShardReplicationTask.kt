@@ -54,6 +54,7 @@ import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.NodeNotConnectedException
 import org.opensearch.transport.client.Client
 import java.time.Duration
+import java.util.concurrent.atomic.AtomicLong
 
 
 class ShardReplicationTask(id: Long, type: String, action: String, description: String, parentTask: TaskId,
@@ -70,6 +71,13 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
     private val remoteClient = client.getRemoteClusterClient(leaderAlias)
     private val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), clusterService.state().metadata.clusterUUID(), remoteClient)
     private var lastLeaseRenewalMillis = System.currentTimeMillis()
+
+    // Checkpoint persistence: persist to metadata store every CHECKPOINT_OPS_INTERVAL operations.
+    // ShardReplicationTask always runs co-located with its shard, so stats here are always accurate
+    // (unlike IndexReplicationTask which reads node-local stats that may miss remote shards).
+    // Initial persist also fires immediately on task start (see replicate()) to handle steady-state restarts.
+    private val checkpointOpsCounter = AtomicLong(0L)
+    private val CHECKPOINT_OPS_INTERVAL = 1_000L   // persist every ~1k ops during active replication
 
     //Start backOff for exceptions with a second
     private val initialBackoffMillis = 1000L
@@ -126,7 +134,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                 val throwable: Throwable = downstreamException as Throwable
 
                 withContext(NonCancellable) {
-                    logInfo("Going to mark ShardReplicationTask as Failed: leaderShard=$leaderShardId, followerShard=$followerShardId, cause=${throwable.stackTraceToString()}")
+                    logInfo("Going to mark ShardReplicationTask as Failed with ${throwable.stackTraceToString()}")
                     try {
                         updateTaskState(FailedState(toESException(throwable)))
                     } catch (inner: Exception) {
@@ -197,17 +205,17 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         updateTaskState(FollowingState)
         val followerIndexService = indicesService.indexServiceSafe(followerShardId.index)
         val indexShard = followerIndexService.getShard(followerShardId.id)
-        logInfo("Shard replication started: leaderShard=$leaderShardId, followerShard=$followerShardId, localCheckpoint=${indexShard.localCheckpoint}, globalCheckpoint=${indexShard.lastSyncedGlobalCheckpoint}")
 
         try {
             //Retention leases preserve the operations including and starting from the retainingSequenceNumber we specify when we take the lease .
             //hence renew retention lease with lastSyncedGlobalCheckpoint + 1
-            retentionLeaseHelper.renewRetentionLease(leaderShardId, indexShard.lastSyncedGlobalCheckpoint + 1, followerShardId)
-            log.debug("${Thread.currentThread().name}: Initial retention lease renewed: leaderShard=$leaderShardId, followerShard=$followerShardId, seqNo=${indexShard.lastSyncedGlobalCheckpoint + 1}")
+            // Use addOrRenewRetentionLease so that warm-attach (role-transition) creates a fresh
+            // lease when none exists on the new leader (snapshot restore was skipped).
+            retentionLeaseHelper.addOrRenewRetentionLease(leaderShardId, indexShard.lastSyncedGlobalCheckpoint + 1, followerShardId)
         } catch (ex: Exception) {
             // In case of a failure, we just log it and move on. All failures scenarios are being handled below with
             // retries and backoff depending on exception.
-            log.error("Retention lease renewal failed: leaderShard=$leaderShardId, followerShard=$followerShardId, error=${ex.stackTraceToString()}")
+            log.error("Retention lease setup failed: ${ex.stackTraceToString()}")
         }
 
         addListenerToInterruptTask()
@@ -224,6 +232,12 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
         // never gets initialized and defaults to 0. To get around this, we set the leaderCheckpoint to follower shard's
         // localCheckpoint as the leader shard is guaranteed to equal or more.
         followerClusterStats.stats[followerShardId]!!.leaderCheckpoint = indexShard.localCheckpoint
+
+        // Persist the initial checkpoint immediately on task start.
+        // This ensures the metadata store is updated even when the follower is fully caught up
+        // and no new operations arrive after a restart (in which case getChanges() only times out
+        // and the ops-based counter in getChanges() never advances).
+        persistShardCheckpoint(indexShard.lastSyncedGlobalCheckpoint)
         coroutineScope {
             while (isActive) {
                 rateLimiter.acquire()
@@ -249,7 +263,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                         changeTracker.updateBatchFetched(false, fromSeqNo, toSeqNo, fromSeqNo - 1,-1)
                     } catch (e: NodeNotConnectedException) {
                         followerClusterStats.stats[followerShardId]!!.opsReadFailures.addAndGet(1)
-                        logInfo("Node not connected to $leaderAlias, retrying with different node. followerShard=$followerShardId, seqNo=$fromSeqNo: ${e.message}")
+                        logInfo("Node not connected. Retrying request using a different node. ${e.stackTraceToString()}")
                         delay(backOffForRetry)
                         backOffForRetry = (backOffForRetry * factor).toLong().coerceAtMost(maxTimeOut)
                         changeTracker.updateBatchFetched(false, fromSeqNo, toSeqNo, fromSeqNo - 1,-1)
@@ -292,13 +306,9 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                 try {
                     retentionLeaseHelper.renewRetentionLease(leaderShardId, indexShard.lastSyncedGlobalCheckpoint + 1, followerShardId)
                     lastLeaseRenewalMillis = System.currentTimeMillis()
-                    log.debug("${Thread.currentThread().name}: Retention lease renewed: leaderShard=$leaderShardId, followerShard=$followerShardId, seqNo=${indexShard.lastSyncedGlobalCheckpoint + 1}")
                 } catch (ex: Exception) {
                     when (ex) {
-                        is RetentionLeaseNotFoundException -> {
-                            logError("Retention lease not found for $leaderShardId/$followerShardId - replication cannot continue")
-                            throw ex
-                        }
+                        is RetentionLeaseNotFoundException ->  throw ex
                         is RetentionLeaseInvalidRetainingSeqNoException -> {
                             if (System.currentTimeMillis() - lastLeaseRenewalMillis >  replicationSettings.leaseRenewalMaxFailureDuration.millis) {
                                 log.error("Retention lease renewal has been failing for last " +
@@ -324,16 +334,42 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                 action = GetChangesAction.INSTANCE, req = request, log = log)
         followerClusterStats.stats[followerShardId]!!.leaderCheckpoint = changesResp.lastSyncedGlobalCheckpoint
         followerClusterStats.stats[followerShardId]!!.opsRead.addAndGet(changesResp.changes.size.toLong())
+
+        // Persist checkpoint to metadata store every CHECKPOINT_OPS_INTERVAL operations.
+        // This runs in ShardReplicationTask which is always co-located with the shard, ensuring
+        // accurate checkpoint data even in multi-node clusters (fixes IndexReplicationTask blind spot).
+        if (changesResp.changes.isNotEmpty()) {
+            val prev = checkpointOpsCounter.getAndAdd(changesResp.changes.size.toLong())
+            val curr = prev + changesResp.changes.size
+            if (prev / CHECKPOINT_OPS_INTERVAL < curr / CHECKPOINT_OPS_INTERVAL) {
+                persistShardCheckpoint(changesResp.lastSyncedGlobalCheckpoint)
+            }
+        }
+
         return changesResp
+    }
+
+    /**
+     * Persists the current shard checkpoint to .replication-metadata-store.
+     * Called every CHECKPOINT_OPS_INTERVAL operations so role transitions can resume
+     * from the last known position instead of doing a full re-sync.
+     */
+    private suspend fun persistShardCheckpoint(leaderCheckpoint: Long) {
+        val followerCheckpoint = followerClusterStats.stats[followerShardId]?.followerCheckpoint ?: return
+        try {
+            replicationMetadataManager.updateIndexCheckpointSequences(
+                followerIndexName, leaderCheckpoint, followerCheckpoint)
+            log.debug("Checkpoint persisted for $followerIndexName[$followerShardId] — " +
+                    "leader=$leaderCheckpoint follower=$followerCheckpoint")
+        } catch (e: Exception) {
+            log.warn("Failed to persist checkpoint for $followerIndexName[$followerShardId]: ${e.message}")
+        }
     }
     private fun logDebug(msg: String) {
         log.debug("${Thread.currentThread().name}: $msg")
     }
     private fun logInfo(msg: String) {
         log.info("${Thread.currentThread().name}: $msg")
-    }
-    private fun logWarn(msg: String) {
-        log.warn("${Thread.currentThread().name}: $msg")
     }
     private fun logError(msg: String) {
         log.error("${Thread.currentThread().name}: $msg")

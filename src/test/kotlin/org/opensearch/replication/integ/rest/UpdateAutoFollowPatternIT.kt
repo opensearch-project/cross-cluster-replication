@@ -18,7 +18,6 @@ import org.opensearch.replication.deleteAutoFollowPattern
 import org.opensearch.replication.startReplication
 import org.opensearch.replication.stopReplication
 import org.opensearch.replication.updateAutoFollowPattern
-import org.opensearch.replication.action.autofollow.UpdateAutoFollowPatternRequest
 import org.opensearch.replication.task.autofollow.AutoFollowExecutor
 import org.opensearch.replication.task.index.IndexReplicationExecutor
 import org.apache.hc.core5.http.HttpStatus
@@ -36,12 +35,7 @@ import org.opensearch.client.indices.CreateIndexRequest
 import org.opensearch.client.indices.GetIndexRequest
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.unit.TimeValue
-import org.opensearch.common.xcontent.XContentType
-import org.opensearch.core.common.bytes.BytesArray
-import org.opensearch.core.xcontent.NamedXContentRegistry
-import org.opensearch.rest.RestRequest
 import org.opensearch.tasks.TaskInfo
-import org.opensearch.test.rest.FakeRestRequest
 import org.junit.Assert
 import java.util.Locale
 import org.opensearch.cluster.metadata.IndexMetadata
@@ -107,80 +101,6 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
                 }
                 assertTrue(stats.size == 5)
                 assertTrue(stats.get("num_success_start_replication")!! == 2)
-            }, 60, TimeUnit.SECONDS)
-        } finally {
-            followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
-        }
-    }
-
-    fun `test auto follow pattern with follower_index_pattern renames follower`() {
-        val followerClient = getClientForCluster(FOLLOWER)
-        val leaderClient = getClientForCluster(LEADER)
-        createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
-        try {
-            followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern,
-                    followerIndexPattern = "{{leader_index}}-replica")
-            val leaderIndexName = createRandomIndex(leaderClient)
-            // Verify the follower index is created with the renamed name
-            assertBusy({
-                Assertions.assertThat(followerClient.indices()
-                        .exists(GetIndexRequest("${leaderIndexName}-replica"), RequestOptions.DEFAULT))
-                        .isEqualTo(true)
-            }, 60, TimeUnit.SECONDS)
-            // Verify the un-renamed name does NOT exist on the follower
-            Assertions.assertThat(followerClient.indices()
-                    .exists(GetIndexRequest(leaderIndexName), RequestOptions.DEFAULT))
-                    .isEqualTo(false)
-        } finally {
-            followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
-        }
-    }
-
-    fun `test auto follow pattern follower_index_pattern avoids collision with existing index`() {
-        val followerClient = getClientForCluster(FOLLOWER)
-        val leaderClient = getClientForCluster(LEADER)
-        createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
-        val existingIndex = "${indexPrefix}existing"
-        try {
-            // Local index on follower with the same name as the leader index
-            followerClient.indices().create(CreateIndexRequest(existingIndex), RequestOptions.DEFAULT)
-            // Same-named index on leader
-            leaderClient.indices().create(CreateIndexRequest(existingIndex), RequestOptions.DEFAULT)
-            followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern,
-                    followerIndexPattern = "{{leader_index}}-replica")
-            // The renamed follower index is created (no collision with the local index)
-            assertBusy({
-                Assertions.assertThat(followerClient.indices()
-                        .exists(GetIndexRequest("${existingIndex}-replica"), RequestOptions.DEFAULT))
-                        .isEqualTo(true)
-            }, 60, TimeUnit.SECONDS)
-        } finally {
-            followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
-        }
-    }
-
-    fun `test auto follow pattern follower_index_pattern validation rejects missing placeholder`() {
-        val followerClient = getClientForCluster(FOLLOWER)
-        createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
-        Assertions.assertThatThrownBy {
-            followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern,
-                    followerIndexPattern = "static-name-no-placeholder")
-        }.isInstanceOf(ResponseException::class.java)
-                .hasMessageContaining("follower_index_pattern must contain")
-    }
-
-    fun `test auto follow pattern without follower_index_pattern preserves backward compat`() {
-        val followerClient = getClientForCluster(FOLLOWER)
-        val leaderClient = getClientForCluster(LEADER)
-        createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
-        try {
-            followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern)
-            val leaderIndexName = createRandomIndex(leaderClient)
-            // Without a pattern, follower index name equals leader index name
-            assertBusy({
-                Assertions.assertThat(followerClient.indices()
-                        .exists(GetIndexRequest(leaderIndexName), RequestOptions.DEFAULT))
-                        .isEqualTo(true)
             }, 60, TimeUnit.SECONDS)
         } finally {
             followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
@@ -631,26 +551,6 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
         persistentConnectionRequest.entity = StringEntity(entityAsString, ContentType.APPLICATION_JSON)
         val persistentConnectionResponse = fromCluster.lowLevelClient.performRequest(persistentConnectionRequest)
         assertEquals(HttpStatus.SC_OK.toLong(), persistentConnectionResponse.statusLine.statusCode.toLong())
-    }
-
-    fun `test update auto follow pattern with cluster_manager_timeout`() {
-        // Verify cluster_manager_timeout param is parsed from HTTP request and set on the request
-        val restRequest = FakeRestRequest.Builder(NamedXContentRegistry.EMPTY)
-            .withMethod(RestRequest.Method.POST)
-            .withPath("/_plugins/_replication/_autofollow")
-            .withParams(mapOf("cluster_manager_timeout" to "60s"))
-            .withContent(
-                BytesArray("""{"leader_alias":"$connectionAlias","name":"$indexPatternName","pattern":"$indexPattern"}"""),
-                XContentType.JSON
-            )
-            .build()
-        val request = UpdateAutoFollowPatternRequest.fromXContent(
-            restRequest.contentParser(), UpdateAutoFollowPatternRequest.Action.ADD
-        )
-        request.clusterManagerNodeTimeout(
-            restRequest.paramAsTime("cluster_manager_timeout", request.clusterManagerNodeTimeout())
-        )
-        assertEquals(TimeValue.timeValueSeconds(60), request.clusterManagerNodeTimeout())
     }
 
 }

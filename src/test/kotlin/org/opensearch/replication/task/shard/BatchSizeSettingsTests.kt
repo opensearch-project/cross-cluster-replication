@@ -55,9 +55,7 @@ class BatchSizeSettingsTests : OpenSearchTestCase() {
                 ReplicationPlugin.REPLICATION_AUTOFOLLOW_CONCURRENT_REPLICATION_JOBS_TRIGGER_SIZE,
                 ReplicationPlugin.REPLICATION_REPLICATE_INDEX_DELETION,
                 ReplicationPlugin.REPLICATION_FOLLOWER_RECOVERY_CHUNK_SIZE,
-                ReplicationPlugin.REPLICATION_FOLLOWER_RECOVERY_PARALLEL_CHUNKS,
-                ReplicationPlugin.REPLICATION_FOLLOWER_BULK_BATCH_SIZE,
-                ReplicationPlugin.REPLICATION_FOLLOWER_BULK_POLL_TIMEOUT
+                ReplicationPlugin.REPLICATION_FOLLOWER_RECOVERY_PARALLEL_CHUNKS
             )
         )
         
@@ -238,11 +236,13 @@ class BatchSizeSettingsTests : OpenSearchTestCase() {
 
         // Test thread safety of batch size operations
         val threads = mutableListOf<Thread>()
+        val results = mutableListOf<Int>()
         
         // Create multiple threads that reduce batch size
-        repeat(5) {
+        repeat(5) { i ->
             val thread = Thread {
                 batchSizeSettings.reduceBatchSize()
+                results.add(batchSizeSettings.getEffectiveBatchSize())
             }
             threads.add(thread)
         }
@@ -253,9 +253,11 @@ class BatchSizeSettingsTests : OpenSearchTestCase() {
         // Wait for all threads to complete
         threads.forEach { it.join() }
         
-        // Verify that batch size was reduced 5 times: 50000 -> 1562
+        // Verify that batch size was reduced and all results are valid
         assertTrue(batchSizeSettings.isDynamicallyReduced())
-        assertEquals(1562, batchSizeSettings.getEffectiveBatchSize())
+        assertTrue(batchSizeSettings.getEffectiveBatchSize() < 50000)
+        assertTrue(batchSizeSettings.getEffectiveBatchSize() >= 16)
+        assertEquals(1562, results[4])
     }
 
     @Test

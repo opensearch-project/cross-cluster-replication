@@ -25,9 +25,6 @@ import org.opensearch.replication.metadata.state.ReplicationStateMetadata
 import org.opensearch.replication.seqno.RemoteClusterStats
 import org.opensearch.replication.task.shard.FollowerClusterStats
 import org.opensearch.threadpool.ThreadPool
-import org.opensearch.action.support.TransportIndicesResolvingAction
-import org.opensearch.cluster.metadata.OptionallyResolvedIndices
-import org.opensearch.cluster.metadata.ResolvedIndices
 import org.opensearch.transport.TransportService
 
 class TransportFollowerStatsAction @Inject constructor(transportService: TransportService,
@@ -39,10 +36,7 @@ class TransportFollowerStatsAction @Inject constructor(transportService: Transpo
                                                        private val followerStats: FollowerClusterStats) :
         TransportNodesAction<FollowerStatsRequest, FollowerStatsResponse, NodeStatsRequest, FollowerNodeStatsResponse>(FollowerStatsAction.NAME,
              threadPool, clusterService, transportService,  actionFilters, ::FollowerStatsRequest,  ::NodeStatsRequest, ThreadPool.Names.MANAGEMENT,
-                FollowerNodeStatsResponse::class.java), CoroutineScope by GlobalScope,
-        TransportIndicesResolvingAction<FollowerStatsRequest> {
-
-    override fun resolveIndices(request: FollowerStatsRequest): OptionallyResolvedIndices = ResolvedIndices.of(listOf<String>())
+                FollowerNodeStatsResponse::class.java), CoroutineScope by GlobalScope {
 
     companion object {
         private val log = LogManager.getLogger(TransportFollowerStatsAction::class.java)
