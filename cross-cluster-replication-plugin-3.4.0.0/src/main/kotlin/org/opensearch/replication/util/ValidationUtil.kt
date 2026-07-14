@@ -114,7 +114,7 @@ object ValidationUtil {
 
     fun validatePattern(pattern: String?, validationException: ValidationException) {
 
-        if (!Strings.validFileNameExcludingAsterisk(pattern))
+        if (pattern != null && Strings.INVALID_FILENAME_CHARS.any { c -> c != '*' && pattern.contains(c) })
             validationException.addValidationError("Autofollow pattern: $pattern must not contain the following characters ${Strings.INVALID_FILENAME_CHARS}")
 
         if (pattern.isNullOrEmpty() == true)
