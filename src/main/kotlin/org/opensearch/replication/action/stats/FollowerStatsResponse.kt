@@ -54,13 +54,15 @@ class FollowerStatsResponse : BaseNodesResponse<FollowerNodeStatsResponse?>, ToX
     constructor(clusterName: ClusterName?, followerNodeResponse: List<FollowerNodeStatsResponse>?, failures: List<FailedNodeException?>?
                 , metadata : ReplicationStateMetadata) : super(clusterName, followerNodeResponse, failures) {
 
-        var syncing :MutableSet<String> = mutableSetOf()
+        // Collect indices that have live shard tasks from the in-memory metrics.
+        // This is the set of indices that are actively replicating data right now.
+        val indicesWithLiveShardTasks: MutableSet<String> = mutableSetOf()
         if (followerNodeResponse != null) {
             for (response in followerNodeResponse) {
                 shardStats.putAll(response.stats)
 
                 for (i in response.stats) {
-                    syncing.add(i.key.indexName)
+                    indicesWithLiveShardTasks.add(i.key.indexName)
 
                     if (i.key.indexName !in indexStats) {
                         indexStats[i.key.indexName] = FollowerShardMetric.FollowerStats()
@@ -72,20 +74,27 @@ class FollowerStatsResponse : BaseNodesResponse<FollowerNodeStatsResponse?>, ToX
             }
         }
 
-        var totalRunning = 0 //includes boostrap and syncing
+        // Compute index-level counters from cluster state metadata (single source of truth).
+        // For RUNNING indices, cross-reference with live shard tasks to distinguish
+        // SYNCING (has active shard tasks) from BOOTSTRAPPING (task registered but not yet active).
+        // This avoids the previous formula (totalRunning - syncingIndices) which could produce
+        // negative values when in-memory metrics and metadata drift apart due to stale/orphaned tasks.
         for (entry in metadata.replicationDetails) {
             when (entry.value[REPLICATION_LAST_KNOWN_OVERALL_STATE]) {
-                ReplicationOverallState.RUNNING.name -> totalRunning++
+                ReplicationOverallState.RUNNING.name -> {
+                    if (entry.key in indicesWithLiveShardTasks) {
+                        syncingIndices++
+                    } else {
+                        bootstrappingIndices++
+                    }
+                }
                 ReplicationOverallState.FAILED.name -> failedIndices++
                 ReplicationOverallState.PAUSED.name -> pausedIndices++
             }
         }
 
-        syncingIndices = syncing.size
-        bootstrappingIndices = totalRunning - syncingIndices
-
         shardTaskCount = shardStats.size
-        indexTaskCount = totalRunning
+        indexTaskCount = syncingIndices + bootstrappingIndices
     }
 
     @Throws(IOException::class)
