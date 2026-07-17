@@ -52,13 +52,6 @@ const val REST_REPLICATION_TASKS = "_tasks?actions=*replication*&detailed&pretty
 const val REST_LEADER_STATS = "${REST_REPLICATION_PREFIX}leader_stats"
 const val REST_FOLLOWER_STATS = "${REST_REPLICATION_PREFIX}follower_stats"
 const val REST_AUTO_FOLLOW_STATS = "${REST_REPLICATION_PREFIX}autofollow_stats"
-const val REST_BULK_START = "${REST_REPLICATION_PREFIX}_bulk_start"
-const val REST_BULK_STOP = "${REST_REPLICATION_PREFIX}_bulk_stop"
-const val REST_BULK_PAUSE = "${REST_REPLICATION_PREFIX}_bulk_pause"
-const val REST_BULK_RESUME = "${REST_REPLICATION_PREFIX}_bulk_resume"
-const val REST_BULK_STATUS = "${REST_REPLICATION_PREFIX}_bulk_status"
-const val REST_TASK_STATUS = "${REST_REPLICATION_PREFIX}_task_status/{task_id}"
-const val REST_TASK_CANCEL = "${REST_REPLICATION_PREFIX}_task_cancel/{task_id}"
 const val INDEX_TASK_CANCELLATION_REASON = "AutoPaused: Index replication task was cancelled by user"
 const val STATUS_REASON_USER_INITIATED = "User initiated"
 const val STATUS_REASON_SHARD_TASK_CANCELLED = "Shard task killed or cancelled."
@@ -72,11 +65,9 @@ fun RestHighLevelClient.startReplication(request: StartReplicationRequest,
                                          waitFor: TimeValue = TimeValue.timeValueSeconds(10),
                                          waitForShardsInit: Boolean = true,
                                          waitForRestore: Boolean = false,
-                                         requestOptions: RequestOptions = RequestOptions.DEFAULT,
-                                         clusterManagerTimeout: String? = null) {
-    var url = REST_REPLICATION_START.replace("{index}", request.toIndex, true) + "?wait_for_restore=${waitForRestore}"
-    if (clusterManagerTimeout != null) url += "&cluster_manager_timeout=$clusterManagerTimeout"
-    val lowLevelRequest = Request("PUT", url)
+                                         requestOptions: RequestOptions = RequestOptions.DEFAULT) {
+    val lowLevelRequest = Request("PUT", REST_REPLICATION_START.replace("{index}", request.toIndex, true)
+            + "?wait_for_restore=${waitForRestore}")
     if (request.settings == Settings.EMPTY) {
         lowLevelRequest.setJsonEntity("""{
                                        "leader_alias" : "${request.leaderAlias}",
@@ -216,11 +207,8 @@ fun `validate paused status response due to leader index deleted`(statusResp: Ma
     Assert.assertTrue(statusResp.getValue("reason").toString().contains(STATUS_REASON_INDEX_NOT_FOUND))
 }
 
-fun RestHighLevelClient.stopReplication(index: String, shouldWait: Boolean = true, requestOptions: RequestOptions = RequestOptions.DEFAULT,
-                                        clusterManagerTimeout: String? = null) {
-    var url = REST_REPLICATION_STOP.replace("{index}", index, true)
-    if (clusterManagerTimeout != null) url += "?cluster_manager_timeout=$clusterManagerTimeout"
-    val lowLevelStopRequest = Request("POST", url)
+fun RestHighLevelClient.stopReplication(index: String, shouldWait: Boolean = true, requestOptions: RequestOptions = RequestOptions.DEFAULT) {
+    val lowLevelStopRequest = Request("POST", REST_REPLICATION_STOP.replace("{index}", index,true))
     lowLevelStopRequest.setJsonEntity("{}")
     lowLevelStopRequest.setOptions(requestOptions)
     val lowLevelStopResponse = lowLevelClient.performRequest(lowLevelStopRequest)
@@ -230,11 +218,8 @@ fun RestHighLevelClient.stopReplication(index: String, shouldWait: Boolean = tru
 }
 
 
-fun RestHighLevelClient.pauseReplication(index: String, reason:String? = null, shouldWait: Boolean = true, requestOptions: RequestOptions = RequestOptions.DEFAULT,
-                                         clusterManagerTimeout: String? = null) {
-    var url = REST_REPLICATION_PAUSE.replace("{index}", index, true)
-    if (clusterManagerTimeout != null) url += "?cluster_manager_timeout=$clusterManagerTimeout"
-    val lowLevelPauseRequest = Request("POST", url)
+fun RestHighLevelClient.pauseReplication(index: String, reason:String? = null, shouldWait: Boolean = true, requestOptions: RequestOptions = RequestOptions.DEFAULT) {
+    val lowLevelPauseRequest = Request("POST", REST_REPLICATION_PAUSE.replace("{index}", index,true))
     if (null == reason) {
         lowLevelPauseRequest.setJsonEntity("{}")
     } else {
@@ -247,11 +232,8 @@ fun RestHighLevelClient.pauseReplication(index: String, reason:String? = null, s
     if (shouldWait) waitForReplicationStop(index)
 }
 
-fun RestHighLevelClient.resumeReplication(index: String, requestOptions: RequestOptions = RequestOptions.DEFAULT,
-                                          clusterManagerTimeout: String? = null) {
-    var url = REST_REPLICATION_RESUME.replace("{index}", index, true)
-    if (clusterManagerTimeout != null) url += "?cluster_manager_timeout=$clusterManagerTimeout"
-    val lowLevelResumeRequest = Request("POST", url)
+fun RestHighLevelClient.resumeReplication(index: String, requestOptions: RequestOptions = RequestOptions.DEFAULT) {
+    val lowLevelResumeRequest = Request("POST", REST_REPLICATION_RESUME.replace("{index}", index, true))
     lowLevelResumeRequest.setJsonEntity("{}")
     lowLevelResumeRequest.setOptions(requestOptions)
     val lowLevelResumeResponse = lowLevelClient.performRequest(lowLevelResumeRequest)
@@ -260,22 +242,8 @@ fun RestHighLevelClient.resumeReplication(index: String, requestOptions: Request
     waitForReplicationStart(index, TimeValue.timeValueSeconds(10))
 }
 
-fun RestHighLevelClient.forceResumeReplication(index: String, requestOptions: RequestOptions = RequestOptions.DEFAULT) {
-    val url = REST_REPLICATION_RESUME.replace("{index}", index, true)
-    val lowLevelResumeRequest = Request("POST", url)
-    lowLevelResumeRequest.setJsonEntity("""{"force_resume": true}""")
-    lowLevelResumeRequest.setOptions(requestOptions)
-    val lowLevelResumeResponse = lowLevelClient.performRequest(lowLevelResumeRequest)
-    val response = getAckResponse(lowLevelResumeResponse)
-    assertThat(response.isAcknowledged).withFailMessage("Replication could not be force resumed").isTrue()
-    waitForReplicationStart(index, TimeValue.timeValueSeconds(60))
-}
-
-fun RestHighLevelClient.updateReplication(index: String, settings: Settings, requestOptions: RequestOptions = RequestOptions.DEFAULT,
-                                          clusterManagerTimeout: String? = null) {
-    var url = REST_REPLICATION_UPDATE.replace("{index}", index, true)
-    if (clusterManagerTimeout != null) url += "?cluster_manager_timeout=$clusterManagerTimeout"
-    val lowLevelRequest = Request("PUT", url)
+fun RestHighLevelClient.updateReplication(index: String, settings: Settings, requestOptions: RequestOptions = RequestOptions.DEFAULT) {
+    val lowLevelRequest = Request("PUT", REST_REPLICATION_UPDATE.replace("{index}", index,true))
     lowLevelRequest.setJsonEntity(settings.toString())
     lowLevelRequest.setOptions(requestOptions)
     val lowLevelResponse = lowLevelClient.performRequest(lowLevelRequest)
@@ -358,29 +326,31 @@ fun RestHighLevelClient.waitForReplicationStop(index: String, waitFor : TimeValu
 fun RestHighLevelClient.updateAutoFollowPattern(connection: String, patternName: String, pattern: String,
                                                 settings: Settings = Settings.EMPTY,
                                                 useRoles: UseRoles = UseRoles(),
-                                                followerIndexPattern: String? = null,
                                                 requestOptions: RequestOptions = RequestOptions.DEFAULT,
-                                                ignoreIfExists: Boolean = false,
-                                                clusterManagerTimeout: String? = null) {
-    var url = REST_AUTO_FOLLOW_PATTERN
-    if (clusterManagerTimeout != null) url += "?cluster_manager_timeout=$clusterManagerTimeout"
-    val lowLevelRequest = Request("POST", url)
-    val bodyParts = mutableListOf(
-        """"leader_alias" : "${connection}"""",
-        """"name" : "${patternName}"""",
-        """"pattern": "${pattern}"""",
-        """"use_roles": {
+                                                ignoreIfExists: Boolean = false) {
+    val lowLevelRequest = Request("POST", REST_AUTO_FOLLOW_PATTERN)
+    if (settings == Settings.EMPTY) {
+        lowLevelRequest.setJsonEntity("""{
+                                       "leader_alias" : "${connection}",
+                                       "name" : "${patternName}",
+                                       "pattern": "${pattern}",
+                                       "use_roles": {
                                         "leader_cluster_role": "${useRoles.leaderClusterRole}",
                                         "follower_cluster_role": "${useRoles.followerClusterRole}"
-                                       }"""
-    )
-    if (followerIndexPattern != null) {
-        bodyParts.add(""""follower_index_pattern": "${followerIndexPattern}"""")
+                                       }
+                                     }""")
+    } else {
+        lowLevelRequest.setJsonEntity("""{
+                                       "leader_alias" : "${connection}",
+                                       "name" : "${patternName}",
+                                       "pattern": "${pattern}",
+                                       "use_roles": {
+                                        "leader_cluster_role": "${useRoles.leaderClusterRole}",
+                                        "follower_cluster_role": "${useRoles.followerClusterRole}"
+                                       },
+                                       "settings": $settings
+                                     }""")
     }
-    if (settings != Settings.EMPTY) {
-        bodyParts.add(""""settings": $settings""")
-    }
-    lowLevelRequest.setJsonEntity("{${bodyParts.joinToString(",")}}")
     lowLevelRequest.setOptions(requestOptions)
     try {
         val lowLevelResponse = lowLevelClient.performRequest(lowLevelRequest)
@@ -445,123 +415,4 @@ fun RestHighLevelClient.updateAutoFollowConcurrentStartReplicationJobSetting(con
     updateSettingsRequest.persistentSettings(settings)
     val response = this.cluster().putSettings(updateSettingsRequest, RequestOptions.DEFAULT)
     assertThat(response.isAcknowledged).isTrue()
-}
-
-
-
-fun RestHighLevelClient.bulkStartReplication(pattern: String,
-                                              leaderAlias: String? = null,
-                                              excludeIndices: List<String> = emptyList(),
-                                              useRoles: UseRoles? = UseRoles()): Map<String, Any> {
-    val request = Request("POST", REST_BULK_START)
-    request.setJsonEntity(buildBulkStartRequestBody(pattern, leaderAlias, excludeIndices, useRoles))
-    val response = lowLevelClient.performRequest(request)
-    return OpenSearchRestTestCase.entityAsMap(response)
-}
-
-fun RestHighLevelClient.bulkStopReplication(pattern: String,
-                                             excludeIndices: List<String> = emptyList()): Map<String, Any> {
-    val request = Request("POST", REST_BULK_STOP)
-    request.setJsonEntity(buildBulkRequestBody(pattern, excludeIndices))
-    val response = lowLevelClient.performRequest(request)
-    return OpenSearchRestTestCase.entityAsMap(response)
-}
-
-fun RestHighLevelClient.bulkPauseReplication(pattern: String,
-                                              excludeIndices: List<String> = emptyList()): Map<String, Any> {
-    val request = Request("POST", REST_BULK_PAUSE)
-    request.setJsonEntity(buildBulkRequestBody(pattern, excludeIndices))
-    val response = lowLevelClient.performRequest(request)
-    return OpenSearchRestTestCase.entityAsMap(response)
-}
-
-fun RestHighLevelClient.bulkResumeReplication(pattern: String,
-                                               excludeIndices: List<String> = emptyList()): Map<String, Any> {
-    val request = Request("POST", REST_BULK_RESUME)
-    request.setJsonEntity(buildBulkRequestBody(pattern, excludeIndices))
-    val response = lowLevelClient.performRequest(request)
-    return OpenSearchRestTestCase.entityAsMap(response)
-}
-
-fun RestHighLevelClient.bulkStatus(pattern: String): Map<String, Any> {
-    val request = Request("GET", "$REST_BULK_STATUS?pattern=$pattern")
-    val response = lowLevelClient.performRequest(request)
-    return OpenSearchRestTestCase.entityAsMap(response)
-}
-
-fun RestHighLevelClient.getTaskStatus(taskId: String): Map<String, Any> {
-    val request = Request("GET", REST_TASK_STATUS.replace("{task_id}", taskId))
-    val response = lowLevelClient.performRequest(request)
-    return OpenSearchRestTestCase.entityAsMap(response)
-}
-
-fun RestHighLevelClient.cancelTask(taskId: String): Map<String, Any> {
-    val request = Request("POST", REST_TASK_CANCEL.replace("{task_id}", taskId))
-    request.setJsonEntity("{}")
-    val response = lowLevelClient.performRequest(request)
-    return OpenSearchRestTestCase.entityAsMap(response)
-}
-
-fun RestHighLevelClient.waitForBulkTaskCompletion(taskId: String,
-                                                   waitFor: TimeValue = TimeValue.timeValueSeconds(360)): Map<String, Any>? {
-    var lastStatus: Map<String, Any>? = null
-    assertBusy({
-        try {
-            val status = getTaskStatus(taskId)
-            lastStatus = status
-            val pending = status["num_pending"] as Int
-            val success = status["num_success"] as Int
-            val failed = status["num_failed"] as Int
-            val cancelled = status["num_cancelled"] as Int
-            assertThat(pending).isEqualTo(0)
-            assertThat(success + failed + cancelled).isGreaterThan(0)
-        } catch (e: org.opensearch.client.ResponseException) {
-            throw AssertionError("Task status not yet available, retrying", e)
-        }
-    }, waitFor.seconds, TimeUnit.SECONDS)
-    // Return the lastStatus that passed assertions — avoids multi-node round-robin
-    // returning stale cluster state from a node that didn't run the task.
-    return lastStatus
-}
-
-private fun buildBulkStartRequestBody(pattern: String,
-                                       leaderAlias: String?,
-                                       excludeIndices: List<String>,
-                                       useRoles: UseRoles?): String {
-    val sb = StringBuilder()
-    sb.append("""{"pattern": "$pattern"""")
-    if (leaderAlias != null) sb.append(""", "leader_alias": "$leaderAlias"""")
-    if (useRoles != null) {
-        sb.append(""", "use_roles": {"leader_cluster_role": "${useRoles.leaderClusterRole}", "follower_cluster_role": "${useRoles.followerClusterRole}"}""")
-    }
-    if (excludeIndices.isNotEmpty()) {
-        sb.append(""", "filters": {"exclude_index": ${excludeIndices.joinToString(prefix = "[\"", separator = "\", \"", postfix = "\"]")}}""")
-    }
-    sb.append("}")
-    return sb.toString()
-}
-
-private fun buildBulkRequestBody(pattern: String,
-                                  excludeIndices: List<String>): String {
-    val sb = StringBuilder()
-    sb.append("""{"pattern": "$pattern"""")
-    if (excludeIndices.isNotEmpty()) {
-        sb.append(""", "filters": {"exclude_index": ${excludeIndices.joinToString(prefix = "[\"", separator = "\", \"", postfix = "\"]")}}""")
-    }
-    sb.append("}")
-    return sb.toString()
-}
-
-fun `validate bulk response`(response: Map<String, Any>) {
-    assertThat(response["acknowledged"]).isEqualTo(true)
-    assertThat(response["task_id"]).isNotNull
-    assertThat(response["task_id"].toString()).contains(":")
-}
-
-fun `validate task status response`(statusResp: Map<String, Any>,
-                                     expectedOperation: String,
-                                     pattern: String) {
-    assertThat(statusResp["operation_type"]).isEqualTo(expectedOperation)
-    assertThat(statusResp["pattern"]).isEqualTo(pattern)
-    assertThat(statusResp).containsKeys("num_success", "num_failed", "num_pending", "start_time", "failed_indices")
 }

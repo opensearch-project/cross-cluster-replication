@@ -17,11 +17,13 @@ import org.opensearch.replication.task.ReplicationState
 import org.opensearch.replication.task.index.IndexReplicationExecutor
 import org.opensearch.replication.task.index.IndexReplicationParams
 import org.opensearch.replication.task.index.IndexReplicationState
-import org.opensearch.replication.util.StaleTaskUtils
 import org.opensearch.replication.util.coroutineContext
+import org.opensearch.replication.util.removeTask
 import org.opensearch.replication.util.startTask
 import org.opensearch.replication.util.suspending
+import org.opensearch.replication.util.waitForClusterStateUpdate
 import org.opensearch.replication.util.waitForTaskCondition
+import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATED_INDEX_SETTING
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
@@ -34,16 +36,22 @@ import org.opensearch.action.support.IndicesOptions
 import org.opensearch.action.support.clustermanager.AcknowledgedResponse
 import org.opensearch.action.support.clustermanager.TransportClusterManagerNodeAction
 import org.opensearch.transport.client.node.NodeClient
+import org.opensearch.cluster.AckedClusterStateUpdateTask
 import org.opensearch.cluster.ClusterState
+import org.opensearch.common.Priority
+import org.opensearch.common.unit.TimeValue
 import org.opensearch.cluster.block.ClusterBlockException
 import org.opensearch.cluster.block.ClusterBlockLevel
 import org.opensearch.cluster.metadata.IndexMetadata
+import org.opensearch.cluster.metadata.Metadata
+import org.opensearch.common.settings.Settings
 import org.opensearch.cluster.metadata.IndexNameExpressionResolver
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Inject
 import org.opensearch.core.common.io.stream.StreamInput
 import org.opensearch.common.settings.IndexScopedSettings
 import org.opensearch.index.IndexNotFoundException
+import org.opensearch.persistent.PersistentTasksCustomMetadata
 import org.opensearch.persistent.PersistentTasksService
 import org.opensearch.replication.ReplicationPlugin
 import org.opensearch.replication.util.stackTraceToString
@@ -102,15 +110,24 @@ class TransportReplicateIndexClusterManagerNodeAction @Inject constructor(transp
                 val remoteMetadata = getRemoteIndexMetadata(replicateIndexReq.leaderAlias, replicateIndexReq.leaderIndex)
                 log.debug("Response returned of the request made to get metadata of ${replicateIndexReq.leaderIndex} index on remote cluster")
 
+                var isWarmAttach = false
                 if (state.routingTable.hasIndex(replicateIndexReq.followerIndex)) {
-                    throw IllegalArgumentException("Cant use same index again for replication. " +
-                    "Delete the index:${replicateIndexReq.followerIndex}")
-                }
-
-                // Remove all replication tasks before creating new ones
-                val removedTaskCount = StaleTaskUtils.removeAllTasksForIndex(clusterService, nodeClient, replicateIndexReq.followerIndex)
-                if (removedTaskCount > 0) {
-                    log.info("Cleaned up $removedTaskCount tasks for ${replicateIndexReq.followerIndex}")
+                    // If the index is already a CCR follower (REPLICATED_INDEX_SETTING is set),
+                    // reject — the user must stop replication first.
+                    // If the index exists but is NOT a follower (e.g. it was previously the leader
+                    // in a role-transition scenario), allow it to proceed as a warm-attach:
+                    // IndexReplicationTask.isResumed() will detect the existing index and skip the
+                    // snapshot restore, letting shard tasks resume from the local checkpoint.
+                    val existingFollowerSetting = state.metadata()
+                        .index(replicateIndexReq.followerIndex)
+                        ?.settings?.get(ReplicationPlugin.REPLICATED_INDEX_SETTING.key)
+                    if (!existingFollowerSetting.isNullOrBlank()) {
+                        throw IllegalArgumentException("Cant use same index again for replication. " +
+                                "Delete the index:${replicateIndexReq.followerIndex}")
+                    }
+                    isWarmAttach = true
+                    log.info("Index ${replicateIndexReq.followerIndex} exists locally but is not a " +
+                            "current follower — proceeding as warm-attach role-transition resume")
                 }
 
                 indexScopedSettings.validate(replicateIndexReq.settings,
@@ -124,22 +141,87 @@ class TransportReplicateIndexClusterManagerNodeAction @Inject constructor(transp
                         ReplicationOverallState.RUNNING, user, replicateIndexReq.useRoles?.getOrDefault(ReplicateIndexRequest.FOLLOWER_CLUSTER_ROLE, null),
                         replicateIndexReq.useRoles?.getOrDefault(ReplicateIndexRequest.LEADER_CLUSTER_ROLE, null), replicateIndexReq.settings)
 
+                if (isWarmAttach) {
+                    log.info("Warm-attach role-transition: stamping REPLICATED_INDEX_SETTING on " +
+                            "${replicateIndexReq.followerIndex} from cluster manager before starting task")
+                    val stampResponse = clusterService.waitForClusterStateUpdate<AcknowledgedResponse>(
+                            "warm-attach-replicated-setting-${replicateIndexReq.followerIndex}") { l ->
+                        object : AckedClusterStateUpdateTask<AcknowledgedResponse>(Priority.NORMAL, null, l) {
+                            override fun timeout(): TimeValue = TimeValue.timeValueSeconds(60)
+                            override fun ackTimeout(): TimeValue = TimeValue.timeValueSeconds(60)
+                            override fun execute(currentState: ClusterState): ClusterState {
+                                val idxMeta = currentState.metadata().index(replicateIndexReq.followerIndex)
+                                    ?: return currentState
+                                val newSettings = Settings.builder()
+                                    .put(idxMeta.settings)
+                                    .put(REPLICATED_INDEX_SETTING.key,
+                                        "${replicateIndexReq.leaderAlias}:${replicateIndexReq.leaderIndex}")
+                                    .build()
+                                val newIdxMeta = IndexMetadata.builder(idxMeta)
+                                    .settings(newSettings)
+                                    .settingsVersion(idxMeta.settingsVersion + 1)
+                                val mdBuilder = Metadata.builder(currentState.metadata()).put(newIdxMeta)
+                                return ClusterState.builder(currentState).metadata(mdBuilder).build()
+                            }
+                            override fun newResponse(acknowledged: Boolean) = AcknowledgedResponse(acknowledged)
+                        }
+                    }
+                    if (!stampResponse.isAcknowledged) {
+                        log.warn("REPLICATED_INDEX_SETTING stamp was not acknowledged for ${replicateIndexReq.followerIndex} — continuing anyway")
+                    } else {
+                        log.info("REPLICATED_INDEX_SETTING successfully stamped on ${replicateIndexReq.followerIndex}")
+                    }
+                }
+
                 log.debug("Starting index replication task in persistent task service with name: replication:index:${replicateIndexReq.followerIndex}")
+
+                // For warm-attach (role-transition), a previous failed attempt may have left a stale
+                // persistent task in the cluster state. Remove it before starting a fresh one to avoid
+                // ResourceAlreadyExistsException.
+                val staleTaskId = "replication:index:${replicateIndexReq.followerIndex}"
+                val existingTask = PersistentTasksCustomMetadata.getTaskWithId<IndexReplicationParams>(state, staleTaskId)
+                if (existingTask != null) {
+                    log.info("Found existing replication task $staleTaskId — removing before warm-attach restart")
+                    try {
+                        persistentTasksService.removeTask(staleTaskId)
+                        log.info("Removed stale task $staleTaskId")
+                    } catch (e: Exception) {
+                        log.warn("Could not remove stale task $staleTaskId: ${e.message}")
+                    }
+                }
+
                 val task = persistentTasksService.startTask("replication:index:${replicateIndexReq.followerIndex}",
                         IndexReplicationExecutor.TASK_NAME, params)
 
                 if (!task.isAssigned) {
                     log.error("Failed to assign task")
                     listener.onResponse(ReplicateIndexResponse(false))
+                    return@launch
                 }
 
-                log.info("Persistent task created for replication: follower=${replicateIndexReq.followerIndex}, leader=${replicateIndexReq.leaderAlias}:${replicateIndexReq.leaderIndex}, taskId=${task.id}")
+                // For warm-attach (role-transition), the index already exists locally and the task
+                // will stamp REPLICATED_INDEX_SETTING and start shard tasks asynchronously.
+                // Stamping requires a cluster state update that can take longer than the default 30s
+                // request timeout, causing a spurious timeout even though replication is progressing.
+                // Since the task is assigned and running, return success immediately and let it
+                // proceed asynchronously — use _status to track progress.
+                if (isWarmAttach) {
+                    log.info("Warm-attach role-transition: task ${task.id} assigned — returning success asynchronously")
+                    listener.onResponse(AcknowledgedResponse(true))
+                    return@launch
+                }
+
                 log.debug("Waiting for persistent task to move to following state")
-                // Now wait for the replication to start and the follower index to get created before returning
+                // Normal start: wait until replication is effectively started.
                 persistentTasksService.waitForTaskCondition(task.id, replicateIndexReq.timeout()) { t ->
-                    val replicationState = (t.state as IndexReplicationState?)?.state
-                    replicationState == ReplicationState.FOLLOWING ||
-                            (!replicateIndexReq.waitForRestore && replicationState == ReplicationState.RESTORING)
+                    val replicationState = (t?.state as? IndexReplicationState)?.state
+                    when (replicationState) {
+                        ReplicationState.FOLLOWING -> true
+                        ReplicationState.RESTORING -> !replicateIndexReq.waitForRestore
+                        ReplicationState.INIT_FOLLOW,
+                        ReplicationState.MONITORING -> true
+                        else -> false
+                    }
                 }
                 log.debug("Persistent task is moved to following replication state")
                 listener.onResponse(AcknowledgedResponse(true))
@@ -165,24 +247,5 @@ class TransportReplicateIndexClusterManagerNodeAction @Inject constructor(transp
 
     override fun checkBlock(request: ReplicateIndexClusterManagerNodeRequest, state: ClusterState): ClusterBlockException? {
         return state.blocks.globalBlockedException(ClusterBlockLevel.METADATA_WRITE)
-    }
-
-    /**
-     * Fetches remote index metadata for multiple indices in ONE remote call for bulk API
-     * Returns a map of index name -> IndexMetadata.
-     */
-    internal suspend fun getRemoteIndexMetadata(leaderAlias: String, indices: List<String>): Map<String, IndexMetadata> {
-        val remoteClusterClient = nodeClient.getRemoteClusterClient(leaderAlias)
-        val clusterStateRequest = remoteClusterClient.admin().cluster().prepareState()
-                .clear()
-                .setIndices(*indices.toTypedArray())
-                .setMetadata(true)
-                .setIndicesOptions(IndicesOptions.lenientExpandOpen())
-                .request()
-        val remoteState = remoteClusterClient.suspending(remoteClusterClient.admin().cluster()::state,
-                injectSecurityContext = true, defaultContext = true)(clusterStateRequest).state
-        return indices.mapNotNull { index ->
-            remoteState.metadata().index(index)?.let { index to it }
-        }.toMap()
     }
 }

@@ -49,12 +49,10 @@ import org.opensearch.tasks.Task
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
 import java.util.*
-import org.opensearch.action.support.TransportIndicesResolvingAction
 
 /*
  This action allows the replication plugin to update the index metadata(mapping, setting & aliases) on the follower index
  when there is a metadata write block(added by the plugin).
-
  */
 class TransportUpdateMetadataAction @Inject constructor(
     transportService: TransportService, actionFilters: ActionFilters, threadPool: ThreadPool,
@@ -64,12 +62,7 @@ class TransportUpdateMetadataAction @Inject constructor(
     val indexAliasService: MetadataIndexAliasesService,
     val indexStateService: MetadataIndexStateService
 ) : TransportClusterManagerNodeAction<UpdateMetadataRequest, AcknowledgedResponse>(UpdateMetadataAction.NAME,
-    transportService, clusterService, threadPool, actionFilters, ::UpdateMetadataRequest, indexNameExpressionResolver),
-    TransportIndicesResolvingAction<UpdateMetadataRequest> {
-
-    override fun resolveIndices(request: UpdateMetadataRequest): OptionallyResolvedIndices {
-        return ResolvedIndices.of(request.indexName)
-    }
+    transportService, clusterService, threadPool, actionFilters, ::UpdateMetadataRequest, indexNameExpressionResolver) {
 
     companion object {
         private val log = LogManager.getLogger(TransportUpdateMetadataAction::class.java)

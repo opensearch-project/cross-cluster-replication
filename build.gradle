@@ -34,8 +34,12 @@ import org.opensearch.gradle.test.RestIntegTestTask
 
 buildscript {
     ext {
-        isSnapshot = "true" == System.getProperty("build.snapshot", "true")
-        opensearch_version = System.getProperty("opensearch.version", "3.7.0-SNAPSHOT")
+        // Lock this branch to the 3.4.0.0 line to avoid external -D overrides drifting to 3.7.x.
+        opensearch_compatibility_version = System.getProperty("opensearch.version", "3.4.0.0")
+        // Ensure plugin descriptor generation resolves to this branch line by default.
+        System.setProperty("opensearch.version", opensearch_compatibility_version)
+        isSnapshot = true
+        opensearch_version = "3.4.0-SNAPSHOT"
         buildVersionQualifier = System.getProperty("build.version_qualifier", "")
         // e.g. 2.0.0-rc1-SNAPSHOT -> 2.0.0.0-rc1-SNAPSHOT
         version_tokens = opensearch_version.tokenize('-')
@@ -50,10 +54,10 @@ buildscript {
 
 
         // for bwc tests
-        opensearch_previous_version = System.getProperty("bwc_older_version", "3.3.0")
+        opensearch_previous_version = System.getProperty("bwc_older_version", "2.6.0")
         plugin_previous_version = opensearch_previous_version.replaceAll(/(\.\d)([^\d]*)$/, '$1.0$2')
 
-        common_utils_version = System.getProperty("common_utils.version", opensearch_build)
+        common_utils_version = opensearch_build
         kotlin_version = System.getProperty("kotlin.version", "2.2.0")
 
         security_plugin_version = opensearch_build
@@ -70,8 +74,6 @@ buildscript {
     }
 
     repositories {
-        mavenLocal()
-        maven { url = "https://ci.opensearch.org/maven2/" }
         mavenCentral()
         maven { url = "https://ci.opensearch.org/ci/dbc/snapshots/maven/" }
         maven { url = "https://plugins.gradle.org/m2/" }
@@ -132,10 +134,17 @@ configurations.all {
         force "org.apache.httpcomponents.core5:httpcore5-h2:${versions.httpcore5}"
         force "org.apache.httpcomponents.client5:httpclient5:${versions.httpclient5}"
         force "org.apache.httpcomponents.client5:httpclient5-osgi:${versions.httpclient5}"
-        force 'com.fasterxml.jackson.core:jackson-databind:2.13.4.2'
+        force 'com.fasterxml.jackson.core:jackson-databind:2.22.0'
         force 'org.yaml:snakeyaml:2.0'
         force 'org.codehaus.plexus:plexus-utils:3.0.24'
         force 'net.java.dev.jna:jna:5.12.1'
+        force "org.opensearch:opensearch:${opensearch_version}"
+        force "org.opensearch.test:framework:${opensearch_version}"
+        force "org.opensearch.client:opensearch-rest-client:${opensearch_version}"
+        force "io.projectreactor:reactor-core:3.8.6"
+        force "com.fasterxml.jackson.core:jackson-core:2.22.0"
+        force "com.fasterxml.jackson.core:jackson-databind:2.22.0"
+        force "com.fasterxml.jackson.core:jackson-annotations:2.22.0"
     }
 }
 
@@ -158,7 +167,7 @@ dependencies {
     implementation "org.apache.httpcomponents.core5:httpcore5-h2:${versions.httpcore5}"
 
     testImplementation "org.opensearch.test:framework:${opensearch_version}"
-    testImplementation "org.assertj:assertj-core:3.27.7"
+    testImplementation "org.assertj:assertj-core:3.17.2"
     testImplementation "org.opensearch.client:opensearch-rest-high-level-client:${opensearch_version}"
     testImplementation "org.jetbrains.kotlinx:kotlinx-coroutines-test:1.6.0" // Moving away from kotlin_version
     testImplementation "org.jetbrains.kotlin:kotlin-test:${kotlin_version}"
@@ -168,8 +177,6 @@ dependencies {
 }
 
 repositories {
-    mavenLocal()
-    maven { url = "https://ci.opensearch.org/maven2/" }
     mavenCentral()
     maven { url = "https://ci.opensearch.org/ci/dbc/snapshots/maven/" }
     maven { url = "https://plugins.gradle.org/m2/" }
@@ -199,6 +206,25 @@ opensearchplugin {
     name = project.name
     description = "OpenSearch Cross Cluster Replication Plugin"
     classname = "org.opensearch.replication.ReplicationPlugin"
+}
+
+// Fix opensearch.version drift: build-tools-3.4.0-SNAPSHOT jar ships with
+// version.properties containing opensearch=3.7.0-SNAPSHOT (CI snapshot contamination).
+// Override the generated descriptor so the plugin is compatible with OpenSearch 3.4.0.
+tasks.named("pluginProperties") {
+    // Force re-run each time so the patch is always applied, even on incremental builds.
+    outputs.upToDateWhen { false }
+    doLast {
+        def propFile = new File("${project.buildDir}/generated-resources/plugin-descriptor.properties")
+        if (propFile.exists()) {
+            def original = propFile.text
+            def patched  = original.replaceAll(/(?m)^opensearch\.version=.*$/, "opensearch.version=${opensearch_no_snapshot}")
+            if (original != patched) {
+                propFile.text = patched
+                logger.lifecycle("Patched plugin-descriptor.properties: opensearch.version -> ${opensearch_no_snapshot}")
+            }
+        }
+    }
 }
 
 java {
@@ -276,8 +302,6 @@ class CrossClusterWaitForHttpResource {
     private URL url;
     private String username;
     private String password;
-    private String clientCertPath;
-    private String clientKeyPath;
     Set<Integer> validResponseCodes = Collections.singleton(200);
 
     CrossClusterWaitForHttpResource(String protocol, String host, int numberOfNodes) throws MalformedURLException {
@@ -316,54 +340,7 @@ class CrossClusterWaitForHttpResource {
         this.password = password;
     }
 
-    void setClientCert(String certPath, String keyPath) {
-        this.clientCertPath = certPath;
-        this.clientKeyPath = keyPath;
-    }
-
     void checkResource() throws IOException {
-        if (clientCertPath != null && clientKeyPath != null) {
-            // Use java.net.http.HttpClient which properly handles client certs
-            def certFactory = java.security.cert.CertificateFactory.getInstance("X.509")
-            def cert = new File(clientCertPath).withInputStream { certFactory.generateCertificate(it) }
-            def rootCa = new File(new File(clientCertPath).parent, "root-ca.pem").withInputStream { certFactory.generateCertificate(it) }
-            def keyLines = new File(clientKeyPath).readLines().findAll { !it.startsWith("-----") }.join("")
-            def keyBytes = Base64.getDecoder().decode(keyLines)
-            def keySpec = new java.security.spec.PKCS8EncodedKeySpec(keyBytes)
-            def key = java.security.KeyFactory.getInstance("RSA").generatePrivate(keySpec)
-
-            def ks = java.security.KeyStore.getInstance("JKS")
-            ks.load(null, null)
-            ks.setKeyEntry("admin", key, "".toCharArray(), [cert, rootCa] as java.security.cert.Certificate[])
-            def kmf = javax.net.ssl.KeyManagerFactory.getInstance(javax.net.ssl.KeyManagerFactory.getDefaultAlgorithm())
-            kmf.init(ks, "".toCharArray())
-
-            TrustManager[] trustAllCerts = [ new X509TrustManager() {
-                X509Certificate[] getAcceptedIssuers() { return null }
-                void checkClientTrusted(X509Certificate[] certs, String authType) {}
-                void checkServerTrusted(X509Certificate[] certs, String authType) {}
-            }] as TrustManager[]
-
-            def sc = javax.net.ssl.SSLContext.getInstance("TLS")
-            sc.init(kmf.getKeyManagers(), trustAllCerts, new java.security.SecureRandom())
-
-            def sslParams = sc.getDefaultSSLParameters()
-            sslParams.setEndpointIdentificationAlgorithm("")
-            def httpClient = java.net.http.HttpClient.newBuilder()
-                .sslContext(sc)
-                .sslParameters(sslParams)
-                .build()
-            def request = java.net.http.HttpRequest.newBuilder()
-                .uri(new URI(this.@url.toString().replace(">=", "%3E%3D")))
-                .header("Authorization", "Basic ")
-                .GET()
-                .build()
-            def response = httpClient.send(request, java.net.http.HttpResponse.BodyHandlers.ofString())
-            if (validResponseCodes.contains(response.statusCode())) {
-                return
-            }
-            throw new IOException(response.statusCode() + " " + response.body())
-        }
         final HttpURLConnection connection = buildConnection()
         connection.connect();
         final Integer response = connection.getResponseCode();
@@ -391,25 +368,7 @@ class CrossClusterWaitForHttpResource {
                 }
             ] as TrustManager[];
             SSLContext sc = SSLContext.getInstance("SSL");
-            javax.net.ssl.KeyManager[] keyManagers = null
-            if (clientCertPath != null && clientKeyPath != null) {
-                def certFactory = java.security.cert.CertificateFactory.getInstance("X.509")
-                def cert = new File(clientCertPath).withInputStream { certFactory.generateCertificate(it) }
-                def rootCa = new File(new File(clientCertPath).parent, "root-ca.pem").withInputStream { certFactory.generateCertificate(it) }
-                def keyLines = new File(clientKeyPath).readLines()
-                    .findAll { !it.startsWith("-----") }
-                    .join("")
-                def keyBytes = Base64.getDecoder().decode(keyLines)
-                def keySpec = new java.security.spec.PKCS8EncodedKeySpec(keyBytes)
-                def key = java.security.KeyFactory.getInstance("RSA").generatePrivate(keySpec)
-                def ks = java.security.KeyStore.getInstance("JKS")
-                ks.load(null, null)
-                ks.setKeyEntry("admin", key, "".toCharArray(), [cert, rootCa] as java.security.cert.Certificate[])
-                def kmf = javax.net.ssl.KeyManagerFactory.getInstance(javax.net.ssl.KeyManagerFactory.getDefaultAlgorithm())
-                kmf.init(ks, "".toCharArray())
-                keyManagers = kmf.getKeyManagers()
-            }
-            sc.init(keyManagers, trustAllCerts, new java.security.SecureRandom());
+            sc.init(null, trustAllCerts, new java.security.SecureRandom());
             connection.setSSLSocketFactory(sc.getSocketFactory());
             // Create all-trusting host name verifier
             HostnameVerifier allHostsValid = new HostnameVerifier() {
@@ -449,11 +408,12 @@ File repo = file("$buildDir/testclusters/repo")
 def _numNodes = findProperty('numNodes') as Integer ?: 2
 testClusters {
     leaderCluster {
+        versions = [opensearch_version]
         plugin(project.tasks.bundlePlugin.archiveFile)
         if(securityEnabled) {
             plugin(provider(securityPluginFile))
         }
-        testDistribution = "ARCHIVE"
+        testDistribution = "INTEG_TEST"
         if(knnEnabled) {
             plugin(provider(knnPluginFile))
             testDistribution = "ARCHIVE"
@@ -468,7 +428,8 @@ testClusters {
         if(_numNodes == 1) jvmArgs "${-> getDebugJvmArgs(debugPort++)}"
     }
     followCluster {
-        testDistribution = "ARCHIVE"
+        versions = [opensearch_version]
+        testDistribution = "INTEG_TEST"
         plugin(project.tasks.bundlePlugin.archiveFile)
         if(securityEnabled) {
             plugin(provider(securityPluginFile))
@@ -484,6 +445,13 @@ testClusters {
         //numberOfNodes = 3
         setting 'path.repo', repo.absolutePath
         if(_numNodes == 1) jvmArgs "${-> getDebugJvmArgs(debugPort++)}"
+    }
+}
+
+// Ensure the default integTest cluster created by the rest-test plugin uses the same OpenSearch version.
+testClusters {
+    integTest {
+        versions = [opensearch_version]
     }
 }
 
@@ -510,15 +478,8 @@ def configureCluster(OpenSearchCluster cluster, Boolean securityEnabled) {
             protocol = "https"
         }
         CrossClusterWaitForHttpResource wait = new CrossClusterWaitForHttpResource(protocol, cluster.getFirstNode().getHttpSocketURI(), cluster.nodes.size())
-        if (securityEnabled) {
-            wait.setClientCert(
-                "$projectDir/src/test/resources/security/plugin/kirk.pem",
-                "$projectDir/src/test/resources/security/plugin/kirk-key.pem"
-            )
-        } else {
-            wait.setUsername("admin")
-            wait.setPassword("admin")
-        }
+        wait.setUsername("admin")
+        wait.setPassword("admin")
         return wait.wait(500)
     }
 
@@ -652,10 +613,9 @@ def addSecurityConfig(OpenSearchNode node, Boolean securityEnabled) {
         node.setting("plugins.security.ssl.http.pemcert_filepath", "esnode.pem")
         node.setting("plugins.security.ssl.http.pemkey_filepath", "esnode-key.pem")
         node.setting("plugins.security.ssl.http.pemtrustedcas_filepath", "root-ca.pem")
-        node.setting("plugins.security.ssl.http.clientauth_mode", "OPTIONAL")
         node.setting("plugins.security.allow_unsafe_democertificates", "true")
         node.setting("plugins.security.allow_default_init_securityindex", "true")
-        node.setting("plugins.security.authcz.admin_dn", "[\"CN=kirk,OU=client,O=client,L=test,C=de\"]")
+        node.setting("plugins.security.authcz.admin_dn", "CN=kirk,OU=client,O=client,L=test,C=de")
         node.setting("plugins.security.audit.type", "internal_opensearch")
         node.setting("plugins.security.enable_snapshot_restore_privilege", "true")
         node.setting("plugins.security.check_snapshot_restore_write_privileges", "true")

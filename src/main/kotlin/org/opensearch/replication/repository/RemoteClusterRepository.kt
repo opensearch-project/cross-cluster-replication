@@ -143,10 +143,10 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         throw UnsupportedOperationException("Operation not permitted")
     }
 
-    override fun snapshotShard(store: Store, mapperService: MapperService, snapshotId: SnapshotId, indexId: IndexId,
-                               snapshotIndexCommit: IndexCommit, @Nullable shardStateIdentifier: String?,
-                               snapshotStatus: IndexShardSnapshotStatus, repositoryMetaVersion: Version,
-                               userMetadata: MutableMap<String, Any>, listener: ActionListener<String>,
+    override fun snapshotShard(store: Store?, mapperService: MapperService?, snapshotId: SnapshotId?, indexId: IndexId?,
+                               snapshotIndexCommit: IndexCommit?, @Nullable shardStateIdentifier: String?,
+                               snapshotStatus: IndexShardSnapshotStatus?, repositoryMetaVersion: Version?,
+                               userMetadata: MutableMap<String, Any>?, listener: ActionListener<String>?,
                                indexMetadata: IndexMetadata?) {
         throw UnsupportedOperationException("Operation not permitted")
     }
@@ -316,14 +316,12 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         // 2. Request for individual files from leader cluster for this shardId
         // make sure the store is not released until we are done.
         val fileMetadata = ArrayList(metadataSnapshot.asMap().values)
-        val totalSizeBytes = fileMetadata.sumOf { it.length() }
-        log.info("Starting bootstrap restore: follower=$followerIndexName, followerShard=$followerShardId, leaderShard=$leaderShardId, fileCount=${fileMetadata.size}, totalSizeBytes=$totalSizeBytes")
         multiChunkTransfer = RemoteClusterMultiChunkTransfer(log, clusterService.clusterName.value(), client.threadPool().threadContext,
                 store, replicationSettings.concurrentFileChunks, restoreUUID, replMetadata, leaderShardNode,
                 leaderShardId, fileMetadata, leaderClusterClient, recoveryState, replicationSettings.chunkSize,
                 object : ActionListener<Void> {
                     override fun onFailure(e: java.lang.Exception?) {
-                        log.error("Restore of ${store.shardId()} failed due to follower=$followerIndexName, leaderShard=$leaderShardId, error=${e?.stackTraceToString()}")
+                        log.error("Restore of ${store.shardId()} failed due to ${e?.stackTraceToString()}")
                         if (e is NodeDisconnectedException || e is NodeNotConnectedException || e is ConnectTransportException) {
                             log.info("Retrying restore shard for ${store.shardId()}")
                             Thread.sleep(1000) // to get updated leader cluster state
@@ -332,7 +330,7 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
                                         recoveryState, listener, ::restoreShardUsingMultiChunkTransfer, log = log)
                             }
                         } else {
-                            log.error("Not retrying restore shard for ${store.shardId()} follower=$followerIndexName, leaderShard=$leaderShardId")
+                            log.error("Not retrying restore shard for ${store.shardId()}")
                             store.decRef()
                             releaseLeaderResources(restoreUUID, leaderShardNode, leaderShardId, followerShardId, followerIndexName)
                             listener.onFailure(e)

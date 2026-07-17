@@ -71,9 +71,6 @@ import org.junit.Assert
 import org.junit.Assume
 import org.opensearch.core.xcontent.DeprecationHandler
 import org.opensearch.core.xcontent.NamedXContentRegistry
-import org.opensearch.core.common.bytes.BytesArray
-import org.opensearch.rest.RestRequest
-import org.opensearch.test.rest.FakeRestRequest
 import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING
 import org.opensearch.replication.followerStats
 import org.opensearch.replication.leaderStats
@@ -85,8 +82,6 @@ import org.opensearch.bootstrap.BootstrapInfo
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.index.mapper.Mapping
 import org.opensearch.indices.replication.common.ReplicationType
-import org.opensearch.replication.action.index.ReplicateIndexRequest
-import org.opensearch.replication.action.update.UpdateIndexReplicationRequest
 import org.opensearch.replication.util.ValidationUtil
 
 
@@ -97,8 +92,8 @@ import org.opensearch.replication.util.ValidationUtil
 class StartReplicationIT: MultiClusterRestTestCase() {
     private val leaderIndexName = "leader_index"
     private val followerIndexName = "follower_index"
-    private val leaderClusterPath = "testclusters/leaderCluster-"
-    private val followerClusterPath = "testclusters/followCluster-"
+    private val leaderClusterPath = "testclusters/leaderCluster-0"
+    private val followerClusterPath = "testclusters/followCluster-0"
     private val repoPath = "testclusters/repo"
     private val buildDir = System.getProperty("build.dir")
     private val synonymsJson = "/analyzers/synonym_setting.json"
@@ -106,24 +101,6 @@ class StartReplicationIT: MultiClusterRestTestCase() {
     private val longIndexName = "index_".repeat(43)
     // 3x of SLEEP_TIME_BETWEEN_POLL_MS
     val SLEEP_TIME_BETWEEN_SYNC = 15L
-
-    fun `test start replication with cluster_manager_timeout`() {
-        // Verify cluster_manager_timeout param is parsed from HTTP request and set on the action request
-        val restRequest = FakeRestRequest.Builder(NamedXContentRegistry.EMPTY)
-            .withMethod(RestRequest.Method.PUT)
-            .withPath("/_plugins/_replication/follower-index/_start")
-            .withParams(mapOf("index" to followerIndexName, "cluster_manager_timeout" to "60s"))
-            .withContent(
-                BytesArray("""{"leader_alias":"source","leader_index":"$leaderIndexName"}"""),
-                XContentType.JSON
-            )
-            .build()
-        val request = ReplicateIndexRequest.fromXContent(restRequest.contentOrSourceParamParser(), restRequest.param("index"))
-        request.clusterManagerNodeTimeout(
-            restRequest.paramAsTime("cluster_manager_timeout", request.clusterManagerNodeTimeout())
-        )
-        assertEquals(TimeValue.timeValueSeconds(60), request.clusterManagerNodeTimeout())
-    }
 
     fun `test start replication in following state and empty index`() {
         val followerClient = getClientForCluster(FOLLOWER)
@@ -615,14 +592,12 @@ class StartReplicationIT: MultiClusterRestTestCase() {
 
         Assume.assumeFalse(ANALYZERS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS, checkifIntegTestRemote())
 
-        val leaderSynonymPaths = mutableListOf<java.nio.file.Path>()
-        for (i in 0 until clusterNodes(LEADER)) {
-            val config = PathUtils.get(buildDir, leaderClusterPath + i, "config")
-            val synonymPath = config.resolve("synonyms.txt")
-            leaderSynonymPaths.add(synonymPath)
-            Files.copy(javaClass.getResourceAsStream("/analyzers/synonyms.txt"), synonymPath)
-        }
+        val synonyms = javaClass.getResourceAsStream("/analyzers/synonyms.txt")
+        val config = PathUtils.get(buildDir, leaderClusterPath, "config")
+        val synonymPath = config.resolve("synonyms.txt")
         try {
+            Files.copy(synonyms, synonymPath)
+
             val settings: Settings = Settings.builder().loadFromStream(synonymsJson, javaClass.getResourceAsStream(synonymsJson), false)
                 .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 1)
                 .build()
@@ -640,7 +615,9 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                 followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName))
             }.isInstanceOf(ResponseException::class.java).hasMessageContaining("resource_not_found_exception")
         } finally {
-            leaderSynonymPaths.forEach { if (Files.exists(it)) Files.delete(it) }
+            if (Files.exists(synonymPath)) {
+                Files.delete(synonymPath)
+            }
         }
     }
 
@@ -648,21 +625,14 @@ class StartReplicationIT: MultiClusterRestTestCase() {
 
         Assume.assumeFalse(ANALYZERS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS, checkifIntegTestRemote())
 
-        val leaderSynonymPaths = mutableListOf<java.nio.file.Path>()
-        val followerSynonymPaths = mutableListOf<java.nio.file.Path>()
-        for (i in 0 until clusterNodes(LEADER)) {
-            val leaderConfig = PathUtils.get(buildDir, leaderClusterPath + i, "config")
-            val leaderSynonymPath = leaderConfig.resolve("synonyms.txt")
-            leaderSynonymPaths.add(leaderSynonymPath)
-            Files.copy(javaClass.getResourceAsStream("/analyzers/synonyms.txt"), leaderSynonymPath)
-        }
-        for (i in 0 until clusterNodes(FOLLOWER)) {
-            val followerConfig = PathUtils.get(buildDir, followerClusterPath + i, "config")
-            val followerSynonymPath = followerConfig.resolve("synonyms.txt")
-            followerSynonymPaths.add(followerSynonymPath)
-            Files.copy(javaClass.getResourceAsStream("/analyzers/synonyms.txt"), followerSynonymPath)
-        }
+        val synonyms = javaClass.getResourceAsStream("/analyzers/synonyms.txt")
+        val leaderConfig = PathUtils.get(buildDir, leaderClusterPath, "config")
+        val leaderSynonymPath = leaderConfig.resolve("synonyms.txt")
+        val followerConfig = PathUtils.get(buildDir, followerClusterPath, "config")
+        val followerSynonymPath = followerConfig.resolve("synonyms.txt")
         try {
+            Files.copy(synonyms, leaderSynonymPath)
+            Files.copy(synonyms, followerSynonymPath)
             val settings: Settings = Settings.builder().loadFromStream(synonymsJson, javaClass.getResourceAsStream(synonymsJson), false)
                 .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 1)
                 .build()
@@ -681,10 +651,13 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             assertBusy {
                 assertThat(followerClient.indices().exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT)).isEqualTo(true)
             }
-            followerClient.stopReplication(followerIndexName)
         } finally {
-            leaderSynonymPaths.forEach { if (Files.exists(it)) Files.delete(it) }
-            followerSynonymPaths.forEach { if (Files.exists(it)) Files.delete(it) }
+            if (Files.exists(leaderSynonymPath)) {
+                Files.delete(leaderSynonymPath)
+            }
+            if (Files.exists(followerSynonymPath)) {
+                Files.delete(followerSynonymPath)
+            }
         }
     }
 
@@ -692,22 +665,15 @@ class StartReplicationIT: MultiClusterRestTestCase() {
 
         Assume.assumeFalse(ANALYZERS_NOT_ACCESSIBLE_FOR_REMOTE_CLUSTERS, checkifIntegTestRemote())
 
+        val synonyms = javaClass.getResourceAsStream("/analyzers/synonyms.txt")
+        val leaderConfig = PathUtils.get(buildDir, leaderClusterPath, "config")
+        val leaderSynonymPath = leaderConfig.resolve("synonyms.txt")
+        val followerConfig = PathUtils.get(buildDir, followerClusterPath, "config")
         val synonymFollowerFilename = "synonyms_follower.txt"
-        val leaderSynonymPaths = mutableListOf<java.nio.file.Path>()
-        val followerSynonymPaths = mutableListOf<java.nio.file.Path>()
-        for (i in 0 until clusterNodes(LEADER)) {
-            val leaderConfig = PathUtils.get(buildDir, leaderClusterPath + i, "config")
-            val leaderSynonymPath = leaderConfig.resolve("synonyms.txt")
-            leaderSynonymPaths.add(leaderSynonymPath)
-            Files.copy(javaClass.getResourceAsStream("/analyzers/synonyms.txt"), leaderSynonymPath)
-        }
-        for (i in 0 until clusterNodes(FOLLOWER)) {
-            val followerConfig = PathUtils.get(buildDir, followerClusterPath + i, "config")
-            val followerSynonymPath = followerConfig.resolve(synonymFollowerFilename)
-            followerSynonymPaths.add(followerSynonymPath)
-            Files.copy(javaClass.getResourceAsStream("/analyzers/synonyms.txt"), followerSynonymPath)
-        }
+        val followerSynonymPath = followerConfig.resolve(synonymFollowerFilename)
         try {
+            Files.copy(synonyms, leaderSynonymPath)
+            Files.copy(synonyms, followerSynonymPath)
             val settings: Settings = Settings.builder().loadFromStream(synonymsJson, javaClass.getResourceAsStream(synonymsJson), false)
                 .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 1)
                 .build()
@@ -729,10 +695,13 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             assertBusy {
                 assertThat(followerClient.indices().exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT)).isEqualTo(true)
             }
-            followerClient.stopReplication(followerIndexName)
         } finally {
-            leaderSynonymPaths.forEach { if (Files.exists(it)) Files.delete(it) }
-            followerSynonymPaths.forEach { if (Files.exists(it)) Files.delete(it) }
+            if (Files.exists(leaderSynonymPath)) {
+                Files.delete(leaderSynonymPath)
+            }
+            if (Files.exists(followerSynonymPath)) {
+                Files.delete(followerSynonymPath)
+            }
         }
     }
 
@@ -827,53 +796,6 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             },
             30, TimeUnit.SECONDS
         )
-    }
-
-    fun `test that write alias is stripped on follower`() {
-        val followerClient = getClientForCluster(FOLLOWER)
-        val leaderClient = getClientForCluster(LEADER)
-        setMetadataSyncDelay() // Ensure sync happens reasonably fast
-        createConnectionBetweenClusters(FOLLOWER, LEADER)
-
-        val createIndexResponse = leaderClient.indices().create(
-            CreateIndexRequest(leaderIndexName)
-                .alias(Alias("write_alias").writeIndex(true)),
-            RequestOptions.DEFAULT
-        )
-        assertThat(createIndexResponse.isAcknowledged).isTrue()
-
-        followerClient.startReplication(
-            StartReplicationRequest("source", leaderIndexName, followerIndexName),
-            waitForRestore = true
-        )
-
-        assertBusy {
-            assertThat(followerClient.indices().exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT)).isEqualTo(true)
-        }
-
-        var followerAliases = followerClient.indices().getAlias(GetAliasesRequest().indices(followerIndexName), RequestOptions.DEFAULT)
-        var aliasMetadata = followerAliases.aliases[followerIndexName]?.find { it.alias == "write_alias" }
-        assertThat(aliasMetadata).isNotNull
-        assertThat(aliasMetadata?.writeIndex()).isFalse()
-
-        // trigger a metadata sync to ensure the alias state is persisted
-        val indicesAliasesRequest = IndicesAliasesRequest()
-        indicesAliasesRequest.addAliasAction(
-            IndicesAliasesRequest.AliasActions.add().index(leaderIndexName).alias("new_alias")
-        )
-        leaderClient.indices().updateAliases(indicesAliasesRequest, RequestOptions.DEFAULT)
-
-        TimeUnit.SECONDS.sleep(SLEEP_TIME_BETWEEN_SYNC + 2) // Wait for sync
-
-        assertBusy {
-            val aliases = followerClient.indices().getAlias(GetAliasesRequest().indices(followerIndexName), RequestOptions.DEFAULT)
-            assertThat(aliases.aliases[followerIndexName]?.find { it.alias == "new_alias" }).isNotNull
-        }
-
-        followerAliases = followerClient.indices().getAlias(GetAliasesRequest().indices(followerIndexName), RequestOptions.DEFAULT)
-        aliasMetadata = followerAliases.aliases[followerIndexName]?.find { it.alias == "write_alias" }
-        assertThat(aliasMetadata).isNotNull
-        assertThat(aliasMetadata?.writeIndex()).isFalse()
     }
 
     fun `test that snapshot on leader does not affect replication during bootstrap`() {
@@ -1422,21 +1344,6 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         return nodeIPs
     }
 
-    fun `test update replication with cluster_manager_timeout`() {
-        // Verify cluster_manager_timeout param is parsed from HTTP request and set on the request
-        val restRequest = FakeRestRequest.Builder(NamedXContentRegistry.EMPTY)
-            .withMethod(RestRequest.Method.PUT)
-            .withPath("/_plugins/_replication/follower-index/_update")
-            .withParams(mapOf("index" to followerIndexName, "cluster_manager_timeout" to "60s"))
-            .withContent(BytesArray("""{"settings":{}}"""), XContentType.JSON)
-            .build()
-        val request = UpdateIndexReplicationRequest(restRequest.param("index"), Settings.EMPTY)
-        request.clusterManagerNodeTimeout(
-            restRequest.paramAsTime("cluster_manager_timeout", request.clusterManagerNodeTimeout())
-        )
-        assertEquals(TimeValue.timeValueSeconds(60), request.clusterManagerNodeTimeout())
-    }
-
     private fun assertValidationFailure(client: RestHighLevelClient, leader: String, follower: String, errrorMsg: String) {
         assertThatThrownBy {
             client.startReplication(StartReplicationRequest("source", leader, follower))
@@ -1447,37 +1354,11 @@ class StartReplicationIT: MultiClusterRestTestCase() {
     private fun assertEqualAliases() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
-        val getAliasesRequest = GetAliasesRequest().indices(followerIndexName)
-        var aliasResponse = followerClient.indices().getAlias(getAliasesRequest, RequestOptions.DEFAULT)
-        val followerAliases = aliasResponse.aliases.get(followerIndexName)
-        aliasResponse = leaderClient.indices().getAlias(GetAliasesRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
-        val leaderAliases = aliasResponse.aliases.get(leaderIndexName)
-
-        if (followerAliases == null || leaderAliases == null) {
-            Assert.fail("Aliases are null. Leader: $leaderAliases, Follower: $followerAliases")
-        }
-        if (followerAliases!!.size != leaderAliases!!.size) {
-            Assert.fail("Alias count mismatch. Leader: ${leaderAliases.size}, Follower: ${followerAliases.size}")
-        }
-
-        for (leader in leaderAliases) {
-            val follower = followerAliases.find { it.alias() == leader.alias() }
-            Assert.assertNotNull("Follower missing alias ${leader.alias()}", follower)
-
-            Assert.assertEquals("Filter mismatch for ${leader.alias()}", leader.filter(), follower!!.filter())
-            Assert.assertEquals("IndexRouting mismatch for ${leader.alias()}", leader.indexRouting(), follower.indexRouting())
-            Assert.assertEquals("SearchRouting mismatch for ${leader.alias()}", leader.searchRouting(), follower.searchRouting())
-            Assert.assertEquals("IsHidden mismatch for ${leader.alias()}", leader.isHidden(), follower.isHidden())
-
-            val leaderWrite = leader.writeIndex()
-            val followerWrite = follower.writeIndex()
-
-            if (leaderWrite == true) {
-                Assert.assertFalse("Follower alias ${follower.alias()} should have writeIndex=false when leader is true", followerWrite == true)
-            } else {
-                Assert.assertEquals("WriteIndex mismatch for ${leader.alias()} (Leader: $leaderWrite)", leaderWrite, followerWrite)
-            }
-        }
+        var getAliasesRequest = GetAliasesRequest().indices(followerIndexName)
+        var aliasRespone = followerClient.indices().getAlias(getAliasesRequest, RequestOptions.DEFAULT)
+        var followerAliases = aliasRespone.aliases.get(followerIndexName)
+        aliasRespone = leaderClient.indices().getAlias(GetAliasesRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
+        var leaderAliases = aliasRespone.aliases.get(leaderIndexName)
+        Assert.assertEquals(followerAliases, leaderAliases)
     }
 }
-

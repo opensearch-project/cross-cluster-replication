@@ -26,9 +26,6 @@ import org.opensearch.indices.IndicesService
 import org.opensearch.replication.seqno.RemoteClusterRetentionLeaseHelper.Companion.RETENTION_LEASE_PREFIX
 import org.opensearch.replication.seqno.RemoteClusterStats
 import org.opensearch.threadpool.ThreadPool
-import org.opensearch.action.support.TransportIndicesResolvingAction
-import org.opensearch.cluster.metadata.OptionallyResolvedIndices
-import org.opensearch.cluster.metadata.ResolvedIndices
 import org.opensearch.transport.TransportService
 import java.util.concurrent.TimeUnit
 
@@ -41,10 +38,7 @@ class TransportLeaderStatsAction @Inject constructor(transportService: Transport
                                                      private val client: NodeClient) :
         TransportNodesAction<LeaderStatsRequest, LeaderStatsResponse, NodeStatsRequest, LeaderNodeStatsResponse>(LeaderStatsAction.NAME,
              threadPool, clusterService, transportService,  actionFilters, ::LeaderStatsRequest,  ::NodeStatsRequest, ThreadPool.Names.MANAGEMENT,
-                LeaderNodeStatsResponse::class.java), CoroutineScope by GlobalScope,
-        TransportIndicesResolvingAction<LeaderStatsRequest> {
-
-    override fun resolveIndices(request: LeaderStatsRequest): OptionallyResolvedIndices = ResolvedIndices.of(listOf<String>())
+                LeaderNodeStatsResponse::class.java), CoroutineScope by GlobalScope {
 
     companion object {
         private val log = LogManager.getLogger(TransportLeaderStatsAction::class.java)

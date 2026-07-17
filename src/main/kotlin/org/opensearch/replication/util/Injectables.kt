@@ -15,26 +15,21 @@ import org.opensearch.common.lifecycle.AbstractLifecycleComponent
 import org.opensearch.common.inject.Inject
 import org.opensearch.indices.IndicesService
 import org.opensearch.persistent.PersistentTasksService
-import org.opensearch.tasks.TaskManager
-import org.opensearch.transport.TransportService
 
 lateinit var indicesService: IndicesService
 lateinit var persistentTasksService: PersistentTasksService
-lateinit var taskManager: TaskManager
 
 /**
  * Provides access to services and components that are not directly available via the [Plugin] interface. This class
  * simply get the required instances via the injector and saves them to static variables for access elsewhere.
  */
 class Injectables @Inject constructor(indicesSvc: IndicesService,
-                                      persistentTasksSvc: PersistentTasksService,
-                                      transportService: TransportService)
+                                      persistentTasksSvc: PersistentTasksService)
     : AbstractLifecycleComponent() {
 
     init {
         indicesService = indicesSvc
         persistentTasksService = persistentTasksSvc
-        taskManager = transportService.getTaskManager()
     }
 
     override fun doStart() {
