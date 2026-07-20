@@ -326,14 +326,14 @@ fun RestHighLevelClient.followerStats() : Map<String, Any>  {
 
 fun RestHighLevelClient.waitForNoInitializingShards() {
     val request = ClusterHealthRequest().waitForNoInitializingShards(true)
-        .timeout(TimeValue.timeValueSeconds(70))
+        .timeout(TimeValue.timeValueSeconds(50))
     request.level(ClusterHealthRequest.Level.SHARDS)
     this.cluster().health(request, RequestOptions.DEFAULT)
 }
 
 fun RestHighLevelClient.waitForNoRelocatingShards() {
     val request = ClusterHealthRequest().waitForNoRelocatingShards(true)
-        .timeout(TimeValue.timeValueSeconds(70))
+        .timeout(TimeValue.timeValueSeconds(50))
     request.level(ClusterHealthRequest.Level.SHARDS)
     this.cluster().health(request, RequestOptions.DEFAULT)
 }
@@ -519,8 +519,6 @@ fun RestHighLevelClient.waitForBulkTaskCompletion(taskId: String,
             throw AssertionError("Task status not yet available, retrying", e)
         }
     }, waitFor.seconds, TimeUnit.SECONDS)
-    // Return the lastStatus that passed assertions — avoids multi-node round-robin
-    // returning stale cluster state from a node that didn't run the task.
     return lastStatus
 }
 
