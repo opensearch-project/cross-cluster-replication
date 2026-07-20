@@ -19,6 +19,10 @@ import org.opensearch.replication.metadata.store.*
 import org.opensearch.replication.repository.RemoteClusterRepository
 import org.opensearch.replication.util.overrideFgacRole
 import org.opensearch.replication.util.suspendExecute
+import kotlinx.coroutines.async
+import kotlinx.coroutines.awaitAll
+import kotlinx.coroutines.coroutineScope
+import java.util.concurrent.CopyOnWriteArrayList
 import org.opensearch.commons.authuser.User
 import org.apache.logging.log4j.LogManager
 import org.apache.logging.log4j.Logger
@@ -59,6 +63,37 @@ open class ReplicationMetadataManager constructor(private val clusterService: Cl
         updateReplicationState(followerIndex, overallState, connectionName)
     }
 
+    /**
+     * Adds index replication metadata for multiple follower indices in as few round-trips as possible:
+     * one bulk write to the replication metadata store, followed by per-index replication-state updates
+     * (which are coalesced into a single cluster-state publish by UpdateReplicationStateDetailsTaskExecutor).
+     * Used by the bulk Start API. Assumes follower index name == leader index name (as resolved by bulk start).
+     * Returns the set of follower indices for which BOTH the doc write and the state update succeeded.
+     */
+    suspend fun addIndexReplicationMetadata(followerIndices: List<String>,
+                                            connectionName: String,
+                                            overallState: ReplicationOverallState,
+                                            user: User?,
+                                            follower_cluster_role: String?,
+                                            leader_cluster_role: String?,
+                                            settings: Settings): Set<String> {
+        if (followerIndices.isEmpty()) return emptySet()
+
+        val addReqs = followerIndices.map { index ->
+            AddReplicationMetadataRequest(
+                ReplicationMetadata(connectionName,
+                    ReplicationStoreMetadataType.INDEX.name, overallState.name, CUSTOMER_INITIATED_ACTION,
+                    ReplicationContext(index, user?.overrideFgacRole(follower_cluster_role)),
+                    ReplicationContext(index, user?.overrideFgacRole(leader_cluster_role)), settings))
+        }
+
+        val written = executeAndWrapExceptionIfAny({
+            replicaionMetadataStore.addMetadata(addReqs)
+        }, log, "Error adding replication metadata") as Set<String>
+
+        return updateReplicationStateConcurrently(written, overallState, connectionName)
+    }
+
     suspend fun addAutofollowMetadata(patternName: String, connectionName: String, pattern: String,
                                       overallState: ReplicationOverallState, user: User?,
                                       follower_cluster_role: String?, leader_cluster_role: String?, settings: Settings,
@@ -91,6 +126,40 @@ open class ReplicationMetadataManager constructor(private val clusterService: Cl
         updatedMetadata.reason = reason
         updateMetadata(UpdateReplicationMetadataRequest(updatedMetadata, getRes.seqNo, getRes.primaryTerm))
         updateReplicationState(followerIndex, overallState)
+    }
+
+    /**
+     * Updates the overall replication state for multiple follower indices in as few round-trips as possible:
+     * one MultiGet (for current docs + versions), one bulk update to the store (optimistic-locked), followed by
+     * per-index replication-state updates (coalesced into a single cluster-state publish by the state executor).
+     * Used by the bulk Pause/Resume APIs. Returns the set of indices updated successfully end-to-end.
+     */
+    suspend fun updateIndexReplicationState(followerIndices: List<String>,
+                                            overallState: ReplicationOverallState,
+                                            reason: String = CUSTOMER_INITIATED_ACTION): Set<String> {
+        if (followerIndices.isEmpty()) return emptySet()
+
+        @Suppress("UNCHECKED_CAST")
+        val current = executeAndWrapExceptionIfAny({
+            replicaionMetadataStore.getMetadataWithVersion(ReplicationStoreMetadataType.INDEX.name, followerIndices)
+        }, log, "Failed to fetch replication metadata") as Map<String, GetReplicationMetadataResponse>
+
+        val updateReqs = ArrayList<UpdateReplicationMetadataRequest>()
+        for (index in followerIndices) {
+            val getRes = current[index] ?: continue
+            val updatedMetadata = getRes.replicationMetadata
+            updatedMetadata.overallState = overallState.name
+            updatedMetadata.reason = reason
+            updateReqs.add(UpdateReplicationMetadataRequest(updatedMetadata, getRes.seqNo, getRes.primaryTerm))
+        }
+        if (updateReqs.isEmpty()) return emptySet()
+
+        @Suppress("UNCHECKED_CAST")
+        val written = executeAndWrapExceptionIfAny({
+            replicaionMetadataStore.updateMetadata(updateReqs)
+        }, log, "Error updating replication metadata") as Set<String>
+
+        return updateReplicationStateConcurrently(written, overallState)
     }
 
     suspend fun updateAutofollowMetadata(patternName: String,
@@ -137,9 +206,7 @@ open class ReplicationMetadataManager constructor(private val clusterService: Cl
      */
     suspend fun deleteIndexReplicationMetadata(followerIndices: List<String>): Set<String> {
         val deleted = replicaionMetadataStore.deleteMetadata(ReplicationStoreMetadataType.INDEX.name, followerIndices)
-        for (index in deleted) {
-            try { updateReplicationState(index, ReplicationOverallState.STOPPED) } catch (_: Exception) {}
-        }
+        updateReplicationStateConcurrently(deleted, ReplicationOverallState.STOPPED)
         return deleted
     }
 
@@ -200,6 +267,31 @@ open class ReplicationMetadataManager constructor(private val clusterService: Cl
         return executeAndWrapExceptionIfAny({
             replicaionMetadataStore.getMetadata(getReq, fetch_from_primary).replicationMetadata
         }, log, "Failed to fetch replication metadata") as ReplicationMetadata
+    }
+
+    /**
+     * Submits per-index replication-state updates concurrently so they are coalesced
+     * into a single cluster-state publish by UpdateReplicationStateDetailsTaskExecutor.
+     * Used by bulk APIs only. Returns the set of indices that succeeded.
+     */
+    private suspend fun updateReplicationStateConcurrently(
+        indices: Collection<String>,
+        overallState: ReplicationOverallState,
+        connectionName: String? = null
+    ): Set<String> {
+        if (indices.isEmpty()) return emptySet()
+        val succeeded = CopyOnWriteArrayList<String>()
+        coroutineScope {
+            indices.map { index -> async {
+                try {
+                    updateReplicationState(index, overallState, connectionName)
+                    succeeded.add(index)
+                } catch (e: Exception) {
+                    log.error("Failed to update replication state for $index: ${e.message}")
+                }
+            }}.awaitAll()
+        }
+        return succeeded.toSet()
     }
 
     private suspend fun updateReplicationState(indexName: String, overallState: ReplicationOverallState, connectionName: String? = null) {

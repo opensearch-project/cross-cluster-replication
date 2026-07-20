@@ -28,6 +28,7 @@ import org.opensearch.action.delete.DeleteRequest
 import org.opensearch.action.delete.DeleteResponse
 import org.opensearch.action.get.GetRequest
 import org.opensearch.action.get.MultiGetRequest
+import org.opensearch.action.index.IndexRequest
 import org.opensearch.action.index.IndexResponse
 import org.opensearch.transport.client.Client
 import org.opensearch.cluster.health.ClusterHealthStatus
@@ -111,6 +112,46 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
         val indexReqBuilder = client.prepareIndex(REPLICATION_CONFIG_SYSTEM_INDEX).setId(id)
                 .setSource(addReq.replicationMetadata.toXContent(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS))
         return client.suspending(indexReqBuilder::execute, defaultContext = true)("replication")
+    }
+
+    /**
+     * Adds replication metadata for multiple entries in ONE call using the Bulk API.
+     * Returns the set of follower resource names (index names) that were written successfully.
+     */
+    suspend fun addMetadata(addReqs: List<AddReplicationMetadataRequest>): Set<String> {
+        if (addReqs.isEmpty()) return emptySet()
+        if (!configStoreExists()) {
+            try {
+                createIndex()
+            } catch (ex: Exception) {
+                if (ExceptionsHelper.unwrapCause(ex) !is ResourceAlreadyExistsException) {
+                    throw ex
+                }
+            }
+        }
+
+        checkAndWaitForStoreHealth()
+        checkAndUpdateMapping()
+
+        val bulkReq = BulkRequest()
+        val resourceNames = ArrayList<String>(addReqs.size)
+        for (addReq in addReqs) {
+            val md = addReq.replicationMetadata
+            val id = getId(md.metadataType, md.connectionName, md.followerContext.resource)
+            resourceNames.add(md.followerContext.resource)
+            bulkReq.add(
+                IndexRequest(REPLICATION_CONFIG_SYSTEM_INDEX).id(id)
+                    .source(md.toXContent(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS))
+            )
+        }
+
+        val bulkRes = client.suspending(client::bulk, defaultContext = true)(bulkReq)
+        val succeeded = mutableSetOf<String>()
+        for ((i, item) in bulkRes.items.withIndex()) {
+            if (!item.isFailed) succeeded.add(resourceNames[i])
+            else log.error("Bulk add of replication metadata failed for ${resourceNames[i]}: ${item.failureMessage}")
+        }
+        return succeeded
     }
 
     private suspend fun checkAndUpdateMapping() {
@@ -294,6 +335,71 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
                 .setIfSeqNo(updateMetadataReq.ifSeqno)
                 .setIfPrimaryTerm(updateMetadataReq.ifPrimaryTerm)
         return client.suspending(indexReqBuilder::execute, defaultContext = true)("replication")
+    }
+
+    /**
+     * Updates replication metadata for multiple entries in ONE call using the Bulk API, preserving
+     * per-doc optimistic concurrency (if_seq_no / if_primary_term). Returns the set of follower
+     * resource names (index names) that were updated successfully.
+     */
+    suspend fun updateMetadata(updateReqs: List<UpdateReplicationMetadataRequest>): Set<String> {
+        if (updateReqs.isEmpty()) return emptySet()
+        if (!configStoreExists()) return emptySet()
+
+        checkAndWaitForStoreHealth()
+        checkAndUpdateMapping()
+
+        val bulkReq = BulkRequest()
+        val resourceNames = ArrayList<String>(updateReqs.size)
+        for (req in updateReqs) {
+            val md = req.replicationMetadata
+            val id = getId(md.metadataType, md.connectionName, md.followerContext.resource)
+            resourceNames.add(md.followerContext.resource)
+            bulkReq.add(
+                IndexRequest(REPLICATION_CONFIG_SYSTEM_INDEX).id(id)
+                    .source(md.toXContent(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS))
+                    .setIfSeqNo(req.ifSeqno)
+                    .setIfPrimaryTerm(req.ifPrimaryTerm)
+            )
+        }
+
+        val bulkRes = client.suspending(client::bulk, defaultContext = true)(bulkReq)
+        val succeeded = mutableSetOf<String>()
+        for ((i, item) in bulkRes.items.withIndex()) {
+            if (!item.isFailed) succeeded.add(resourceNames[i])
+            else log.error("Bulk update of replication metadata failed for ${resourceNames[i]}: ${item.failureMessage}")
+        }
+        return succeeded
+    }
+
+    /**
+     * Fetches replication metadata for multiple indices in ONE MultiGet call, preserving seqNo and
+     * primaryTerm per doc (needed for optimistic-concurrency updates). Missing indices are omitted.
+     */
+    suspend fun getMetadataWithVersion(metadataType: String, indices: List<String>): Map<String, GetReplicationMetadataResponse> {
+        if (indices.isEmpty()) return emptyMap()
+        if (!configStoreExists()) return emptyMap()
+
+        checkAndWaitForStoreHealth()
+
+        val multiGetReq = MultiGetRequest().realtime(true)
+        for (index in indices) {
+            val id = getId(metadataType, null, index)
+            multiGetReq.add(MultiGetRequest.Item(REPLICATION_CONFIG_SYSTEM_INDEX, id))
+        }
+
+        val multiGetRes = client.suspending(client::multiGet, defaultContext = true)(multiGetReq)
+        val result = mutableMapOf<String, GetReplicationMetadataResponse>()
+        for ((i, response) in multiGetRes.responses.withIndex()) {
+            if (response.isFailed || response.response?.sourceAsBytesRef == null) continue
+            val parser = XContentHelper.createParser(
+                namedXContentRegistry, LoggingDeprecationHandler.INSTANCE,
+                response.response.sourceAsBytesRef, XContentType.JSON
+            )
+            result[indices[i]] = GetReplicationMetadataResponse(
+                ReplicationMetadata.fromXContent(parser), response.response.seqNo, response.response.primaryTerm)
+        }
+        return result
     }
 
     private fun getId(metadataType: String, connectionName: String?, resourceName: String): String {

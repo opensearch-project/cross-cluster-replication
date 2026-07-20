@@ -521,6 +521,7 @@ fun RestHighLevelClient.waitForBulkTaskCompletion(taskId: String,
     }, waitFor.seconds, TimeUnit.SECONDS)
     // Return the lastStatus that passed assertions — avoids multi-node round-robin
     // returning stale cluster state from a node that didn't run the task.
+    Thread.sleep(5000)
     return lastStatus
 }
 

@@ -42,7 +42,22 @@ abstract class BulkReplicationIT : MultiClusterRestTestCase() {
     open fun setupPreCondition(client: RestHighLevelClient, pattern: String) {}
 
     open fun cleanup(client: RestHighLevelClient, pattern: String) {
-        client.bulkStopReplication(pattern)
+        // Retry stop in case a previous bulk task is still completing (lock release is async)
+        var attempts = 0
+        while (attempts < 10) {
+            try {
+                client.bulkStopReplication(pattern)
+                return
+            } catch (e: org.opensearch.client.ResponseException) {
+                if (e.message?.contains("already running") == true || e.message?.contains("CONFLICT") == true) {
+                    attempts++
+                    Thread.sleep(3000)
+                } else {
+                    throw e
+                }
+            }
+        }
+        client.bulkStopReplication(pattern) // final attempt, let it throw
     }
 
     protected fun createAndStartReplication(
@@ -83,7 +98,6 @@ abstract class BulkReplicationIT : MultiClusterRestTestCase() {
         cleanup(followerClient, "$indexPrefix-base-*")
     }
 
-    @org.apache.lucene.tests.util.LuceneTestCase.AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/0000")
     fun `test bulk operation without replication in progress`() {
         val followerClient = getClientForCluster(FOLLOWER)
         createConnectionBetweenClusters(FOLLOWER, LEADER)
@@ -94,7 +108,6 @@ abstract class BulkReplicationIT : MultiClusterRestTestCase() {
             .hasMessageContaining("404")
     }
 
-    @org.apache.lucene.tests.util.LuceneTestCase.AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/0000")
     fun `test bulk operation with exclude index filter`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
@@ -111,7 +124,6 @@ abstract class BulkReplicationIT : MultiClusterRestTestCase() {
         cleanup(followerClient, "$indexPrefix-excl-*")
     }
 
-    @org.apache.lucene.tests.util.LuceneTestCase.AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/0000")
     fun `test bulk operation task status response`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)

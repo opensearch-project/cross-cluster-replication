@@ -79,7 +79,6 @@ class BulkStartReplicationIT : MultiClusterRestTestCase() {
         followerClient.bulkStopReplication("$indexPrefix-*")
     }
 
-    @org.apache.lucene.tests.util.LuceneTestCase.AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/0000")
     fun `test bulk start with pattern not found on leader`() {
         val followerClient = getClientForCluster(FOLLOWER)
         createConnectionBetweenClusters(FOLLOWER, LEADER)
@@ -91,7 +90,6 @@ class BulkStartReplicationIT : MultiClusterRestTestCase() {
             .hasMessageContaining("No indices found matching pattern")
     }
 
-    @org.apache.lucene.tests.util.LuceneTestCase.AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/0000")
     fun `test bulk start with all indices already replicated`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
@@ -113,7 +111,6 @@ class BulkStartReplicationIT : MultiClusterRestTestCase() {
         followerClient.bulkStopReplication("$indexPrefix-dup-*")
     }
 
-    @org.apache.lucene.tests.util.LuceneTestCase.AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/0000")
     fun `test bulk start without leader alias`() {
         val followerClient = getClientForCluster(FOLLOWER)
         createConnectionBetweenClusters(FOLLOWER, LEADER)
@@ -125,7 +122,6 @@ class BulkStartReplicationIT : MultiClusterRestTestCase() {
             .hasMessageContaining("leader_alias is required for bulk start")
     }
 
-    @org.apache.lucene.tests.util.LuceneTestCase.AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/0000")
     fun `test bulk start with partial failures`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
@@ -147,7 +143,6 @@ class BulkStartReplicationIT : MultiClusterRestTestCase() {
         followerClient.bulkStopReplication("$indexPrefix-partial-*")
     }
 
-    @org.apache.lucene.tests.util.LuceneTestCase.AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/0000")
     fun `test bulk start with exclude index filter`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
@@ -171,7 +166,6 @@ class BulkStartReplicationIT : MultiClusterRestTestCase() {
         followerClient.bulkStopReplication("$indexPrefix-excl-*")
     }
 
-    @org.apache.lucene.tests.util.LuceneTestCase.AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/0000")
     fun `test bulk start only one task at a time`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
@@ -222,7 +216,6 @@ class BulkStartReplicationIT : MultiClusterRestTestCase() {
         setBulkBatchSize(followerClient, 10)
     }
 
-    @org.apache.lucene.tests.util.LuceneTestCase.AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/0000")
     fun `test bulk start task cancel mid flight`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
@@ -252,7 +245,6 @@ class BulkStartReplicationIT : MultiClusterRestTestCase() {
         setBulkBatchSize(followerClient, 10)
     }
 
-    @org.apache.lucene.tests.util.LuceneTestCase.AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/0000")
     fun `test bulk start task status response`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
@@ -276,7 +268,6 @@ class BulkStartReplicationIT : MultiClusterRestTestCase() {
         followerClient.bulkStopReplication("$indexPrefix-status-*")
     }
 
-    @org.apache.lucene.tests.util.LuceneTestCase.AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/0000")
     fun `test bulk start task status unknown task id`() {
         val followerClient = getClientForCluster(FOLLOWER)
         assertThatThrownBy {
@@ -285,7 +276,6 @@ class BulkStartReplicationIT : MultiClusterRestTestCase() {
             .hasMessageContaining("404")
     }
 
-    @org.apache.lucene.tests.util.LuceneTestCase.AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/0000")
     fun `test bulk start task cancel with completed task`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
@@ -308,7 +298,6 @@ class BulkStartReplicationIT : MultiClusterRestTestCase() {
         followerClient.bulkStopReplication("$indexPrefix-done")
     }
 
-    @org.apache.lucene.tests.util.LuceneTestCase.AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/0000")
     fun `test bulk start fails when leader unreachable`() {
         val followerClient = getClientForCluster(FOLLOWER)
 
@@ -320,7 +309,6 @@ class BulkStartReplicationIT : MultiClusterRestTestCase() {
         }.isInstanceOf(ResponseException::class.java)
     }
 
-    @org.apache.lucene.tests.util.LuceneTestCase.AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/0000")
     fun `test bulk batch size setting controls batching`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
@@ -340,7 +328,6 @@ class BulkStartReplicationIT : MultiClusterRestTestCase() {
         followerClient.bulkStopReplication("$indexPrefix-batch-*")
     }
 
-    @org.apache.lucene.tests.util.LuceneTestCase.AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/0000")
     fun `test bulk status shows syncing for replicating indices`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
@@ -366,7 +353,6 @@ class BulkStartReplicationIT : MultiClusterRestTestCase() {
         followerClient.bulkStopReplication("$indexPrefix-bstatus-*")
     }
 
-    @org.apache.lucene.tests.util.LuceneTestCase.AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/0000")
     fun `test bulk status returns empty when pattern not found`() {
         val followerClient = getClientForCluster(FOLLOWER)
         createConnectionBetweenClusters(FOLLOWER, LEADER)
@@ -374,7 +360,6 @@ class BulkStartReplicationIT : MultiClusterRestTestCase() {
         assertThat(followerClient.bulkStatus("non-existent-bulk-status-*")["indices"] as Map<*, *>).isEmpty()
     }
 
-    @org.apache.lucene.tests.util.LuceneTestCase.AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/0000")
     fun `test bulk status without pattern param`() {
         val followerClient = getClientForCluster(FOLLOWER)
 

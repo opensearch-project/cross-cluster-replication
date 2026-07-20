@@ -20,6 +20,7 @@ import org.opensearch.replication.action.pause.PauseIndexReplicationAction
 import org.opensearch.replication.action.pause.PauseIndexReplicationRequest
 import org.opensearch.replication.metadata.ReplicationMetadataManager
 import org.opensearch.replication.metadata.ReplicationOverallState
+import org.opensearch.replication.metadata.UpdateIndexBlockTaskExecutor
 import org.opensearch.replication.metadata.UpdateMetadataAction
 import org.opensearch.replication.metadata.UpdateMetadataRequest
 import org.opensearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
@@ -165,6 +166,15 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         const val SLEEP_TIME_BETWEEN_POLL_MS = 5000L
         const val AUTOPAUSED_REASON_PREFIX = "AutoPaused: "
         const val TASK_CANCELLATION_REASON = AUTOPAUSED_REASON_PREFIX + "Index replication task was cancelled by user"
+
+        // If a bulk task is running, use the batched executor for index block updates.
+        // Checks live cluster state instead of a static flag to avoid race conditions.
+        fun isBulkTaskActive(clusterService: org.opensearch.cluster.service.ClusterService): Boolean {
+            val metadata = clusterService.state().metadata
+                .custom<org.opensearch.replication.metadata.state.BulkReplicationTaskMetadata>(
+                    org.opensearch.replication.metadata.state.BulkReplicationTaskMetadata.NAME)
+            return metadata?.taskState != null && metadata.taskState.numPending > 0
+        }
 
         /**
          * Determines whether a given setting key should be skipped during metadata sync
@@ -331,7 +341,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                     val exception: OpenSearchException? = taskState.exception
                     msg += "[${shard} - ${exception?.javaClass?.name} - \"${exception?.message}\"], "
                 } else {
-                    msg += "[${shard} - \"Shard task killed or cancelled.\"], "
+                    msg += "[${shard} - \"Shard task killed or cancelled.\"], " 
                 }
             }
             return FailedState(failedShardTasks, msg)
@@ -863,8 +873,22 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
 
     private suspend fun addIndexBlockForReplication() {
         log.info("Adding index block for replication")
-        val request = UpdateIndexBlockRequest(followerIndexName, IndexBlockUpdateType.ADD_BLOCK)
-        client.suspendExecute(replicationMetadata, UpdateIndexBlockAction.INSTANCE, request, defaultContext = true)
+        if (isBulkTaskActive(clusterService)) {
+            UpdateIndexBlockTaskExecutor.submitBatch(clusterService, listOf(followerIndexName), IndexBlockUpdateType.ADD_BLOCK)
+        } else {
+            val request = UpdateIndexBlockRequest(followerIndexName, IndexBlockUpdateType.ADD_BLOCK)
+            client.suspendExecute(replicationMetadata, UpdateIndexBlockAction.INSTANCE, request, defaultContext = true)
+        }
+    }
+
+    /**
+     * Batched overload: adds index blocks for multiple indices in ~1 cluster-state publish.
+     * Used by bulk API flows where many IndexReplicationTasks reach INIT_FOLLOW concurrently.
+     * Submissions to the same batched executor with the same source string are coalesced.
+     */
+    private suspend fun addIndexBlockForReplication(indices: List<String>) {
+        log.info("Adding index block for replication (batched) for ${indices.size} indices")
+        UpdateIndexBlockTaskExecutor.submitBatch(clusterService, indices, IndexBlockUpdateType.ADD_BLOCK)
     }
 
     private suspend fun updateState(newState: IndexReplicationState) : IndexReplicationState {

@@ -129,7 +129,7 @@ class BulkReplicationTask(
             } finally {
                 pendingCount.set(0)
                 for (attempt in 1..3) {
-                    try { updateClusterState(); break } catch (_: Exception) {
+                    try { updateClusterState(force = true); break } catch (_: Exception) {
                         if (attempt < 3) kotlinx.coroutines.delay(1000)
                     }
                 }
@@ -161,17 +161,11 @@ class BulkReplicationTask(
             batchFailures.addAll(failures)
             pendingCount.addAndGet(-failures.size)
             updateClusterState()
-            // Wait up to 60s for batch indices to leave INIT state before next batch
+            // Brief pause between batches to avoid overwhelming the cluster manager.
+            // The bulk restore (done in executeBatchStart) means tasks skip INIT→RESTORING entirely
+            // and go straight to InitFollowState, so there's no need to wait for restores.
             if (started.isNotEmpty() && indices.size > bulkBatchSize) {
-                val batchDeadline = System.currentTimeMillis() + 60_000
-                var pending = started.toList()
-                while (pending.isNotEmpty() && System.currentTimeMillis() < batchDeadline && !isCancelled) {
-                    kotlinx.coroutines.delay(2000)
-                    pending = pending.filter { index ->
-                        val state = getIndexTaskState(index)
-                        state == null || state.state == ReplicationState.INIT
-                    }
-                }
+                kotlinx.coroutines.delay(2000)
             }
         }
 
@@ -299,7 +293,13 @@ class BulkReplicationTask(
             } catch (_: Exception) { "Replication task failed" }
     }
 
-    private suspend fun updateClusterState() {
+    private val lastClusterStateUpdate = java.util.concurrent.atomic.AtomicLong(0)
+    private val UPDATE_CLUSTER_STATE_INTERVAL_MS = 5000L
+
+    private suspend fun updateClusterState(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && now - lastClusterStateUpdate.get() < UPDATE_CLUSTER_STATE_INTERVAL_MS) return
+        lastClusterStateUpdate.set(now)
         try {
             client.suspendExecute(UpdateBulkTaskStateAction.INSTANCE, UpdateBulkTaskStateRequest(
                 BulkTaskState(bulkTaskId, operationType.label, request.pattern, startTime,

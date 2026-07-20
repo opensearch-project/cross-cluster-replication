@@ -30,7 +30,6 @@ import java.util.concurrent.TimeUnit
     MultiClusterAnnotations.ClusterConfiguration(clusterName = LEADER),
     MultiClusterAnnotations.ClusterConfiguration(clusterName = FOLLOWER)
 )
-@org.apache.lucene.tests.util.LuceneTestCase.AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/0000")
 class BulkStopReplicationIT : BulkReplicationIT() {
 
     override val indexPrefix = "bulk-stop-test"
@@ -50,7 +49,6 @@ class BulkStopReplicationIT : BulkReplicationIT() {
         // No cleanup needed — stop is the terminal operation
     }
 
-    @org.apache.lucene.tests.util.LuceneTestCase.AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/0000")
     fun `test bulk stop with partial failures`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
@@ -76,7 +74,6 @@ class BulkStopReplicationIT : BulkReplicationIT() {
             .contains("No replication in progress for index")
     }
 
-    @org.apache.lucene.tests.util.LuceneTestCase.AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/0000")
     fun `test bulk stop task cancel mid flight`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
@@ -91,7 +88,6 @@ class BulkStopReplicationIT : BulkReplicationIT() {
         assertThat((statusResp["num_cancelled"] as Int) + (statusResp["num_success"] as Int) + (statusResp["num_failed"] as Int)).isEqualTo(10)
     }
 
-    @org.apache.lucene.tests.util.LuceneTestCase.AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/0000")
     fun `test bulk stop unblocks follower indices for writes`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
