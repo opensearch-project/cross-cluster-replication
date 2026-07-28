@@ -378,11 +378,10 @@ class UpdateAutoFollowPatternIT: MultiClusterRestTestCase() {
         val followerClient = getClientForCluster(FOLLOWER)
         createConnectionBetweenClusters(FOLLOWER, LEADER, connectionAlias)
         followerClient.updateAutoFollowPattern(connectionAlias, indexPatternName, indexPattern)
-        //Delete a replication rule which does not exist
-        Assertions.assertThatThrownBy {
+        //Delete a replication rule which does not exist — idempotent: succeeds instead of throwing
+        Assertions.assertThatCode {
             followerClient.deleteAutoFollowPattern(connectionAlias, "dummy_conn")
-        }.isInstanceOf(ResponseException::class.java)
-                .hasMessageContaining("does not exist")
+        }.doesNotThrowAnyException()
         //Delete a replication rule which exists
         Assertions.assertThatCode {
             followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
