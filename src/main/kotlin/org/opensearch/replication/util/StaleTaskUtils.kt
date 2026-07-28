@@ -127,6 +127,13 @@ object StaleTaskUtils {
 
             // Node is valid — check task manager to see if tasks are actually running
             val runningDescriptions = getRunningTaskDescriptions(client, nodeId)
+            if (runningDescriptions == null) {
+                // The task manager on this node could not be queried (transient failure, timeout,
+                // disconnect). Fail closed: never remove a task we cannot confirm is stale, otherwise
+                // a momentary query failure would delete actively-running replication tasks.
+                log.warn("Skipping stale-task removal for node $nodeId as its running tasks could not be queried")
+                continue
+            }
             for (task in tasks) {
                 if (!isTaskRunningOnNode(task, runningDescriptions)) {
                     log.info("Task ${task.id} is assigned to node $nodeId but not running in task manager")
@@ -196,7 +203,9 @@ object StaleTaskUtils {
     }
 
     //  Queries the task manager on a specific node to get descriptions of running replication tasks.
-    private suspend fun getRunningTaskDescriptions(client: Client, nodeId: String): Set<String> {
+    //  Returns null when the query fails, so callers can distinguish "no running tasks" from
+    //  "could not determine" and avoid removing tasks that may still be running.
+    private suspend fun getRunningTaskDescriptions(client: Client, nodeId: String): Set<String>? {
         return try {
             val listTasksRequest = ListTasksRequest()
                 .setActions("cluster:indices/admin/replication*", "cluster:indices/shards/replication*")
@@ -207,7 +216,7 @@ object StaleTaskUtils {
             response.tasks.mapNotNull { it.description }.toSet()
         } catch (e: Exception) {
             log.error("Failed to fetch running tasks from node $nodeId: ${e.message}")
-            emptySet()
+            null
         }
     }
 

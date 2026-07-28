@@ -43,6 +43,8 @@ import org.opensearch.test.ClusterServiceUtils.setState
 import org.opensearch.test.OpenSearchTestCase
 import org.opensearch.test.client.NoOpNodeClient
 import org.opensearch.threadpool.TestThreadPool
+import org.opensearch.core.tasks.TaskId
+import org.opensearch.tasks.TaskInfo
 import java.util.Collections
 
 @ThreadLeakScope(ThreadLeakScope.Scope.NONE)
@@ -350,6 +352,44 @@ class StaleTaskUtilsTests : OpenSearchTestCase() {
         assertThat(removed).isEqualTo(1)
     }
 
+    // Regression tests: removeStaleTasksForIndex must NOT delete a task it cannot confirm is stale.
+
+    fun testRemoveStaleTasksForIndex_preservesRunningTaskOnValidNode() = runBlocking {
+        val tasks = PersistentTasksCustomMetadata.builder()
+        tasks.addTask<PersistentTaskParams>(
+            "replication:index:$followerIndex",
+            IndexReplicationExecutor.TASK_NAME,
+            IndexReplicationParams("remote", Index(followerIndex, "_na_"), followerIndex),
+            PersistentTasksCustomMetadata.Assignment("valid_node", "test")
+        )
+        setClusterStateWithTasksAndNodes(tasks.build(), listOf("valid_node"))
+
+        // Task manager reports this task IS running on the valid node — it must be preserved.
+        val client = StaleTaskTestClient("running",
+            runningDescriptions = setOf("replication:remote:$followerIndex -> $followerIndex"))
+        val removed = StaleTaskUtils.removeStaleTasksForIndex(clusterService, client, followerIndex)
+        assertThat(removed).isEqualTo(0)
+        assertThat(client.removedTaskIds).isEmpty()
+    }
+
+    fun testRemoveStaleTasksForIndex_skipsRemovalWhenTaskManagerQueryFails() = runBlocking {
+        val tasks = PersistentTasksCustomMetadata.builder()
+        tasks.addTask<PersistentTaskParams>(
+            "replication:index:$followerIndex",
+            IndexReplicationExecutor.TASK_NAME,
+            IndexReplicationParams("remote", Index(followerIndex, "_na_"), followerIndex),
+            PersistentTasksCustomMetadata.Assignment("valid_node", "test")
+        )
+        setClusterStateWithTasksAndNodes(tasks.build(), listOf("valid_node"))
+
+        // The task-manager query fails — we cannot confirm the task is stale, so it must NOT be removed.
+        val client = StaleTaskTestClient("listFails",
+            listTasksThrows = RuntimeException("list tasks timed out"))
+        val removed = StaleTaskUtils.removeStaleTasksForIndex(clusterService, client, followerIndex)
+        assertThat(removed).isEqualTo(0)
+        assertThat(client.removedTaskIds).isEmpty()
+    }
+
     //Helpers
 
     private fun buildPersistentTask(
@@ -400,7 +440,8 @@ class StaleTaskUtilsTests : OpenSearchTestCase() {
     inner class StaleTaskTestClient(
         testName: String,
         private val runningDescriptions: Set<String> = emptySet(),
-        private val removeThrows: Exception? = null
+        private val removeThrows: Exception? = null,
+        private val listTasksThrows: Exception? = null
     ) : NoOpNodeClient(testName) {
 
         val removedTaskIds = mutableListOf<String>()
@@ -421,8 +462,17 @@ class StaleTaskUtilsTests : OpenSearchTestCase() {
                     }
                 }
                 ListTasksAction.INSTANCE -> {
-                    val response = ListTasksResponse(emptyList(), emptyList(), emptyList())
-                    listener.onResponse(response as Response)
+                    if (listTasksThrows != null) {
+                        listener.onFailure(listTasksThrows)
+                    } else {
+                        val taskInfos = runningDescriptions.map { desc ->
+                            TaskInfo(TaskId("node", 1L), "persistent",
+                                IndexReplicationExecutor.TASK_NAME, desc, null, 0L, 0L,
+                                false, false, TaskId.EMPTY_TASK_ID, Collections.emptyMap(), null)
+                        }
+                        val response = ListTasksResponse(taskInfos, emptyList(), emptyList())
+                        listener.onResponse(response as Response)
+                    }
                 }
                 else -> {
                     listener.onFailure(UnsupportedOperationException("Unexpected action: ${action?.name()}"))
