@@ -314,7 +314,7 @@ class SecurityCustomRolesIT: SecurityBase()  {
                         .isEqualTo(true)
             }, 60, TimeUnit.SECONDS)
         } finally {
-            followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
+//            followerClient.deleteAutoFollowPattern(connectionAlias, indexPatternName)
         }
     }
 
