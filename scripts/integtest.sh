@@ -25,7 +25,7 @@ function usage() {
     echo "--------------------------------------------------------------------------"
 }
 
-while getopts ":h:b:p:t:e:s:c:v:" arg; do
+while getopts ":h:b:p:t:e:s:c:v:n:" arg; do
     case $arg in
         h)
             usage
@@ -52,6 +52,9 @@ while getopts ":h:b:p:t:e:s:c:v:" arg; do
         v)
             OPENSEARCH_VERSION=$OPTARG
             ;;
+        n)
+            SNAPSHOT=$OPTARG
+            ;;
         :)
             echo "-${OPTARG} requires an argument"
             usage
@@ -68,6 +71,11 @@ done
 if [ -z "$SECURITY_ENABLED" ]
 then
   SECURITY_ENABLED="true"
+fi
+
+if [ -z "$SNAPSHOT" ]
+then
+  SNAPSHOT="false"
 fi
 
 OPENSEARCH_REQUIRED_VERSION="2.12.0"
@@ -143,8 +151,8 @@ then
   # Get number of nodes, assuming both leader and follower have same number of nodes
   numNodes=$((${follower_port} - ${leader_port}))
   echo "numNodes: $numNodes"
-  echo './gradlew --no-daemon integTestRemote -Dleader.http_host='"$leader_endpoint:$leader_port"' -Dfollower.http_host='"$follower_endpoint:$follower_port"' -Dfollower.transport_host='"$follower_endpoint:$follower_transport"'  -Dleader.transport_host='"$leader_endpoint:$leader_transport"'  -Dsecurity_enabled='"$SECURITY_ENABLED"' -Duser='"$USERNAME"' -Dpassword='"$PASSWORD"' -PnumNodes='"$numNodes"' --console=plain'
-  ./gradlew --no-daemon integTestRemote -Dleader.http_host=$leader_endpoint:$leader_port -Dfollower.http_host=$follower_endpoint:$follower_port -Dfollower.transport_host=$follower_endpoint:$follower_transport  -Dleader.transport_host=$leader_endpoint:$leader_transport  -Dsecurity_enabled=$SECURITY_ENABLED -Duser=$USERNAME -Dpassword=$PASSWORD -PnumNodes=$numNodes --console=plain
+  echo './gradlew --no-daemon integTestRemote -Dopensearch.version='"$OPENSEARCH_VERSION"' -Dbuild.snapshot='"$SNAPSHOT"' -Dleader.http_host='"$leader_endpoint:$leader_port"' -Dfollower.http_host='"$follower_endpoint:$follower_port"' -Dfollower.transport_host='"$follower_endpoint:$follower_transport"'  -Dleader.transport_host='"$leader_endpoint:$leader_transport"'  -Dsecurity_enabled='"$SECURITY_ENABLED"' -Duser='"$USERNAME"' -Dpassword='"$PASSWORD"' -PnumNodes='"$numNodes"' --console=plain'
+  ./gradlew --no-daemon integTestRemote -Dopensearch.version=$OPENSEARCH_VERSION -Dbuild.snapshot=$SNAPSHOT -Dleader.http_host=$leader_endpoint:$leader_port -Dfollower.http_host=$follower_endpoint:$follower_port -Dfollower.transport_host=$follower_endpoint:$follower_transport  -Dleader.transport_host=$leader_endpoint:$leader_transport  -Dsecurity_enabled=$SECURITY_ENABLED -Duser=$USERNAME -Dpassword=$PASSWORD -PnumNodes=$numNodes --console=plain
 
 else
   # Single cluster
@@ -152,5 +160,6 @@ else
   then
     TRANSPORT_PORT="9300"
   fi
-  ./gradlew singleClusterSanityTest -Dfollower.http_host="$BIND_ADDRESS:$BIND_PORT" -Dfollower.transport_host="$BIND_ADDRESS:$TRANSPORT_PORT" -Dsecurity_enabled=$SECURITY_ENABLED -Duser=$USERNAME -Dpassword=$PASSWORD --console=plain
+  echo "./gradlew singleClusterSanityTest -Dopensearch.version=$OPENSEARCH_VERSION -Dbuild.snapshot=$SNAPSHOT -Dfollower.http_host=$BIND_ADDRESS:$BIND_PORT -Dfollower.transport_host=$BIND_ADDRESS:$TRANSPORT_PORT -Dsecurity_enabled=$SECURITY_ENABLED -Duser=$USERNAME -Dpassword=$PASSWORD --console=plain"
+  ./gradlew singleClusterSanityTest -Dopensearch.version=$OPENSEARCH_VERSION -Dbuild.snapshot=$SNAPSHOT -Dfollower.http_host="$BIND_ADDRESS:$BIND_PORT" -Dfollower.transport_host="$BIND_ADDRESS:$TRANSPORT_PORT" -Dsecurity_enabled=$SECURITY_ENABLED -Duser=$USERNAME -Dpassword=$PASSWORD --console=plain
 fi
