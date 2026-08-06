@@ -59,4 +59,10 @@ class ReplicationEngine(config: EngineConfig) : InternalEngine(config) {
     override fun assertNonPrimaryOrigin(operation: Operation): Boolean {
         return true
     }
+
+    override fun fillSeqNoGaps(primaryTerm: Long): Int {
+        // The leader is the authority; the replication follower should never
+        // generate seqNos or fill gaps.
+        return 0
+    }
 }
