@@ -70,7 +70,12 @@ class TransportAutoFollowClusterManagerNodeAction @Inject constructor(transportS
                 if (request.action == UpdateAutoFollowPatternRequest.Action.REMOVE) {
                     // Stopping the tasks and removing the context information from the cluster state
                     stopAutoFollowTask(request.connection, request.patternName)
-                    metadataManager.deleteAutofollowMetadata(request.patternName, request.connection)
+                    try {
+                        metadataManager.deleteAutofollowMetadata(request.patternName, request.connection)
+                    } catch (e: ResourceNotFoundException) {
+                        // Metadata already removed. Removal must be idempotent, so treat as success.
+                        log.warn("Autofollow metadata for '${request.connection}:${request.patternName}' already removed", e)
+                    }
                 }
 
                 if (request.action == UpdateAutoFollowPatternRequest.Action.ADD) {
@@ -123,9 +128,9 @@ class TransportAutoFollowClusterManagerNodeAction @Inject constructor(transportS
         try {
             persistentTasksService.removeTask("autofollow:$clusterAlias:$patternName")
         } catch(e: ResourceNotFoundException) {
-            // Log warn as the task is already removed
+            // Task already removed. Removal must be idempotent (e.g. a retried REMOVE), so treat as success
+            // instead of failing the request.
             log.warn("Task already stopped for '$clusterAlias:$patternName'", e)
-            throw OpenSearchException("Autofollow replication rule $clusterAlias:$patternName does not exist")
         } catch (e: Exception) {
            log.error("Failed to stop auto follow task for cluster '$clusterAlias:$patternName'", e)
             throw OpenSearchException(AUTOFOLLOW_EXCEPTION_GENERIC_STRING)
