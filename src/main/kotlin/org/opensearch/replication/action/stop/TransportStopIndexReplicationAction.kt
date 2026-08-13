@@ -95,6 +95,16 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
             try {
                 log.info("Stopping index replication on index:" + request.indexName)
 
+                // An index that still carries the replication block is (or was) a follower even if its
+                // metadata document is missing (e.g. the document was lost via an out-of-band deletion or an
+                // unrelated bug/race while replication was active). Capture this before we start mutating the
+                // index so a missing metadata document can still be treated as a successful stop rather than
+                // failing at the very end. INDEX_REPLICATION_BLOCK is a runtime ClusterBlock and is never
+                // persisted in a snapshot, so its presence is reliable evidence of a real follower on this
+                // cluster — unlike REPLICATED_INDEX_SETTING, which survives snapshot/restore onto any index
+                // and is therefore not sufficient evidence on its own.
+                val wasFollowerIndex = clusterService.state().blocks().hasIndexBlock(request.indexName, INDEX_REPLICATION_BLOCK)
+
                 // NOTE: We remove the block first before validation since it is harmless idempotent operations and
                 //       gives back control of the index even if any failure happens in one of the steps post this.
                 val updateIndexBlockRequest = UpdateIndexBlockRequest(request.indexName,IndexBlockUpdateType.REMOVE_BLOCK)
@@ -151,7 +161,14 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                 try {
                     replicationMetadataManager.deleteIndexReplicationMetadata(request.indexName)
                 } catch (e: ResourceNotFoundException) {
-                    throw IllegalArgumentException("No replication in progress for index:${request.indexName}")
+                    // No metadata document exists. If the index still had replication block/settings, the
+                    // cleanup performed above is the intended outcome, so treat this as a successful stop.
+                    // Otherwise there was genuinely no replication in progress for this index.
+                    if (!wasFollowerIndex) {
+                        throw IllegalArgumentException("No replication in progress for index:${request.indexName}")
+                    }
+                    log.info("No replication metadata found for ${request.indexName}; treating stop as successful " +
+                            "since replication block/settings were present")
                 }
 
                 listener.onResponse(AcknowledgedResponse(true))
