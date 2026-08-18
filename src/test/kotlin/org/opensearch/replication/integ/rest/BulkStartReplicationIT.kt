@@ -41,7 +41,6 @@ import java.util.concurrent.atomic.AtomicReference
 class BulkStartReplicationIT : MultiClusterRestTestCase() {
 
     private val indexPrefix = "bulk-start-test"
-
     @org.junit.Before
     fun setupBatchSize() {
         val followerClient = getClientForCluster(FOLLOWER)
@@ -51,15 +50,14 @@ class BulkStartReplicationIT : MultiClusterRestTestCase() {
     @org.junit.After
     fun resetBatchSize() {
         val followerClient = getClientForCluster(FOLLOWER)
-        setBulkBatchSize(followerClient, 10)
+        setBulkBatchSize(followerClient, 1)
     }
-
     fun `test bulk start replication in following state`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
         createConnectionBetweenClusters(FOLLOWER, LEADER)
 
-        for (i in 1..3) {
+        for (i in 1..2) {
             leaderClient.indices().create(CreateIndexRequest("$indexPrefix-$i"), RequestOptions.DEFAULT)
         }
 
@@ -67,10 +65,10 @@ class BulkStartReplicationIT : MultiClusterRestTestCase() {
         `validate bulk response`(response)
         val statusResp = followerClient.waitForBulkTaskCompletion(response["task_id"].toString()) ?: return
         `validate task status response`(statusResp, "bulk_start_replication", "$indexPrefix-*")
-        assertThat(statusResp["num_success"]).isEqualTo(3)
+        assertThat(statusResp["num_success"]).isEqualTo(2)
 
         assertBusy({
-            for (i in 1..3) {
+            for (i in 1..2) {
                 assertThat(followerClient.replicationStatus("$indexPrefix-$i")["status"])
                     .isIn("SYNCING", "BOOTSTRAPPING")
             }
@@ -219,7 +217,7 @@ class BulkStartReplicationIT : MultiClusterRestTestCase() {
         val taskId = successes[0]["task_id"].toString()
         try { followerClient.cancelTask(taskId) } catch (_: ResponseException) {}
         followerClient.waitForBulkTaskCompletion(taskId, TimeValue.timeValueSeconds(180))
-        setBulkBatchSize(followerClient, 10)
+        setBulkBatchSize(followerClient, 1)
     }
 
     @org.apache.lucene.tests.util.LuceneTestCase.AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/0000")
@@ -249,7 +247,7 @@ class BulkStartReplicationIT : MultiClusterRestTestCase() {
         val failed = statusResp["num_failed"] as Int
         assertThat(cancelled + success + failed).isEqualTo(10)
 
-        setBulkBatchSize(followerClient, 10)
+        setBulkBatchSize(followerClient, 1)
     }
 
     @org.apache.lucene.tests.util.LuceneTestCase.AwaitsFix(bugUrl = "https://github.com/opensearch-project/cross-cluster-replication/issues/0000")
@@ -336,7 +334,7 @@ class BulkStartReplicationIT : MultiClusterRestTestCase() {
         val _s = followerClient.waitForBulkTaskCompletion(response["task_id"].toString()) ?: return
         assertThat(_s["num_success"]).isEqualTo(6)
 
-        setBulkBatchSize(followerClient, 10)
+        setBulkBatchSize(followerClient, 1)
         followerClient.bulkStopReplication("$indexPrefix-batch-*")
     }
 
