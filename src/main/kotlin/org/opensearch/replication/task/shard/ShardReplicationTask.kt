@@ -282,6 +282,10 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                         delay(backOffForRetry)
                         backOffForRetry = (backOffForRetry * factor).toLong().coerceAtMost(maxTimeOut)
                     } finally {
+                        // Keep follower_stats' follower_checkpoint in sync with the live shard even when
+                        // this attempt didn't replay anything (e.g. timed out waiting on an idle leader),
+                        // so it doesn't report a permanent phantom lag once the shard has caught up.
+                        followerClusterStats.refreshFollowerCheckpoint(followerShardId, indexShard.localCheckpoint)
                         rateLimiter.release()
                     }
                 }
