@@ -20,6 +20,7 @@ import org.opensearch.core.xcontent.ToXContentFragment
 import org.opensearch.core.xcontent.XContentBuilder
 import org.opensearch.common.xcontent.XContentType
 import org.opensearch.core.index.shard.ShardId
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
 class FollowerShardMetric  {
@@ -116,5 +117,6 @@ class FollowerShardMetric  {
 
 @Singleton
 class FollowerClusterStats {
-    var stats :MutableMap<ShardId, FollowerShardMetric> =  mutableMapOf()
+    // ConcurrentHashMap: concurrent put/remove/get from multiple ShardReplicationTasks (issue #1660)
+    val stats: MutableMap<ShardId, FollowerShardMetric> = ConcurrentHashMap()
 }
