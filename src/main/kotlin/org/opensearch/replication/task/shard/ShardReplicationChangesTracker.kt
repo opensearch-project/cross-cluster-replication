@@ -64,8 +64,23 @@ class ShardReplicationChangesTracker(indexShard: IndexShard, private val replica
 
             // missing batch takes higher priority.
             return if (missingBatches.isNotEmpty()) {
-                logDebug("Fetching missing batch ${missingBatches[0].first}-${missingBatches[0].second}")
-                missingBatches.removeAt(0)
+                // Cap the replayed missing range to the (possibly dynamically-reduced) effective batch size.
+                // A batch that failed the 2GB serialization limit is re-queued at its ORIGINAL width; without
+                // this cap the dynamic reduction (reduceBatchSize) is only applied to newly-carved batches and
+                // never reaches the offending range, so the fetch keeps retrying the same oversized span and
+                // makes no progress. Splitting here lets the reduced size take effect on retried batches too.
+                val missing = missingBatches.removeAt(0)
+                val effectiveBatchSize = batchSizeSettings.getEffectiveBatchSize().toLong()
+                if (missing.second - missing.first + 1 > effectiveBatchSize) {
+                    val cappedTo = missing.first + effectiveBatchSize - 1
+                    // Re-queue the remainder at the front to preserve ordering and complete coverage.
+                    missingBatches.add(0, Pair(cappedTo + 1, missing.second))
+                    logDebug("Fetching missing batch ${missing.first}-$cappedTo (capped from ${missing.first}-${missing.second}, batch size: $effectiveBatchSize)")
+                    Pair(missing.first, cappedTo)
+                } else {
+                    logDebug("Fetching missing batch ${missing.first}-${missing.second}")
+                    Pair(missing.first, missing.second)
+                }
             } else {
                 // return the next batch to fetch and update seqNoAlreadyRequested.
                 val currentBatchSize = batchSizeSettings.getEffectiveBatchSize()
