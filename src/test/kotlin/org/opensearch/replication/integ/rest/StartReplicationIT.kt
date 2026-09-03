@@ -293,6 +293,51 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         }, 30L, TimeUnit.SECONDS)
     }
 
+    fun `test that new property added to existing mapping on leader is replicated to follower`() {
+        // Regression test for issue #1430: adding a NEW property to an index that already
+        // has a property mapping should be replicated to the follower, without needing to
+        // modify an existing property as a workaround.
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+
+        // Create an index that already has at least one property mapping.
+        val createIndexResponse = leaderClient.indices().create(
+            CreateIndexRequest(leaderIndexName)
+                .mapping("{\"properties\":{\"existing_field\":{\"type\":\"text\"}}}", XContentType.JSON),
+            RequestOptions.DEFAULT
+        )
+        assertThat(createIndexResponse.isAcknowledged).isTrue()
+
+        followerClient.startReplication(
+            StartReplicationRequest("source", leaderIndexName, followerIndexName),
+            waitForRestore = true
+        )
+        assertBusy {
+            assertThat(followerClient.indices()
+                .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
+                .isEqualTo(true)
+        }
+
+        // Add a NEW property on the leader, leaving the existing property untouched.
+        val putMappingRequest = PutMappingRequest(leaderIndexName)
+        putMappingRequest.source("{\"properties\":{\"new_field\":{\"type\":\"keyword\"}}}", XContentType.JSON)
+        leaderClient.indices().putMapping(putMappingRequest, RequestOptions.DEFAULT)
+
+        // The follower mapping should converge to the leader mapping (including new_field).
+        assertBusy({
+            val leaderMappings = leaderClient.indices()
+                .getMapping(GetMappingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
+                .mappings()[leaderIndexName]
+            Assert.assertEquals(
+                leaderMappings,
+                followerClient.indices()
+                    .getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
+                    .mappings()[followerIndexName]
+            )
+        }, 30L, TimeUnit.SECONDS)
+    }
+
     fun `test that index settings are getting replicated`() {
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
