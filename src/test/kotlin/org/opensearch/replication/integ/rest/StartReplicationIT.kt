@@ -299,6 +299,7 @@ class StartReplicationIT: MultiClusterRestTestCase() {
         // modify an existing property as a workaround.
         val followerClient = getClientForCluster(FOLLOWER)
         val leaderClient = getClientForCluster(LEADER)
+        setMetadataSyncDelay() // Ensure metadata (mapping) sync happens reasonably fast
         createConnectionBetweenClusters(FOLLOWER, LEADER)
 
         // Create an index that already has at least one property mapping.
@@ -1338,43 +1339,6 @@ class StartReplicationIT: MultiClusterRestTestCase() {
             .mappings()[leaderIndexName]
         TimeUnit.MINUTES.sleep(2)
         Assert.assertEquals(
-            leaderMappings,
-            followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
-                .mappings()[followerIndexName]
-        )
-    }
-
-    fun `test that follower index mapping does not update when only new fields are added but not respective docs in leader index`() {
-        val followerClient = getClientForCluster(FOLLOWER)
-        val leaderClient = getClientForCluster(LEADER)
-        createConnectionBetweenClusters(FOLLOWER, LEADER)
-        val createIndexResponse = leaderClient.indices().create(CreateIndexRequest(leaderIndexName), RequestOptions.DEFAULT)
-        assertThat(createIndexResponse.isAcknowledged).isTrue()
-        var putMappingRequest = PutMappingRequest(leaderIndexName)
-        putMappingRequest.source("{\"properties\":{\"name\":{\"type\":\"text\"}}}", XContentType.JSON)
-        leaderClient.indices().putMapping(putMappingRequest, RequestOptions.DEFAULT)
-        val sourceMap = mapOf("name" to randomAlphaOfLength(5))
-        leaderClient.index(IndexRequest(leaderIndexName).id("1").source(sourceMap), RequestOptions.DEFAULT)
-        followerClient.startReplication(StartReplicationRequest("source", leaderIndexName, followerIndexName),
-            waitForRestore = true)
-        assertBusy {
-            assertThat(followerClient.indices()
-                .exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT))
-                .isEqualTo(true)
-        }
-        Assert.assertEquals(
-            leaderClient.indices().getMapping(GetMappingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
-                .mappings()[leaderIndexName],
-            followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
-                .mappings()[followerIndexName]
-        )
-        putMappingRequest = PutMappingRequest(leaderIndexName)
-        putMappingRequest.source("{\"properties\":{\"name\":{\"type\":\"text\"},\"age\":{\"type\":\"integer\"}}}",XContentType.JSON)
-        leaderClient.indices().putMapping(putMappingRequest, RequestOptions.DEFAULT)
-        val leaderMappings = leaderClient.indices().getMapping(GetMappingsRequest().indices(leaderIndexName), RequestOptions.DEFAULT)
-            .mappings()[leaderIndexName]
-        TimeUnit.MINUTES.sleep(2)
-        Assert.assertNotEquals(
             leaderMappings,
             followerClient.indices().getMapping(GetMappingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
                 .mappings()[followerIndexName]

@@ -660,7 +660,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 val followerMappingMap = mappingResponse?.mappings()?.get(this.followerIndexName)?.sourceAsMap()?.toMap()
                 // Compare the full mapping (not just existing follower properties) so that newly added
                 // properties and dynamic mapping changes on the leader are also replicated to the follower.
-                if (leaderMappingMap != followerMappingMap) {
+                if (leaderMappingMap != null && leaderMappingMap != followerMappingMap) {
                     log.debug("Updating Mapping at Follower")
                     updateFollowerMapping(this.followerIndexName, leaderMappingSource)
                 }
