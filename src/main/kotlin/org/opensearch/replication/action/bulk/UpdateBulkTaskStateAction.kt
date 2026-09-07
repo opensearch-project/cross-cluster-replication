@@ -11,7 +11,8 @@
 
 package org.opensearch.replication.action.bulk
 
-import org.opensearch.ResourceAlreadyExistsException
+import org.opensearch.OpenSearchStatusException
+import org.opensearch.core.rest.RestStatus
 import org.opensearch.action.ActionType
 import org.opensearch.action.support.ActionFilters
 import org.opensearch.action.support.clustermanager.AcknowledgedRequest
@@ -85,9 +86,16 @@ class TransportUpdateBulkTaskStateAction @Inject constructor(
                     if (request.taskState != null && request.taskState.taskId.isEmpty()) {
                         val existing = currentState.metadata
                             .custom<BulkReplicationTaskMetadata>(BulkReplicationTaskMetadata.NAME)?.taskState
-                        if (existing != null && existing.numPending > 0 && existing.taskId.isEmpty()) {
-                            throw ResourceAlreadyExistsException(
-                                "A bulk replication task is already running. Only one bulk task is allowed at a time.")
+                        if (existing != null && existing.numPending > 0) {
+                            // Check if the node that owns the task is still in the cluster.
+                            // Bulk tasks are transient by design and are cleared when the node leaves the cluster.
+                            // If the owning node is gone, the lock is stale and allow the new task.
+                            val taskNodeId = existing.taskId.split(":").firstOrNull()
+                            val nodeAlive = taskNodeId.isNullOrEmpty() || currentState.nodes().nodeExists(taskNodeId)
+                            if (nodeAlive) {
+                                throw OpenSearchStatusException(
+                                    "A bulk replication task is already running. Only one bulk task is allowed at a time.", RestStatus.CONFLICT)
+                            }
                         }
                     }
                     val newMetadata = Metadata.builder(currentState.metadata)
