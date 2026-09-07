@@ -660,11 +660,9 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 mappingResponse = client.suspending(client.admin().indices()::getMappings, injectSecurityContext = true)(gmr)
                 @Suppress("UNCHECKED_CAST")
                 val followerProperties = mappingResponse?.mappings()?.get(this.followerIndexName)?.sourceAsMap()?.toMap()?.get("properties") as? Map<String,Any>?
-                // Compare the entire properties map (not just the existing follower properties) so that
-                // newly added properties on the leader are also replicated to the follower, in addition
-                // to modifications of already existing (e.g. multi-field) properties.
+                // Compare the entire properties map so that newly added properties are also replicated.
                 if (leaderProperties != null && leaderProperties != followerProperties) {
-                    log.debug("Updating Mapping at Follower")
+                    log.debug("Updating Multi-field Mapping at Follower")
                     updateFollowerMapping(this.followerIndexName, leaderMappingSource)
                 }
             } catch (e: Exception) {
