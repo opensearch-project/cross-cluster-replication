@@ -654,13 +654,16 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 var gmr = GetMappingsRequest().indices(this.leaderIndex.name).indicesOptions(options)
                 var mappingResponse = remoteClient.suspending(remoteClient.admin().indices()::getMappings, injectSecurityContext = true)(gmr)
                 var leaderMappingSource = mappingResponse?.mappings?.get(this.leaderIndex.name)?.source()?.toString()
-                val leaderMappingMap = mappingResponse?.mappings()?.get(this.leaderIndex.name)?.sourceAsMap()?.toMap()
+                @Suppress("UNCHECKED_CAST")
+                val leaderProperties = mappingResponse?.mappings()?.get(this.leaderIndex.name)?.sourceAsMap()?.toMap()?.get("properties") as? Map<String,Any>?
                 gmr = GetMappingsRequest().indices(this.followerIndexName).indicesOptions(options)
                 mappingResponse = client.suspending(client.admin().indices()::getMappings, injectSecurityContext = true)(gmr)
-                val followerMappingMap = mappingResponse?.mappings()?.get(this.followerIndexName)?.sourceAsMap()?.toMap()
-                // Compare the full mapping (not just existing follower properties) so that newly added
-                // properties and dynamic mapping changes on the leader are also replicated to the follower.
-                if (leaderMappingMap != null && leaderMappingMap != followerMappingMap) {
+                @Suppress("UNCHECKED_CAST")
+                val followerProperties = mappingResponse?.mappings()?.get(this.followerIndexName)?.sourceAsMap()?.toMap()?.get("properties") as? Map<String,Any>?
+                // Compare the entire properties map (not just the existing follower properties) so that
+                // newly added properties on the leader are also replicated to the follower, in addition
+                // to modifications of already existing (e.g. multi-field) properties.
+                if (leaderProperties != null && leaderProperties != followerProperties) {
                     log.debug("Updating Mapping at Follower")
                     updateFollowerMapping(this.followerIndexName, leaderMappingSource)
                 }
