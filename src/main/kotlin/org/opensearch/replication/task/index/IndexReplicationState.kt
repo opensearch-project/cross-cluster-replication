@@ -11,6 +11,7 @@
 
 package org.opensearch.replication.task.index
 
+import org.opensearch.Version
 import org.opensearch.replication.task.ReplicationState
 import org.opensearch.replication.task.shard.ShardReplicationParams
 import org.opensearch.core.ParseField
@@ -131,12 +132,20 @@ object MonitoringState : IndexReplicationState(ReplicationState.MONITORING)
  */
 data class FailedState(val failedShards: Map<ShardId, PersistentTask<ShardReplicationParams>>, val errorMsg: String)
     : IndexReplicationState(ReplicationState.FAILED) {
-    constructor(inp: StreamInput) : this(inp.readMap(::ShardId, ::PersistentTask), inp.readString())
+    constructor(inp: StreamInput) : this(
+        inp.readMap(::ShardId, ::PersistentTask),
+        // errorMsg was added to the FailedState wire format by the CCR bulk feature.
+        // Read it only if the sending node's version wrote it (3.7+).
+        if (inp.version.onOrAfter(Version.V_3_7_0)) inp.readString() else "")
 
     override fun writeTo(out: StreamOutput) {
         super.writeTo(out)
         out.writeMap(failedShards, { o, k -> k.writeTo(o) }, { o, v -> v.writeTo(o) })
-        out.writeString(errorMsg)
+        // errorMsg was added to the FailedState wire format by the CCR bulk feature.
+        // Write it only if the receiving node's version understands it (3.7+).
+        if (out.version.onOrAfter(Version.V_3_7_0)) {
+            out.writeString(errorMsg)
+        }
     }
 
     override fun toXContent(builder: XContentBuilder, params: ToXContent.Params?): XContentBuilder {
