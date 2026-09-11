@@ -68,12 +68,23 @@ class RemoteClusterRestoreLeaderService @Inject constructor(private val indicesS
     fun <T : SingleShardRequest<T>?> openInputStream(restoreUUID: String,
                                                      request: RemoteClusterRepositoryRequest<T>,
                                                      fileName: String,
+                                                     offset: Long,
                                                      length: Long): InputStreamIndexInput {
         val leaderIndexShard = indicesService.getShardOrNull(request.leaderShardId)
                 ?: throw OpenSearchException("Shard [$request.leaderShardId] missing")
         val store = leaderIndexShard.store()
         val restoreContext = getLeaderClusterRestore(restoreUUID)
         val indexInput = restoreContext.openInput(store, fileName)
+
+        /**
+         * Seek directly to the requested chunk offset on the (cloned) IndexInput instead of
+         * relying on InputStream.skip, which is a read-and-discard loop. Skipping made serving
+         * chunk k cost O(k * chunkSize) of leader-side reads, i.e. O(N^2) per file transfer.
+         * The clone is per-request, so seeking it is safe under concurrent chunk fetches.
+         */
+        if (offset > 0) {
+            indexInput.seek(offset)
+        }
 
         return object : InputStreamIndexInput(indexInput, length) {
             @Throws(IOException::class)
