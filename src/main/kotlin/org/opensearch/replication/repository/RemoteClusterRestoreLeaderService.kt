@@ -86,7 +86,8 @@ class RemoteClusterRestoreLeaderService @Inject constructor(private val indicesS
             indexInput.seek(offset)
         }
 
-        return object : InputStreamIndexInput(indexInput, length) {
+        // Bound the stream to the bytes remaining after the seek.
+        return object : InputStreamIndexInput(indexInput, length - offset) {
             @Throws(IOException::class)
             override fun close() {
                 IOUtils.close(indexInput, Closeable { super.close() }) // InputStreamIndexInput's close is a noop
