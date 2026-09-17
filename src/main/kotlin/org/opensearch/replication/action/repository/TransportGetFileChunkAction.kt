@@ -56,11 +56,10 @@ class TransportGetFileChunkAction @Inject constructor(threadPool: ThreadPool, cl
 
         store.performOp({
             val fileMetaData = request.storeFileMetadata
-            val currentInput = restoreLeaderService.openInputStream(request.restoreUUID, request,
-                    fileMetaData.name(), fileMetaData.length())
             val offset = request.offset
             if (offset < fileMetaData.length()) {
-                currentInput.skip(offset)
+                val currentInput = restoreLeaderService.openInputStream(request.restoreUUID, request,
+                        fileMetaData.name(), offset, fileMetaData.length())
                 bytesRead = currentInput.read(buffer)
             }
         })
