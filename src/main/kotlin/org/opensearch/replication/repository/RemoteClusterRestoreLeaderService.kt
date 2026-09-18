@@ -16,6 +16,7 @@ import org.opensearch.replication.action.repository.RemoteClusterRepositoryReque
 import org.opensearch.replication.seqno.RemoteClusterRetentionLeaseHelper
 import org.opensearch.replication.util.performOp
 import org.apache.logging.log4j.LogManager
+import org.apache.lucene.store.IndexInput
 import org.opensearch.OpenSearchException
 import org.opensearch.action.support.single.shard.SingleShardRequest
 import org.opensearch.transport.client.node.NodeClient
@@ -26,6 +27,7 @@ import org.opensearch.common.inject.Singleton
 import org.opensearch.common.lucene.store.InputStreamIndexInput
 import org.opensearch.common.unit.TimeValue
 import org.opensearch.common.util.io.IOUtils
+import org.opensearch.commons.utils.OpenForTesting
 import org.opensearch.core.concurrency.OpenSearchRejectedExecutionException
 import org.opensearch.index.seqno.RetentionLeaseActions
 import org.opensearch.index.store.Store
@@ -43,7 +45,8 @@ import java.util.concurrent.atomic.AtomicBoolean
  * to update the resources
  */
 @Singleton
-class RemoteClusterRestoreLeaderService @Inject constructor(private val indicesService: IndicesService,
+@OpenForTesting
+open class RemoteClusterRestoreLeaderService @Inject constructor(private val indicesService: IndicesService,
                                                             private val nodeClient : NodeClient,
                                                             private val threadPool: ThreadPool,
                                                             private val clusterService: ClusterService) :
@@ -78,6 +81,8 @@ class RemoteClusterRestoreLeaderService @Inject constructor(private val indicesS
     }
 
     override fun doClose() {
+        // Cancel eviction here too (not just doStop) so the sweep cannot race resource release on shutdown.
+        evictionTask?.cancel()
         // Obj in the list being null or closed has no effect
         IOUtils.close(closableResources)
         synchronized(this) {
@@ -101,9 +106,15 @@ class RemoteClusterRestoreLeaderService @Inject constructor(private val indicesS
                     "Leader restore sessions at capacity [$maxConcurrentRecoveries]; retry after in-flight restores drain")
         }
         val restoreContext = constructRestoreContext(restoreUUID, request)
+        // Register the session here (rather than inside constructRestoreContext) so admission control and the
+        // map insertion that every later getLeaderClusterRestore depends on are visible at one call site.
+        onGoingRestores[restoreUUID] = restoreContext
         restoreContext.touch(threadPool.relativeTimeInMillis())
         return restoreContext
     }
+
+    /** Number of tracked restore sessions. Visible for testing. */
+    internal fun ongoingRestoreCount(): Int = synchronized(this) { onGoingRestores.size }
 
     private fun getLeaderClusterRestore(restoreUUID: String): RestoreContext {
         return onGoingRestores[restoreUUID] ?: throw IllegalStateException("missing restoreContext")
@@ -124,8 +135,9 @@ class RemoteClusterRestoreLeaderService @Inject constructor(private val indicesS
         restoreContext.incRef()
         restoreContext.touch(threadPool.relativeTimeInMillis())
         var streamCreated = false
+        var indexInput: IndexInput? = null
         try {
-            val indexInput = restoreContext.openInput(store, fileName)
+            indexInput = restoreContext.openInput(store, fileName)
 
             /**
              * Seek directly to the requested chunk offset on the (cloned) IndexInput instead of
@@ -138,13 +150,14 @@ class RemoteClusterRestoreLeaderService @Inject constructor(private val indicesS
             }
 
             // Bound the stream to the bytes remaining after the seek.
-            val stream = object : InputStreamIndexInput(indexInput, length - offset) {
+            val openedInput = indexInput
+            val stream = object : InputStreamIndexInput(openedInput, length - offset) {
                 private val closed = AtomicBoolean(false)
                 @Throws(IOException::class)
                 override fun close() {
                     if (closed.compareAndSet(false, true)) {
                         try {
-                            IOUtils.close(indexInput, Closeable { super.close() }) // InputStreamIndexInput's close is a noop
+                            IOUtils.close(openedInput, Closeable { super.close() }) // InputStreamIndexInput's close is a noop
                         } finally {
                             restoreContext.decRef()
                         }
@@ -154,14 +167,19 @@ class RemoteClusterRestoreLeaderService @Inject constructor(private val indicesS
             streamCreated = true
             return stream
         } finally {
-            // If we failed before handing the stream (and its close) to the caller, release the read ref now.
+            // If we failed before handing the stream (and its close) to the caller, close the opened clone
+            // (e.g. seek failed) and release the read ref now, so neither leaks.
             if (!streamCreated) {
-                restoreContext.decRef()
+                try {
+                    indexInput?.let { IOUtils.close(it) }
+                } finally {
+                    restoreContext.decRef()
+                }
             }
         }
     }
 
-    private fun <T : SingleShardRequest<T>?> constructRestoreContext(restoreUUID: String,
+    internal open fun <T : SingleShardRequest<T>?> constructRestoreContext(restoreUUID: String,
                                         request: RemoteClusterRepositoryRequest<T>): RestoreContext {
         val leaderIndexShard = indicesService.getShardOrNull(request.leaderShardId)
                 ?: throw OpenSearchException("Shard [$request.leaderShardId] missing")
@@ -182,31 +200,37 @@ class RemoteClusterRestoreLeaderService @Inject constructor(private val indicesS
          */
         val indexCommitRef = leaderIndexShard.acquireSafeIndexCommit()
 
-        val store = leaderIndexShard.store()
-        var metadataSnapshot = Store.MetadataSnapshot.EMPTY
-        store.performOp({
-            metadataSnapshot = store.getMetadata(indexCommitRef.get())
-        })
+        // If anything below fails before the session is tracked in onGoingRestores, release the safe-commit
+        // and retention lock here — nothing else holds a reference to them yet, so they would otherwise leak.
+        try {
+            val store = leaderIndexShard.store()
+            var metadataSnapshot = Store.MetadataSnapshot.EMPTY
+            store.performOp({
+                metadataSnapshot = store.getMetadata(indexCommitRef.get())
+            })
 
-        // Identifies the seq no to start the replication operations from
-        var fromSeqNo = RetentionLeaseActions.RETAIN_ALL
+            // Identifies the seq no to start the replication operations from
+            var fromSeqNo = RetentionLeaseActions.RETAIN_ALL
 
-        // Adds the retention lease for fromSeqNo for the next stage of the replication.
-        retentionLeaseHelper.addRetentionLease(request.leaderShardId, fromSeqNo, request.followerShardId,
-                RemoteClusterRepository.REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC)
+            // Adds the retention lease for fromSeqNo for the next stage of the replication.
+            retentionLeaseHelper.addRetentionLease(request.leaderShardId, fromSeqNo, request.followerShardId,
+                    RemoteClusterRepository.REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC)
 
-        /**
-         * At this point, it should be safe to release retention lock as the retention lease
-         * is acquired from the local checkpoint and the rest of the follower replay actions
-         * can be performed using this retention lease.
-         */
-        retentionLock.close()
+            /**
+             * At this point, it should be safe to release retention lock as the retention lease
+             * is acquired from the local checkpoint and the rest of the follower replay actions
+             * can be performed using this retention lease.
+             */
+            retentionLock.close()
 
-        var restoreContext = RestoreContext(restoreUUID, leaderIndexShard,
-                indexCommitRef, metadataSnapshot, fromSeqNo, request.followerCluster, request.followerShardId)
-        onGoingRestores[restoreUUID] = restoreContext
-
-        return restoreContext
+            // The RestoreContext starts with base ref-count 1, owned by the onGoingRestores map; that ref is
+            // dropped by removeLeaderClusterRestore (normal completion) or evictIdleRestores (abandoned follower).
+            return RestoreContext(restoreUUID, leaderIndexShard,
+                    indexCommitRef, metadataSnapshot, fromSeqNo, request.followerCluster, request.followerShardId)
+        } catch (e: Exception) {
+            IOUtils.closeWhileHandlingException(indexCommitRef, retentionLock)
+            throw e
+        }
     }
 
     @Synchronized
@@ -226,7 +250,7 @@ class RemoteClusterRestoreLeaderService @Inject constructor(private val indicesS
      * abandoned the restore (it will never reach the GetChanges flow), so the retention lease is actively
      * removed to avoid pinning history on the leader. Resource release is done outside the monitor.
      */
-    private fun evictIdleRestores() {
+    internal fun evictIdleRestores() {
         val now = threadPool.relativeTimeInMillis()
         val timeoutMillis = sessionIdleTimeout.millis()
         val evicted = mutableMapOf<String, RestoreContext>()

@@ -206,17 +206,25 @@ suspend fun RemoteClusterRepository.restoreShardWithRetries(
  */
 fun isRestoreBackpressure(t: Throwable): Boolean {
     var cause: Throwable? = t
-    while (cause != null) {
+    var depth = 0
+    // Bound the walk and break on a self-referential cause: the JDK permits an exception whose cause is
+    // itself, which would otherwise spin forever.
+    while (cause != null && depth < MAX_CAUSE_DEPTH) {
         when (cause) {
             is CircuitBreakingException,
             is OpenSearchRejectedExecutionException,
             is ConnectTransportException -> return true
             is OpenSearchException -> if (cause.status() == RestStatus.TOO_MANY_REQUESTS) return true
         }
-        cause = cause.cause
+        val next = cause.cause
+        if (next === cause) break
+        cause = next
+        depth++
     }
     return false
 }
+
+private const val MAX_CAUSE_DEPTH = 20
 
 /**
  * Runs [block] with a per-attempt timeout, retrying on retryable leader backpressure (see
@@ -231,7 +239,11 @@ suspend fun <T> retryRestoreOnBackpressure(
         maxDelayMillis: Long = 60000,           // 60 seconds
         description: String = "leader restore request",
         block: suspend () -> T): T {
-    val deadline = System.currentTimeMillis() + retryTimeout.millis()
+    // Track the budget against a monotonic clock so an NTP correction (wall-clock jump) can neither shorten
+    // nor extend the retry window, and measure remaining time by subtraction so nothing overflows even for the
+    // 365-day default (nanos of which would overflow a Long).
+    val startNanos = System.nanoTime()
+    val budgetMillis = retryTimeout.millis()
     var nextDelay = initialDelayMillis
     var attempt = 0
     while (true) {
@@ -239,13 +251,13 @@ suspend fun <T> retryRestoreOnBackpressure(
         try {
             return withTimeout(perAttemptTimeoutMillis) { block() }
         } catch (e: Exception) {
-            val now = System.currentTimeMillis()
-            if (!isRestoreBackpressure(e) || now >= deadline) {
+            val remainingMillis = budgetMillis - (System.nanoTime() - startNanos) / 1_000_000
+            if (!isRestoreBackpressure(e) || remainingMillis <= 0) {
                 throw e
             }
-            // Equal jitter: half the window is fixed, half is random, capped at the remaining deadline.
+            // Equal jitter: half the window is fixed, half is random, capped at the remaining budget.
             val half = nextDelay / 2
-            val sleep = (half + Random.nextLong(half + 1)).coerceAtMost(deadline - now)
+            val sleep = (half + Random.nextLong(half + 1)).coerceAtMost(remainingMillis)
             log.warn("Attempt $attempt for $description hit leader backpressure (${e.javaClass.simpleName}); " +
                     "retrying in ${sleep}ms")
             delay(sleep)
