@@ -11,6 +11,7 @@
 
 package org.opensearch.replication.action.repository
 
+import org.opensearch.replication.ReplicationPlugin
 import org.opensearch.replication.repository.RemoteClusterRestoreLeaderService
 import org.apache.logging.log4j.LogManager
 import org.opensearch.action.support.ActionFilters
@@ -33,7 +34,7 @@ class TransportGetStoreMetadataAction @Inject constructor(threadPool: ThreadPool
                                                           private val restoreLeaderService: RemoteClusterRestoreLeaderService) :
         TransportSingleShardAction<GetStoreMetadataRequest, GetStoreMetadataResponse>(GetStoreMetadataAction.NAME,
                 threadPool, clusterService, transportService, actionFilters,
-                indexNameExpressionResolver, ::GetStoreMetadataRequest, ThreadPool.Names.GET) {
+                indexNameExpressionResolver, ::GetStoreMetadataRequest, ReplicationPlugin.REPLICATION_EXECUTOR_NAME_LEADER) {
     init {
         TransportActionProxy.registerProxyAction(transportService, GetStoreMetadataAction.NAME, ::GetStoreMetadataResponse)
     }

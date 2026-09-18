@@ -16,6 +16,7 @@ import org.opensearch.replication.metadata.store.ReplicationContext
 import org.opensearch.replication.metadata.store.ReplicationMetadata
 import org.opensearch.commons.authuser.User
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.withTimeout
 import org.apache.logging.log4j.Logger
 import org.opensearch.OpenSearchException
 import org.opensearch.OpenSearchSecurityException
@@ -42,9 +43,12 @@ import org.opensearch.snapshots.SnapshotId
 import org.opensearch.transport.ConnectTransportException
 import org.opensearch.transport.NodeDisconnectedException
 import org.opensearch.transport.NodeNotConnectedException
+import org.opensearch.core.common.breaker.CircuitBreakingException
+import org.opensearch.common.unit.TimeValue
 import java.io.PrintWriter
 import java.io.StringWriter
 import java.lang.Exception
+import kotlin.random.Random
 
 /*
  * Extension function to use the store object
@@ -189,6 +193,63 @@ suspend fun RemoteClusterRepository.restoreShardWithRetries(
                 listener.onFailure(e)
                 return
             }
+        }
+    }
+}
+
+/**
+ * True if [t] (or any of its causes) is retryable leader-side backpressure during a bootstrap restore:
+ * a 429 (session cap / rejected execution), a tripped circuit breaker, or a transient connect loss.
+ * Everything else (corruption, auth, missing index, local write error) fails fast so a doomed request
+ * is not re-sent. A per-attempt timeout is deliberately NOT retryable: the in-flight leader request
+ * cannot be cancelled, so retrying would pile up a duplicate; the attempt fails and recovery restarts.
+ */
+fun isRestoreBackpressure(t: Throwable): Boolean {
+    var cause: Throwable? = t
+    while (cause != null) {
+        when (cause) {
+            is CircuitBreakingException,
+            is OpenSearchRejectedExecutionException,
+            is ConnectTransportException -> return true
+            is OpenSearchException -> if (cause.status() == RestStatus.TOO_MANY_REQUESTS) return true
+        }
+        cause = cause.cause
+    }
+    return false
+}
+
+/**
+ * Runs [block] with a per-attempt timeout, retrying on retryable leader backpressure (see
+ * [isRestoreBackpressure]) with exponential equal-jitter back-off until [retryTimeout] elapses, then
+ * rethrows the last failure. Non-backpressure errors propagate immediately.
+ */
+suspend fun <T> retryRestoreOnBackpressure(
+        log: Logger,
+        retryTimeout: TimeValue,
+        perAttemptTimeoutMillis: Long,
+        initialDelayMillis: Long = 1000,        // 1 second
+        maxDelayMillis: Long = 60000,           // 60 seconds
+        description: String = "leader restore request",
+        block: suspend () -> T): T {
+    val deadline = System.currentTimeMillis() + retryTimeout.millis()
+    var nextDelay = initialDelayMillis
+    var attempt = 0
+    while (true) {
+        attempt++
+        try {
+            return withTimeout(perAttemptTimeoutMillis) { block() }
+        } catch (e: Exception) {
+            val now = System.currentTimeMillis()
+            if (!isRestoreBackpressure(e) || now >= deadline) {
+                throw e
+            }
+            // Equal jitter: half the window is fixed, half is random, capped at the remaining deadline.
+            val half = nextDelay / 2
+            val sleep = (half + Random.nextLong(half + 1)).coerceAtMost(deadline - now)
+            log.warn("Attempt $attempt for $description hit leader backpressure (${e.javaClass.simpleName}); " +
+                    "retrying in ${sleep}ms")
+            delay(sleep)
+            nextDelay = (nextDelay * 2).coerceAtMost(maxDelayMillis)
         }
     }
 }
