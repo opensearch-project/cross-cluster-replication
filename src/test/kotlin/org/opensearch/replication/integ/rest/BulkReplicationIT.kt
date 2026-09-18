@@ -42,7 +42,21 @@ abstract class BulkReplicationIT : MultiClusterRestTestCase() {
     open fun setupPreCondition(client: RestHighLevelClient, pattern: String) {}
 
     open fun cleanup(client: RestHighLevelClient, pattern: String) {
-        client.bulkStopReplication(pattern)
+        var attempts = 0
+        while (attempts < 10) {
+            try {
+                client.bulkStopReplication(pattern)
+                return
+            } catch (e: org.opensearch.client.ResponseException) {
+                if (e.message?.contains("already running") == true || e.message?.contains("CONFLICT") == true) {
+                    attempts++
+                    Thread.sleep(3000)
+                } else {
+                    throw e
+                }
+            }
+        }
+        client.bulkStopReplication(pattern) 
     }
 
     protected fun createAndStartReplication(
