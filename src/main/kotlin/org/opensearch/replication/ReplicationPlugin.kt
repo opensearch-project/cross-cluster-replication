@@ -162,6 +162,7 @@ import org.opensearch.threadpool.ScalingExecutorBuilder
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.watcher.ResourceWatcherService
 import java.util.Optional
+import java.util.function.Function
 import java.util.function.Supplier
 
 import org.opensearch.index.engine.NRTReplicationEngine
@@ -201,7 +202,25 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
         val REPLICATION_FOLLOWER_RECOVERY_CHUNK_SIZE: Setting<ByteSizeValue> = Setting.byteSizeSetting("plugins.replication.follower.index.recovery.chunk_size", ByteSizeValue(10, ByteSizeUnit.MB),
                 ByteSizeValue(1, ByteSizeUnit.MB), ByteSizeValue(1, ByteSizeUnit.GB),
                 Setting.Property.Dynamic, Setting.Property.NodeScope)
-        val REPLICATION_FOLLOWER_RECOVERY_PARALLEL_CHUNKS: Setting<Int> = Setting.intSetting("plugins.replication.follower.index.recovery.max_concurrent_file_chunks", 5, 1,
+        val REPLICATION_FOLLOWER_RECOVERY_PARALLEL_CHUNKS: Setting<Int> = Setting.intSetting("plugins.replication.follower.index.recovery.max_concurrent_file_chunks", 4, 1,
+                Setting.Property.Dynamic, Setting.Property.NodeScope)
+        // Per-node cap on concurrent leader-side restore sessions. Requests beyond this are rejected with a
+        // retryable 429, bounding leader heap held by buffered chunk responses to roughly
+        // max_concurrent_recoveries * max_concurrent_file_chunks * chunk_size. CPU-scaled default.
+        val REPLICATION_LEADER_RESTORE_MAX_CONCURRENT_RECOVERIES: Setting<Int> = Setting("plugins.replication.leader.restore.max_concurrent_recoveries",
+                Function<Settings, String> { settings -> Math.max(1, Math.min(16, OpenSearchExecutors.allocatedProcessors(settings) / 4)).toString() },
+                Function<String, Int> { s -> Setting.parseInt(s, 1, "plugins.replication.leader.restore.max_concurrent_recoveries") },
+                Setting.Property.Dynamic, Setting.Property.NodeScope)
+        // Idle window after which an abandoned leader restore session is evicted (its safe-commit released and
+        // retention lease removed), so a dead follower cannot pin leader resources indefinitely.
+        val REPLICATION_LEADER_RESTORE_SESSION_IDLE_TIMEOUT: Setting<TimeValue> = Setting.timeSetting("plugins.replication.leader.restore.session_idle_timeout",
+                TimeValue.timeValueMinutes(5), TimeValue.timeValueSeconds(30),
+                Setting.Property.Dynamic, Setting.Property.NodeScope)
+        // How long the follower keeps retrying a single restore request against retryable leader backpressure
+        // (429/circuit-breaker/connect-loss) before giving up. Effectively unbounded by default so transient
+        // leader throttling never strands a shard in a failed state.
+        val REPLICATION_FOLLOWER_RECOVERY_RETRY_TIMEOUT: Setting<TimeValue> = Setting.timeSetting("plugins.replication.follower.index.recovery.retry_timeout",
+                TimeValue.timeValueDays(365), TimeValue.timeValueMinutes(1),
                 Setting.Property.Dynamic, Setting.Property.NodeScope)
         val REPLICATION_FOLLOWER_CONCURRENT_READERS_PER_SHARD = Setting.intSetting("plugins.replication.follower.concurrent_readers_per_shard", 2, 1,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
@@ -413,7 +432,10 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             REPLICATION_INDEX_TRANSLOG_RETENTION_SIZE, REPLICATION_FOLLOWER_BLOCK_START, REPLICATION_AUTOFOLLOW_CONCURRENT_REPLICATION_JOBS_TRIGGER_SIZE,
             REPLICATION_FOLLOWER_CONCURRENT_WRITERS_PER_SHARD, REPLICATION_REPLICATE_INDEX_DELETION,
             REPLICATION_FOLLOWER_BULK_BATCH_SIZE,
-            REPLICATION_FOLLOWER_BULK_POLL_TIMEOUT)
+            REPLICATION_FOLLOWER_BULK_POLL_TIMEOUT,
+            REPLICATION_LEADER_RESTORE_MAX_CONCURRENT_RECOVERIES,
+            REPLICATION_LEADER_RESTORE_SESSION_IDLE_TIMEOUT,
+            REPLICATION_FOLLOWER_RECOVERY_RETRY_TIMEOUT)
     }
     override fun getInternalRepositories(env: Environment, namedXContentRegistry: NamedXContentRegistry,
                                          clusterService: ClusterService, recoverySettings: RecoverySettings): Map<String, Repository.Factory> {

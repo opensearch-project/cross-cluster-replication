@@ -11,6 +11,7 @@
 
 package org.opensearch.replication.action.repository
 
+import org.opensearch.replication.ReplicationPlugin
 import org.opensearch.replication.repository.RemoteClusterRestoreLeaderService
 import org.opensearch.replication.util.performOp
 import org.apache.logging.log4j.LogManager
@@ -37,7 +38,7 @@ class TransportGetFileChunkAction @Inject constructor(threadPool: ThreadPool, cl
                                                       private val restoreLeaderService: RemoteClusterRestoreLeaderService) :
         TransportSingleShardAction<GetFileChunkRequest, GetFileChunkResponse>(GetFileChunkAction.NAME,
                 threadPool, clusterService, transportService, actionFilters,
-                indexNameExpressionResolver, ::GetFileChunkRequest, ThreadPool.Names.GET) {
+                indexNameExpressionResolver, ::GetFileChunkRequest, ReplicationPlugin.REPLICATION_EXECUTOR_NAME_LEADER) {
 
     init {
         TransportActionProxy.registerProxyAction(transportService, GetFileChunkAction.NAME, ::GetFileChunkResponse)

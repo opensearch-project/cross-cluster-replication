@@ -36,6 +36,7 @@ open class ReplicationSettings(clusterService: ClusterService) {
     @Volatile var replicateIndexDeletion: Boolean = clusterService.clusterSettings.get(ReplicationPlugin.REPLICATION_REPLICATE_INDEX_DELETION)
     @Volatile var bulkBatchSize: Int = clusterService.clusterSettings.get(ReplicationPlugin.REPLICATION_FOLLOWER_BULK_BATCH_SIZE)
     @Volatile var bulkPollTimeout: Int = clusterService.clusterSettings.get(ReplicationPlugin.REPLICATION_FOLLOWER_BULK_POLL_TIMEOUT)
+    @Volatile var recoveryRetryTimeout: TimeValue = clusterService.clusterSettings.get(ReplicationPlugin.REPLICATION_FOLLOWER_RECOVERY_RETRY_TIMEOUT)
 
     init {
         listenForUpdates(clusterService.clusterSettings)
@@ -57,5 +58,6 @@ open class ReplicationSettings(clusterService: ClusterService) {
         clusterSettings.addSettingsUpdateConsumer(ReplicationPlugin.REPLICATION_REPLICATE_INDEX_DELETION) { replicateIndexDeletion = it }
         clusterSettings.addSettingsUpdateConsumer(ReplicationPlugin.REPLICATION_FOLLOWER_BULK_BATCH_SIZE) { bulkBatchSize = it }
         clusterSettings.addSettingsUpdateConsumer(ReplicationPlugin.REPLICATION_FOLLOWER_BULK_POLL_TIMEOUT) { bulkPollTimeout = it }
+        clusterSettings.addSettingsUpdateConsumer(ReplicationPlugin.REPLICATION_FOLLOWER_RECOVERY_RETRY_TIMEOUT) { recoveryRetryTimeout = it }
     }
 }
