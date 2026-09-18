@@ -117,4 +117,14 @@ class FollowerShardMetric  {
 @Singleton
 class FollowerClusterStats {
     var stats :MutableMap<ShardId, FollowerShardMetric> =  mutableMapOf()
+
+    /**
+     * Syncs the reported follower_checkpoint to the live shard value. Needed because the normal
+     * update (on a successful replay) doesn't happen while the leader is idle and getChanges keeps
+     * timing out, which otherwise leaves follower_stats permanently behind the live checkpoint
+     * reported by _status.
+     */
+    fun refreshFollowerCheckpoint(shardId: ShardId, liveFollowerCheckpoint: Long) {
+        stats[shardId]?.followerCheckpoint = liveFollowerCheckpoint
+    }
 }
