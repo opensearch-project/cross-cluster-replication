@@ -45,7 +45,9 @@ import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.coroutineScope
 import kotlinx.coroutines.withContext
+import kotlinx.coroutines.withTimeoutOrNull
 import org.opensearch.OpenSearchException
 import org.opensearch.OpenSearchTimeoutException
 import org.opensearch.core.action.ActionListener
@@ -81,6 +83,7 @@ import org.opensearch.core.xcontent.ToXContentObject
 import org.opensearch.core.xcontent.XContentBuilder
 import org.opensearch.common.xcontent.XContentType
 import org.opensearch.core.index.Index
+import org.opensearch.index.IndexNotFoundException
 import org.opensearch.index.IndexService
 import org.opensearch.index.IndexSettings
 import org.opensearch.index.shard.IndexShard
@@ -140,6 +143,8 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
     override val log = Loggers.getLogger(javaClass, Index(params.followerIndexName, ClusterState.UNKNOWN_UUID))
     private val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), clusterService.state().metadata.clusterUUID(), remoteClient)
     private var shouldCallEvalMonitoring = true
+    // Lowered by tests.
+    internal var cancelRestoreLeaseTimeoutMs = CANCEL_RESTORE_LEASE_TIMEOUT_MS
     private var isLeaderIndexDeleted = false
     private var updateSettingsContinuousFailCount = 0
     private var updateAliasContinousFailCount = 0
@@ -163,6 +168,8 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         val blockListedSettings :Set<String> = blSettings.stream().map { k -> k.key }.collect(Collectors.toSet())
 
         const val SLEEP_TIME_BETWEEN_POLL_MS = 5000L
+        // Leaves room for the index delete inside cleanup's 60s budget.
+        const val CANCEL_RESTORE_LEASE_TIMEOUT_MS = 20000L
         const val AUTOPAUSED_REASON_PREFIX = "AutoPaused: "
         const val TASK_CANCELLATION_REASON = AUTOPAUSED_REASON_PREFIX + "Index replication task was cancelled by user"
 
@@ -184,9 +191,13 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
     }
 
     //only for testing
-    fun setPersistent(taskManager: TaskManager) {
+    // Default is the first allocation ID a fresh PersistentTasksCustomMetadata.Builder assigns.
+    fun setPersistent(taskManager: TaskManager, allocationId: Long = 1) {
         super.init(persistentTasksService, taskManager, "persistentTaskId", allocationId)
     }
+
+    //only for testing
+    suspend fun runCleanup() = cleanup()
 
     override fun indicesOrShards(): List<Any> = listOf(followerIndexName)
 
@@ -341,20 +352,24 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
     }
 
     fun isTrackingTaskForIndex(): Boolean {
-        val persistentTasks = clusterService.state().metadata.custom<PersistentTasksCustomMetadata>(PersistentTasksCustomMetadata.TYPE)
-        val runningTasksForIndex = persistentTasks.findTasks(IndexReplicationExecutor.TASK_NAME, Predicate { true }).stream()
-                .map { task -> task as PersistentTask<IndexReplicationParams> }
-                .filter { task -> task.params!!.followerIndexName  == followerIndexName}
-                .toArray()
+        val runningTasksForIndex = indexTasks()
         assert(runningTasksForIndex.size <= 1) { "Found more than one running index task for index[$followerIndexName]" }
-        for (runningTask in runningTasksForIndex) {
-            val currentTask = runningTask as PersistentTask<IndexReplicationParams>
-            log.info("Verifying task details - currentTask={isAssigned=${currentTask.isAssigned},executorNode=${currentTask.executorNode}}")
-            if(currentTask.isAssigned && currentTask.executorNode == clusterService.state().nodes.localNodeId) {
+        for (currentTask in runningTasksForIndex) {
+            log.info("Verifying task details - currentTask={isAssigned=${currentTask.isAssigned},executorNode=${currentTask.executorNode},allocationId=${currentTask.allocationId}}")
+            // A retried _start can put a new task for this index on the same node; only our allocation is us.
+            if(currentTask.isAssigned && currentTask.executorNode == clusterService.state().nodes.localNodeId
+                    && currentTask.allocationId == allocationId) {
                 return true
             }
         }
         return false
+    }
+
+    private fun indexTasks(): List<PersistentTask<IndexReplicationParams>> {
+        val persistentTasks = clusterService.state().metadata.custom<PersistentTasksCustomMetadata>(PersistentTasksCustomMetadata.TYPE)
+        return persistentTasks.findTasks(IndexReplicationExecutor.TASK_NAME, Predicate { true })
+                .map { task -> task as PersistentTask<IndexReplicationParams> }
+                .filter { task -> task.params!!.followerIndexName == followerIndexName }
     }
 
     private fun isResumed(): Boolean {
@@ -828,37 +843,45 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
     }
 
     override suspend fun cleanup() {
-        // If the task is already running on the other node,
-        // OpenSearch persistent task framework cancels any stale tasks on the old nodes.
-        // Currently, we don't have view on the cancellation reason. Before triggering
-        // any further actions on the index from this task, verify that, this is the actual task tracking the index.
-        // - stale task during cancellation shouldn't trigger further actions.
-        if(isTrackingTaskForIndex()) {
-            if (currentTaskState.state == ReplicationState.RESTORING)  {
+        try {
+            // If the task is already running on the other node,
+            // OpenSearch persistent task framework cancels any stale tasks on the old nodes.
+            // Currently, we don't have view on the cancellation reason. Before triggering
+            // any further actions on the index from this task, verify that, this is the actual task tracking the index.
+            // - stale task during cancellation shouldn't trigger further actions.
+            val tracking = isTrackingTaskForIndex()
+            // Unset if setup failed before execute() ran.
+            val taskState = if (this::currentTaskState.isInitialized) currentTaskState else null
+            val restoreFailed = (taskState as? FailedState)?.duringRestore == true
+            // markAsFailed() removes the task from cluster state asynchronously, so it may already be gone here.
+            // A stale task is reassigned rather than removed, so an absent task is still ours.
+            val restoring = tracking && taskState?.state == ReplicationState.RESTORING
+            if (restoring || (restoreFailed && (tracking || indexTasks().isEmpty()))) {
                 log.info("Replication stopped before restore could finish, so removing partial restore..")
-                cancelRestore()
+                // RESTORING means our restore was accepted, so the index is ours even after _stop strips its setting.
+                cancelRestore(checkCreatedByReplication = !restoring)
             }
 
-            // if cancelled and not in paused state.
-            val replicationStateParams = getReplicationStateParamsForIndex(clusterService, followerIndexName)
-            if(isCancelled && replicationStateParams != null
-                    && replicationStateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE] == ReplicationOverallState.RUNNING.name) {
-                log.info("Task is cancelled. Moving the index to auto-pause state")
-                client.execute(PauseIndexReplicationAction.INSTANCE,
-                        PauseIndexReplicationRequest(followerIndexName, TASK_CANCELLATION_REASON))
-            }
+            if(tracking) {
+                // if cancelled and not in paused state.
+                val replicationStateParams = getReplicationStateParamsForIndex(clusterService, followerIndexName)
+                if(isCancelled && replicationStateParams != null
+                        && replicationStateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE] == ReplicationOverallState.RUNNING.name) {
+                    log.info("Task is cancelled. Moving the index to auto-pause state")
+                    client.execute(PauseIndexReplicationAction.INSTANCE,
+                            PauseIndexReplicationRequest(followerIndexName, TASK_CANCELLATION_REASON))
+                }
 
-            // Deleting the follower index if replication is stopped because of leader index deletion
-            if (clusterService.clusterSettings.get(ReplicationPlugin.REPLICATION_REPLICATE_INDEX_DELETION)
-                && currentTaskState.state == ReplicationState.COMPLETED && isLeaderIndexDeleted)  {
-                deleteIndex()
+                // Deleting the follower index if replication is stopped because of leader index deletion
+                if (clusterService.clusterSettings.get(ReplicationPlugin.REPLICATION_REPLICATE_INDEX_DELETION)
+                    && taskState?.state == ReplicationState.COMPLETED && isLeaderIndexDeleted)  {
+                    deleteIndex()
+                }
             }
+        } finally {
+            // The listener keeps firing after completion, so remove it even if a cleanup step fails.
+            clusterService.removeListener(this)
         }
-
-        /* This is to minimise overhead of calling an additional listener as
-         * it continues to be called even after the task is completed.
-         */
-        clusterService.removeListener(this)
     }
 
     private suspend fun addIndexBlockForReplication() {
@@ -905,23 +928,44 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         return tasks
     }
 
-    private suspend fun cancelRestore() {
+    private suspend fun cancelRestore(checkCreatedByReplication: Boolean) {
+        // Only undo an index our restore created: the name can be taken by another index before the restore runs.
+        val indexMetadata = clusterService.state().metadata.index(followerIndexName)
+        if (checkCreatedByReplication && indexMetadata != null
+                && REPLICATED_INDEX_SETTING.get(indexMetadata.settings).isEmpty()) {
+            log.warn("Not removing $followerIndexName: it was not created by replication")
+            return
+        }
+        val followerShardIds = clusterService.state().routingTable.indicesRouting().get(followerIndexName)
+                ?.shards()?.map { it.value.shardId }.orEmpty()
+
         /*
          * Should be safe to delete the retention leases here for all the shards
          * as the restore is not yet completed
          */
-        val shards = clusterService.state().routingTable.indicesRouting().get(followerIndexName)?.shards()
-        shards?.forEach {
-            val followerShardId = it.value.shardId
-            retentionLeaseHelper.attemptRetentionLeaseRemoval(ShardId(leaderIndex, followerShardId.id), followerShardId)
-        }
+        // Leases go before the delete: their ID has no index UUID, so once the index is gone a retried _start can
+        // reuse it. Bounded so an unreachable leader can't use up cleanup's timeout before the delete runs.
+        withTimeoutOrNull(cancelRestoreLeaseTimeoutMs) {
+            coroutineScope {
+                followerShardIds.forEach { followerShardId ->
+                    launch {
+                        retentionLeaseHelper.attemptRetentionLeaseRemoval(ShardId(leaderIndex, followerShardId.id), followerShardId)
+                    }
+                }
+            }
+        } ?: log.warn("Timed out removing leader retention leases for $followerIndexName; they expire on the leader")
 
         /* As given here
          * (https://www.elastic.co/guide/en/elasticsearch/reference/6.8/modules-snapshots.html#_stopping_currently_running_snapshot_and_restore_operations)
          * a snapshot restore can be cancelled by deleting the indices being restored.
          */
         log.info("Deleting the index $followerIndexName")
-        client.suspending(client.admin().indices()::delete, defaultContext = true)(DeleteIndexRequest(followerIndexName))
+        try {
+            client.suspending(client.admin().indices()::delete, defaultContext = true)(DeleteIndexRequest(followerIndexName))
+        } catch (e: IndexNotFoundException) {
+            // restoreSnapshot can fail before the follower index is created; nothing to remove.
+            log.info("No follower index $followerIndexName to remove")
+        }
     }
 
     private suspend fun setupAndStartRestore(): IndexReplicationState {
@@ -968,7 +1012,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         } catch(e: Exception) {
             val err = "Unable to initiate restore call for $followerIndexName from $leaderAlias:${leaderIndex.name}"
             log.error(err, e)
-            return FailedState(Collections.emptyMap(), err)
+            return FailedState(Collections.emptyMap(), err, duringRestore = true)
         }
         cso.waitForNextChange("remote restore start") { inProgressRestore(it) != null }
         return RestoreState
@@ -1005,13 +1049,15 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
             } else {
                 return FailedState(Collections.emptyMap(), """
                     Unable to find in progress restore for remote index: $leaderAlias:$leaderIndex.
-                    This can happen if there was a badly timed cluster manager node failure.""".trimIndent())
+                    This can happen if there was a badly timed cluster manager node failure.""".trimIndent(),
+                    // Validation also fails while a restored primary relocates; only a partial restore is ours to remove.
+                    duringRestore = !allPrimariesActive())
             }
         } else if (restore.state() == RestoreInProgress.State.FAILURE) {
             val failureReason = restore.shards().values.find {
                 it.state() == RestoreInProgress.State.FAILURE
             }!!.reason()
-            return FailedState(Collections.emptyMap(), failureReason)
+            return FailedState(Collections.emptyMap(), failureReason, duringRestore = true)
         } else {
             return InitFollowState
         }
@@ -1041,6 +1087,9 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
             return false
         }
     }
+    private fun allPrimariesActive(): Boolean =
+            clusterService.state().routingTable.index(followerIndexName)?.allPrimaryShardsActive() == true
+
     private fun inProgressRestore(cs: ClusterState): RestoreInProgress.Entry? {
         return cs.custom<RestoreInProgress>(RestoreInProgress.TYPE).singleOrNull { entry ->
             entry.snapshot().repository == RemoteClusterRepository.repoForCluster(leaderAlias) &&

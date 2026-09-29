@@ -50,6 +50,7 @@ sealed class IndexReplicationState : PersistentTaskState {
 
         init {
             PARSER.declareString(Builder::setIndexTaskState, ParseField("state"))
+            PARSER.declareBoolean({ b, v -> b.duringRestore = v }, ParseField(FailedState.DURING_RESTORE))
         }
 
         @Throws(IOException::class)
@@ -76,6 +77,7 @@ sealed class IndexReplicationState : PersistentTaskState {
 
     class Builder {
         lateinit var state: String
+        var duringRestore = false
 
         fun setIndexTaskState(state: String) {
             this.state = state
@@ -95,7 +97,7 @@ sealed class IndexReplicationState : PersistentTaskState {
                 ReplicationState.FOLLOWING.name -> FollowingState(mapOf())
                 ReplicationState.COMPLETED.name -> CompletedState
                 ReplicationState.MONITORING.name -> MonitoringState
-                ReplicationState.FAILED.name -> FailedState(mapOf(), "")
+                ReplicationState.FAILED.name -> FailedState(mapOf(), "", duringRestore)
                 else -> throw IllegalArgumentException("$state - Not a valid state for index replication task")
             }
         }
@@ -128,15 +130,18 @@ object CompletedState : IndexReplicationState(ReplicationState.COMPLETED)
 object MonitoringState : IndexReplicationState(ReplicationState.MONITORING)
 
 /**
- * State when index task is in failed state.
+ * State when index task is in failed state. [duringRestore] marks a failure before the follower index held
+ * replicated data, which is what lets cleanup() remove the partial restore.
  */
-data class FailedState(val failedShards: Map<ShardId, PersistentTask<ShardReplicationParams>>, val errorMsg: String)
+data class FailedState(val failedShards: Map<ShardId, PersistentTask<ShardReplicationParams>>, val errorMsg: String,
+                       val duringRestore: Boolean = false)
     : IndexReplicationState(ReplicationState.FAILED) {
     constructor(inp: StreamInput) : this(
         inp.readMap(::ShardId, ::PersistentTask),
         // errorMsg was added to the FailedState wire format by the CCR bulk feature.
         // Read it only if the sending node's version wrote it (3.7+).
-        if (inp.version.onOrAfter(Version.V_3_7_0)) inp.readString() else "")
+        if (inp.version.onOrAfter(Version.V_3_7_0)) inp.readString() else "",
+        if (inp.version.onOrAfter(Version.V_3_10_0)) inp.readBoolean() else false)
 
     override fun writeTo(out: StreamOutput) {
         super.writeTo(out)
@@ -146,14 +151,22 @@ data class FailedState(val failedShards: Map<ShardId, PersistentTask<ShardReplic
         if (out.version.onOrAfter(Version.V_3_7_0)) {
             out.writeString(errorMsg)
         }
+        if (out.version.onOrAfter(Version.V_3_10_0)) {
+            out.writeBoolean(duringRestore)
+        }
     }
 
     override fun toXContent(builder: XContentBuilder, params: ToXContent.Params?): XContentBuilder {
         return builder.startObject()
                 .field("error_message", errorMsg)
                 .field("failed_shard_replication_tasks").map(failedShards.mapKeys { it.key.toString() })
+                .field(DURING_RESTORE, duringRestore)
                 .field("state", state)
                 .endObject()
+    }
+
+    companion object {
+        const val DURING_RESTORE = "during_restore"
     }
 }
 
