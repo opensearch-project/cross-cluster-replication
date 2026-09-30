@@ -66,6 +66,7 @@ import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.ClusterStateListener
 import org.opensearch.cluster.ClusterStateObserver
 import org.opensearch.cluster.RestoreInProgress
+import org.opensearch.cluster.metadata.AliasMetadata
 import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.cluster.routing.allocation.decider.EnableAllocationDecider
 import org.opensearch.cluster.service.ClusterService
@@ -180,6 +181,24 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
             }
             val autoExpandReplicas = followerSettings.get(IndexMetadata.SETTING_AUTO_EXPAND_REPLICAS)
             return autoExpandReplicas != null && autoExpandReplicas != "false"
+        }
+
+        // The leader's aliases as the follower should hold them: a follower is never a write index,
+        // so writeIndex=true is stripped to false.
+        fun desiredFollowerAliases(leaderAliases: List<AliasMetadata>): List<AliasMetadata> {
+            return leaderAliases.map { alias ->
+                if (alias.writeIndex() == true) {
+                    AliasMetadata.builder(alias.alias())
+                        .filter(alias.filter())
+                        .indexRouting(alias.indexRouting())
+                        .searchRouting(alias.searchRouting())
+                        .isHidden(alias.isHidden)
+                        .writeIndex(false)
+                        .build()
+                } else {
+                    alias
+                }
+            }
         }
     }
 
@@ -600,8 +619,9 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 var followerAliases = getAliasesRes.aliases.getOrDefault(followerIndexName, Collections.emptyList())
 
                 var request  :IndicesAliasesRequest?
+                val desiredAliases = desiredFollowerAliases(leaderAliases)
 
-                if (leaderAliases == followerAliases) {
+                if (desiredAliases == followerAliases) {
                     log.debug("All aliases equal")
                     request = null
                 } else {
