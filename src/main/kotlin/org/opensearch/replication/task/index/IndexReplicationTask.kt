@@ -37,6 +37,7 @@ import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.replication.util.startTask
 import org.opensearch.replication.util.suspendExecute
 import org.opensearch.replication.util.suspending
+import org.opensearch.replication.util.waitForClusterStateUpdate
 import org.opensearch.replication.util.waitForNextChange
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -48,6 +49,10 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import org.opensearch.OpenSearchException
 import org.opensearch.OpenSearchTimeoutException
+import org.opensearch.action.support.clustermanager.AcknowledgedResponse
+import org.opensearch.cluster.AckedClusterStateUpdateTask
+import org.opensearch.cluster.metadata.Metadata
+import org.opensearch.common.Priority
 import org.opensearch.core.action.ActionListener
 import org.opensearch.action.admin.indices.alias.IndicesAliasesRequest
 import org.opensearch.action.admin.indices.alias.IndicesAliasesRequest.AliasActions
@@ -74,6 +79,7 @@ import org.opensearch.common.logging.Loggers
 import org.opensearch.common.settings.Setting
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.settings.SettingsModule
+import org.opensearch.common.unit.TimeValue
 import org.opensearch.core.common.unit.ByteSizeUnit
 import org.opensearch.core.common.unit.ByteSizeValue
 import org.opensearch.core.xcontent.ToXContent
@@ -109,6 +115,7 @@ import kotlin.coroutines.suspendCoroutine
 import org.opensearch.commons.replication.action.ReplicationActions.INTERNAL_STOP_REPLICATION_ACTION_TYPE
 import org.opensearch.commons.replication.action.StopIndexReplicationRequest
 import org.opensearch.replication.ReplicationPlugin
+import org.opensearch.replication.task.shard.FollowerClusterStats
 import kotlin.streams.toList
 import org.opensearch.cluster.DiffableUtils
 import org.opensearch.common.util.concurrent.ThreadContext
@@ -124,7 +131,8 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                            replicationMetadataManager: ReplicationMetadataManager,
                            replicationSettings: ReplicationSettings,
                            val settingsModule: SettingsModule,
-                           val cso: ClusterStateObserver)
+                           val cso: ClusterStateObserver,
+                           private val followerClusterStats: FollowerClusterStats)
     : CrossClusterReplicationTask(id, type, action, description, parentTask, emptyMap(), executor,
                                   clusterService, threadPool, client, replicationMetadataManager, replicationSettings), ClusterStateListener
     {
@@ -143,6 +151,10 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
     private var isLeaderIndexDeleted = false
     private var updateSettingsContinuousFailCount = 0
     private var updateAliasContinousFailCount = 0
+
+    // Checkpoint persistence: update every CHECKPOINT_PERSIST_INTERVAL polls (~60s at 5s/poll)
+    private var checkpointPollCounter = 0
+    private val CHECKPOINT_PERSIST_INTERVAL = 12
 
     private var metadataUpdate :MetadataUpdate? = null
     private var metadataPoller: Job? = null
@@ -198,12 +210,26 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
             try {
                 val newState = when (currentTaskState.state) {
                     ReplicationState.INIT -> {
-                        addListenerToInterruptTask()
                         if (isResumed()) {
-                            log.debug("Resuming tasks now.")
+                            // Warm-attach (role-transition resume): the follower index already exists locally.
+                            // REPLICATED_INDEX_SETTING was stamped on the cluster manager in
+                            // TransportReplicateIndexClusterManagerNodeAction before this task was started.
+                            // Register the interrupt listener and proceed directly to InitFollowState.
+                            val currentSetting = clusterService.state().metadata()
+                                .index(followerIndexName)?.settings?.get(REPLICATED_INDEX_SETTING.key)
+                            if (currentSetting.isNullOrBlank()) {
+                                log.warn("Warm-attach: REPLICATED_INDEX_SETTING not yet visible on this node for " +
+                                        "$followerIndexName — cluster state propagation may be delayed, retrying")
+                                // Throw to trigger the outer retry loop (5s delay) until the setting propagates.
+                                throw OpenSearchException("REPLICATED_INDEX_SETTING not yet propagated for $followerIndexName")
+                            }
+                            addListenerToInterruptTask()
+                            log.info("Warm-attach resume for $followerIndexName — REPLICATED_INDEX_SETTING=$currentSetting, " +
+                                    "shard tasks will resume from local checkpoint")
                             InitFollowState
                         } else {
                             log.info("Starting new index replication: follower=$followerIndexName, leader=$leaderAlias:${leaderIndex.name}")
+                            addListenerToInterruptTask()
                             setupAndStartRestore()
                         }
                     }
@@ -336,8 +362,46 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
             }
             return FailedState(failedShardTasks, msg)
         }
+
+        // Persist checkpoint sequences every CHECKPOINT_PERSIST_INTERVAL polls (~60s)
+        if (++checkpointPollCounter >= CHECKPOINT_PERSIST_INTERVAL) {
+            checkpointPollCounter = 0
+            persistCheckpointSequences()
+        }
+
         delay(SLEEP_TIME_BETWEEN_POLL_MS)
         return MonitoringState
+    }
+
+    /**
+     * Aggregates leader and follower checkpoints across all shards for this index from the live
+     * FollowerClusterStats, then persists them to the replication metadata store.
+     * Called every ~60 seconds so a role transition can resume from the latest known position.
+     */
+    private suspend fun persistCheckpointSequences() {
+        try {
+            val followerShardIds = clusterService.state().routingTable.indicesRouting()[followerIndexName]
+                ?.shards()?.map { it.value.shardId }?.toSet()
+            if (followerShardIds.isNullOrEmpty()) return
+
+            var maxLeaderCheckpoint = -1L
+            var maxFollowerCheckpoint = -1L
+            for (shardId in followerShardIds) {
+                val metric = followerClusterStats.stats[shardId] ?: continue
+                if (metric.leaderCheckpoint > maxLeaderCheckpoint)   maxLeaderCheckpoint = metric.leaderCheckpoint
+                if (metric.followerCheckpoint > maxFollowerCheckpoint) maxFollowerCheckpoint = metric.followerCheckpoint
+            }
+
+            // Only persist if we have real checkpoint data from at least one active shard task
+            if (maxLeaderCheckpoint >= 0) {
+                replicationMetadataManager.updateIndexCheckpointSequences(
+                    followerIndexName, maxLeaderCheckpoint, maxFollowerCheckpoint)
+                log.debug("Checkpoint persisted for $followerIndexName — " +
+                        "leader=$maxLeaderCheckpoint follower=$maxFollowerCheckpoint")
+            }
+        } catch (e: Exception) {
+            log.warn("Failed to persist checkpoint sequences for $followerIndexName: ${e.message}")
+        }
     }
 
     fun isTrackingTaskForIndex(): Boolean {
@@ -840,12 +904,23 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
             }
 
             // if cancelled and not in paused state.
+            // Guard: do NOT auto-pause when the task was cancelled during INIT state.
+            // In the warm-attach (role-transition) path the task may be cancelled by the clusterChanged()
+            // race before replication has actually started (REPLICATED_INDEX_SETTING not yet stamped,
+            // no write block applied). Pausing in that situation sets PAUSED in the cluster state, which
+            // causes every subsequent start-replication attempt to be immediately cancelled by
+            // clusterChanged() with "received a pause" — making the index permanently stuck until both
+            // clusters are restarted (which clears the stale in-flight pause updates).
             val replicationStateParams = getReplicationStateParamsForIndex(clusterService, followerIndexName)
+            val cancelledAfterReplicationStarted = currentTaskState.state != ReplicationState.INIT
             if(isCancelled && replicationStateParams != null
-                    && replicationStateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE] == ReplicationOverallState.RUNNING.name) {
+                    && replicationStateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE] == ReplicationOverallState.RUNNING.name
+                    && cancelledAfterReplicationStarted) {
                 log.info("Task is cancelled. Moving the index to auto-pause state")
                 client.execute(PauseIndexReplicationAction.INSTANCE,
                         PauseIndexReplicationRequest(followerIndexName, TASK_CANCELLATION_REASON))
+            } else if (isCancelled && !cancelledAfterReplicationStarted) {
+                log.info("Task cancelled during INIT (warm-attach race) — skipping auto-pause to allow clean retry")
             }
 
             // Deleting the follower index if replication is stopped because of leader index deletion
