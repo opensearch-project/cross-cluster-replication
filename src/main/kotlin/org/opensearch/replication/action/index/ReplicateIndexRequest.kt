@@ -43,6 +43,10 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
     var waitForRestore: Boolean = false
     // Triggered from autofollow to skip permissions check based on user as this is already validated
     var isAutoFollowRequest: Boolean = false
+    // Set when a CCR role transition is detected (old follower becomes new leader).
+    // Bypasses the "follower index already exists" guard and skips the snapshot restore —
+    // the existing local index data is reused as-is and shard tasks start from the saved checkpoint.
+    var isRoleTransitionResume: Boolean = false
 
     var settings :Settings = Settings.EMPTY
 
@@ -142,6 +146,7 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
 
         waitForRestore = inp.readBoolean()
         isAutoFollowRequest = inp.readBoolean()
+        isRoleTransitionResume = inp.readBoolean()
         settings = Settings.readSettingsFromStream(inp)
 
     }
@@ -155,7 +160,7 @@ class ReplicateIndexRequest : AcknowledgedRequest<ReplicateIndexRequest>, Indice
         out.writeOptionalString(useRoles?.get(FOLLOWER_CLUSTER_ROLE))
         out.writeBoolean(waitForRestore)
         out.writeBoolean(isAutoFollowRequest)
-
+        out.writeBoolean(isRoleTransitionResume)
         Settings.writeSettingsToStream(settings, out);
     }
 

@@ -48,6 +48,7 @@ import org.opensearch.replication.metadata.store.ReplicationMetadataStore
 import org.opensearch.replication.metadata.store.ReplicationMetadataStore.Companion.REPLICATION_CONFIG_SYSTEM_INDEX
 import org.opensearch.replication.metadata.store.ReplicationStoreMetadataType
 import org.opensearch.replication.repository.REMOTE_REPOSITORY_PREFIX
+import org.opensearch.replication.task.shard.FollowerClusterStats
 import org.opensearch.replication.task.shard.ShardReplicationExecutor
 import org.opensearch.replication.task.shard.ShardReplicationParams
 import org.opensearch.snapshots.Snapshot
@@ -295,9 +296,10 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
         val replicationSettings = Mockito.mock(ReplicationSettings::class.java)
         replicationSettings.metadataSyncInterval = TimeValue(100, TimeUnit.MILLISECONDS)
         val cso = ClusterStateObserver(clusterService, logger, threadPool.threadContext)
+        val followerClusterStats = FollowerClusterStats()
         val indexReplicationTask = IndexReplicationTask(1, "type", "action", "description" , EMPTY_TASK_ID,
                 ReplicationPlugin.REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService , threadPool, spyClient, IndexReplicationParams(connectionName, Index(followerIndex, "0"), followerIndex),
-                persist, replicationMetadataManager, replicationSettings, settingsModule,cso)
+                persist, replicationMetadataManager, replicationSettings, settingsModule, cso, followerClusterStats)
 
         return indexReplicationTask
     }

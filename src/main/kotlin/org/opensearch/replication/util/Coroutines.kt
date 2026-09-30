@@ -154,7 +154,7 @@ suspend fun PersistentTasksService.removeTask(taskId: String): PersistentTask<*>
 }
 
 suspend fun PersistentTasksService.waitForTaskCondition(taskId: String, timeout: TimeValue,
-                                                        condition: (PersistentTask<*>) -> Boolean) : PersistentTask<*> {
+                                                        condition: (PersistentTask<*>?) -> Boolean) : PersistentTask<*> {
     return suspendCancellableCoroutine { cont ->
         val listener = object : PersistentTasksService.WaitForPersistentTaskListener<PersistentTaskParams> {
             override fun onResponse(response: PersistentTask<PersistentTaskParams>) = cont.resume(response)
