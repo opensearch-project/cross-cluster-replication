@@ -169,21 +169,12 @@ class ReplicationMetadata: ToXContent {
     /**
      * Returns true if this document represents a STOPPED replication with a preserved checkpoint that
      * has outlived its configured retention period, and should therefore be purged rather than reused
-     * for a role-transition resume or retained further in the system index. See
-     * ReplicationMetadataManager#deleteIndexReplicationMetadata / #purgeExpiredCheckpointIfNeeded.
+     * for a role-transition resume or retained further in the system index. Delegates to
+     * CheckpointRetentionPolicy so the expiry rule is defined in exactly one place and shared with the
+     * periodic background sweep in ReplicationMetadataStore.
      */
-    fun isCheckpointExpired(nowMillis: Long = System.currentTimeMillis()): Boolean {
-        if (checkpointStoppedAtMillis <= UNASSIGNED_SEQ_NO) return false
-        return try {
-            val retentionMillis = org.opensearch.common.unit.TimeValue.parseTimeValue(
-                checkpointRetentionPeriod, "checkpoint_retention_period").millis
-            nowMillis - checkpointStoppedAtMillis > retentionMillis
-        } catch (e: Exception) {
-            // Unparseable retention period — fail safe by treating as expired rather than retaining
-            // indefinitely.
-            true
-        }
-    }
+    fun isCheckpointExpired(nowMillis: Long = System.currentTimeMillis()): Boolean =
+        CheckpointRetentionPolicy.isExpired(checkpointStoppedAtMillis, checkpointRetentionPeriod, nowMillis)
 
     override fun toXContent(builder: XContentBuilder, params: ToXContent.Params): XContentBuilder {
         builder.startObject()

@@ -454,10 +454,11 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
             if (checkpointSweepHandle != null) return
             checkpointSweepHandle = client.threadPool().scheduleWithFixedDelay(
                 { sweepExpiredCheckpoints() },
-                CHECKPOINT_SWEEP_INTERVAL,
+                CheckpointRetentionPolicy.SWEEP_INTERVAL,
                 ThreadPool.Names.GENERIC
             )
-            log.info("Scheduled expired-checkpoint sweep for [$REPLICATION_CONFIG_SYSTEM_INDEX] every $CHECKPOINT_SWEEP_INTERVAL")
+            log.info("Scheduled expired-checkpoint sweep for [$REPLICATION_CONFIG_SYSTEM_INDEX] every " +
+                    "${CheckpointRetentionPolicy.SWEEP_INTERVAL}")
         }
     }
 
