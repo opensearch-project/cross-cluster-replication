@@ -97,19 +97,37 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
                 if (leaderSettings.keySet().contains(ReplicationPlugin.REPLICATED_INDEX_SETTING.key) &&
                         !leaderSettings.get(ReplicationPlugin.REPLICATED_INDEX_SETTING.key).isNullOrBlank()) {
                     // The leader index has REPLICATED_INDEX_SETTING — normally means circular replication.
-                    // EXCEPTION: if the local cluster has this index as a regular (non-follower) index,
-                    // this is a role-transition — the new leader's index still carries the stale setting
-                    // from when it was a follower. Allow the warm-attach to proceed.
+                    // EXCEPTION: a genuine role-transition (old follower becomes new leader) leaves the
+                    // leader's index carrying this stale setting from when it was a follower.
+                    //
+                    // SECURITY: the bypass below must NOT be based solely on the local index missing
+                    // REPLICATED_INDEX_SETTING — that condition can trivially be true for any unrelated
+                    // index, or forced by clearing local cluster state, which would silently re-enable
+                    // circular replication between two clusters (data corruption / infinite replication
+                    // loop). We therefore additionally require the caller to have explicitly asserted
+                    // isRoleTransitionResume=true on the request. This flag is only ever set by
+                    // AutoFollowTask after it has independently verified, from the persisted replication
+                    // metadata store, that a real checkpoint exists for this index and the configured
+                    // roleTransitionResumeMode is CHECKPOINT — i.e. it reflects a verified role-transition,
+                    // not merely the absence of a local setting.
+                    //
                     // Note: we do NOT try to clear the leader's setting here because REPLICATED_INDEX_SETTING
                     // is InternalIndex and cannot be modified via UpdateSettingsRequest. It will be cleared
                     // when StopIndexReplicationAction is eventually called on the (new) leader cluster.
                     val localIndex = clusterService.state().metadata().index(request.followerIndex)
                     val localFollowerSetting = localIndex?.settings?.get(ReplicationPlugin.REPLICATED_INDEX_SETTING.key)
                     val localIndexIsRegular = localIndex != null && localFollowerSetting.isNullOrBlank()
-                    if (localIndexIsRegular) {
+                    if (request.isRoleTransitionResume && localIndexIsRegular) {
                         log.info("Role transition detected for ${request.leaderAlias}:${request.leaderIndex} — " +
-                                "local index exists as regular (non-follower) index, allowing warm-attach")
+                                "local index exists as regular (non-follower) index and request explicitly " +
+                                "asserts isRoleTransitionResume, allowing warm-attach")
                     } else {
+                        if (localIndexIsRegular) {
+                            log.warn("Leader ${request.leaderAlias}:${request.leaderIndex} carries " +
+                                    "REPLICATED_INDEX_SETTING and local index ${request.followerIndex} looks " +
+                                    "like a candidate role-transition, but request did not assert " +
+                                    "isRoleTransitionResume — rejecting to avoid enabling circular replication")
+                        }
                         throw IllegalArgumentException("Cannot Replicate a Replicated Index ${request.leaderIndex}")
                     }
                 }

@@ -186,6 +186,12 @@ open class ReplicationMetadataManager constructor(private val clusterService: Cl
      * followerAppliedSequence). This allows a subsequent role transition to resume from the last
      * known checkpoint rather than performing a full re-sync.
      *
+     * The preserved checkpoint is NOT retained indefinitely: checkpointStoppedAtMillis is recorded
+     * here, and purgeExpiredCheckpointIfNeeded()/getIndexReplicationMetadata() enforce
+     * checkpointRetentionPeriod (default 24h) by hard-deleting the document once it has expired, so
+     * replication topology and checkpoint data does not remain readable in the system index forever
+     * after a user stops replication.
+     *
      * When replication is re-started fresh (not a role transition), addIndexReplicationMetadata()
      * overwrites this STOPPED document with a new RUNNING state, so there is no data leak.
      */
@@ -194,17 +200,21 @@ open class ReplicationMetadataManager constructor(private val clusterService: Cl
             val getReq = GetReplicationMetadataRequest(ReplicationStoreMetadataType.INDEX.name, null, followerIndex)
             val getRes = replicaionMetadataStore.getMetadata(getReq, false)
             val metadata = getRes.replicationMetadata
-            if (metadata.leaderSequenceNumber > ReplicationMetadata.UNASSIGNED_SEQ_NO) {
-                // Checkpoint exists — preserve it by transitioning to STOPPED state
+            if (metadata.checkpointPersistenceEnabled && metadata.leaderSequenceNumber > ReplicationMetadata.UNASSIGNED_SEQ_NO) {
+                // Checkpoint exists — preserve it by transitioning to STOPPED state, bounded by
+                // checkpointRetentionPeriod (enforced lazily on next read / purge sweep).
                 metadata.overallState = ReplicationOverallState.STOPPED.name
                 metadata.reason = CUSTOMER_INITIATED_ACTION
+                metadata.checkpointStoppedAtMillis = System.currentTimeMillis()
                 replicaionMetadataStore.updateMetadata(
                     UpdateReplicationMetadataRequest(metadata, getRes.seqNo, getRes.primaryTerm))
                 log.info("Preserved checkpoint for $followerIndex on stop — " +
                         "leaderSeqNo=${metadata.leaderSequenceNumber}, followerSeqNo=${metadata.followerAppliedSequence}. " +
-                        "Role transition can resume from this checkpoint.")
+                        "Role transition can resume from this checkpoint within " +
+                        "${metadata.checkpointRetentionPeriod} of the stop time, after which it is purged.")
             } else {
-                // No checkpoint recorded — safe to delete (nothing useful to preserve)
+                // No checkpoint recorded, or checkpoint persistence disabled for this index — safe to
+                // delete (nothing useful, or nothing permitted, to preserve).
                 val delReq = DeleteReplicationMetadataRequest(ReplicationStoreMetadataType.INDEX.name, null, followerIndex)
                 deleteMetadata(delReq)
                 log.debug("Deleted INDEX metadata for $followerIndex (no checkpoint to preserve)")
@@ -235,6 +245,39 @@ open class ReplicationMetadataManager constructor(private val clusterService: Cl
             try { updateReplicationState(index, ReplicationOverallState.STOPPED) } catch (_: Exception) {}
         }
         return deleted
+    }
+
+    /**
+     * Reads the INDEX replication metadata for [followerIndex] and, if it is a STOPPED document whose
+     * preserved checkpoint has outlived checkpointRetentionPeriod, hard-deletes it (data-retention
+     * enforcement — see deleteIndexReplicationMetadata) and returns null instead of the stale data.
+     * Returns the metadata unchanged if it is not expired.
+     *
+     * Callers that need the checkpoint purely to decide role-transition eligibility (e.g. AutoFollowTask)
+     * should use this instead of getIndexReplicationMetadata() directly, so expired STOPPED documents
+     * are both refused for reuse and actively purged rather than retained indefinitely.
+     */
+    suspend fun getIndexReplicationMetadataEnforcingRetention(followerIndex: String): ReplicationMetadata? {
+        val getReq = GetReplicationMetadataRequest(ReplicationStoreMetadataType.INDEX.name, null, followerIndex)
+        val getRes = try {
+            replicaionMetadataStore.getMetadata(getReq, false)
+        } catch (e: ResourceNotFoundException) {
+            return null
+        }
+        val metadata = getRes.replicationMetadata
+        if (metadata.overallState == ReplicationOverallState.STOPPED.name && metadata.isCheckpointExpired()) {
+            log.info("Checkpoint for $followerIndex has exceeded its retention period " +
+                    "(${metadata.checkpointRetentionPeriod}) — purging preserved replication metadata " +
+                    "(leader/follower topology and checkpoint sequence numbers) instead of retaining it further.")
+            try {
+                val delReq = DeleteReplicationMetadataRequest(ReplicationStoreMetadataType.INDEX.name, null, followerIndex)
+                deleteMetadata(delReq)
+            } catch (e: Exception) {
+                log.warn("Failed to purge expired checkpoint metadata for $followerIndex: ${e.message}")
+            }
+            return null
+        }
+        return metadata
     }
 
     suspend fun deleteAutofollowMetadata(patternName: String,

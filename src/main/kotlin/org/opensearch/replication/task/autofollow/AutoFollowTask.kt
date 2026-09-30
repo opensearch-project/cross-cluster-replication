@@ -29,8 +29,6 @@ import org.opensearch.OpenSearchException
 import org.opensearch.OpenSearchSecurityException
 import org.opensearch.ResourceNotFoundException
 import org.opensearch.action.admin.indices.get.GetIndexRequest
-import org.opensearch.action.admin.indices.settings.get.GetSettingsRequest
-import org.opensearch.action.admin.indices.settings.put.UpdateSettingsRequest
 import org.opensearch.action.support.IndicesOptions
 import org.opensearch.transport.client.Client
 import org.opensearch.cluster.service.ClusterService
@@ -224,16 +222,23 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
         // Read the per-index checkpoint from INDEX metadata (updated by ShardReplicationTask and
         // preserved on stop). The AUTO_FOLLOW pattern metadata (replicationMetadata) always has
         // leaderSequenceNumber=-1 since it is never updated at the pattern level.
+        //
+        // Uses getIndexReplicationMetadataEnforcingRetention() rather than a raw read: a STOPPED
+        // document whose checkpoint has outlived checkpointRetentionPeriod is purged on read instead
+        // of being retained indefinitely and reused as a valid checkpoint (data-retention enforcement).
         var savedLeaderSeqNo = ReplicationMetadata.UNASSIGNED_SEQ_NO
         var savedFollowerSeqNo = ReplicationMetadata.UNASSIGNED_SEQ_NO
         try {
-            val indexMeta = replicationMetadataManager.getIndexReplicationMetadata(followerIndex)
-            savedLeaderSeqNo = indexMeta.leaderSequenceNumber
-            savedFollowerSeqNo = indexMeta.followerAppliedSequence
-            log.debug("Found saved checkpoint for $followerIndex: " +
-                    "leader=$savedLeaderSeqNo follower=$savedFollowerSeqNo state=${indexMeta.overallState}")
-        } catch (e: ResourceNotFoundException) {
-            log.debug("No INDEX metadata found for $followerIndex — treating as first-time replication")
+            val indexMeta = replicationMetadataManager.getIndexReplicationMetadataEnforcingRetention(followerIndex)
+            if (indexMeta != null) {
+                savedLeaderSeqNo = indexMeta.leaderSequenceNumber
+                savedFollowerSeqNo = indexMeta.followerAppliedSequence
+                log.debug("Found saved checkpoint for $followerIndex: " +
+                        "leader=$savedLeaderSeqNo follower=$savedFollowerSeqNo state=${indexMeta.overallState}")
+            } else {
+                log.debug("No usable INDEX metadata for $followerIndex (absent or expired checkpoint purged) " +
+                        "— treating as first-time replication")
+            }
         } catch (e: Exception) {
             log.warn("Could not read INDEX metadata for $followerIndex: ${e.message}")
         }
@@ -307,33 +312,6 @@ class AutoFollowTask(id: Long, type: String, action: String, description: String
         }
     }
 
-    /**
-     * Clears the REPLICATED_INDEX_SETTING on the leader index via the remote client.
-     * After a role switch the new leader's index (old follower) still carries this setting,
-     * which blocks TransportReplicateIndexAction's "cannot replicate a replicated index" guard.
-     */
-    private suspend fun clearLeaderReplicatedSetting(leaderIndex: String) {
-        try {
-            val remoteClient = client.getRemoteClusterClient(leaderAlias)
-            val getSettingsReq = GetSettingsRequest().indices(leaderIndex)
-            val settingsResp = remoteClient.suspending(
-                remoteClient.admin().indices()::getSettings, defaultContext = true)(getSettingsReq)
-            val settingValue = settingsResp.getSetting(leaderIndex,
-                org.opensearch.replication.ReplicationPlugin.REPLICATED_INDEX_SETTING.key)
-            if (!settingValue.isNullOrBlank()) {
-                log.info("Clearing REPLICATED_INDEX_SETTING on $leaderAlias:$leaderIndex for role transition")
-                val updateReq = UpdateSettingsRequest(leaderIndex)
-                    .settings(org.opensearch.common.settings.Settings.builder()
-                        .putNull(org.opensearch.replication.ReplicationPlugin.REPLICATED_INDEX_SETTING.key))
-                remoteClient.suspending(
-                    remoteClient.admin().indices()::updateSettings, defaultContext = true)(updateReq)
-                log.info("Successfully cleared REPLICATED_INDEX_SETTING on $leaderAlias:$leaderIndex")
-            }
-        } catch (e: Exception) {
-            log.warn("Could not clear REPLICATED_INDEX_SETTING on $leaderAlias:$leaderIndex: ${e.message}")
-            throw e
-        }
-    }
 
     override fun toString(): String {
         return "AutoFollowTask(from=${leaderAlias} with pattern=${params.patternName})"

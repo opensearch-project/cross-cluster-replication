@@ -98,6 +98,13 @@ class ReplicationMetadata: ToXContent {
     var checkpointRetentionPeriod: String = "24h"
     var roleTransitionResumeMode: String = "CHECKPOINT"
 
+    // Epoch millis at which this document was transitioned to STOPPED while preserving a checkpoint
+    // (see ReplicationMetadataManager#deleteIndexReplicationMetadata). Used to enforce
+    // checkpointRetentionPeriod so that STOPPED replication topology / checkpoint data does not remain
+    // in the .replication-metadata-store system index indefinitely. UNASSIGNED_SEQ_NO (-1) means "not
+    // currently stopped" / not applicable.
+    var checkpointStoppedAtMillis: Long = UNASSIGNED_SEQ_NO
+
     constructor(connectionName: String,
                 metadataType: String,
                 overallState: String,
@@ -150,11 +157,31 @@ class ReplicationMetadata: ToXContent {
             METADATA_PARSER.declareBoolean(ReplicationMetadata::checkpointPersistenceEnabled::set, ParseField("checkpoint_persistence_enabled"))
             METADATA_PARSER.declareString(ReplicationMetadata::checkpointRetentionPeriod::set, ParseField("checkpoint_retention_period"))
             METADATA_PARSER.declareString(ReplicationMetadata::roleTransitionResumeMode::set, ParseField("role_transition_resume_mode"))
+            METADATA_PARSER.declareLong(ReplicationMetadata::checkpointStoppedAtMillis::set, ParseField("checkpoint_stopped_at_millis"))
         }
 
         @Throws(IOException::class)
         fun fromXContent(parser: XContentParser): ReplicationMetadata {
             return METADATA_PARSER.parse(parser, null)
+        }
+    }
+
+    /**
+     * Returns true if this document represents a STOPPED replication with a preserved checkpoint that
+     * has outlived its configured retention period, and should therefore be purged rather than reused
+     * for a role-transition resume or retained further in the system index. See
+     * ReplicationMetadataManager#deleteIndexReplicationMetadata / #purgeExpiredCheckpointIfNeeded.
+     */
+    fun isCheckpointExpired(nowMillis: Long = System.currentTimeMillis()): Boolean {
+        if (checkpointStoppedAtMillis <= UNASSIGNED_SEQ_NO) return false
+        return try {
+            val retentionMillis = org.opensearch.common.unit.TimeValue.parseTimeValue(
+                checkpointRetentionPeriod, "checkpoint_retention_period").millis
+            nowMillis - checkpointStoppedAtMillis > retentionMillis
+        } catch (e: Exception) {
+            // Unparseable retention period — fail safe by treating as expired rather than retaining
+            // indefinitely.
+            true
         }
     }
 
@@ -193,6 +220,7 @@ class ReplicationMetadata: ToXContent {
         builder.field("checkpoint_persistence_enabled", checkpointPersistenceEnabled)
         builder.field("checkpoint_retention_period", checkpointRetentionPeriod)
         builder.field("role_transition_resume_mode", roleTransitionResumeMode)
+        builder.field("checkpoint_stopped_at_millis", checkpointStoppedAtMillis)
 
         builder.endObject()
 

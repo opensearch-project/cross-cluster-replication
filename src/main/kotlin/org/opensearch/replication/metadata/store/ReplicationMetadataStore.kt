@@ -30,6 +30,8 @@ import org.opensearch.action.get.GetRequest
 import org.opensearch.action.get.MultiGetRequest
 import org.opensearch.action.index.IndexResponse
 import org.opensearch.transport.client.Client
+import org.opensearch.action.search.SearchRequest
+import org.opensearch.action.bulk.BulkRequest
 import org.opensearch.cluster.ClusterChangedEvent
 import org.opensearch.cluster.ClusterStateListener
 import org.opensearch.cluster.health.ClusterHealthStatus
@@ -37,6 +39,7 @@ import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.lifecycle.AbstractLifecycleComponent
 import org.opensearch.common.settings.Settings
+import org.opensearch.common.unit.TimeValue
 import org.opensearch.common.util.concurrent.ThreadContext
 import org.opensearch.common.xcontent.XContentType
 import org.opensearch.common.xcontent.XContentFactory
@@ -45,7 +48,10 @@ import org.opensearch.common.xcontent.LoggingDeprecationHandler
 import org.opensearch.core.xcontent.NamedXContentRegistry
 import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.XContentParser
+import org.opensearch.index.query.QueryBuilders
 import org.opensearch.replication.util.suspendExecuteWithRetries
+import org.opensearch.search.builder.SearchSourceBuilder
+import org.opensearch.threadpool.Scheduler
 import org.opensearch.threadpool.ThreadPool
 
 class ReplicationMetadataStore constructor(val client: Client, val clusterService: ClusterService,
@@ -55,12 +61,21 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
     // Avoids a cluster-state read on every getMetadata/addMetadata call after the first check.
     @Volatile private var mappingUpToDate = false
 
+    // Handle to the periodic expired-checkpoint sweep scheduled in doStart(); cancelled in doStop().
+    // See sweepExpiredCheckpoints() — enforces checkpointRetentionPeriod so that STOPPED replication
+    // topology / checkpoint data does not persist indefinitely in this system index, independent of
+    // whether any code path happens to read it again.
+    @Volatile private var checkpointSweepHandle: Scheduler.Cancellable? = null
+
     companion object {
         const val REPLICATION_CONFIG_SYSTEM_INDEX = ".replication-metadata-store"
         const val MAPPING_TYPE = "_doc"
         const val MAPPING_META = "_meta"
         const val MAPPING_SCHEMA_VERSION = "schema_version"
         const val DEFAULT_SCHEMA_VERSION = 1
+        // How often the expired-checkpoint retention sweep runs (see sweepExpiredCheckpoints()).
+        // Deliberately coarse-grained since checkpointRetentionPeriod itself defaults to 24h.
+        val CHECKPOINT_SWEEP_INTERVAL: TimeValue = TimeValue.timeValueHours(1)
         val REPLICATION_CONFIG_SYSTEM_INDEX_MAPPING = ReplicationMetadataStore::class.java
             .classLoader.getResource("mappings/replication-metadata-store.json")!!.readText()
         var REPLICATION_STORE_MAPPING_VERSION: Int
@@ -421,9 +436,87 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
         } finally {
             storedContext?.close()
         }
+
+        scheduleCheckpointSweepIfNeeded()
+    }
+
+    /**
+     * Schedules the periodic sweep that hard-deletes STOPPED INDEX replication metadata documents
+     * whose preserved checkpoint has outlived its configured checkpointRetentionPeriod. This is the
+     * data-retention backstop: even if no code path ever happens to read a given index's stopped
+     * checkpoint again (e.g. autofollow pattern removed, or manual replication never restarted),
+     * the preserved leader/follower topology and checkpoint sequence numbers will still eventually be
+     * purged from the system index rather than being retained indefinitely.
+     */
+    private fun scheduleCheckpointSweepIfNeeded() {
+        if (checkpointSweepHandle != null) return
+        synchronized(this) {
+            if (checkpointSweepHandle != null) return
+            checkpointSweepHandle = client.threadPool().scheduleWithFixedDelay(
+                { sweepExpiredCheckpoints() },
+                CHECKPOINT_SWEEP_INTERVAL,
+                ThreadPool.Names.GENERIC
+            )
+            log.info("Scheduled expired-checkpoint sweep for [$REPLICATION_CONFIG_SYSTEM_INDEX] every $CHECKPOINT_SWEEP_INTERVAL")
+        }
+    }
+
+    /**
+     * Finds STOPPED INDEX-type replication metadata documents whose checkpoint has exceeded its
+     * configured retention period and hard-deletes them. Runs on the GENERIC thread pool.
+     */
+    private fun sweepExpiredCheckpoints() {
+        if (!configStoreExists()) return
+        var storedContext: ThreadContext.StoredContext? = null
+        try {
+            storedContext = client.threadPool().threadContext.stashContext()
+
+            val query = QueryBuilders.boolQuery()
+                .must(QueryBuilders.termQuery("metadata_type.keyword", ReplicationStoreMetadataType.INDEX.name))
+                .must(QueryBuilders.termQuery("overall_state.keyword",
+                    org.opensearch.replication.metadata.ReplicationOverallState.STOPPED.name))
+            val searchRequest = SearchRequest(REPLICATION_CONFIG_SYSTEM_INDEX)
+                .source(SearchSourceBuilder().query(query).size(500).fetchSource(true))
+            val searchResponse = client.search(searchRequest).actionGet()
+
+            val expiredIds = mutableListOf<String>()
+            for (hit in searchResponse.hits.hits) {
+                val sourceBytes = hit.sourceRef ?: continue
+                try {
+                    val parser = XContentHelper.createParser(namedXContentRegistry, LoggingDeprecationHandler.INSTANCE,
+                            sourceBytes, XContentType.JSON)
+                    val metadata = ReplicationMetadata.fromXContent(parser)
+                    if (metadata.isCheckpointExpired()) {
+                        expiredIds.add(hit.id)
+                    }
+                } catch (e: Exception) {
+                    log.warn("Failed to parse replication metadata doc ${hit.id} during checkpoint sweep: ${e.message}")
+                }
+            }
+
+            if (expiredIds.isNotEmpty()) {
+                val bulkRequest = BulkRequest()
+                expiredIds.forEach { id -> bulkRequest.add(DeleteRequest(REPLICATION_CONFIG_SYSTEM_INDEX, id)) }
+                val bulkResponse = client.bulk(bulkRequest).actionGet()
+                val failures = bulkResponse.items.count { it.isFailed }
+                log.info("Checkpoint retention sweep purged ${expiredIds.size - failures} expired STOPPED " +
+                        "replication metadata document(s) from [$REPLICATION_CONFIG_SYSTEM_INDEX]" +
+                        if (failures > 0) " ($failures failed, will retry next sweep)" else "")
+            } else {
+                log.debug("Checkpoint retention sweep found no expired STOPPED replication metadata in " +
+                        "[$REPLICATION_CONFIG_SYSTEM_INDEX]")
+            }
+        } catch (ex: Exception) {
+            log.warn("Checkpoint retention sweep failed for [$REPLICATION_CONFIG_SYSTEM_INDEX], will retry " +
+                    "on next scheduled run: ${ex.message}")
+        } finally {
+            storedContext?.close()
+        }
     }
 
     override fun doStop() {
+        checkpointSweepHandle?.cancel()
+        checkpointSweepHandle = null
     }
 
     override fun doClose() {
