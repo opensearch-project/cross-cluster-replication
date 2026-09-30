@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "schema_version": 2
+    "schema_version": 3
   },
   "dynamic": "strict",
   "properties": {
@@ -54,6 +54,9 @@
     },
     "role_transition_resume_mode": {
       "type": "keyword"
+    },
+    "checkpoint_stopped_at_millis": {
+      "type": "long"
     },
     "follower_context": {
       "type": "nested",
