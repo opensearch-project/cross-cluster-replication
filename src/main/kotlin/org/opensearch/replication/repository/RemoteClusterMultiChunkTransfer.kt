@@ -15,7 +15,8 @@ import org.opensearch.replication.action.repository.GetFileChunkAction
 import org.opensearch.replication.action.repository.GetFileChunkRequest
 import org.opensearch.replication.metadata.store.ReplicationMetadata
 import org.opensearch.replication.util.coroutineContext
-import org.opensearch.replication.util.suspendExecuteWithRetries
+import org.opensearch.replication.util.retryRestoreOnBackpressure
+import org.opensearch.replication.util.suspendExecute
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.GlobalScope
@@ -27,6 +28,7 @@ import org.opensearch.core.action.ActionListener
 import org.opensearch.transport.client.Client
 import org.opensearch.cluster.node.DiscoveryNode
 import org.opensearch.core.common.unit.ByteSizeValue
+import org.opensearch.common.unit.TimeValue
 import org.opensearch.common.util.concurrent.ThreadContext
 import org.opensearch.core.index.shard.ShardId
 import org.opensearch.index.store.Store
@@ -48,6 +50,7 @@ class RemoteClusterMultiChunkTransfer(val logger: Logger,
                                       val leaderClusterClient: Client,
                                       val recoveryState: RecoveryState,
                                       val chunkSize: ByteSizeValue,
+                                      val retryTimeout: TimeValue,
                                       listener: ActionListener<Void>) :
         MultiChunkTransfer<StoreFileMetadata, RemoteClusterRepositoryFileChunk>(logger,
                 threadContext, listener, maxConcurrentFileChunks, remoteFiles), CoroutineScope by GlobalScope {
@@ -84,8 +87,14 @@ class RemoteClusterMultiChunkTransfer(val logger: Logger,
 
         launch(Dispatchers.IO + leaderClusterClient.threadPool().coroutineContext()) {
             try {
-                val response = leaderClusterClient.suspendExecuteWithRetries(replMetadata, GetFileChunkAction.INSTANCE,
-                        getFileChunkRequest, log = logger)
+                // Retry against retryable leader backpressure (429 from the leader session cap, tripped circuit
+                // breaker, transient connect loss) with capped back-off until retryTimeout, so leader throttling
+                // slows a restore rather than failing it. Each attempt is bounded to 2x the leader request timeout.
+                val response = retryRestoreOnBackpressure(logger, retryTimeout,
+                        perAttemptTimeoutMillis = 2 * RemoteClusterRepository.REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC,
+                        description = "file chunk ${request.storeFileMetadata.name()}@${request.offset}") {
+                    leaderClusterClient.suspendExecute(replMetadata, GetFileChunkAction.INSTANCE, getFileChunkRequest)
+                }
                 logger.debug("Filename: ${request.storeFileMetadata.name()}, " +
                         "response_size: ${response.data.length()}, response_offset: ${response.offset}")
                 mutex.withLock {

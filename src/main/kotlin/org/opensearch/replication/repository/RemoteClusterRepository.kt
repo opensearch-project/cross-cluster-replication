@@ -25,6 +25,7 @@ import org.opensearch.replication.metadata.ReplicationMetadataManager
 import org.opensearch.replication.metadata.store.ReplicationMetadata
 import org.opensearch.replication.util.coroutineContext
 import org.opensearch.replication.util.execute
+import org.opensearch.replication.util.retryRestoreOnBackpressure
 import org.opensearch.replication.util.suspendExecute
 import kotlinx.coroutines.Dispatchers
 import org.apache.logging.log4j.LogManager
@@ -308,8 +309,13 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
             RemoteClusterRetentionLeaseHelper.getFollowerClusterNameWithUUID(clusterService.clusterName.value(), clusterService.state().metadata.clusterUUID()),
              followerShardId)
 
-        // Gets the remote store metadata
-        val metadataResponse = executeActionOnRemote(GetStoreMetadataAction.INSTANCE, getStoreMetadataRequest, followerIndexName)
+        // Gets the remote store metadata. This is the first request to open a leader restore session, so it is
+        // where the leader's session-cap 429 surfaces; retry it against backpressure like the chunk fetches.
+        val metadataResponse = retryRestoreOnBackpressure(log, replicationSettings.recoveryRetryTimeout,
+                perAttemptTimeoutMillis = 2 * REMOTE_CLUSTER_REPO_REQ_TIMEOUT_IN_MILLI_SEC,
+                description = "store metadata for $followerShardId") {
+            executeActionOnRemote(GetStoreMetadataAction.INSTANCE, getStoreMetadataRequest, followerIndexName)
+        }
         val metadataSnapshot = metadataResponse.metadataSnapshot
 
         val replMetadata = getReplicationMetadata(followerIndexName)
@@ -321,6 +327,7 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         multiChunkTransfer = RemoteClusterMultiChunkTransfer(log, clusterService.clusterName.value(), client.threadPool().threadContext,
                 store, replicationSettings.concurrentFileChunks, restoreUUID, replMetadata, leaderShardNode,
                 leaderShardId, fileMetadata, leaderClusterClient, recoveryState, replicationSettings.chunkSize,
+                replicationSettings.recoveryRetryTimeout,
                 object : ActionListener<Void> {
                     override fun onFailure(e: java.lang.Exception?) {
                         log.error("Restore of ${store.shardId()} failed due to follower=$followerIndexName, leaderShard=$leaderShardId, error=${e?.stackTraceToString()}")
