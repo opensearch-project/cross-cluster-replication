@@ -29,6 +29,9 @@ import org.opensearch.replication.action.status.ReplicationStatusAction
 import org.opensearch.replication.action.status.ShardInfoRequest
 import org.opensearch.persistent.PersistentTasksCustomMetadata
 import org.opensearch.replication.metadata.state.BulkTaskState
+import org.opensearch.replication.metadata.state.ReplicationStateMetadata
+import org.opensearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
+import org.opensearch.replication.metadata.ReplicationOverallState
 import org.opensearch.replication.util.suspendExecute
 import org.opensearch.tasks.CancellableTask
 import org.opensearch.tasks.Task
@@ -75,6 +78,14 @@ class BulkReplicationTask(
     private fun isSuccessState(state: ReplicationState) =
         state == ReplicationState.RESTORING || state == ReplicationState.FOLLOWING || state == ReplicationState.MONITORING
 
+    private fun isOverallStatePaused(index: String): Boolean {
+        val metadata = clusterService.state().metadata
+            .custom<ReplicationStateMetadata>(ReplicationStateMetadata.NAME) ?: return false
+        val stateParams = metadata.replicationDetails[index] ?: return false
+        val overallState = stateParams[REPLICATION_LAST_KNOWN_OVERALL_STATE]
+        return overallState == ReplicationOverallState.PAUSED.name
+    }
+
     private fun getIndexTaskState(index: String): IndexReplicationState? {
         val persistentTasks = clusterService.state().metadata
             .custom<PersistentTasksCustomMetadata>(PersistentTasksCustomMetadata.TYPE)
@@ -113,7 +124,7 @@ class BulkReplicationTask(
                     cancelledCount.set(maxOf(0, indices.size - successCount.get() - newFailures))
                 }
                 pendingCount.set(0)
-                updateClusterState()
+                updateClusterState(force = true)
                 val finalStatus = getStatus() as BulkReplicationTaskStatus
                 log.info("BulkReplicationTask.run: COMPLETED success=${finalStatus.numSuccess} failed=${finalStatus.numFailed} pending=${finalStatus.numPending} cancelled=${finalStatus.numCancelled}")
                 listener.onResponse(finalStatus)
@@ -129,7 +140,7 @@ class BulkReplicationTask(
             } finally {
                 pendingCount.set(0)
                 for (attempt in 1..3) {
-                    try { updateClusterState(); break } catch (_: Exception) {
+                    try { updateClusterState(force = true); break } catch (e: Exception) { log.debug("Failed to write final cluster state (attempt $attempt/3): ${e.message}")
                         if (attempt < 3) kotlinx.coroutines.delay(1000)
                     }
                 }
@@ -161,17 +172,11 @@ class BulkReplicationTask(
             batchFailures.addAll(failures)
             pendingCount.addAndGet(-failures.size)
             updateClusterState()
-            // Wait up to 60s for batch indices to leave INIT state before next batch
+            // Brief pause between batches to avoid overwhelming the cluster manager.
+            // The bulk restore (done in executeBatchStart) means tasks skip INIT→RESTORING entirely
+            // and go straight to InitFollowState, so there's no need to wait for restores.
             if (started.isNotEmpty() && indices.size > bulkBatchSize) {
-                val batchDeadline = System.currentTimeMillis() + 60_000
-                var pending = started.toList()
-                while (pending.isNotEmpty() && System.currentTimeMillis() < batchDeadline && !isCancelled) {
-                    kotlinx.coroutines.delay(2000)
-                    pending = pending.filter { index ->
-                        val state = getIndexTaskState(index)
-                        state == null || state.state == ReplicationState.INIT
-                    }
-                }
+                kotlinx.coroutines.delay(2000)
             }
         }
 
@@ -275,7 +280,17 @@ class BulkReplicationTask(
     private suspend fun pollIndices(snapshot: List<String>, allStarted: CopyOnWriteArrayList<String>, batchFailures: CopyOnWriteArrayList<FailedIndex>) {
         for (index in snapshot) {
             if (isCancelled) break
-            val state = getIndexTaskState(index) ?: continue
+            val state = getIndexTaskState(index)
+            if (state == null) {
+                // Persistent task absent — check if index was auto-paused (task cancelled after successful start).
+                // PAUSED + no task = auto-paused after start. RUNNING + no task = task not yet assigned, keep waiting.
+                if (isOverallStatePaused(index)) {
+                    allStarted.remove(index)
+                    successCount.incrementAndGet()
+                    pendingCount.decrementAndGet()
+                }
+                continue
+            }
             when {
                 isSuccessState(state.state) -> {
                     allStarted.remove(index)
@@ -299,7 +314,13 @@ class BulkReplicationTask(
             } catch (_: Exception) { "Replication task failed" }
     }
 
-    private suspend fun updateClusterState() {
+    private val lastClusterStateUpdate = java.util.concurrent.atomic.AtomicLong(0)
+    private val UPDATE_CLUSTER_STATE_INTERVAL_MS = 2000L
+
+    private suspend fun updateClusterState(force: Boolean = false) {
+        val now = System.currentTimeMillis()
+        if (!force && now - lastClusterStateUpdate.get() < UPDATE_CLUSTER_STATE_INTERVAL_MS) return
+        lastClusterStateUpdate.set(now)
         try {
             client.suspendExecute(UpdateBulkTaskStateAction.INSTANCE, UpdateBulkTaskStateRequest(
                 BulkTaskState(bulkTaskId, operationType.label, request.pattern, startTime,
