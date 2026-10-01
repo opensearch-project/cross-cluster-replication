@@ -25,6 +25,7 @@ import org.opensearch.action.admin.indices.recovery.RecoveryResponse
 import org.opensearch.action.admin.indices.settings.get.GetSettingsAction
 import org.opensearch.action.admin.indices.settings.get.GetSettingsResponse
 import org.opensearch.action.admin.indices.settings.put.UpdateSettingsAction
+import org.opensearch.action.admin.indices.settings.put.UpdateSettingsRequest
 import org.opensearch.action.get.GetAction
 import org.opensearch.action.get.GetResponse
 import org.opensearch.action.support.clustermanager.AcknowledgedResponse
@@ -61,6 +62,8 @@ open class NoOpClient(testName :String) : NoOpNodeClient(testName) {
     override fun <Request : ActionRequest, Response : ActionResponse> doExecute(action: ActionType<Response>?, request: Request?, listener: ActionListener<Response>) {
         if (action == UpdateSettingsAction.INSTANCE) {
             //Update setting to prevent pruning on leader
+            val updateRequest = request as UpdateSettingsRequest
+            IndexReplicationTaskTests.leaderSettingsUpdates.add(updateRequest)
             var settingResponse = AcknowledgedResponse(true)
             listener.onResponse(settingResponse as Response)
         } else if (action == RestoreSnapshotAction.INSTANCE) {

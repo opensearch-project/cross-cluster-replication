@@ -19,6 +19,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.assertj.core.api.Assertions.assertThat
+import org.junit.Before
 import org.mockito.Mockito
 import org.opensearch.Version
 import org.opensearch.cluster.ClusterState
@@ -29,8 +30,11 @@ import org.opensearch.cluster.metadata.Metadata
 import org.opensearch.cluster.node.DiscoveryNode
 import org.opensearch.cluster.node.DiscoveryNodes
 import org.opensearch.cluster.routing.RoutingTable
+import org.opensearch.action.admin.indices.settings.put.UpdateSettingsRequest
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.settings.SettingsModule
+import org.opensearch.core.common.unit.ByteSizeUnit
+import org.opensearch.core.common.unit.ByteSizeValue
 import org.opensearch.index.IndexSettings
 import org.opensearch.common.unit.TimeValue
 import org.opensearch.core.xcontent.NamedXContentRegistry
@@ -73,6 +77,17 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
         var followerIndex = "follower-index"
         var connectionName = "leader-cluster"
         var remoteCluster = "remote-cluster"
+
+        var leaderTranslogGenerationThresholdSize: ByteSizeValue =
+                ReplicationPlugin.REPLICATION_FOLLOWER_LEADER_TRANSLOG_GENERATION_THRESHOLD_SIZE.getDefault(Settings.EMPTY)
+        val leaderSettingsUpdates: MutableList<UpdateSettingsRequest> = Collections.synchronizedList(ArrayList())
+    }
+
+    @Before
+    fun resetLeaderTranslogSettingsCapture() {
+        leaderTranslogGenerationThresholdSize =
+                ReplicationPlugin.REPLICATION_FOLLOWER_LEADER_TRANSLOG_GENERATION_THRESHOLD_SIZE.getDefault(Settings.EMPTY)
+        leaderSettingsUpdates.clear()
     }
 
     var threadPool = TestThreadPool("ReplicationPluginTest")
@@ -126,6 +141,8 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
             assertThat(currentTaskState == RestoreState).isTrue()
         },  1, TimeUnit.SECONDS)
 
+        assertLeaderTranslogSettingsPushed(ByteSizeValue(32, ByteSizeUnit.MB))
+
 
         //Complete the Restore
         metaBuilder = Metadata.builder()
@@ -150,6 +167,53 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
 
         job.cancel()
 
+    }
+
+    fun testLeaderTranslogGenerationThresholdSizeOverrideIsPushedToLeader() = runBlocking {
+        leaderTranslogGenerationThresholdSize = ByteSizeValue(2, ByteSizeUnit.MB)
+        val replicationTask: IndexReplicationTask = spy(createIndexReplicationTask())
+        val taskManager = Mockito.mock(TaskManager::class.java)
+        replicationTask.setPersistent(taskManager)
+        val rc = ReplicationContext(followerIndex)
+        val rm = ReplicationMetadata(connectionName, ReplicationStoreMetadataType.INDEX.name, ReplicationOverallState.RUNNING.name, "reason", rc, rc, Settings.EMPTY)
+        replicationTask.setReplicationMetadata(rm)
+
+        val state: ClusterState = clusterService.state()
+        val metadata = Metadata.builder()
+                .put(IndexMetadata.builder(REPLICATION_CONFIG_SYSTEM_INDEX).settings(settings(Version.CURRENT)).numberOfShards(1).numberOfReplicas(0))
+                .build()
+        val routingTable = RoutingTable.builder().addAsNew(metadata.index(REPLICATION_CONFIG_SYSTEM_INDEX)).build()
+        setState(clusterService, ClusterState.builder(state).routingTable(routingTable)
+                .putCustom(RestoreInProgress.TYPE, RestoreInProgress.Builder(RestoreInProgress.EMPTY).build()).build())
+
+        val job = this.launch {
+            replicationTask.execute(this, InitialState)
+        }
+
+        // runBlocking is single-threaded: yield to the task instead of blocking in assertBusy
+        var attempts = 0
+        while (pushedLeaderTranslogSettingsUpdates().isEmpty() && attempts++ < 50) {
+            delay(100)
+        }
+        assertLeaderTranslogSettingsPushed(ByteSizeValue(2, ByteSizeUnit.MB))
+
+        job.cancel()
+    }
+
+    private fun pushedLeaderTranslogSettingsUpdates(): List<UpdateSettingsRequest> {
+        // leader and follower share a name here, so identify the leader update by the pruning key
+        return leaderSettingsUpdates.filter {
+            it.indices().contains(followerIndex) && it.settings().hasValue(ReplicationPlugin.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING.key)
+        }
+    }
+
+    private fun assertLeaderTranslogSettingsPushed(expectedGenerationThresholdSize: ByteSizeValue) {
+        val pushed = pushedLeaderTranslogSettingsUpdates()
+        assertThat(pushed).describedAs("translog settings update on the leader index").isNotEmpty
+        val settings = pushed.last().settings()
+        assertThat(settings.getAsBoolean(ReplicationPlugin.REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING.key, false)).isTrue()
+        assertThat(settings.getAsBytesSize(IndexSettings.INDEX_TRANSLOG_GENERATION_THRESHOLD_SIZE_SETTING.key, null))
+                .isEqualTo(expectedGenerationThresholdSize)
     }
 
     fun testStartNewShardTasks() = runBlocking {
@@ -295,6 +359,7 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
 
         val replicationSettings = Mockito.mock(ReplicationSettings::class.java)
         replicationSettings.metadataSyncInterval = TimeValue(100, TimeUnit.MILLISECONDS)
+        replicationSettings.leaderTranslogGenerationThresholdSize = leaderTranslogGenerationThresholdSize
         val cso = ClusterStateObserver(clusterService, logger, threadPool.threadContext)
         val indexReplicationTask = IndexReplicationTask(1, "type", "action", "description" , EMPTY_TASK_ID,
                 ReplicationPlugin.REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService , threadPool, spyClient, IndexReplicationParams(connectionName, Index(followerIndex, "0"), followerIndex),
