@@ -20,6 +20,9 @@ import org.opensearch.action.admin.cluster.health.ClusterHealthAction
 import org.opensearch.action.admin.cluster.health.ClusterHealthResponse
 import org.opensearch.action.admin.cluster.snapshots.restore.RestoreSnapshotAction
 import org.opensearch.action.admin.cluster.snapshots.restore.RestoreSnapshotResponse
+import org.opensearch.action.admin.indices.delete.DeleteIndexAction
+import org.opensearch.action.admin.indices.delete.DeleteIndexRequest
+import org.opensearch.action.admin.indices.mapping.put.PutMappingAction
 import org.opensearch.action.admin.indices.recovery.RecoveryAction
 import org.opensearch.action.admin.indices.recovery.RecoveryResponse
 import org.opensearch.action.admin.indices.settings.get.GetSettingsAction
@@ -27,6 +30,9 @@ import org.opensearch.action.admin.indices.settings.get.GetSettingsResponse
 import org.opensearch.action.admin.indices.settings.put.UpdateSettingsAction
 import org.opensearch.action.get.GetAction
 import org.opensearch.action.get.GetResponse
+import org.opensearch.action.index.IndexAction
+import org.opensearch.action.index.IndexRequest
+import org.opensearch.action.index.IndexResponse
 import org.opensearch.action.support.clustermanager.AcknowledgedResponse
 import org.opensearch.common.UUIDs
 import org.opensearch.core.common.bytes.BytesReference
@@ -35,6 +41,7 @@ import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.common.xcontent.XContentFactory
 import org.opensearch.core.index.Index
 import org.opensearch.index.get.GetResult
+import org.opensearch.index.seqno.RetentionLeaseActions
 import org.opensearch.core.index.shard.ShardId
 import org.opensearch.indices.recovery.RecoveryState
 import org.opensearch.persistent.PersistentTaskResponse
@@ -43,6 +50,7 @@ import org.opensearch.persistent.StartPersistentTaskAction
 import org.opensearch.persistent.UpdatePersistentTaskStatusAction
 import org.opensearch.replication.ReplicationPlugin
 import org.opensearch.replication.action.index.block.UpdateIndexBlockAction
+import org.opensearch.replication.action.replicationstatedetails.UpdateReplicationStateAction
 import org.opensearch.replication.metadata.ReplicationMetadataManager
 import org.opensearch.replication.metadata.store.ReplicationContext
 import org.opensearch.replication.metadata.store.ReplicationMetadata
@@ -64,6 +72,10 @@ open class NoOpClient(testName :String) : NoOpNodeClient(testName) {
             var settingResponse = AcknowledgedResponse(true)
             listener.onResponse(settingResponse as Response)
         } else if (action == RestoreSnapshotAction.INSTANCE) {
+            if (IndexReplicationTaskTests.restoreFails) {
+                listener.onFailure(IllegalStateException("restore failed"))
+                return
+            }
             //begin snapshot operation
             var snapResponse = RestoreSnapshotResponse(null as RestoreInfo?)
             if (IndexReplicationTaskTests.restoreNotNull) {
@@ -112,7 +124,12 @@ open class NoOpClient(testName :String) : NoOpNodeClient(testName) {
         } else if (action == RecoveryAction.INSTANCE) {
             val shardRecoveryStates: MutableMap<String, List<RecoveryState>> = HashMap()
             val recoveryStates: MutableList<RecoveryState> = ArrayList()
-            recoveryStates.add(Mockito.mock(RecoveryState::class.java))
+            val recovery = Mockito.mock(RecoveryState::class.java)
+            if (IndexReplicationTaskTests.primaryRecovering) {
+                doReturn(true).`when`(recovery).primary
+                doReturn(RecoveryState.Stage.INDEX).`when`(recovery).stage
+            }
+            recoveryStates.add(recovery)
             shardRecoveryStates.put("follower-index", recoveryStates)
             var recoveryResponse = RecoveryResponse(1,1, 1, shardRecoveryStates, listOf())
             listener.onResponse(recoveryResponse as Response)
@@ -132,6 +149,28 @@ open class NoOpClient(testName :String) : NoOpNodeClient(testName) {
             // Store health response
             val replicationStoreResponse = ClusterHealthResponse()
             listener.onResponse(replicationStoreResponse as Response)
+        } else if (action == DeleteIndexAction.INSTANCE) {
+            // cancelRestore() removing a partial restore
+            IndexReplicationTaskTests.deletedIndices.addAll((request as DeleteIndexRequest).indices())
+            IndexReplicationTaskTests.cleanupActions.add("delete")
+            listener.onResponse(AcknowledgedResponse(true) as Response)
+        } else if (action == RetentionLeaseActions.Remove.INSTANCE) {
+            // cancelRestore() releasing the leader side retention leases
+            IndexReplicationTaskTests.cleanupActions.add("lease")
+            // Never answering stands in for an unreachable leader.
+            if (IndexReplicationTaskTests.leaderUnreachable) return
+            IndexReplicationTaskTests.removedRetentionLeases++
+            listener.onResponse(RetentionLeaseActions.Response() as Response)
+        } else if (action == PutMappingAction.INSTANCE) {
+            // Replication metadata store bringing its mapping up to date before a write
+            listener.onResponse(AcknowledgedResponse(true) as Response)
+        } else if (action == IndexAction.INSTANCE) {
+            // Replication metadata store persisting the updated metadata document
+            val shardId = ShardId(Index(ReplicationMetadataStore.REPLICATION_CONFIG_SYSTEM_INDEX, "_na_"), 0)
+            listener.onResponse(IndexResponse(shardId, (request as IndexRequest).id(), 1, 1, 1, false) as Response)
+        } else if (action == UpdateReplicationStateAction.INSTANCE) {
+            // Replication state details written into cluster state
+            listener.onResponse(AcknowledgedResponse(true) as Response)
         }
     }
 }
