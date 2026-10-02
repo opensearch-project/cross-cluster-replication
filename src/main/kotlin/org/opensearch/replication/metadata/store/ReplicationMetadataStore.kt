@@ -35,7 +35,6 @@ import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.lifecycle.AbstractLifecycleComponent
 import org.opensearch.common.settings.Settings
-import org.opensearch.common.util.concurrent.ThreadContext
 import org.opensearch.common.xcontent.XContentType
 import org.opensearch.common.xcontent.XContentFactory
 import org.opensearch.common.xcontent.XContentHelper
@@ -45,7 +44,11 @@ import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.XContentParser
 import org.opensearch.replication.util.suspendExecuteWithRetries
 
-class ReplicationMetadataStore constructor(val client: Client, val clusterService: ClusterService,
+class ReplicationMetadataStore constructor(val client: Client,
+                               // Reaches the replication config system index as the plugin's own subject,
+                               // which the calling user is not entitled to read directly.
+                               val pluginClient: Client,
+                               val clusterService: ClusterService,
                                val namedXContentRegistry: NamedXContentRegistry): AbstractLifecycleComponent() {
 
     companion object {
@@ -180,20 +183,13 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
             getReq.preference(preference)
         }
 
-        var storedContext: ThreadContext.StoredContext? = null
-        try {
-            storedContext = client.threadPool().threadContext.stashContext()
-            val getRes = client.get(getReq).actionGet(timeout)
-            if(getRes.sourceAsBytesRef == null) {
-                throw ResourceNotFoundException("Metadata for $id doesn't exist")
-            }
-            val parser = XContentHelper.createParser(namedXContentRegistry, LoggingDeprecationHandler.INSTANCE,
-                    getRes.sourceAsBytesRef, XContentType.JSON)
-            return GetReplicationMetadataResponse(ReplicationMetadata.fromXContent(parser), getRes.seqNo, getRes.primaryTerm)
-        } finally {
-            storedContext?.close()
+        val getRes = pluginClient.get(getReq).actionGet(timeout)
+        if(getRes.sourceAsBytesRef == null) {
+            throw ResourceNotFoundException("Metadata for $id doesn't exist")
         }
-
+        val parser = XContentHelper.createParser(namedXContentRegistry, LoggingDeprecationHandler.INSTANCE,
+                getRes.sourceAsBytesRef, XContentType.JSON)
+        return GetReplicationMetadataResponse(ReplicationMetadata.fromXContent(parser), getRes.seqNo, getRes.primaryTerm)
     }
 
     /**

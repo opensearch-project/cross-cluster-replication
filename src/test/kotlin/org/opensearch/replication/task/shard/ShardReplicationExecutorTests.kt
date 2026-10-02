@@ -41,7 +41,7 @@ class ShardReplicationExecutorTests: OpenSearchTestCase() {
     fun setup() {
         val spyClient = Mockito.spy(NoOpClient("testName"))
         val replicationMetadataManager = ReplicationMetadataManager(clusterService, spyClient,
-            ReplicationMetadataStore(spyClient, clusterService, NamedXContentRegistry.EMPTY)
+            ReplicationMetadataStore(spyClient, spyClient, clusterService, NamedXContentRegistry.EMPTY)
         )
         val followerStats = FollowerClusterStats()
         val followerShardId = ShardId("follower", "follower_uuid", 0)
