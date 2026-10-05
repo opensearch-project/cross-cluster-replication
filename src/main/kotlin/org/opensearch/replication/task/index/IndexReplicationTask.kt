@@ -627,7 +627,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                 } else {
                     log.info("All aliases are not equal on $followerIndexName. Will sync up them")
                     request = IndicesAliasesRequest()
-                    var toAdd = leaderAliases - followerAliases
+                    var toAdd = desiredAliases - followerAliases
 
                     for (alias in toAdd) {
                         log.info("Adding alias ${alias.alias} from $followerIndexName")
@@ -652,7 +652,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
                         request.addAliasAction(aliasAction)
                     }
 
-                    var toRemove = followerAliases - leaderAliases
+                    var toRemove = followerAliases - desiredAliases
                     val leaderAliasNames = leaderAliases.map { it.alias() }.toSet()
                     for (alias in toRemove) {
                         // Only remove if it doesn't exist on the leader at all (by name).
