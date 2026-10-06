@@ -42,21 +42,16 @@ class FollowerClusterStatsTests : OpenSearchTestCase() {
         assertFalse(stats.stats.containsKey(shardId))
     }
 
-    // add imports:
-    // import java.util.concurrent.ConcurrentHashMap
-    // import java.util.concurrent.atomic.AtomicBoolean
-    // import java.util.concurrent.atomic.AtomicLong
-
     /**
-     * Reproduces the 2026-08-27 production NPE storm. FollowerClusterStats.stats is a plain
+     * Guards against a concurrency NPE. FollowerClusterStats.stats is a plain
      * mutableMapOf() (LinkedHashMap), a node-wide @Singleton, concurrently read by every shard
      * reader (stats[followerShardId]!! in the ShardReplicationTask getChanges error path) and
-     * mutated by task start/cleanup. A leader blue/green produces a burst of GetChanges failures
+     * mutated by task start/cleanup. A leader blue/green deployment produces a burst of GetChanges failures
      * (reads) WHILE many shard tasks start/stop (put/remove) -- concurrent structural modification
      * of a non-thread-safe map, which can return null for a PRESENT key mid-resize; the unguarded
-     * !! then throws NPE (fired ~738x across 10 nodes).
+     * !! then throws NPE.
      */
-    fun `test FollowerClusterStats is thread-safe under concurrent churn (regression for the Aug-27 NPE)`() {
+    fun `test FollowerClusterStats is thread-safe under concurrent churn`() {
         val stats = FollowerClusterStats()
         val hot = ShardId(Index("follower-index", "_na_"), 0)
         stats.stats[hot] = FollowerShardMetric()                       // always present; never removed
