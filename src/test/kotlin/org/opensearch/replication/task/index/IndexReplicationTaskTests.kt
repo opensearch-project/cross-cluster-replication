@@ -340,7 +340,7 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
         val spyClient = Mockito.spy<NoOpClient>(NoOpClient("testName"))
 
         val replicationMetadataManager = ReplicationMetadataManager(clusterService, spyClient,
-                ReplicationMetadataStore(spyClient, clusterService, NamedXContentRegistry.EMPTY))
+                ReplicationMetadataStore(spyClient, spyClient, clusterService, NamedXContentRegistry.EMPTY))
         var persist = PersistentTasksService(clusterService, threadPool, spyClient)
         val state: ClusterState = clusterService.state()
         val tasks = PersistentTasksCustomMetadata.builder()

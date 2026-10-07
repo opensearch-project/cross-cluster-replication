@@ -112,9 +112,11 @@ import org.opensearch.indices.recovery.RecoverySettings
 import org.opensearch.persistent.PersistentTaskParams
 import org.opensearch.persistent.PersistentTaskState
 import org.opensearch.persistent.PersistentTasksExecutor
+import org.opensearch.identity.PluginSubject
 import org.opensearch.plugins.ActionPlugin
 import org.opensearch.plugins.ActionPlugin.ActionHandler
 import org.opensearch.plugins.EnginePlugin
+import org.opensearch.plugins.IdentityAwarePlugin
 import org.opensearch.plugins.PersistentTaskPlugin
 import org.opensearch.plugins.SystemIndexPlugin
 import org.opensearch.plugins.Plugin
@@ -166,14 +168,16 @@ import java.util.function.Supplier
 
 import org.opensearch.index.engine.NRTReplicationEngine
 import org.opensearch.indices.SystemIndexDescriptor
+import org.opensearch.replication.util.PluginClient
 import org.opensearch.replication.util.ValidationUtil
 
 
 @OpenForTesting
 internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
-    RepositoryPlugin, EnginePlugin, SystemIndexPlugin {
+    RepositoryPlugin, EnginePlugin, SystemIndexPlugin, IdentityAwarePlugin {
 
     private lateinit var client: Client
+    private lateinit var pluginClient: PluginClient
     private lateinit var clusterService: ClusterService
     private lateinit var threadPool: ThreadPool
     private lateinit var replicationMetadataManager: ReplicationMetadataManager
@@ -247,10 +251,11 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
                                   indexNameExpressionResolver: IndexNameExpressionResolver,
                                   repositoriesService: Supplier<RepositoriesService>): Collection<Any> {
         this.client = client
+        this.pluginClient = PluginClient(client)
         this.threadPool = threadPool
         this.clusterService = clusterService
         this.replicationMetadataManager = ReplicationMetadataManager(clusterService, client,
-                ReplicationMetadataStore(client, clusterService, xContentRegistry))
+                ReplicationMetadataStore(client, pluginClient, clusterService, xContentRegistry))
         this.replicationSettings = ReplicationSettings(clusterService)
         return listOf(RemoteClusterRepositoriesService(repositoriesService, clusterService), replicationMetadataManager, replicationSettings, followerClusterStats)
     }
@@ -463,5 +468,9 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
     }
     override fun getSystemIndexDescriptors(settings: Settings): Collection<SystemIndexDescriptor> {
         return listOf(SystemIndexDescriptor(ReplicationMetadataStore.REPLICATION_CONFIG_SYSTEM_INDEX, "System Index for storing cross cluster replication configuration."))
+    }
+
+    override fun assignSubject(pluginSubject: PluginSubject) {
+        pluginClient.setSubject(pluginSubject)
     }
 }
