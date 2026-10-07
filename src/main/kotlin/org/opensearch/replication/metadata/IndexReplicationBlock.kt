@@ -11,16 +11,9 @@
 
 package org.opensearch.replication.metadata
 
-import org.opensearch.replication.action.index.block.IndexBlockUpdateType
-import org.opensearch.replication.action.index.block.UpdateIndexBlockRequest
-import org.opensearch.core.action.ActionListener
-import org.opensearch.action.support.clustermanager.AcknowledgedResponse
-import org.opensearch.cluster.AckedClusterStateUpdateTask
-import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.block.ClusterBlock
 import org.opensearch.cluster.block.ClusterBlockException
 import org.opensearch.cluster.block.ClusterBlockLevel
-import org.opensearch.cluster.block.ClusterBlocks
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.index.IndexNotFoundException
 import org.opensearch.core.rest.RestStatus
@@ -57,29 +50,4 @@ fun checkIfIndexBlockedWithLevel(clusterService: ClusterService,
     if (clusterBlocksSet.contains(INDEX_REPLICATION_BLOCK)
             && clusterBlocksSet.size > 1)
         throw ClusterBlockException(clusterBlocksSet)
-}
-
-class UpdateIndexBlockTask(val request: UpdateIndexBlockRequest, listener: ActionListener<AcknowledgedResponse>) :
-        AckedClusterStateUpdateTask<AcknowledgedResponse>(request, listener)
-{
-    override fun execute(currentState: ClusterState): ClusterState {
-        val newState = ClusterState.builder(currentState)
-        when(request.updateType) {
-            IndexBlockUpdateType.ADD_BLOCK -> {
-                if (!currentState.blocks.hasIndexBlock(request.indexName, INDEX_REPLICATION_BLOCK)) {
-                    val newBlocks = ClusterBlocks.builder().blocks(currentState.blocks)
-                        .addIndexBlock(request.indexName, INDEX_REPLICATION_BLOCK)
-                    newState.blocks(newBlocks)
-                }
-            }
-            IndexBlockUpdateType.REMOVE_BLOCK -> {
-                val newBlocks = ClusterBlocks.builder().blocks(currentState.blocks)
-                    .removeIndexBlock(request.indexName, INDEX_REPLICATION_BLOCK)
-                newState.blocks(newBlocks)
-            }
-        }
-        return newState.build()
-    }
-
-    override fun newResponse(acknowledged: Boolean) = AcknowledgedResponse(acknowledged)
 }
