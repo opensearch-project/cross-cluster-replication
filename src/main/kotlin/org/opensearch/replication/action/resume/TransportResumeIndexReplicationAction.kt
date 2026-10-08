@@ -195,31 +195,16 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
     }
 
     private suspend fun isResumable(params: IndexReplicationParams): Boolean {
-        var isResumable = true
         val remoteClient = client.getRemoteClusterClient(params.leaderAlias)
         val shards = clusterService.state().routingTable.indicesRouting().get(params.followerIndexName)?.shards()
         val retentionLeaseHelper = RemoteClusterRetentionLeaseHelper(clusterService.clusterName.value(), clusterService.state().metadata.clusterUUID(), remoteClient)
         shards?.forEach {
             val followerShardId = it.value.shardId
             if (!retentionLeaseHelper.verifyRetentionLeaseExist(ShardId(params.leaderIndex, followerShardId.id), followerShardId)) {
-                log.info("Retention lease missing for follower=${params.followerIndexName}, followerShard=$followerShardId, leaderShard=${ShardId(params.leaderIndex, followerShardId.id)} - replication cannot be resumed")
-                isResumable = false
+                return false
             }
         }
-
-        if (isResumable) {
-            return true
-        }
-
-        // clean up all retention leases we may have accidentally took while doing verifyRetentionLeaseExist .
-        // Idempotent Op which does no harm
-        shards?.forEach {
-            val followerShardId = it.value.shardId
-            log.debug("Removing lease for $followerShardId.id ")
-            retentionLeaseHelper.attemptRetentionLeaseRemoval(ShardId(params.leaderIndex, followerShardId.id), followerShardId)
-        }
-
-        return false
+        return true
     }
 
     private suspend fun getLeaderIndexMetadata(leaderAlias: String, leaderIndex: String): IndexMetadata {
