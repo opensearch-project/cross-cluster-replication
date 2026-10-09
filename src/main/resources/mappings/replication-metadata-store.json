@@ -1,6 +1,6 @@
 {
   "_meta": {
-    "schema_version": 2
+    "schema_version": 3
   },
   "dynamic": "strict",
   "properties": {
@@ -39,6 +39,24 @@
           "ignore_above": 1024
         }
       }
+    },
+    "leader_sequence_number": {
+      "type": "long"
+    },
+    "follower_applied_sequence": {
+      "type": "long"
+    },
+    "checkpoint_persistence_enabled": {
+      "type": "boolean"
+    },
+    "checkpoint_retention_period": {
+      "type": "keyword"
+    },
+    "role_transition_resume_mode": {
+      "type": "keyword"
+    },
+    "checkpoint_stopped_at_millis": {
+      "type": "long"
     },
     "follower_context": {
       "type": "nested",

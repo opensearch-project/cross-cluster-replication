@@ -89,6 +89,21 @@ class ReplicationMetadata: ToXContent {
     lateinit var settings: Settings
     var followerIndexPattern: String? = null
 
+    // Point 1 & 2: Bidirectional checkpoint tracking — persisted so role transitions can resume
+    var leaderSequenceNumber: Long = UNASSIGNED_SEQ_NO
+    var followerAppliedSequence: Long = UNASSIGNED_SEQ_NO
+
+    // Point 3 & 5: Checkpoint configuration stored alongside metadata
+    var checkpointPersistenceEnabled: Boolean = true
+    var checkpointRetentionPeriod: String = "24h"
+    var roleTransitionResumeMode: String = "CHECKPOINT"
+
+    // Epoch millis at which this document was transitioned to STOPPED while preserving a checkpoint
+    // (see ReplicationMetadataManager#deleteIndexReplicationMetadata). Used to enforce
+    // checkpointRetentionPeriod so that STOPPED replication topology / checkpoint data does not remain
+    // in the .replication-metadata-store system index indefinitely. UNASSIGNED_SEQ_NO (-1) means "not
+    // currently stopped" / not applicable.
+    var checkpointStoppedAtMillis: Long = UNASSIGNED_SEQ_NO
 
     constructor(connectionName: String,
                 metadataType: String,
@@ -97,7 +112,10 @@ class ReplicationMetadata: ToXContent {
                 followerContext: ReplicationContext,
                 leaderContext: ReplicationContext,
                 settings: Settings,
-                followerIndexPattern: String? = null) {
+                followerIndexPattern: String? = null,
+                checkpointPersistenceEnabled: Boolean = true,
+                checkpointRetentionPeriod: String = "24h",
+                roleTransitionResumeMode: String = "CHECKPOINT") {
         this.connectionName = connectionName
         this.metadataType = metadataType
         this.overallState = overallState
@@ -106,12 +124,17 @@ class ReplicationMetadata: ToXContent {
         this.leaderContext = leaderContext
         this.settings = settings
         this.followerIndexPattern = followerIndexPattern
+        this.checkpointPersistenceEnabled = checkpointPersistenceEnabled
+        this.checkpointRetentionPeriod = checkpointRetentionPeriod
+        this.roleTransitionResumeMode = roleTransitionResumeMode
     }
 
     private constructor() {
     }
 
     companion object {
+        const val UNASSIGNED_SEQ_NO = -1L
+
         private val METADATA_PARSER = ObjectParser<ReplicationMetadata, Void>("ReplicationMetadataParser") { ReplicationMetadata() }
         init {
             METADATA_PARSER.declareString(ReplicationMetadata::connectionName::set, ParseField( "connection_name"))
@@ -127,6 +150,14 @@ class ReplicationMetadata: ToXContent {
                     ParseField(KEY_SETTINGS))
             METADATA_PARSER.declareStringOrNull({ metadata: ReplicationMetadata, value: String? -> metadata.followerIndexPattern = value },
                     ParseField(KEY_FOLLOWER_INDEX_PATTERN))
+            // Point 1 & 2: Checkpoint sequence tracking fields
+            METADATA_PARSER.declareLong(ReplicationMetadata::leaderSequenceNumber::set, ParseField("leader_sequence_number"))
+            METADATA_PARSER.declareLong(ReplicationMetadata::followerAppliedSequence::set, ParseField("follower_applied_sequence"))
+            // Point 3 & 5: Checkpoint configuration fields
+            METADATA_PARSER.declareBoolean(ReplicationMetadata::checkpointPersistenceEnabled::set, ParseField("checkpoint_persistence_enabled"))
+            METADATA_PARSER.declareString(ReplicationMetadata::checkpointRetentionPeriod::set, ParseField("checkpoint_retention_period"))
+            METADATA_PARSER.declareString(ReplicationMetadata::roleTransitionResumeMode::set, ParseField("role_transition_resume_mode"))
+            METADATA_PARSER.declareLong(ReplicationMetadata::checkpointStoppedAtMillis::set, ParseField("checkpoint_stopped_at_millis"))
         }
 
         @Throws(IOException::class)
@@ -134,6 +165,16 @@ class ReplicationMetadata: ToXContent {
             return METADATA_PARSER.parse(parser, null)
         }
     }
+
+    /**
+     * Returns true if this document represents a STOPPED replication with a preserved checkpoint that
+     * has outlived its configured retention period, and should therefore be purged rather than reused
+     * for a role-transition resume or retained further in the system index. Delegates to
+     * CheckpointRetentionPolicy so the expiry rule is defined in exactly one place and shared with the
+     * periodic background sweep in ReplicationMetadataStore.
+     */
+    fun isCheckpointExpired(nowMillis: Long = System.currentTimeMillis()): Boolean =
+        CheckpointRetentionPolicy.isExpired(checkpointStoppedAtMillis, checkpointRetentionPeriod, nowMillis)
 
     override fun toXContent(builder: XContentBuilder, params: ToXContent.Params): XContentBuilder {
         builder.startObject()
@@ -163,6 +204,14 @@ class ReplicationMetadata: ToXContent {
         if (followerIndexPattern != null) {
             builder.field(KEY_FOLLOWER_INDEX_PATTERN, followerIndexPattern)
         }
+        // Point 1 & 2: Persist bidirectional checkpoint sequences
+        builder.field("leader_sequence_number", leaderSequenceNumber)
+        builder.field("follower_applied_sequence", followerAppliedSequence)
+        // Point 3 & 5: Persist checkpoint configuration
+        builder.field("checkpoint_persistence_enabled", checkpointPersistenceEnabled)
+        builder.field("checkpoint_retention_period", checkpointRetentionPeriod)
+        builder.field("role_transition_resume_mode", roleTransitionResumeMode)
+        builder.field("checkpoint_stopped_at_millis", checkpointStoppedAtMillis)
 
         builder.endObject()
 
