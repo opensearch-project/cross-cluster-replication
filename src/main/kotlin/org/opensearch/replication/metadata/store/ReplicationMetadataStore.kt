@@ -31,7 +31,6 @@ import org.opensearch.action.get.MultiGetRequest
 import org.opensearch.action.index.IndexResponse
 import org.opensearch.transport.client.Client
 import org.opensearch.action.search.SearchRequest
-import org.opensearch.action.bulk.BulkRequest
 import org.opensearch.cluster.ClusterChangedEvent
 import org.opensearch.cluster.ClusterStateListener
 import org.opensearch.cluster.health.ClusterHealthStatus
