@@ -57,7 +57,8 @@ class BatchSizeSettingsTests : OpenSearchTestCase() {
                 ReplicationPlugin.REPLICATION_FOLLOWER_RECOVERY_CHUNK_SIZE,
                 ReplicationPlugin.REPLICATION_FOLLOWER_RECOVERY_PARALLEL_CHUNKS,
                 ReplicationPlugin.REPLICATION_FOLLOWER_BULK_BATCH_SIZE,
-                ReplicationPlugin.REPLICATION_FOLLOWER_BULK_POLL_TIMEOUT
+                ReplicationPlugin.REPLICATION_FOLLOWER_BULK_POLL_TIMEOUT,
+                ReplicationPlugin.REPLICATION_FOLLOWER_LEADER_TRANSLOG_GENERATION_THRESHOLD_SIZE
             )
         )
         

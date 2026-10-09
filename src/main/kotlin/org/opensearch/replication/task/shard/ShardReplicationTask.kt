@@ -228,11 +228,11 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                                           TaskId(clusterService.nodeName, id), client, indexShard.localCheckpoint, followerClusterStats, replicationSettings.writersPerShard)
 
         val changeTracker = ShardReplicationChangesTracker(indexShard, replicationSettings)
-        followerClusterStats.stats[followerShardId]!!.followerCheckpoint = indexShard.localCheckpoint
+        followerClusterStats.stats[followerShardId]?.followerCheckpoint = indexShard.localCheckpoint
         // In case the shard task starts on a new node and there are no active writes on the leader shard, leader checkpoint
         // never gets initialized and defaults to 0. To get around this, we set the leaderCheckpoint to follower shard's
         // localCheckpoint as the leader shard is guaranteed to equal or more.
-        followerClusterStats.stats[followerShardId]!!.leaderCheckpoint = indexShard.localCheckpoint
+        followerClusterStats.stats[followerShardId]?.leaderCheckpoint = indexShard.localCheckpoint
 
         // Persist the initial checkpoint immediately on task start.
         // This ensures the metadata store is updated even when the follower is fully caught up
@@ -263,13 +263,13 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                         logInfo("Timed out waiting for new changes. Current seqNo: $fromSeqNo. $e")
                         changeTracker.updateBatchFetched(false, fromSeqNo, toSeqNo, fromSeqNo - 1,-1)
                     } catch (e: NodeNotConnectedException) {
-                        followerClusterStats.stats[followerShardId]!!.opsReadFailures.addAndGet(1)
+                        followerClusterStats.stats[followerShardId]?.opsReadFailures?.addAndGet(1)
                         logInfo("Node not connected to $leaderAlias, retrying with different node. followerShard=$followerShardId, seqNo=$fromSeqNo: ${e.message}")
                         delay(backOffForRetry)
                         backOffForRetry = (backOffForRetry * factor).toLong().coerceAtMost(maxTimeOut)
                         changeTracker.updateBatchFetched(false, fromSeqNo, toSeqNo, fromSeqNo - 1,-1)
                     } catch (e: Exception) {
-                        followerClusterStats.stats[followerShardId]!!.opsReadFailures.addAndGet(1)
+                        followerClusterStats.stats[followerShardId]?.opsReadFailures?.addAndGet(1)
                         logInfo("Unable to get changes from seqNo: $fromSeqNo. ${e.stackTraceToString()}")
 
                         // Handle 2GB limit exception specifically
@@ -289,7 +289,7 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
                         if (e is OpenSearchException &&
                                 range4xx.contains(e.status().status) ) {
                             if (e.status().status == RestStatus.TOO_MANY_REQUESTS.status) {
-                                followerClusterStats.stats[followerShardId]!!.opsReadThrottles.addAndGet(1)
+                                followerClusterStats.stats[followerShardId]?.opsReadThrottles?.addAndGet(1)
                             } else {
                                 throw e
                             }
@@ -341,8 +341,8 @@ class ShardReplicationTask(id: Long, type: String, action: String, description: 
 
         var changesResp =  remoteClient.suspendExecuteWithRetries(replicationMetadata = replicationMetadata,
                 action = GetChangesAction.INSTANCE, req = request, log = log)
-        followerClusterStats.stats[followerShardId]!!.leaderCheckpoint = changesResp.lastSyncedGlobalCheckpoint
-        followerClusterStats.stats[followerShardId]!!.opsRead.addAndGet(changesResp.changes.size.toLong())
+        followerClusterStats.stats[followerShardId]?.leaderCheckpoint = changesResp.lastSyncedGlobalCheckpoint
+        followerClusterStats.stats[followerShardId]?.opsRead?.addAndGet(changesResp.changes.size.toLong())
 
         // Persist checkpoint to metadata store every CHECKPOINT_OPS_INTERVAL operations.
         // This runs in ShardReplicationTask which is always co-located with the shard, ensuring

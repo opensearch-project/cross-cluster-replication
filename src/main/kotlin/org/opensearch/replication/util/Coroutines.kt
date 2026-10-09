@@ -20,10 +20,12 @@ import org.opensearch.action.ActionRequest
 import org.opensearch.core.action.ActionResponse
 import org.opensearch.action.ActionType
 import org.opensearch.action.support.clustermanager.AcknowledgedRequest
+import org.opensearch.action.support.clustermanager.AcknowledgedResponse
 import org.opensearch.action.support.clustermanager.ClusterManagerNodeRequest
 import org.opensearch.transport.client.Client
 import org.opensearch.transport.client.OpenSearchClient
 import org.opensearch.cluster.*
+import org.opensearch.cluster.node.DiscoveryNode
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.Priority
 import org.opensearch.common.unit.TimeValue
@@ -143,6 +145,104 @@ suspend fun <T> ClusterService.waitForClusterStateUpdate(source: String,
                                                          updateTaskFactory: (ActionListener<T>) ->
                                                          AckedClusterStateUpdateTask<T>) : T =
     suspendCoroutine { cont -> submitStateUpdateTask(source, updateTaskFactory(CoroutineActionListener(cont))) }
+
+/**
+ * Batching-aware variant of [waitForClusterStateUpdate].
+ *
+ * Uses the 5-arg [ClusterService.submitStateUpdateTask] overload so that concurrent submissions
+ * with the same [executor] instance coalesce into a single cluster-manager update turn via
+ * OpenSearch's [org.opensearch.cluster.service.TaskBatcher]. The caller is responsible for
+ * ensuring [executor] is a shared singleton — passing a fresh executor per invocation is
+ * functionally equivalent to the non-batching overload above (unique batching key -> no coalescing).
+ *
+ * The per-submission ack semantics of [AckedClusterStateUpdateTask] are preserved by wrapping
+ * the coroutine continuation in a [BatchedCoroutineAckListener], which implements both
+ * [ClusterStateTaskListener] (for immediate failures and no-longer-cluster-manager) and
+ * [AckedClusterStateTaskListener] (to resume with an [AcknowledgedResponse] only after the new
+ * state is acknowledged by all nodes, mirroring the behavior of AckedClusterStateUpdateTask).
+ *
+ * @param source diagnostic label for the update, used in cluster manager logging
+ * @param task the per-caller task input; identity-distinct across submissions
+ * @param executor shared singleton executor implementing coalesced [ClusterStateTaskExecutor.execute]
+ * @param priority priority of the task in the cluster manager's priority queue
+ * @param taskTimeout queue timeout — if the task waits in the queue longer than this, it fails
+ *                    with [org.opensearch.cluster.service.ClusterManagerService.ProcessClusterEventTimeoutException].
+ *                    Null (default) means no queue timeout.
+ * @param ackTimeout time to wait for all-nodes-acked before firing onAckTimeout. Defaults to 30s.
+ */
+suspend fun <T> ClusterService.waitForClusterStateUpdate(
+        source: String,
+        task: T,
+        executor: ClusterStateTaskExecutor<T>,
+        priority: Priority = Priority.NORMAL,
+        taskTimeout: TimeValue? = null,
+        ackTimeout: TimeValue = DEFAULT_ACK_TIMEOUT
+) : AcknowledgedResponse = suspendCoroutine { cont ->
+    val listener = BatchedCoroutineAckListener(cont, ackTimeout)
+    val config = ClusterStateTaskConfig.build(priority, taskTimeout)
+    submitStateUpdateTask(source, task, config, executor, listener)
+}
+
+private val DEFAULT_ACK_TIMEOUT: TimeValue = TimeValue.timeValueSeconds(30)
+
+/**
+ * Per-submission listener for the batched-executor code path. Implements both
+ * [ClusterStateTaskListener] and [AckedClusterStateTaskListener] so that the framework will:
+ *
+ *   1. Call [onFailure] if the executor's execute() threw for this task, or if the CM stepped down.
+ *   2. Call [clusterStateProcessed] after the CM applies the new state locally (no-op here — we
+ *      wait for all-nodes-acked before resuming, matching AckedClusterStateUpdateTask semantics).
+ *   3. Call [onAllNodesAcked] (with null exception on success, or with the exception on ack failure).
+ *   4. Call [onAckTimeout] if some nodes have not acked within [ackTimeout].
+ *
+ * The listener is one-shot: whichever callback fires first resumes the coroutine, and subsequent
+ * callbacks are dropped. This guards against a theoretical race where both [onFailure] and an ack
+ * callback could otherwise resume the same continuation.
+ */
+class BatchedCoroutineAckListener(
+        private val continuation: Continuation<AcknowledgedResponse>,
+        private val ackTimeoutValue: TimeValue
+) : AckedClusterStateTaskListener {
+
+    @Volatile private var resumed: Boolean = false
+
+    @Synchronized
+    private fun resumeOnce(response: AcknowledgedResponse) {
+        if (resumed) return
+        resumed = true
+        continuation.resume(response)
+    }
+
+    @Synchronized
+    private fun resumeOnceWithException(e: Exception) {
+        if (resumed) return
+        resumed = true
+        continuation.resumeWithException(ExceptionsHelper.unwrapCause(e))
+    }
+
+    override fun onFailure(source: String, e: Exception) {
+        resumeOnceWithException(e)
+    }
+
+    override fun clusterStateProcessed(source: String, oldState: ClusterState, newState: ClusterState) {
+        // Local state is applied. Wait for onAllNodesAcked before resuming, matching
+        // AckedClusterStateUpdateTask.clusterStateProcessed (a no-op there too).
+    }
+
+    override fun mustAck(discoveryNode: DiscoveryNode): Boolean = true
+
+    override fun onAllNodesAcked(e: Exception?) {
+        // Mirror AckedClusterStateUpdateTask.onAllNodesAcked: acknowledged = (e == null).
+        resumeOnce(AcknowledgedResponse(e == null))
+    }
+
+    override fun onAckTimeout() {
+        // Mirror AckedClusterStateUpdateTask.onAckTimeout: acknowledged = false on timeout.
+        resumeOnce(AcknowledgedResponse(false))
+    }
+
+    override fun ackTimeout(): TimeValue = ackTimeoutValue
+}
 
 suspend fun <T : PersistentTaskParams>
     PersistentTasksService.startTask(taskId: String, taskName: String, params : T): PersistentTask<T> {
