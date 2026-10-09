@@ -13,6 +13,7 @@ package org.opensearch.replication.action.index
 
 import org.opensearch.replication.metadata.ReplicationMetadataManager
 import org.opensearch.replication.metadata.ReplicationOverallState
+import org.opensearch.replication.metadata.store.ReplicationMetadata
 import org.opensearch.replication.task.ReplicationState
 import org.opensearch.replication.task.index.IndexReplicationExecutor
 import org.opensearch.replication.task.index.IndexReplicationParams
@@ -144,9 +145,46 @@ class TransportReplicateIndexClusterManagerNodeAction @Inject constructor(transp
                         throw IllegalArgumentException("Cant use same index again for replication. " +
                                 "Delete the index:${replicateIndexReq.followerIndex}")
                     }
+
+                    // SECURITY: do not rely solely on the caller-supplied flags above as proof of
+                    // authorization. The flags are a transport-level boolean on the request object —
+                    // if any future/alternate internal code path ever constructed a
+                    // ReplicateIndexRequest with both flags set without first doing AutoFollowTask's
+                    // checkpoint verification, this would be the only thing standing between it and a
+                    // privileged, unaudited cluster-state mutation. Instead, independently re-derive the
+                    // authorization decision here, at the point of the privileged mutation itself, by
+                    // reading the actual persisted checkpoint record from the replication metadata store
+                    // and verifying it: (a) exists, (b) is in STOPPED state (i.e. was an explicitly
+                    // stopped CCR follower, not an arbitrary unrelated index), (c) has a real preserved
+                    // checkpoint (leaderSequenceNumber assigned), and (d) names the *same* leader
+                    // cluster/index this request claims to attach to — preventing a warm-attach request
+                    // for index X from being satisfied using a checkpoint that was actually recorded
+                    // against a different leader.
+                    val preservedCheckpoint = try {
+                        replicationMetadataManager.getIndexReplicationMetadataEnforcingRetention(replicateIndexReq.followerIndex)
+                    } catch (e: Exception) {
+                        log.warn("Could not independently verify preserved checkpoint for " +
+                                "${replicateIndexReq.followerIndex}: ${e.message}")
+                        null
+                    }
+                    val checkpointVerified = preservedCheckpoint != null &&
+                            preservedCheckpoint.overallState == ReplicationOverallState.STOPPED.name &&
+                            preservedCheckpoint.leaderSequenceNumber > ReplicationMetadata.UNASSIGNED_SEQ_NO &&
+                            preservedCheckpoint.connectionName == replicateIndexReq.leaderAlias &&
+                            preservedCheckpoint.leaderContext.resource == replicateIndexReq.leaderIndex
+                    if (!checkpointVerified) {
+                        log.warn("Rejecting warm-attach for ${replicateIndexReq.followerIndex}: caller asserted " +
+                                "isRoleTransitionResume/isAutoFollowRequest but no matching persisted STOPPED " +
+                                "checkpoint for leader ${replicateIndexReq.leaderAlias}:${replicateIndexReq.leaderIndex} " +
+                                "could be independently verified in the replication metadata store")
+                        throw IllegalArgumentException("Cant use same index again for replication. " +
+                                "Delete the index:${replicateIndexReq.followerIndex}")
+                    }
+
                     isWarmAttach = true
                     log.info("Index ${replicateIndexReq.followerIndex} exists locally but is not a " +
-                            "current follower and request explicitly asserts isRoleTransitionResume — " +
+                            "current follower and request explicitly asserts isRoleTransitionResume, " +
+                            "independently verified against persisted checkpoint — " +
                             "proceeding as warm-attach role-transition resume")
                 }
 
