@@ -36,6 +36,7 @@ import org.opensearch.common.settings.SettingsModule
 import org.opensearch.core.common.unit.ByteSizeUnit
 import org.opensearch.core.common.unit.ByteSizeValue
 import org.opensearch.index.IndexSettings
+import org.opensearch.common.settings.IndexScopedSettings
 import org.opensearch.common.unit.TimeValue
 import org.opensearch.core.xcontent.NamedXContentRegistry
 import org.opensearch.core.index.Index
@@ -489,5 +490,62 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
             .put(IndexMetadata.SETTING_AUTO_EXPAND_REPLICAS, "0-all")
             .build()
         assertThat(IndexReplicationTask.shouldSkipSettingSync(IndexSettings.INDEX_REFRESH_INTERVAL_SETTING.key, followerSettings)).isFalse()
+    }
+
+    fun testFollowerSettingNotRemovedWhenAutoExpandActive() {
+        // Regression for issue #1661: with auto_expand_replicas active on the follower,
+        // number_of_replicas is intentionally excluded from desiredSettings. The remove loop
+        // must NOT strip it, otherwise it would be removed on every metadata-sync cycle,
+        // fighting auto_expand_replicas and causing replica churn.
+        val indexScopedSettings = IndexScopedSettings.DEFAULT_SCOPED_SETTINGS
+        val followerSettings = Settings.builder()
+            .put(IndexMetadata.SETTING_AUTO_EXPAND_REPLICAS, "0-all")
+            .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 1)
+            .build()
+        val desiredSettings = Settings.EMPTY
+        val setting = indexScopedSettings[IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+        assertThat(
+            IndexReplicationTask.shouldRemoveFollowerSetting(
+                IndexMetadata.SETTING_NUMBER_OF_REPLICAS, setting, desiredSettings, followerSettings
+            )
+        ).isFalse()
+    }
+
+    fun testFollowerOnlySettingRemovedWhenNoAutoExpand() {
+        // Normal reconciliation: without auto_expand_replicas, a follower-only setting absent
+        // from desiredSettings should still be removed.
+        val indexScopedSettings = IndexScopedSettings.DEFAULT_SCOPED_SETTINGS
+        val followerSettings = Settings.builder()
+            .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 1)
+            .build()
+        val desiredSettings = Settings.EMPTY
+        val setting = indexScopedSettings[IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+        assertThat(
+            IndexReplicationTask.shouldRemoveFollowerSetting(
+                IndexMetadata.SETTING_NUMBER_OF_REPLICAS, setting, desiredSettings, followerSettings
+            )
+        ).isTrue()
+    }
+
+    fun testNumberOfReplicasNotRemovedWhenFollowerOverridesAutoExpand() {
+        // Scenario from issue #1661: the leader uses fixed replicas (auto_expand_replicas=false,
+        // number_of_replicas=0) but replication is started with a follower override that enables
+        // auto_expand_replicas. The follower then materializes number_of_replicas locally, so the
+        // removal path must skip it; otherwise it is stripped on every metadata-sync cycle.
+        val indexScopedSettings = IndexScopedSettings.DEFAULT_SCOPED_SETTINGS
+        val followerSettings = Settings.builder()
+            .put(IndexMetadata.SETTING_AUTO_EXPAND_REPLICAS, "0-all") // enabled via follower override
+            .put(IndexMetadata.SETTING_NUMBER_OF_REPLICAS, 1)         // materialized locally by auto_expand
+            .build()
+        // desiredSettings carries the override auto_expand but not number_of_replicas (skipped by the builder).
+        val desiredSettings = Settings.builder()
+            .put(IndexMetadata.SETTING_AUTO_EXPAND_REPLICAS, "0-all")
+            .build()
+        val setting = indexScopedSettings[IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
+        assertThat(
+            IndexReplicationTask.shouldRemoveFollowerSetting(
+                IndexMetadata.SETTING_NUMBER_OF_REPLICAS, setting, desiredSettings, followerSettings
+            )
+        ).isFalse()
     }
 }

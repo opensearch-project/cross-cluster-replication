@@ -48,6 +48,8 @@ import org.opensearch.action.admin.indices.settings.put.UpdateSettingsRequest
 import org.opensearch.action.get.GetRequest
 import org.opensearch.action.index.IndexRequest
 import org.opensearch.client.Request
+import org.opensearch.action.admin.cluster.settings.ClusterUpdateSettingsRequest
+import org.opensearch.test.rest.OpenSearchRestTestCase
 import org.opensearch.client.RequestOptions
 import org.opensearch.client.ResponseException
 import org.opensearch.client.RestHighLevelClient
@@ -320,6 +322,81 @@ class StartReplicationIT: MultiClusterRestTestCase() {
                     .indexToSettings.getOrDefault(followerIndexName, Settings.EMPTY)[IndexMetadata.SETTING_NUMBER_OF_REPLICAS]
             )
         }, 30L, TimeUnit.SECONDS)
+    }
+
+    fun `test number_of_replicas is not churned on follower when auto_expand_replicas is active`() {
+        // Regression IT for issue #1661: when auto_expand_replicas is active on a follower index,
+        // the follower materializes number_of_replicas locally. The leader does not export an
+        // explicit number_of_replicas, so without the removal-path guard the follower stripped it
+        // on every metadata-sync cycle and auto_expand_replicas immediately re-added it, churning
+        // the index settings_version continuously. With the guard the settings_version is stable.
+        val followerClient = getClientForCluster(FOLLOWER)
+        val leaderClient = getClientForCluster(LEADER)
+        createConnectionBetweenClusters(FOLLOWER, LEADER)
+
+        val syncSettings = Settings.builder()
+            .put("plugins.replication.follower.metadata_sync_interval", TimeValue.timeValueSeconds(5))
+            .build()
+        followerClient.cluster().putSettings(
+            ClusterUpdateSettingsRequest().persistentSettings(syncSettings), RequestOptions.DEFAULT)
+
+        val leaderSettings = Settings.builder()
+            .put(IndexMetadata.SETTING_AUTO_EXPAND_REPLICAS, "0-all")
+            .build()
+        assertThat(
+            leaderClient.indices()
+                .create(CreateIndexRequest(leaderIndexName).settings(leaderSettings), RequestOptions.DEFAULT)
+                .isAcknowledged
+        ).isTrue()
+
+        followerClient.startReplication(
+            StartReplicationRequest("source", leaderIndexName, followerIndexName), waitForRestore = true)
+        assertBusy {
+            assertThat(
+                followerClient.indices().exists(GetIndexRequest(followerIndexName), RequestOptions.DEFAULT)
+            ).isEqualTo(true)
+        }
+
+        assertBusy({
+            Assert.assertEquals(
+                "0-all",
+                followerClient.indices()
+                    .getSettings(GetSettingsRequest().indices(followerIndexName), RequestOptions.DEFAULT)
+                    .indexToSettings.getOrDefault(followerIndexName, Settings.EMPTY)[IndexMetadata.SETTING_AUTO_EXPAND_REPLICAS]
+            )
+        }, 30L, TimeUnit.SECONDS)
+
+        // CCR logs "Removing setting index.number_of_replicas from <index>" every time the follower
+        // metadata-sync strips the setting. Count those occurrences across the follower node logs:
+        // with the guard there must be none; without it they recur on every metadata-sync cycle.
+        fun replicaRemovalCount(): Int {
+            val needle = "Removing setting index.number_of_replicas from $followerIndexName"
+            val nodesResp = followerClient.lowLevelClient.performRequest(
+                Request("GET", "/_nodes/settings?filter_path=nodes.*.settings.path.logs"))
+            val nodes = OpenSearchRestTestCase.entityAsMap(nodesResp)["nodes"] as Map<*, *>
+            var count = 0
+            for (node in nodes.values) {
+                val logsDir = (((node as Map<*, *>)["settings"] as Map<*, *>)["path"] as Map<*, *>)["logs"] as String
+                val logFile = java.io.File(logsDir, "$FOLLOWER.log")
+                if (logFile.exists()) {
+                    count += logFile.readLines().count { it.contains(needle) }
+                }
+            }
+            return count
+        }
+
+        // Let replication converge, then observe several metadata-sync cycles.
+        Thread.sleep(10_000)
+        val removalsBefore = replicaRemovalCount()
+        Thread.sleep(25_000) // >= 4 metadata-sync intervals (5s each)
+        val removalsAfter = replicaRemovalCount()
+
+        assertThat(removalsAfter - removalsBefore)
+            .withFailMessage(
+                "CCR stripped index.number_of_replicas from the follower %d times across several " +
+                "metadata-sync cycles while auto_expand_replicas was active (replica churn; " +
+                "removal-path guard missing)", removalsAfter - removalsBefore)
+            .isEqualTo(0)
     }
 
     fun `test that aliases settings are getting replicated`() {
