@@ -100,9 +100,15 @@ abstract class CrossClusterReplicationTask(id: Long, type: String, action: Strin
                 log.error(
                     "Exception encountered in CrossClusterReplicationTask - task=${this.javaClass.simpleName}, id=$id, follower=$followerIndexName, leader=$leaderAlias, coroutine:isActive=${isActive} Context=${coroutineContext}", e)
                 if (isCancelled || e is CancellationException) {
+                    // CancellationException is the expected mechanism for STOP and PAUSE operations.
+                    // Log at INFO so normal stops don't produce alarming ERROR entries.
+                    log.info("CrossClusterReplicationTask stopped via cancellation " +
+                            "(reason: ${e.message}) — coroutine:isActive=${isActive}")
                     markAsCompleted()
                     log.info("Completed the task with id:$id")
                 } else {
+                    log.error(
+                        "Exception encountered in CrossClusterReplicationTask - coroutine:isActive=${isActive} Context=${coroutineContext}", e)
                     exception = e
                     markAsFailed(e)
                 }
