@@ -180,6 +180,7 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
             val autoExpandReplicas = followerSettings.get(IndexMetadata.SETTING_AUTO_EXPAND_REPLICAS)
             return autoExpandReplicas != null && autoExpandReplicas != "false"
         }
+
         /**
          * Determines whether a follower-only setting (present on the follower but absent from the
          * leader-derived desired settings) should be removed during metadata sync. This mirrors the
