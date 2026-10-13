@@ -179,6 +179,28 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
             val autoExpandReplicas = followerSettings.get(IndexMetadata.SETTING_AUTO_EXPAND_REPLICAS)
             return autoExpandReplicas != null && autoExpandReplicas != "false"
         }
+
+        /**
+         * Determines whether a follower-only setting (present on the follower but absent from the
+         * leader-derived desired settings) should be removed during metadata sync. This mirrors the
+         * guard applied when building desiredSettings (issue #1661): number_of_replicas must NOT be
+         * removed while auto_expand_replicas is active on the follower, otherwise it is stripped on
+         * every metadata-sync cycle, fighting auto_expand_replicas and causing replica churn.
+         */
+        fun shouldRemoveFollowerSetting(
+            key: String,
+            setting: Setting<*>?,
+            desiredSettings: Settings,
+            followerSettings: Settings
+        ): Boolean {
+            if (setting == null || setting.isPrivateIndex || setting.isFinal) {
+                return false
+            }
+            if (shouldSkipSettingSync(key, followerSettings)) {
+                return false
+            }
+            return desiredSettings.get(key) == null
+        }
     }
 
     //only for testing
@@ -561,12 +583,8 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
 
                 for (key in followerSettings.keySet()) {
                     val setting = indexScopedSettings[key]
-                    if (setting == null || setting.isPrivateIndex || setting.isFinal) {
-                        continue
-                    }
-
-                    if (desiredSettings.get(key) == null) {
-                        if (!setting.isDynamic()) {
+                    if (shouldRemoveFollowerSetting(key, setting, desiredSettings, followerSettings)) {
+                        if (!setting!!.isDynamic()) {
                             staticUpdated = true
                         }
 
