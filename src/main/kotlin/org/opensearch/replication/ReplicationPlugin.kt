@@ -232,6 +232,11 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
         val REPLICATION_FOLLOWER_BULK_POLL_TIMEOUT: Setting<Int> = Setting.intSetting("plugins.replication.follower.bulk_poll_timeout", 15, 1, 30,
             Setting.Property.Dynamic, Setting.Property.NodeScope)
+        // index.translog.generation_threshold_size pushed onto each leader index at replication start
+        val REPLICATION_FOLLOWER_LEADER_TRANSLOG_GENERATION_THRESHOLD_SIZE: Setting<ByteSizeValue> = Setting.byteSizeSetting(
+            "plugins.replication.follower.leader_translog_generation_threshold_size", ByteSizeValue(32, ByteSizeUnit.MB),
+            ByteSizeValue(1, ByteSizeUnit.MB), ByteSizeValue(1, ByteSizeUnit.GB),
+            Setting.Property.Dynamic, Setting.Property.NodeScope)
     }
 
     override fun createComponents(client: Client, clusterService: ClusterService, threadPool: ThreadPool,
@@ -413,7 +418,8 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
             REPLICATION_INDEX_TRANSLOG_RETENTION_SIZE, REPLICATION_FOLLOWER_BLOCK_START, REPLICATION_AUTOFOLLOW_CONCURRENT_REPLICATION_JOBS_TRIGGER_SIZE,
             REPLICATION_FOLLOWER_CONCURRENT_WRITERS_PER_SHARD, REPLICATION_REPLICATE_INDEX_DELETION,
             REPLICATION_FOLLOWER_BULK_BATCH_SIZE,
-            REPLICATION_FOLLOWER_BULK_POLL_TIMEOUT)
+            REPLICATION_FOLLOWER_BULK_POLL_TIMEOUT,
+            REPLICATION_FOLLOWER_LEADER_TRANSLOG_GENERATION_THRESHOLD_SIZE)
     }
     override fun getInternalRepositories(env: Environment, namedXContentRegistry: NamedXContentRegistry,
                                          clusterService: ClusterService, recoverySettings: RecoverySettings): Map<String, Repository.Factory> {

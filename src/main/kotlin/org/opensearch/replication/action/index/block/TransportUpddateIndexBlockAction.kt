@@ -11,7 +11,7 @@
 
 package org.opensearch.replication.action.index.block
 
-import org.opensearch.replication.metadata.UpdateIndexBlockTask
+import org.opensearch.replication.metadata.UpdateIndexBlockTaskExecutor
 import org.opensearch.replication.util.completeWith
 import org.opensearch.replication.util.coroutineContext
 import org.opensearch.replication.util.waitForClusterStateUpdate
@@ -59,22 +59,25 @@ class TransportUpddateIndexBlockAction @Inject constructor(transportService: Tra
     @Throws(Exception::class)
     override fun clusterManagerOperation(request: UpdateIndexBlockRequest?, state: ClusterState?, listener: ActionListener<AcknowledgedResponse>) {
         val followerIndexName = request!!.indexName
-        log.debug("Adding index block for $followerIndexName")
+        log.debug("${request.updateType} index block for $followerIndexName")
         launch(threadPool.coroutineContext(ThreadPool.Names.MANAGEMENT)) {
-            listener.completeWith { addIndexBlockForReplication(request) }
+            listener.completeWith { updateIndexBlockForReplication(request) }
         }
     }
 
-    private suspend fun addIndexBlockForReplication(request: UpdateIndexBlockRequest): AcknowledgedResponse {
-        val addIndexBlockTaskResponse : AcknowledgedResponse =
-                clusterService.waitForClusterStateUpdate("add-block") {
-                    l ->
-                    UpdateIndexBlockTask(request, l)
-                }
-        if (!addIndexBlockTaskResponse.isAcknowledged) {
-            throw OpenSearchException("Failed to add index block to index:${request.indexName}")
+    private suspend fun updateIndexBlockForReplication(request: UpdateIndexBlockRequest): AcknowledgedResponse {
+        // Shared singleton executor: concurrent block-add / block-remove submissions coalesce into
+        // one cluster-manager update turn via TaskBatcher (batching key is the executor's identity).
+        val response = clusterService.waitForClusterStateUpdate(
+                source = "update-block:${request.updateType}",
+                task = request,
+                executor = UpdateIndexBlockTaskExecutor,
+                ackTimeout = request.ackTimeout()
+        )
+        if (!response.isAcknowledged) {
+            throw OpenSearchException("Failed to ${request.updateType} index block on ${request.indexName}")
         }
-        return addIndexBlockTaskResponse
+        return response
     }
 
     override fun executor(): String {

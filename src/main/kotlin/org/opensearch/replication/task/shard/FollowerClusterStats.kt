@@ -20,6 +20,7 @@ import org.opensearch.core.xcontent.ToXContentFragment
 import org.opensearch.core.xcontent.XContentBuilder
 import org.opensearch.common.xcontent.XContentType
 import org.opensearch.core.index.shard.ShardId
+import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicLong
 
 class FollowerShardMetric  {
@@ -116,5 +117,15 @@ class FollowerShardMetric  {
 
 @Singleton
 class FollowerClusterStats {
-    var stats :MutableMap<ShardId, FollowerShardMetric> =  mutableMapOf()
+    var stats :MutableMap<ShardId, FollowerShardMetric> =  ConcurrentHashMap()
+
+    /**
+     * Syncs the reported follower_checkpoint to the live shard value. Needed because the normal
+     * update (on a successful replay) doesn't happen while the leader is idle and getChanges keeps
+     * timing out, which otherwise leaves follower_stats permanently behind the live checkpoint
+     * reported by _status.
+     */
+    fun refreshFollowerCheckpoint(shardId: ShardId, liveFollowerCheckpoint: Long) {
+        stats[shardId]?.followerCheckpoint = liveFollowerCheckpoint
+    }
 }

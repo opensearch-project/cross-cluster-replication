@@ -75,8 +75,6 @@ import org.opensearch.common.logging.Loggers
 import org.opensearch.common.settings.Setting
 import org.opensearch.common.settings.Settings
 import org.opensearch.common.settings.SettingsModule
-import org.opensearch.core.common.unit.ByteSizeUnit
-import org.opensearch.core.common.unit.ByteSizeValue
 import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.ToXContentObject
 import org.opensearch.core.xcontent.XContentBuilder
@@ -181,6 +179,27 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
             }
             val autoExpandReplicas = followerSettings.get(IndexMetadata.SETTING_AUTO_EXPAND_REPLICAS)
             return autoExpandReplicas != null && autoExpandReplicas != "false"
+        }
+        /**
+         * Determines whether a follower-only setting (present on the follower but absent from the
+         * leader-derived desired settings) should be removed during metadata sync. This mirrors the
+         * guard applied when building desiredSettings (issue #1661): number_of_replicas must NOT be
+         * removed while auto_expand_replicas is active on the follower, otherwise it is stripped on
+         * every metadata-sync cycle, fighting auto_expand_replicas and causing replica churn.
+         */
+        fun shouldRemoveFollowerSetting(
+            key: String,
+            setting: Setting<*>?,
+            desiredSettings: Settings,
+            followerSettings: Settings
+        ): Boolean {
+            if (setting == null || setting.isPrivateIndex || setting.isFinal) {
+                return false
+            }
+            if (shouldSkipSettingSync(key, followerSettings)) {
+                return false
+            }
+            return desiredSettings.get(key) == null
         }
 
         // The leader's aliases as the follower should hold them: a follower is never a write index,
@@ -582,12 +601,8 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
 
                 for (key in followerSettings.keySet()) {
                     val setting = indexScopedSettings[key]
-                    if (setting == null || setting.isPrivateIndex || setting.isFinal) {
-                        continue
-                    }
-
-                    if (desiredSettings.get(key) == null) {
-                        if (!setting.isDynamic()) {
+                    if (shouldRemoveFollowerSetting(key, setting, desiredSettings, followerSettings)) {
+                        if (!setting!!.isDynamic()) {
                             staticUpdated = true
                         }
 
@@ -954,13 +969,17 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
         // INDEX_TRANSLOG_GENERATION_THRESHOLD_SIZE_SETTING - This setting sets each generation size for the translog.
         // This ensures that, we don't have to search the huge translog files for the given range and ensuring that
         // the searches are optimal within a generation and skip searching the generations based on translog checkpoints
+        val leaderTranslogGenerationThresholdSize = replicationSettings.leaderTranslogGenerationThresholdSize
         val settingsBuilder = Settings.builder()
                 .put(REPLICATION_INDEX_TRANSLOG_PRUNING_ENABLED_SETTING.key, true)
-                .put(IndexSettings.INDEX_TRANSLOG_GENERATION_THRESHOLD_SIZE_SETTING.key, ByteSizeValue(32, ByteSizeUnit.MB))
+                .put(IndexSettings.INDEX_TRANSLOG_GENERATION_THRESHOLD_SIZE_SETTING.key, leaderTranslogGenerationThresholdSize)
         val updateSettingsRequest = remoteClient.admin().indices().prepareUpdateSettings().setSettings(settingsBuilder).setIndices(leaderIndex.name).request()
         val updateResponse = remoteClient.suspending(remoteClient.admin().indices()::updateSettings, injectSecurityContext = true)(updateSettingsRequest)
         if(!updateResponse.isAcknowledged) {
             log.error("Unable to update setting for translog pruning based on retention lease leaderIndex=${leaderIndex.name}")
+        } else {
+            log.info("Updated translog settings on leaderIndex=${leaderIndex.name}: " +
+                    "${IndexSettings.INDEX_TRANSLOG_GENERATION_THRESHOLD_SIZE_SETTING.key}=$leaderTranslogGenerationThresholdSize")
         }
 
         val restoreRequest = client.admin().cluster()
