@@ -17,6 +17,7 @@ import org.opensearch.replication.task.ReplicationState
 import org.opensearch.replication.task.index.IndexReplicationExecutor
 import org.opensearch.replication.task.index.IndexReplicationParams
 import org.opensearch.replication.task.index.IndexReplicationState
+import org.opensearch.replication.util.StaleTaskUtils
 import org.opensearch.replication.util.coroutineContext
 import org.opensearch.replication.util.startTask
 import org.opensearch.replication.util.suspending
@@ -104,6 +105,12 @@ class TransportReplicateIndexClusterManagerNodeAction @Inject constructor(transp
                 if (state.routingTable.hasIndex(replicateIndexReq.followerIndex)) {
                     throw IllegalArgumentException("Cant use same index again for replication. " +
                     "Delete the index:${replicateIndexReq.followerIndex}")
+                }
+
+                // Remove all replication tasks before creating new ones
+                val removedTaskCount = StaleTaskUtils.removeAllTasksForIndex(clusterService, nodeClient, replicateIndexReq.followerIndex)
+                if (removedTaskCount > 0) {
+                    log.info("Cleaned up $removedTaskCount tasks for ${replicateIndexReq.followerIndex}")
                 }
 
                 indexScopedSettings.validate(replicateIndexReq.settings,
