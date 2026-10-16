@@ -13,7 +13,6 @@ package org.opensearch.replication.action.stop
 
 import org.opensearch.commons.replication.action.ReplicationActions.STOP_REPLICATION_ACTION_NAME
 import org.opensearch.commons.replication.action.StopIndexReplicationRequest
-import org.opensearch.replication.ReplicationPlugin.Companion.REPLICATED_INDEX_SETTING
 import org.opensearch.replication.action.index.block.IndexBlockUpdateType
 import org.opensearch.replication.action.index.block.UpdateIndexBlockAction
 import org.opensearch.replication.action.index.block.UpdateIndexBlockRequest
@@ -41,19 +40,14 @@ import org.opensearch.action.support.clustermanager.AcknowledgedResponse
 import org.opensearch.action.support.clustermanager.TransportClusterManagerNodeAction
 import org.opensearch.transport.client.Client
 import org.opensearch.transport.client.Requests
-import org.opensearch.cluster.AckedClusterStateUpdateTask
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.RestoreInProgress
 import org.opensearch.cluster.block.ClusterBlockException
 import org.opensearch.cluster.block.ClusterBlockLevel
-import org.opensearch.cluster.block.ClusterBlocks
-import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.cluster.metadata.IndexNameExpressionResolver
-import org.opensearch.cluster.metadata.Metadata
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.inject.Inject
 import org.opensearch.core.common.io.stream.StreamInput
-import org.opensearch.common.settings.Settings
 import org.opensearch.replication.util.stackTraceToString
 import org.opensearch.threadpool.ThreadPool
 import org.opensearch.transport.TransportService
@@ -139,8 +133,12 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
                     log.error("Failed to remove retention lease from the leader cluster", e)
                 }
 
-                val clusterStateUpdateResponse : AcknowledgedResponse =
-                        clusterService.waitForClusterStateUpdate("stop_replication") { l -> StopReplicationTask(request, l)}
+                val clusterStateUpdateResponse: AcknowledgedResponse = clusterService.waitForClusterStateUpdate(
+                        source = "stop_replication",
+                        task = request,
+                        executor = StopIndexReplicationTaskExecutor,
+                        ackTimeout = request.ackTimeout()
+                )
                 if (!clusterStateUpdateResponse.isAcknowledged) {
                     throw OpenSearchException("Failed to update cluster state")
                 }
@@ -186,36 +184,5 @@ class TransportStopIndexReplicationAction @Inject constructor(transportService: 
     @Throws(IOException::class)
     override fun read(inp: StreamInput): AcknowledgedResponse {
         return AcknowledgedResponse(inp)
-    }
-
-    class StopReplicationTask(val request: StopIndexReplicationRequest, listener: ActionListener<AcknowledgedResponse>) :
-        AckedClusterStateUpdateTask<AcknowledgedResponse>(request, listener) {
-
-        override fun execute(currentState: ClusterState): ClusterState {
-            val newState = ClusterState.builder(currentState)
-
-            // remove index block
-            if (currentState.blocks.hasIndexBlock(request.indexName, INDEX_REPLICATION_BLOCK)) {
-                val newBlocks = ClusterBlocks.builder().blocks(currentState.blocks)
-                    .removeIndexBlock(request.indexName, INDEX_REPLICATION_BLOCK)
-                newState.blocks(newBlocks)
-            }
-
-            val mdBuilder = Metadata.builder(currentState.metadata)
-            // remove replicated index setting
-            val currentIndexMetadata = currentState.metadata.index(request.indexName)
-            if (currentIndexMetadata != null &&
-                    currentIndexMetadata.settings[REPLICATED_INDEX_SETTING.key] != null) {
-                val newIndexMetadata = IndexMetadata.builder(currentIndexMetadata)
-                        .settings(Settings.builder().put(currentIndexMetadata.settings).putNull(REPLICATED_INDEX_SETTING.key))
-                        .settingsVersion(1 + currentIndexMetadata.settingsVersion)
-                mdBuilder.put(newIndexMetadata)
-            }
-            newState.metadata(mdBuilder)
-
-            return newState.build()
-        }
-
-        override fun newResponse(acknowledged: Boolean) = AcknowledgedResponse(acknowledged)
     }
 }
