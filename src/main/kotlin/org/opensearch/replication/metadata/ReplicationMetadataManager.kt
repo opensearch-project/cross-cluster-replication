@@ -138,7 +138,10 @@ open class ReplicationMetadataManager constructor(private val clusterService: Cl
     private suspend fun deleteMetadata(deleteReq: DeleteReplicationMetadataRequest) {
         executeAndWrapExceptionIfAny({
             val delRes = replicaionMetadataStore.deleteMetadata(deleteReq)
-            if(delRes.result != DocWriteResponse.Result.DELETED && delRes.result != DocWriteResponse.Result.NOT_FOUND) {
+            if(delRes.result == DocWriteResponse.Result.NOT_FOUND) {
+                throw ResourceNotFoundException("Metadata for ${deleteReq.resourceName} doesn't exist")
+            }
+            if(delRes.result != DocWriteResponse.Result.DELETED) {
                 log.error("Encountered error with result - ${delRes.result}, while deleting metadata")
                 throw ReplicationException("Error deleting replication metadata")
             }
