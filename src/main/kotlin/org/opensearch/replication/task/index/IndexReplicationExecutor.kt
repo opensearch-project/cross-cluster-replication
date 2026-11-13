@@ -16,6 +16,7 @@ import org.opensearch.replication.metadata.ReplicationMetadataManager
 import org.opensearch.replication.metadata.ReplicationOverallState
 import org.opensearch.replication.metadata.state.REPLICATION_LAST_KNOWN_OVERALL_STATE
 import org.opensearch.replication.metadata.state.getReplicationStateParamsForIndex
+import org.opensearch.replication.task.shard.FollowerClusterStats
 import org.opensearch.replication.util.persistentTasksService
 import org.apache.logging.log4j.LogManager
 import org.opensearch.transport.client.Client
@@ -34,7 +35,8 @@ class IndexReplicationExecutor(executor: String, private val clusterService: Clu
                                private val threadPool: ThreadPool, private val client: Client,
                                private val replicationMetadataManager: ReplicationMetadataManager,
                                private val replicationSettings: ReplicationSettings,
-                               var settingsModule: SettingsModule)
+                               var settingsModule: SettingsModule,
+                               private val followerClusterStats: FollowerClusterStats)
     : PersistentTasksExecutor<IndexReplicationParams>(TASK_NAME, executor) {
 
     companion object {
@@ -68,7 +70,8 @@ class IndexReplicationExecutor(executor: String, private val clusterService: Clu
         val cso = ClusterStateObserver(clusterService, log, threadPool.threadContext)
         return IndexReplicationTask(id, type, action, getDescription(taskInProgress), parentTaskId,
                                     executor, clusterService, threadPool, client, requireNotNull(taskInProgress.params),
-                                    persistentTasksService, replicationMetadataManager, replicationSettings, settingsModule, cso)
+                                    persistentTasksService, replicationMetadataManager, replicationSettings,
+                                    settingsModule, cso, followerClusterStats)
     }
 
     override fun getDescription(taskInProgress: PersistentTask<IndexReplicationParams>): String {
