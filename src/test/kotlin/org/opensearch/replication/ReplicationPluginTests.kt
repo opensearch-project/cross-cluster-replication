@@ -20,6 +20,8 @@ import org.opensearch.core.common.io.stream.NamedWriteableRegistry
 import org.opensearch.core.xcontent.NamedXContentRegistry
 import org.opensearch.env.Environment
 import org.opensearch.identity.PluginSubject
+import org.opensearch.replication.metadata.ReplicationMetadataManager
+import org.opensearch.replication.metadata.store.ReplicationMetadataStore
 import org.opensearch.repositories.RepositoriesService
 import org.opensearch.script.ScriptService
 import org.opensearch.test.ClusterServiceUtils
@@ -40,13 +42,21 @@ class ReplicationPluginTests : OpenSearchTestCase() {
         try {
             ClusterServiceUtils.createClusterService(Settings.EMPTY, clusterSettings, threadPool).use { clusterService ->
                 val plugin = ReplicationPlugin()
-                newNodeEnvironment().use { nodeEnvironment ->
+                val components = newNodeEnvironment().use { nodeEnvironment ->
                     plugin.createComponents(NoOpClient(threadPool), clusterService, threadPool,
                             Mockito.mock(ResourceWatcherService::class.java), Mockito.mock(ScriptService::class.java),
                             NamedXContentRegistry.EMPTY, Mockito.mock(Environment::class.java), nodeEnvironment,
                             NamedWriteableRegistry(emptyList()), Mockito.mock(IndexNameExpressionResolver::class.java),
                             Supplier<RepositoriesService> { throw AssertionError("not used by createComponents") })
                 }
+                // The metadata store reaches its system index through the client the subject is assigned to.
+                val manager = components.filterIsInstance<ReplicationMetadataManager>().single()
+                val storeField = ReplicationMetadataManager::class.java.getDeclaredField("replicaionMetadataStore")
+                storeField.isAccessible = true
+                val store = storeField.get(manager) as ReplicationMetadataStore
+                val clientField = ReplicationPlugin::class.java.getDeclaredField("pluginClient")
+                clientField.isAccessible = true
+                assertSame("the store uses the client that receives the subject", clientField.get(plugin), store.pluginClient)
                 val subject = Mockito.mock(PluginSubject::class.java)
 
                 plugin.assignSubject(subject)

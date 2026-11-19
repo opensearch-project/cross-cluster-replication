@@ -255,7 +255,7 @@ internal class ReplicationPlugin : Plugin(), ActionPlugin, PersistentTaskPlugin,
         this.threadPool = threadPool
         this.clusterService = clusterService
         this.replicationMetadataManager = ReplicationMetadataManager(clusterService, client,
-                ReplicationMetadataStore(client, pluginClient, clusterService, xContentRegistry))
+                ReplicationMetadataStore(pluginClient, clusterService, xContentRegistry))
         this.replicationSettings = ReplicationSettings(clusterService)
         return listOf(RemoteClusterRepositoriesService(repositoriesService, clusterService), replicationMetadataManager, replicationSettings, followerClusterStats)
     }
