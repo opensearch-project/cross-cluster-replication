@@ -37,10 +37,15 @@ import org.opensearch.common.settings.Settings
 import org.opensearch.commons.ConfigConstants
 import org.opensearch.core.action.ActionListener
 import org.opensearch.core.action.ActionResponse
+import org.opensearch.core.index.Index
 import org.opensearch.core.tasks.TaskId
 import org.opensearch.env.Environment
 import org.opensearch.indices.recovery.RecoverySettings
+import org.opensearch.persistent.PersistentTaskParams
+import org.opensearch.persistent.PersistentTaskResponse
+import org.opensearch.persistent.PersistentTasksCustomMetadata
 import org.opensearch.persistent.PersistentTasksService
+import org.opensearch.persistent.RemovePersistentTaskAction
 import org.opensearch.repositories.RepositoriesService
 import org.opensearch.transport.client.node.NodeClient
 import org.opensearch.replication.ReplicationSettings
@@ -51,7 +56,11 @@ import org.opensearch.replication.action.autofollow.UpdateAutoFollowPatternReque
 import org.opensearch.replication.action.bulk.BulkReplicationRequest
 import org.opensearch.replication.action.bulk.BulkReplicationResponse
 import org.opensearch.replication.metadata.state.BulkTaskState
+import org.opensearch.replication.action.bulk.TransportBulkPauseReplicationAction
+import org.opensearch.replication.action.bulk.TransportBulkReplicationAction
+import org.opensearch.replication.action.bulk.TransportBulkResumeReplicationAction
 import org.opensearch.replication.action.bulk.TransportBulkStartReplicationAction
+import org.opensearch.replication.action.bulk.TransportBulkStopReplicationAction
 import org.opensearch.replication.action.bulk.UpdateBulkTaskStateAction
 import org.opensearch.replication.action.index.ReplicateIndexClusterManagerNodeAction
 import org.opensearch.replication.action.index.ReplicateIndexClusterManagerNodeRequest
@@ -65,6 +74,8 @@ import org.opensearch.replication.repository.REMOTE_REPOSITORY_PREFIX
 import org.opensearch.replication.repository.RemoteClusterRepository
 import org.opensearch.replication.task.bulk.BulkOperationType
 import org.opensearch.replication.task.bulk.BulkReplicationTask
+import org.opensearch.replication.task.index.IndexReplicationExecutor
+import org.opensearch.replication.task.index.IndexReplicationParams
 import org.opensearch.tasks.Task
 import org.opensearch.tasks.TaskManager
 import org.opensearch.test.ClusterServiceUtils
@@ -128,20 +139,52 @@ class ContextPinsTests : OpenSearchTestCase() {
     }
 
     fun testResumeReadsTheLeaderStateInADefaultContext() {
-        val action = TransportResumeIndexReplicationAction(transportService, clusterService, threadPool, ActionFilters(emptySet()),
-                IndexNameExpressionResolver(threadPool.threadContext), client, Mockito.mock(ReplicationMetadataManager::class.java),
-                Mockito.mock(Environment::class.java))
-        runBlocking { action.getLeaderIndexMetadata("remote", "leader") }
+        runBlocking { resumeAction().getLeaderIndexMetadata("remote", "leader") }
         assertEquals(listOf("${ClusterStateAction.NAME} as null"), client.calls)
     }
 
-    fun testTheBulkLockIsClaimedAndReleasedInADefaultContext() {
-        val action = bulkStartAction()
-        runBlocking {
-            action.claimLock(BulkTaskState("", "bulk_start_replication", "x*", 0, 0, 0, 0, 0, emptyList()))
-            action.releaseLock()
+    fun testTheBulkLockIsClaimedInADefaultContextOnlyAfterEarlierCalls() {
+        val claim = BulkTaskState("", "bulk", "x*", 0, 0, 0, 0, 0, emptyList())
+        val expected = mapOf(BulkOperationType.START to null, BulkOperationType.RESUME to null,
+                BulkOperationType.STOP to CALLER, BulkOperationType.PAUSE to CALLER)
+        for ((type, identity) in expected) {
+            client.calls.clear()
+            runBlocking { bulkAction(type).claimLock(claim) }
+            assertEquals(type.label, listOf("${UpdateBulkTaskStateAction.NAME} as $identity"), client.calls)
         }
-        assertEquals(listOf("${UpdateBulkTaskStateAction.NAME} as null", "${UpdateBulkTaskStateAction.NAME} as null"), client.calls)
+    }
+
+    fun testTheBulkLockIsReleasedInADefaultContext() {
+        runBlocking { bulkStartAction().releaseLock() }
+        assertEquals(listOf("${UpdateBulkTaskStateAction.NAME} as null"), client.calls)
+    }
+
+    fun testResumeRemovesItsFirstTaskAsTheCallerAndTheOthersInADefaultContext() {
+        val tasks = PersistentTasksCustomMetadata.builder()
+        for (id in listOf("replication:index:follower", "replication:[follower][0]")) {
+            tasks.addTask<PersistentTaskParams>(id, IndexReplicationExecutor.TASK_NAME,
+                    IndexReplicationParams("remote", Index("follower", "_na_"), "follower"), PersistentTasksCustomMetadata.INITIAL_ASSIGNMENT)
+        }
+        ClusterServiceUtils.setState(clusterService, ClusterState.builder(clusterService.state())
+                .metadata(Metadata.builder(clusterService.state().metadata()).putCustom(PersistentTasksCustomMetadata.TYPE, tasks.build())))
+        runBlocking { resumeAction().removeExistingTasks("follower") }
+        assertEquals(listOf("${RemovePersistentTaskAction.NAME} as $CALLER", "${RemovePersistentTaskAction.NAME} as null"), client.calls)
+    }
+
+    fun testAddingAPatternForwardsInADefaultContextAndRemovingOneAsTheCaller() {
+        val action = TransportUpdateAutoFollowPatternAction(transportService, threadPool, ActionFilters(emptySet()), client)
+        for (request in listOf(
+                UpdateAutoFollowPatternRequest("remote", "p", "l*", UpdateAutoFollowPatternRequest.Action.ADD, Settings.EMPTY),
+                UpdateAutoFollowPatternRequest("remote", "p", null, UpdateAutoFollowPatternRequest.Action.REMOVE, Settings.EMPTY))) {
+            val done = CompletableDeferred<Unit>()
+            action.execute(Mockito.mock(Task::class.java), request, object : ActionListener<AcknowledgedResponse> {
+                override fun onResponse(response: AcknowledgedResponse) { done.complete(Unit) }
+                override fun onFailure(e: Exception) { done.completeExceptionally(e) }
+            })
+            runBlocking { done.await() }
+        }
+        assertEquals(listOf("${SetupChecksAction.NAME} as $CALLER", "${AutoFollowClusterManagerNodeAction.NAME} as null",
+                "${AutoFollowClusterManagerNodeAction.NAME} as $CALLER"), client.calls)
     }
 
     fun testTheBulkActionCompletesInTheCallersContextAfterAnInjectedCall() {
@@ -196,14 +239,32 @@ class ContextPinsTests : OpenSearchTestCase() {
         return block()
     }
 
-    private fun bulkStartAction() = TransportBulkStartReplicationAction(transportService, ActionFilters(emptySet()), client, clusterService,
-            threadPool, IndexNameExpressionResolver(threadPool.threadContext), Mockito.mock(ReplicationMetadataManager::class.java),
-            Mockito.mock(ReplicationSettings::class.java), Mockito.mock(PersistentTasksService::class.java),
-            replicateIndexAction(), TransportReplicateIndexClusterManagerNodeAction(transportService, clusterService, threadPool,
-                    ActionFilters(emptySet()), IndexNameExpressionResolver(threadPool.threadContext),
-                    IndexScopedSettings.DEFAULT_SCOPED_SETTINGS, Mockito.mock(PersistentTasksService::class.java),
-                    Mockito.mock(NodeClient::class.java), Mockito.mock(RepositoriesService::class.java),
-                    Mockito.mock(ReplicationMetadataManager::class.java)))
+    private fun bulkStartAction() = bulkAction(BulkOperationType.START)
+
+    private fun bulkAction(type: BulkOperationType): TransportBulkReplicationAction {
+        val resolver = IndexNameExpressionResolver(threadPool.threadContext)
+        val manager = Mockito.mock(ReplicationMetadataManager::class.java)
+        val settings = Mockito.mock(ReplicationSettings::class.java)
+        val tasks = Mockito.mock(PersistentTasksService::class.java)
+        val clusterManagerAction = TransportReplicateIndexClusterManagerNodeAction(transportService, clusterService, threadPool,
+                ActionFilters(emptySet()), resolver, IndexScopedSettings.DEFAULT_SCOPED_SETTINGS, tasks,
+                Mockito.mock(NodeClient::class.java), Mockito.mock(RepositoriesService::class.java), manager)
+        val filters = ActionFilters(emptySet())
+        return when (type) {
+            BulkOperationType.START -> TransportBulkStartReplicationAction(transportService, filters, client, clusterService, threadPool,
+                    resolver, manager, settings, tasks, replicateIndexAction(), clusterManagerAction)
+            BulkOperationType.STOP -> TransportBulkStopReplicationAction(transportService, filters, client, clusterService, threadPool,
+                    resolver, manager, settings, tasks, replicateIndexAction(), clusterManagerAction)
+            BulkOperationType.PAUSE -> TransportBulkPauseReplicationAction(transportService, filters, client, clusterService, threadPool,
+                    resolver, manager, settings, tasks, replicateIndexAction(), clusterManagerAction)
+            BulkOperationType.RESUME -> TransportBulkResumeReplicationAction(transportService, filters, client, clusterService, threadPool,
+                    resolver, manager, settings, tasks, replicateIndexAction(), clusterManagerAction)
+        }
+    }
+
+    private fun resumeAction() = TransportResumeIndexReplicationAction(transportService, clusterService, threadPool,
+            ActionFilters(emptySet()), IndexNameExpressionResolver(threadPool.threadContext), client,
+            Mockito.mock(ReplicationMetadataManager::class.java), Mockito.mock(Environment::class.java))
 
     private fun replicateIndexAction() = TransportReplicateIndexAction(transportService, clusterService, threadPool,
             ActionFilters(emptySet()), client, Mockito.mock(Environment::class.java), Mockito.mock(MetadataCreateIndexService::class.java))
@@ -226,6 +287,7 @@ class ContextPinsTests : OpenSearchTestCase() {
             calls.add("${action.name()} as ${threadPool().threadContext.getTransient<String>(IDENTITY)}")
             val response: ActionResponse = when (action.name()) {
                 ClusterStateAction.NAME -> ClusterStateResponse(ClusterName("leader"), leaderState(), false)
+                RemovePersistentTaskAction.NAME -> PersistentTaskResponse(null as PersistentTasksCustomMetadata.PersistentTask<*>?)
                 GetIndexAction.NAME -> Mockito.mock(GetIndexResponse::class.java).also {
                     Mockito.`when`(it.indices).thenReturn(arrayOf())
                 }

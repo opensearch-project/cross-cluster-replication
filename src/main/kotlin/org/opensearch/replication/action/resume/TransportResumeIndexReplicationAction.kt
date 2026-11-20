@@ -85,7 +85,7 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
                 validateResumeReplicationRequest(request)
 
                 // Remove all existing tasks before resuming to ensure a clean slate
-                StaleTaskUtils.removeAllTasksForIndex(clusterService, client, request.indexName, firstCallAsCaller = true)
+                removeExistingTasks(request.indexName)
 
                 val replMetadata = replicationMetadataManager.getIndexReplicationMetadata(request.indexName)
                 val remoteMetadata = getLeaderIndexMetadata(replMetadata.connectionName, replMetadata.leaderContext.resource)
@@ -221,6 +221,10 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
 
         return false
     }
+
+    // The first request of resume, so its first removal runs as the caller, as it did before the context fix.
+    internal suspend fun removeExistingTasks(indexName: String): Int =
+        StaleTaskUtils.removeAllTasksForIndex(clusterService, client, indexName, firstCallAsCaller = true)
 
     internal suspend fun getLeaderIndexMetadata(leaderAlias: String, leaderIndex: String): IndexMetadata {
         val leaderClusterClient = client.getRemoteClusterClient(leaderAlias)

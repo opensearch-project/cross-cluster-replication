@@ -289,16 +289,21 @@ open class TransportBulkReplicationAction(
     }
 
     /**
+     * Sets the "a bulk task is running" flag. Start and resume reach it after their setup checks or lease checks, so it
+     * goes in a default context, as it did when those calls left the context empty; stop and pause send it first, as
+     * the caller.
+     */
+    internal suspend fun claimLock(claimState: BulkTaskState) {
+        val afterEarlierCalls = operationType == BulkOperationType.START || operationType == BulkOperationType.RESUME
+        client.suspendExecute(UpdateBulkTaskStateAction.INSTANCE, UpdateBulkTaskStateRequest(claimState), defaultContext = afterEarlierCalls)
+    }
+
+    /**
      * Clears the cluster-wide "a bulk task is running" flag so future bulk requests
      * are not permanently blocked. Must be called on every failure path after the flag
      * has been set. If clearing the flag itself fails, it is logged as an error because
      * it will require manual intervention to unblock the cluster.
      */
-    /** Sets the "a bulk task is running" flag, in a default context like [releaseLock]. */
-    internal suspend fun claimLock(claimState: BulkTaskState) {
-        client.suspendExecute(UpdateBulkTaskStateAction.INSTANCE, UpdateBulkTaskStateRequest(claimState), defaultContext = true)
-    }
-
     internal suspend fun releaseLock() {
         for (attempt in 1..3) {
             try {

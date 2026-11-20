@@ -11,18 +11,12 @@
 
 package org.opensearch.replication.task.index
 
-import org.opensearch.replication.task.CrossClusterReplicationTask
-
-import org.opensearch.threadpool.ThreadPool
-
-import kotlinx.coroutines.Dispatchers
-
-import kotlinx.coroutines.CoroutineScope
-
 import com.carrotsearch.randomizedtesting.annotations.ThreadLeakScope
 import com.nhaarman.mockitokotlin2.any
 import com.nhaarman.mockitokotlin2.doAnswer
 import com.nhaarman.mockitokotlin2.spy
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
@@ -62,6 +56,7 @@ import org.opensearch.replication.metadata.store.ReplicationMetadataStore
 import org.opensearch.replication.metadata.store.ReplicationMetadataStore.Companion.REPLICATION_CONFIG_SYSTEM_INDEX
 import org.opensearch.replication.metadata.store.ReplicationStoreMetadataType
 import org.opensearch.replication.repository.REMOTE_REPOSITORY_PREFIX
+import org.opensearch.replication.task.CrossClusterReplicationTask
 import org.opensearch.replication.task.shard.ShardReplicationExecutor
 import org.opensearch.replication.task.shard.ShardReplicationParams
 import org.opensearch.snapshots.Snapshot
@@ -72,6 +67,7 @@ import org.opensearch.test.ClusterServiceUtils
 import org.opensearch.test.ClusterServiceUtils.setState
 import org.opensearch.test.OpenSearchTestCase
 import org.opensearch.threadpool.TestThreadPool
+import org.opensearch.threadpool.ThreadPool
 import java.util.*
 import java.util.concurrent.TimeUnit
 
