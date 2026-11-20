@@ -297,7 +297,7 @@ open class TransportBulkReplicationAction(
     internal suspend fun releaseLock() {
         for (attempt in 1..3) {
             try {
-                client.suspendExecute(UpdateBulkTaskStateAction.INSTANCE, UpdateBulkTaskStateRequest(null))
+                client.suspendExecute(UpdateBulkTaskStateAction.INSTANCE, UpdateBulkTaskStateRequest(null), defaultContext = true)
                 return
             } catch (e: Exception) {
                 if (attempt == 3) {
@@ -338,7 +338,7 @@ open class TransportBulkReplicationAction(
             numCancelled = 0,
             failedIndices = preFailedIndices
         )
-        client.suspendExecute(UpdateBulkTaskStateAction.INSTANCE, UpdateBulkTaskStateRequest(claimState))
+        client.suspendExecute(UpdateBulkTaskStateAction.INSTANCE, UpdateBulkTaskStateRequest(claimState), defaultContext = true)
 
         val bulkTask = try {
             val taskAwareRequest = object : TaskAwareRequest {

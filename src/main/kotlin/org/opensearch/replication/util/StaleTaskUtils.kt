@@ -185,7 +185,7 @@ object StaleTaskUtils {
         return try {
             log.info("Removing task: ${task.id} from cluster state")
             val removeRequest = RemovePersistentTaskAction.Request(task.id)
-            client.suspendExecute(RemovePersistentTaskAction.INSTANCE, removeRequest)
+            client.suspendExecute(RemovePersistentTaskAction.INSTANCE, removeRequest, defaultContext = true)
             log.info("Removed stale task ${task.id} for index $indexName")
             true
         } catch (e: ResourceNotFoundException) {
@@ -212,7 +212,7 @@ object StaleTaskUtils {
                 .setNodes(nodeId)
                 .setDetailed(true)
 
-            val response = client.suspendExecute(ListTasksAction.INSTANCE, listTasksRequest)
+            val response = client.suspendExecute(ListTasksAction.INSTANCE, listTasksRequest, defaultContext = true)
             response.tasks.mapNotNull { it.description }.toSet()
         } catch (e: Exception) {
             log.error("Failed to fetch running tasks from node $nodeId: ${e.message}")

@@ -50,6 +50,10 @@ import java.util.Collections
 @ThreadLeakScope(ThreadLeakScope.Scope.NONE)
 class StaleTaskUtilsTests : OpenSearchTestCase() {
 
+    companion object {
+        private const val IDENTITY = "identity"
+    }
+
     private val followerIndex = "test-follower-index"
     private val otherIndex = "other-index"
     private val threadPool = TestThreadPool("StaleTaskUtilsTests")
@@ -390,6 +394,26 @@ class StaleTaskUtilsTests : OpenSearchTestCase() {
         assertThat(client.removedTaskIds).isEmpty()
     }
 
+    fun testRemoveStaleTasksForIndex_listsAndRemovesWithoutTheCallersContext() = runBlocking {
+        val tasks = PersistentTasksCustomMetadata.builder()
+        tasks.addTask<PersistentTaskParams>(
+            "replication:index:$followerIndex",
+            IndexReplicationExecutor.TASK_NAME,
+            IndexReplicationParams("remote", Index(followerIndex, "_na_"), followerIndex),
+            PersistentTasksCustomMetadata.Assignment("valid_node", "test")
+        )
+        setClusterStateWithTasksAndNodes(tasks.build(), listOf("valid_node"))
+
+        val client = StaleTaskTestClient("identity", runningDescriptions = emptySet())
+        client.threadPool().threadContext.putTransient(IDENTITY, "caller")
+        StaleTaskUtils.removeStaleTasksForIndex(clusterService, client, followerIndex)
+
+        // Task bookkeeping runs in a default context, as the plugin, whoever triggered it.
+        assertThat(client.identities).containsExactly(
+            "${ListTasksAction.NAME} as null", "${RemovePersistentTaskAction.NAME} as null")
+        assertThat(client.threadPool().threadContext.getTransient<String>(IDENTITY)).isEqualTo("caller")
+    }
+
     //Helpers
 
     private fun buildPersistentTask(
@@ -445,12 +469,14 @@ class StaleTaskUtilsTests : OpenSearchTestCase() {
     ) : NoOpNodeClient(testName) {
 
         val removedTaskIds = mutableListOf<String>()
+        val identities = mutableListOf<String?>()
 
         override fun <Request : ActionRequest, Response : ActionResponse> doExecute(
             action: ActionType<Response>?,
             request: Request?,
             listener: ActionListener<Response>
         ) {
+            identities.add("${action?.name()} as ${threadPool().threadContext.getTransient<String>(IDENTITY)}")
             when (action) {
                 RemovePersistentTaskAction.INSTANCE -> {
                     if (removeThrows != null) {

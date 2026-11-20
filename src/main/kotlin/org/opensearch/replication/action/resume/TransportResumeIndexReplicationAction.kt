@@ -125,8 +125,10 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
                 ValidationUtil.validateAnalyzerSettings(environment, leaderSettings, replMetadata.settings)
 
                 replicationMetadataManager.updateIndexReplicationState(request.indexName, ReplicationOverallState.RUNNING)
-                val task = persistentTasksService.startTask("replication:index:${request.indexName}",
-                        IndexReplicationExecutor.TASK_NAME, params)
+                val task = threadPool.inDefaultContext {
+                    persistentTasksService.startTask("replication:index:${request.indexName}",
+                            IndexReplicationExecutor.TASK_NAME, params)
+                }
 
                 if (!task.isAssigned) {
                     log.error("Failed to assign task")
@@ -230,7 +232,7 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
                 .setMetadata(true)
                 .setIndicesOptions(IndicesOptions.strictSingleIndexNoExpandForbidClosed())
                 .request()
-        val remoteState = leaderClusterClient.suspending(leaderClusterClient.admin().cluster()::state)(clusterStateRequest).state
+        val remoteState = leaderClusterClient.suspending(leaderClusterClient.admin().cluster()::state, defaultContext = true)(clusterStateRequest).state
         return remoteState.metadata.index(leaderIndex) ?: throw IndexNotFoundException("${leaderAlias}:${leaderIndex}")
     }
 
