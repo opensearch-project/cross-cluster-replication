@@ -54,8 +54,8 @@ import kotlin.coroutines.*
  *
  * @param fn - a block of code that is passed an [ActionListener] that should be passed to the ES client API.
  */
-// The response of a wrapped call can resume the coroutine on another thread before this thread has finished
-// suspending, so the coroutine's context is saved before the request is sent.
+// A response can resume the coroutine on another thread before this thread has finished suspending, so every
+// suspend helper in this file saves the coroutine's context before it sends its request or registers its listener.
 private suspend fun saveCoroutineContext() {
     kotlin.coroutines.coroutineContext[OpenSearchThreadContextElement.Key]?.saveCurrent()
 }
@@ -114,6 +114,7 @@ suspend fun <Req: ActionRequest, Resp: ActionResponse>
 }
 
 suspend fun IndexShard.waitForGlobalCheckpoint(waitingForGlobalCheckpoint: Long, timeout: TimeValue?) : Long {
+    saveCoroutineContext()
     return suspendCancellableCoroutine {  cont ->
         val listener = object : GlobalCheckpointListeners.GlobalCheckpointListener {
 
@@ -134,6 +135,7 @@ suspend fun IndexShard.waitForGlobalCheckpoint(waitingForGlobalCheckpoint: Long,
 }
 
 suspend fun ClusterStateObserver.waitForNextChange(reason: String, predicate: (ClusterState) -> Boolean = { true }) {
+    saveCoroutineContext()
     return suspendCancellableCoroutine { cont ->
         waitForNextChange(object : ClusterStateObserver.Listener {
             override fun onClusterServiceClose() {
@@ -153,8 +155,10 @@ suspend fun ClusterStateObserver.waitForNextChange(reason: String, predicate: (C
 
 suspend fun <T> ClusterService.waitForClusterStateUpdate(source: String,
                                                          updateTaskFactory: (ActionListener<T>) ->
-                                                         AckedClusterStateUpdateTask<T>) : T =
-    suspendCoroutine { cont -> submitStateUpdateTask(source, updateTaskFactory(CoroutineActionListener(cont))) }
+                                                         AckedClusterStateUpdateTask<T>) : T {
+    saveCoroutineContext()
+    return suspendCoroutine { cont -> submitStateUpdateTask(source, updateTaskFactory(CoroutineActionListener(cont))) }
+}
 
 /**
  * Batching-aware variant of [waitForClusterStateUpdate].
@@ -187,10 +191,13 @@ suspend fun <T> ClusterService.waitForClusterStateUpdate(
         priority: Priority = Priority.NORMAL,
         taskTimeout: TimeValue? = null,
         ackTimeout: TimeValue = DEFAULT_ACK_TIMEOUT
-) : AcknowledgedResponse = suspendCoroutine { cont ->
-    val listener = BatchedCoroutineAckListener(cont, ackTimeout)
-    val config = ClusterStateTaskConfig.build(priority, taskTimeout)
-    submitStateUpdateTask(source, task, config, executor, listener)
+) : AcknowledgedResponse {
+    saveCoroutineContext()
+    return suspendCoroutine { cont ->
+        val listener = BatchedCoroutineAckListener(cont, ackTimeout)
+        val config = ClusterStateTaskConfig.build(priority, taskTimeout)
+        submitStateUpdateTask(source, task, config, executor, listener)
+    }
 }
 
 private val DEFAULT_ACK_TIMEOUT: TimeValue = TimeValue.timeValueSeconds(30)
@@ -256,15 +263,18 @@ class BatchedCoroutineAckListener(
 
 suspend fun <T : PersistentTaskParams>
     PersistentTasksService.startTask(taskId: String, taskName: String, params : T): PersistentTask<T> {
+    saveCoroutineContext()
     return suspendCoroutine { cont -> this.sendStartRequest(taskId, taskName, params, CoroutineActionListener(cont)) }
 }
 
 suspend fun PersistentTasksService.removeTask(taskId: String): PersistentTask<*> {
+    saveCoroutineContext()
     return suspendCoroutine { cont -> this.sendRemoveRequest(taskId, CoroutineActionListener(cont)) }
 }
 
 suspend fun PersistentTasksService.waitForTaskCondition(taskId: String, timeout: TimeValue,
                                                         condition: (PersistentTask<*>) -> Boolean) : PersistentTask<*> {
+    saveCoroutineContext()
     return suspendCancellableCoroutine { cont ->
         val listener = object : PersistentTasksService.WaitForPersistentTaskListener<PersistentTaskParams> {
             override fun onResponse(response: PersistentTask<PersistentTaskParams>) = cont.resume(response)
@@ -297,6 +307,13 @@ inline fun <T> ActionListener<T>.completeWith(block : () -> T) {
  * context and puts the thread's own back. A pooled thread is therefore left as it was found, and a caller that
  * continues on the same thread after a nested context element exits keeps its context. Each child coroutine gets
  * its own copy, so coroutines launched in the same scope never see each other's context.
+ *
+ * A change the coroutine makes to the context is kept across a suspension only if it is saved before the coroutine can
+ * resume on another thread. The suspend helpers in this file save it; a change made just before a bare `delay`,
+ * `withContext` with another dispatcher, or `await` is kept only if the code calls [saveCurrent] first.
+ *
+ * The handling of a nested `withContext` relies on kotlinx-coroutines 1.6, which does not copy elements for
+ * `withContext`; 1.7 folds copyable elements there too, so check it again on an upgrade.
  *
  * @param threadContext - a [ThreadContext] instance
  */
@@ -381,6 +398,8 @@ class OpenSearchClientThreadContextElement(private val threadContext: ThreadCont
 
     companion object Key : CoroutineContext.Key<OpenSearchThreadContextElement>
 
+    // Not guarded: if the response resumes the call on another thread before this one has saved, the resumed block
+    // only hands the response back and sends no request, so the context it runs in is not used.
     private var storedContext: ThreadContext.StoredContext = threadContext.newStoredContext(true)
     private var init = false
 
@@ -426,6 +445,7 @@ suspend fun <T : ClusterManagerNodeRequest<T>> submitClusterStateUpdateTask(requ
                                                                     taskExecutor: ClusterStateTaskExecutor<AcknowledgedRequest<T>>,
                                                                     clusterService: ClusterService,
                                                                     source: String): ClusterState {
+    saveCoroutineContext()
     return suspendCoroutine { continuation ->
         clusterService.submitStateUpdateTask(
                 source,

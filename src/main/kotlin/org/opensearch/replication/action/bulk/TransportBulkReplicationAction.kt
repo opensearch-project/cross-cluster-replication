@@ -294,6 +294,8 @@ open class TransportBulkReplicationAction(
      * the caller.
      */
     internal suspend fun claimLock(claimState: BulkTaskState) {
+        // Without the metadata store index, resume sends no request before this point, but then every index fails its
+        // lease check and the claim is not reached; that unreachable case is accepted.
         val afterEarlierCalls = operationType == BulkOperationType.START || operationType == BulkOperationType.RESUME
         client.suspendExecute(UpdateBulkTaskStateAction.INSTANCE, UpdateBulkTaskStateRequest(claimState), defaultContext = afterEarlierCalls)
     }

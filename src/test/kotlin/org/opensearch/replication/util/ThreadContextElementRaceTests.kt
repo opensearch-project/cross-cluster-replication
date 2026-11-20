@@ -12,7 +12,10 @@ import com.carrotsearch.randomizedtesting.annotations.ThreadLeakScope
 import kotlinx.coroutines.ThreadContextElement
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext
+import org.mockito.Mockito
 import org.opensearch.core.action.ActionListener
+import org.opensearch.index.shard.GlobalCheckpointListeners
+import org.opensearch.index.shard.IndexShard
 import org.opensearch.test.OpenSearchTestCase
 import org.opensearch.test.client.NoOpClient
 import org.opensearch.threadpool.TestThreadPool
@@ -93,6 +96,50 @@ class ThreadContextElementRaceTests : OpenSearchTestCase() {
         } finally {
             t1.shutdown()
             t2.shutdown()
+        }
+    }
+
+    fun testAValuePutBeforeASavedSuspensionSurvivesAResumeThatOvertookTheUnwind() {
+        val tc = threadPool.threadContext
+        val t1 = Executors.newSingleThreadExecutor()
+        val t2 = Executors.newSingleThreadExecutor()
+        fun <T> on(executor: ExecutorService, block: () -> T): T = executor.submit(block).get()
+        try {
+            val element = on(t1) { threadPool.coroutineContext() as OpenSearchThreadContextElement }
+            val ctx = EmptyCoroutineContext
+            val s0 = on(t1) { element.updateThreadContext(ctx) }
+            on(t1) { tc.putTransient("mark", "m") }                // coroutine code before a suspension point
+            on(t1) { element.saveCurrent() }                       // what every suspend helper does first
+            val s1 = on(t2) { element.updateThreadContext(ctx) }   // the resume overtakes the unwind
+            val seen = on(t2) { tc.getTransient<String>("mark") }
+            on(t1) { element.restoreThreadContext(ctx, s0) }
+            on(t2) { element.restoreThreadContext(ctx, s1) }
+            assertEquals("m", seen)
+        } finally {
+            t1.shutdown()
+            t2.shutdown()
+        }
+    }
+
+    fun testAValuePutBeforeAHelperSuspensionSurvivesAResumeThatOvertookTheUnwind() {
+        val shard = Mockito.mock(IndexShard::class.java)
+        val responder = Executors.newSingleThreadExecutor()
+        Mockito.doAnswer { invocation ->
+            val listener = invocation.getArgument<GlobalCheckpointListeners.GlobalCheckpointListener>(1)
+            responder.execute { listener.accept(5, null) }
+            null
+        }.`when`(shard).addGlobalCheckpointListener(Mockito.anyLong(), Mockito.any(), Mockito.any())
+        try {
+            val seen = runBlocking {
+                withContext(threadPool.coroutineContext(ThreadPool.Names.GENERIC) + SlowFirstUnwind()) {
+                    threadPool.threadContext.putTransient("mark", "m")
+                    shard.waitForGlobalCheckpoint(5, null)
+                    threadPool.threadContext.getTransient<String>("mark")
+                }
+            }
+            assertEquals("m", seen)
+        } finally {
+            responder.shutdown()
         }
     }
 
