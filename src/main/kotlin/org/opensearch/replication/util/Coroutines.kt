@@ -54,10 +54,17 @@ import kotlin.coroutines.*
  *
  * @param fn - a block of code that is passed an [ActionListener] that should be passed to the ES client API.
  */
+// The response of a wrapped call can resume the coroutine on another thread before this thread has finished
+// suspending, so the coroutine's context is saved before the request is sent.
+private suspend fun saveCoroutineContext() {
+    kotlin.coroutines.coroutineContext[OpenSearchThreadContextElement.Key]?.saveCurrent()
+}
+
 suspend fun <Req, Resp> Client.suspending(fn: (Req, ActionListener<Resp>) -> Unit,
                                   injectSecurityContext: Boolean = false,
                                   defaultContext: Boolean = false): suspend (Req) -> Resp {
     return { req: Req ->
+        saveCoroutineContext()
         withContext(this.threadPool().coroutineContext(null, "default", injectSecurityContext, defaultContext)) {
             suspendCancellableCoroutine<Resp> { cont -> fn(req, CoroutineActionListener(cont)) }
         }
@@ -68,6 +75,7 @@ suspend fun <Req, Resp> Client.suspending(replicationMetadata: ReplicationMetada
                                   fn: (req: Req, ActionListener<Resp>) -> Unit,
                                   defaultContext: Boolean = false): suspend (Req) -> Resp {
     return { req: Req ->
+        saveCoroutineContext()
         withContext(this.threadPool().coroutineContext(replicationMetadata, "default", true, defaultContext)) {
             suspendCancellableCoroutine<Resp> { cont -> fn(req, CoroutineActionListener(cont)) }
         }
@@ -78,6 +86,7 @@ suspend fun <Req: ActionRequest, Resp: ActionResponse>
         OpenSearchClient.suspendExecute(action: ActionType<Resp>, req: Req,
                                            injectSecurityContext: Boolean = false,
                                            defaultContext: Boolean = false) : Resp {
+    saveCoroutineContext()
     return withContext(this.threadPool().coroutineContext(null, action.name(), injectSecurityContext, defaultContext)) {
         suspendCancellableCoroutine<Resp> { cont -> execute(action, req, CoroutineActionListener(cont)) }
     }
@@ -86,6 +95,7 @@ suspend fun <Req: ActionRequest, Resp: ActionResponse>
 suspend fun <Req: ActionRequest, Resp: ActionResponse>
         OpenSearchClient.suspendExecute(replicationMetadata: ReplicationMetadata,
                                            action: ActionType<Resp>, req: Req, defaultContext: Boolean = false) : Resp {
+    saveCoroutineContext()
     return withContext(this.threadPool().coroutineContext(replicationMetadata, action.name(), true, defaultContext)) {
         suspendCancellableCoroutine<Resp> { cont ->
             execute(action, req, CoroutineActionListener(cont))
@@ -293,7 +303,7 @@ inline fun <T> ActionListener<T>.completeWith(block : () -> T) {
 @OptIn(ExperimentalCoroutinesApi::class)
 class OpenSearchThreadContextElement private constructor(
     private val threadContext: ThreadContext,
-    @Volatile private var context: ThreadContext.StoredContext
+    initial: ThreadContext.StoredContext
 ) : CopyableThreadContextElement<OpenSearchThreadContextElement.State> {
 
     constructor(threadContext: ThreadContext) : this(threadContext, threadContext.newStoredContext(true))
@@ -301,43 +311,59 @@ class OpenSearchThreadContextElement private constructor(
     companion object Key : CoroutineContext.Key<OpenSearchThreadContextElement>
 
     /**
-     * What a resume changed on the thread, so the matching suspend can undo exactly that.
+     * What one resume changed on its thread, so the matching suspend can undo exactly that.
      *
      * @property threadOwn the thread's own context, or null when the coroutine was already installed on the thread
-     * @property previousRunningOn the thread the coroutine was marked as running on before this resume
+     * @property generation the number of the resume, so a late suspend does not overwrite a newer saved context
      */
-    class State(val threadOwn: ThreadContext.StoredContext?, val previousRunningOn: Thread?)
+    class State(val threadOwn: ThreadContext.StoredContext?, val generation: Long)
 
-    // The thread this element's coroutine is installed on, if any.
-    @Volatile private var runningOn: Thread? = null
+    private val lock = Any()
+    // The coroutine's context as last saved, and the number of the latest resume; both guarded by lock.
+    private var context: ThreadContext.StoredContext = initial
+    private var generation = 0L
+    // Whether the coroutine is installed on the current thread. Per thread, so no other thread can change it.
+    private val installedHere = ThreadLocal<Boolean>()
 
     override val key: CoroutineContext.Key<*>
         get() = Key
 
     override fun updateThreadContext(context: CoroutineContext): State {
-        val current = Thread.currentThread()
-        if (runningOn === current) {
-            // A nested withContext on the same thread: the coroutine's context is already installed.
-            return State(null, current)
+        if (installedHere.get() == true) {
+            // A nested withContext on this thread: the coroutine's context is already installed.
+            return State(null, 0)
         }
-        val previous = runningOn
+        val (saved, number) = synchronized(lock) { this.context to ++generation }
         val threadOwn = threadContext.stashContext()
-        this.context.restore()
-        runningOn = current
-        return State(threadOwn, previous)
+        saved.restore()
+        installedHere.set(true)
+        return State(threadOwn, number)
     }
 
     override fun restoreThreadContext(context: CoroutineContext, oldState: State) {
         val threadOwn = oldState.threadOwn ?: return
-        this.context = threadContext.newStoredContext(true)
-        runningOn = oldState.previousRunningOn
+        val current = threadContext.newStoredContext(true)
+        synchronized(lock) {
+            if (generation == oldState.generation) {
+                this.context = current
+            }
+        }
+        installedHere.remove()
         threadOwn.restore()
+    }
+
+    /** Saves the coroutine's current context, when the coroutine is installed on the calling thread. */
+    fun saveCurrent() {
+        if (installedHere.get() == true) {
+            val current = threadContext.newStoredContext(true)
+            synchronized(lock) { this.context = current }
+        }
     }
 
     override fun copyForChildCoroutine(): CopyableThreadContextElement<State> {
         // A child launched from inside the running coroutine starts from its current context; one launched from
         // outside starts from the context the parent last saved.
-        val start = if (runningOn === Thread.currentThread()) threadContext.newStoredContext(true) else context
+        val start = if (installedHere.get() == true) threadContext.newStoredContext(true) else synchronized(lock) { context }
         return OpenSearchThreadContextElement(threadContext, start)
     }
 }
