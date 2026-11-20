@@ -244,6 +244,15 @@ class BatchedCoroutineAckListener(
     override fun ackTimeout(): TimeValue = ackTimeoutValue
 }
 
+/**
+ * Runs [block] in a default context, the way a wrapped call with `defaultContext = true` runs its request.
+ *
+ * @param block the code to run, typically one persistent task request
+ * @return the result of [block]
+ */
+suspend fun <T> ThreadPool.inDefaultContext(block: suspend () -> T): T =
+    withContext(coroutineContext(null, "default", false, true)) { block() }
+
 suspend fun <T : PersistentTaskParams>
     PersistentTasksService.startTask(taskId: String, taskName: String, params : T): PersistentTask<T> {
     return suspendCoroutine { cont -> this.sendStartRequest(taskId, taskName, params, CoroutineActionListener(cont)) }
@@ -285,14 +294,23 @@ inline fun <T> ActionListener<T>.completeWith(block : () -> T) {
  *
  * On resume it saves the thread's own context and installs the coroutine's; on suspend it saves the coroutine's
  * context and puts the thread's own back. A pooled thread is therefore left as it was found, and a caller that
- * continues on the same thread after a nested context element exits keeps its context.
+ * continues on the same thread after a nested context element exits keeps its context. Each child coroutine gets
+ * its own copy, so coroutines launched in the same scope never see each other's context.
  *
  * @param threadContext - a [ThreadContext] instance
  */
-class OpenSearchThreadContextElement(private val threadContext: ThreadContext) : ThreadContextElement<ThreadContext.StoredContext> {
+@OptIn(ExperimentalCoroutinesApi::class)
+class OpenSearchThreadContextElement private constructor(
+    private val threadContext: ThreadContext,
+    @Volatile private var context: ThreadContext.StoredContext
+) : CopyableThreadContextElement<ThreadContext.StoredContext> {
+
+    constructor(threadContext: ThreadContext) : this(threadContext, threadContext.newStoredContext(true))
 
     companion object Key : CoroutineContext.Key<OpenSearchThreadContextElement>
-    private var context: ThreadContext.StoredContext = threadContext.newStoredContext(true)
+
+    // The thread this element's coroutine is running on, if any.
+    @Volatile private var runningOn: Thread? = null
 
     override val key: CoroutineContext.Key<*>
         get() = Key
@@ -300,12 +318,21 @@ class OpenSearchThreadContextElement(private val threadContext: ThreadContext) :
     override fun updateThreadContext(context: CoroutineContext): ThreadContext.StoredContext {
         val threadOwn = threadContext.stashContext()
         this.context.restore()
+        runningOn = Thread.currentThread()
         return threadOwn
     }
 
     override fun restoreThreadContext(context: CoroutineContext, oldState: ThreadContext.StoredContext) {
         this.context = threadContext.newStoredContext(true)
+        runningOn = null
         oldState.restore()
+    }
+
+    override fun copyForChildCoroutine(): CopyableThreadContextElement<ThreadContext.StoredContext> {
+        // A child launched from inside the running coroutine starts from its current context; one launched from
+        // outside starts from the context the parent last saved.
+        val start = if (runningOn === Thread.currentThread()) threadContext.newStoredContext(true) else context
+        return OpenSearchThreadContextElement(threadContext, start)
     }
 }
 
