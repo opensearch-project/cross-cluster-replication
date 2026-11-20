@@ -85,7 +85,7 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
                 validateResumeReplicationRequest(request)
 
                 // Remove all existing tasks before resuming to ensure a clean slate
-                StaleTaskUtils.removeAllTasksForIndex(clusterService, client, request.indexName)
+                removeExistingTasks(request.indexName)
 
                 val replMetadata = replicationMetadataManager.getIndexReplicationMetadata(request.indexName)
                 val remoteMetadata = getLeaderIndexMetadata(replMetadata.connectionName, replMetadata.leaderContext.resource)
@@ -222,7 +222,11 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
         return false
     }
 
-    private suspend fun getLeaderIndexMetadata(leaderAlias: String, leaderIndex: String): IndexMetadata {
+    // The first request of resume, so its first removal runs as the caller, as it did before the context fix.
+    internal suspend fun removeExistingTasks(indexName: String): Int =
+        StaleTaskUtils.removeAllTasksForIndex(clusterService, client, indexName, firstCallAsCaller = true)
+
+    internal suspend fun getLeaderIndexMetadata(leaderAlias: String, leaderIndex: String): IndexMetadata {
         val leaderClusterClient = client.getRemoteClusterClient(leaderAlias)
         val clusterStateRequest = leaderClusterClient.admin().cluster().prepareState()
                 .clear()
@@ -230,7 +234,7 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
                 .setMetadata(true)
                 .setIndicesOptions(IndicesOptions.strictSingleIndexNoExpandForbidClosed())
                 .request()
-        val remoteState = leaderClusterClient.suspending(leaderClusterClient.admin().cluster()::state)(clusterStateRequest).state
+        val remoteState = leaderClusterClient.suspending(leaderClusterClient.admin().cluster()::state, defaultContext = true)(clusterStateRequest).state
         return remoteState.metadata.index(leaderIndex) ?: throw IndexNotFoundException("${leaderAlias}:${leaderIndex}")
     }
 

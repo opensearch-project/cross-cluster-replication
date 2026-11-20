@@ -295,7 +295,7 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
         val followerShardId = store.shardId()
         // 1. Get all the files info from the leader cluster for this shardId
         // Node containing the shard
-        val leaderClusterState = getLeaderClusterState(true, true, indexId.name)
+        val leaderClusterState = leaderClusterStateForRestore(indexId.name)
         val leaderShardRouting = leaderClusterState.routingTable.shardRoutingTable(snapshotShardId.indexName,
                 snapshotShardId.id).primaryShard()
         leaderShardNode = leaderClusterState.nodes.get(leaderShardRouting.currentNodeId())
@@ -386,6 +386,10 @@ class RemoteClusterRepository(private val repositoryMetadata: RepositoryMetadata
      * This method makes a blocking call to the leader cluster
      * For restore workflow this is expected.
      */
+    // In a default context on every attempt, as the retries ran after earlier calls had left the context empty.
+    internal fun leaderClusterStateForRestore(leaderIndex: String): ClusterState =
+        leaderClusterClient.threadPool().threadContext.stashContext().use { getLeaderClusterState(true, true, leaderIndex) }
+
     private fun getLeaderClusterState(includeNodes: Boolean, includeRoutingTable: Boolean, vararg remoteIndices: String): ClusterState {
         val clusterStateRequest = leaderClusterClient.admin().cluster().prepareState()
                 .clear()

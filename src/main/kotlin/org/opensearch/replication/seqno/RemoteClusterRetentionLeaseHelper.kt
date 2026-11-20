@@ -69,7 +69,7 @@ class RemoteClusterRetentionLeaseHelper constructor(var followerClusterNameWithU
         // Or if a retention lease already exists with -1 seqno, it will renew that .
         val request = RetentionLeaseActions.RenewRequest(leaderShardId, retentionLeaseId, RetentionLeaseActions.RETAIN_ALL, retentionLeaseSource)
         try {
-            client.suspendExecute(RetentionLeaseActions.Renew.INSTANCE, request)
+            client.suspendExecute(RetentionLeaseActions.Renew.INSTANCE, request, defaultContext = true)
         } catch (e : RetentionLeaseInvalidRetainingSeqNoException) {
             return true
         }
@@ -86,7 +86,7 @@ class RemoteClusterRetentionLeaseHelper constructor(var followerClusterNameWithU
         val oldRetentionLeaseId = retentionLeaseIdForShard(followerClusterName, followerShardId)
         val requestForOldId = RetentionLeaseActions.RenewRequest(leaderShardId, oldRetentionLeaseId, RetentionLeaseActions.RETAIN_ALL, retentionLeaseSource)
         try {
-            client.suspendExecute(RetentionLeaseActions.Renew.INSTANCE, requestForOldId)
+            client.suspendExecute(RetentionLeaseActions.Renew.INSTANCE, requestForOldId, defaultContext = true)
         } catch (ex: RetentionLeaseInvalidRetainingSeqNoException) {
             //old retention lease id present, will add new retention lease
             log.info("Old retention lease Id ${oldRetentionLeaseId} present with invalid seq number, adding new retention lease with ID:" +
@@ -106,7 +106,7 @@ class RemoteClusterRetentionLeaseHelper constructor(var followerClusterNameWithU
         val retentionLeaseId = retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)
         val request = RetentionLeaseActions.AddRequest(leaderShardId, retentionLeaseId, seqNo, retentionLeaseSource)
         try {
-            client.suspendExecute(RetentionLeaseActions.Add.INSTANCE, request)
+            client.suspendExecute(RetentionLeaseActions.Add.INSTANCE, request, defaultContext = true)
             log.info("Added new retention lease: id=$retentionLeaseId, leaderShard=$leaderShardId, seqNo=$seqNo")
             return true
         } catch (e: Exception) {
@@ -119,7 +119,7 @@ class RemoteClusterRetentionLeaseHelper constructor(var followerClusterNameWithU
         val retentionLeaseId = retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)
         val request = RetentionLeaseActions.RenewRequest(leaderShardId, retentionLeaseId, seqNo, retentionLeaseSource)
         try {
-            client.suspendExecute(RetentionLeaseActions.Renew.INSTANCE, request)
+            client.suspendExecute(RetentionLeaseActions.Renew.INSTANCE, request, defaultContext = true)
         }catch (e: RetentionLeaseNotFoundException){
             //New retention lease not found, checking presense of old retention lease
             log.info("Retention lease with ID: ${retentionLeaseId} not found," +
@@ -156,7 +156,7 @@ class RemoteClusterRetentionLeaseHelper constructor(var followerClusterNameWithU
             .setMetadata(true)
             .setIndicesOptions(IndicesOptions.strictSingleIndexNoExpandForbidClosed())
             .request()
-        val leaderState = leaderClusterClient.suspending(leaderClusterClient.admin().cluster()::state)(clusterStateRequest).state
+        val leaderState = leaderClusterClient.suspending(leaderClusterClient.admin().cluster()::state, defaultContext = true)(clusterStateRequest).state
         return leaderState.metadata.index(leaderIndex) ?: throw IndexNotFoundException("${leaderAlias}:${leaderIndex}")
     }
 
@@ -165,7 +165,7 @@ class RemoteClusterRetentionLeaseHelper constructor(var followerClusterNameWithU
         val retentionLeaseId = retentionLeaseIdForShard(followerClusterNameWithUUID, followerShardId)
         val request = RetentionLeaseActions.RemoveRequest(leaderShardId, retentionLeaseId)
         try {
-            client.suspendExecute(RetentionLeaseActions.Remove.INSTANCE, request)
+            client.suspendExecute(RetentionLeaseActions.Remove.INSTANCE, request, defaultContext = true)
             log.info("Removed retention lease with id - $retentionLeaseId")
         } catch(e: RetentionLeaseNotFoundException) {
             // log error and bail

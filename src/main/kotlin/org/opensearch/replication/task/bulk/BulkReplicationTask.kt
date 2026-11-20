@@ -92,7 +92,11 @@ class BulkReplicationTask(
 
     fun run(listener: ActionListener<BulkReplicationTaskStatus>, taskId: String) {
         bulkTaskId = taskId
-        CoroutineScope(threadPool.coroutineContext(ThreadPool.Names.GENERIC)).launch {
+        // The task runs in a default context, not in the context of the request that spawned it.
+        val taskScope = threadPool.threadContext.stashContext().use {
+            CoroutineScope(threadPool.coroutineContext(ThreadPool.Names.GENERIC))
+        }
+        taskScope.launch {
             try {
                 val indices = preResolvedIndices
                 updateClusterState()
@@ -299,13 +303,13 @@ class BulkReplicationTask(
             } catch (_: Exception) { "Replication task failed" }
     }
 
-    private suspend fun updateClusterState() {
+    internal suspend fun updateClusterState() {
         try {
             client.suspendExecute(UpdateBulkTaskStateAction.INSTANCE, UpdateBulkTaskStateRequest(
                 BulkTaskState(bulkTaskId, operationType.label, request.pattern, startTime,
                     successCount.get(), failedIndices.size, pendingCount.get(),
                     cancelledCount.get(), failedIndices.toList())
-            ))
+            ), defaultContext = true)
         } catch (e: Exception) {
             log.warn("Failed to update cluster state: ${e.message}")
         }
