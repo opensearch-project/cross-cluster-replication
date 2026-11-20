@@ -10,6 +10,7 @@ package org.opensearch.replication.metadata.store
 
 import com.carrotsearch.randomizedtesting.annotations.ThreadLeakScope
 import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.withContext
 import org.mockito.Mockito
 import org.opensearch.ResourceNotFoundException
 import org.opensearch.Version
@@ -50,6 +51,7 @@ import org.opensearch.identity.PluginSubject
 import org.opensearch.index.get.GetResult
 import org.opensearch.replication.metadata.ReplicationOverallState
 import org.opensearch.replication.util.PluginClient
+import org.opensearch.replication.util.coroutineContext
 import org.opensearch.test.ClusterServiceUtils
 import org.opensearch.test.OpenSearchTestCase
 import org.opensearch.test.client.NoOpClient
@@ -95,16 +97,17 @@ class ReplicationMetadataStoreTests : OpenSearchTestCase() {
         val get = GetReplicationMetadataRequest(TYPE, null, "follower")
 
         runBlocking {
-            store.addMetadata(AddReplicationMetadataRequest(metadata()))
-            expectNotFound { runBlocking { store.getMetadata(get, false) } }
-            store.getMetadata(TYPE, listOf("follower"))
-            store.deleteMetadata(DeleteReplicationMetadataRequest(TYPE, null, "follower"))
-            store.deleteMetadata(TYPE, listOf("follower"))
-            store.updateMetadata(UpdateReplicationMetadataRequest(metadata(), 1, 1))
+            // Like the transport actions, the calls run in a coroutine that carries the caller's context.
+            withContext(threadPool.coroutineContext(ThreadPool.Names.GENERIC)) {
+                callerIsBackAfter { store.addMetadata(AddReplicationMetadataRequest(metadata())) }
+                callerIsBackAfter { expectNotFound { runBlocking { store.getMetadata(get, false) } } }
+                callerIsBackAfter { store.getMetadata(TYPE, listOf("follower")) }
+                callerIsBackAfter { store.deleteMetadata(DeleteReplicationMetadataRequest(TYPE, null, "follower")) }
+                callerIsBackAfter { store.deleteMetadata(TYPE, listOf("follower")) }
+                callerIsBackAfter { store.updateMetadata(UpdateReplicationMetadataRequest(metadata(), 1, 1)) }
+            }
         }
-        // The coroutine elements leave a default context behind, so the blocking read starts from the caller again.
-        threadPool.threadContext.putTransient(IDENTITY, CALLER)
-        expectNotFound { store.getMetadata(get, false, 10_000) }
+        callerIsBackAfterBlocking { expectNotFound { store.getMetadata(get, false, 10_000) } }
 
         val health = ClusterHealthAction.NAME
         assertEquals(
@@ -119,16 +122,32 @@ class ReplicationMetadataStoreTests : OpenSearchTestCase() {
             ).map { "$it as $SUBJECT" },
             calls
         )
-        assertEquals("context after the blocking read", CALLER, threadPool.threadContext.getTransient<String>(IDENTITY))
+        assertEquals("context on the test thread afterwards", CALLER, threadPool.threadContext.getTransient<String>(IDENTITY))
     }
 
     fun testCreatingTheStoreRunsAsTheSubject() {
         val store = ReplicationMetadataStore(pluginClient(), clusterService, NamedXContentRegistry.EMPTY)
 
-        // The store index never appears in this cluster state, so the mapping check after the create fails.
-        expectNotFound { runBlocking { store.addMetadata(AddReplicationMetadataRequest(metadata())) } }
+        runBlocking {
+            withContext(threadPool.coroutineContext(ThreadPool.Names.GENERIC)) {
+                // The store index never appears in this cluster state, so the mapping check after the create fails.
+                callerIsBackAfter { expectNotFound { runBlocking { store.addMetadata(AddReplicationMetadataRequest(metadata())) } } }
+            }
+        }
 
         assertEquals(listOf("${CreateIndexAction.NAME} as $SUBJECT"), calls)
+    }
+
+    private suspend fun callerIsBackAfter(call: suspend () -> Unit) {
+        assertEquals("context before the store call", CALLER, threadPool.threadContext.getTransient<String>(IDENTITY))
+        call()
+        assertEquals("context after the store call", CALLER, threadPool.threadContext.getTransient<String>(IDENTITY))
+    }
+
+    private fun callerIsBackAfterBlocking(call: () -> Unit) {
+        assertEquals("context before the store call", CALLER, threadPool.threadContext.getTransient<String>(IDENTITY))
+        call()
+        assertEquals("context after the store call", CALLER, threadPool.threadContext.getTransient<String>(IDENTITY))
     }
 
     private fun expectNotFound(block: () -> Unit) {

@@ -281,14 +281,15 @@ inline fun <T> ActionListener<T>.completeWith(block : () -> T) {
 }
 
 /**
- * Stores and restores the OpenSearch [ThreadContext] when the coroutine is suspended and resumed.
+ * Carries the OpenSearch [ThreadContext] of a coroutine across suspension and resumption.
  *
- * The implementation is a little confusing because OpenSearch and Kotlin uses [ThreadContext.stashContext] to
- * restore the default context.
+ * On resume it saves the thread's own context and installs the coroutine's; on suspend it saves the coroutine's
+ * context and puts the thread's own back. A pooled thread is therefore left as it was found, and a caller that
+ * continues on the same thread after a nested context element exits keeps its context.
  *
  * @param threadContext - a [ThreadContext] instance
  */
-class OpenSearchThreadContextElement(private val threadContext: ThreadContext) : ThreadContextElement<Unit> {
+class OpenSearchThreadContextElement(private val threadContext: ThreadContext) : ThreadContextElement<ThreadContext.StoredContext> {
 
     companion object Key : CoroutineContext.Key<OpenSearchThreadContextElement>
     private var context: ThreadContext.StoredContext = threadContext.newStoredContext(true)
@@ -296,18 +297,28 @@ class OpenSearchThreadContextElement(private val threadContext: ThreadContext) :
     override val key: CoroutineContext.Key<*>
         get() = Key
 
-    override fun restoreThreadContext(context: CoroutineContext, oldState: Unit) {
-        this.context = threadContext.stashContext()
+    override fun updateThreadContext(context: CoroutineContext): ThreadContext.StoredContext {
+        val threadOwn = threadContext.stashContext()
+        this.context.restore()
+        return threadOwn
     }
 
-    override fun updateThreadContext(context: CoroutineContext) = this.context.close()
+    override fun restoreThreadContext(context: CoroutineContext, oldState: ThreadContext.StoredContext) {
+        this.context = threadContext.newStoredContext(true)
+        oldState.restore()
+    }
 }
 
+/**
+ * Like [OpenSearchThreadContextElement], but starts the coroutine in a default context when [defaultContext] or
+ * [injectSecurityContext] is set, and with the security transients of [replicationMetadata] when
+ * [injectSecurityContext] is set. Otherwise the coroutine starts in the context it was created in.
+ */
 class OpenSearchClientThreadContextElement(private val threadContext: ThreadContext,
                                               private val replicationMetadata: ReplicationMetadata?,
                                               private val action: String,
                                               private val injectSecurityContext: Boolean,
-                                              private val defaultContext: Boolean) : ThreadContextElement<Unit> {
+                                              private val defaultContext: Boolean) : ThreadContextElement<ThreadContext.StoredContext> {
 
     companion object Key : CoroutineContext.Key<OpenSearchThreadContextElement>
 
@@ -317,25 +328,26 @@ class OpenSearchClientThreadContextElement(private val threadContext: ThreadCont
     override val key: CoroutineContext.Key<*>
         get() = Key
 
-    override fun restoreThreadContext(context: CoroutineContext, oldState: Unit) {
-        // OpenSearch expects default context to be set after coroutine is suspended.
-        this.storedContext = threadContext.stashContext()
-        init = true
-    }
-
-    override fun updateThreadContext(context: CoroutineContext) {
-        this.storedContext.close()
-        if(!init) {
-            // To ensure, we initialize security related transients only once
-            this.storedContext = if(injectSecurityContext || defaultContext)
-                threadContext.stashContext()
-            else
-                threadContext.newStoredContext(true)
-            if(injectSecurityContext) {
-                // Populate relevant transients from replication metadata
+    override fun updateThreadContext(context: CoroutineContext): ThreadContext.StoredContext {
+        val threadOwn = threadContext.stashContext()
+        if (init) {
+            storedContext.restore()
+        } else {
+            // The security transients are set up once, on the first resume.
+            init = true
+            if (!injectSecurityContext && !defaultContext) {
+                storedContext.restore()
+            }
+            if (injectSecurityContext) {
                 SecurityContext.setBasedOnActions(replicationMetadata, action, threadContext)
             }
         }
+        return threadOwn
+    }
+
+    override fun restoreThreadContext(context: CoroutineContext, oldState: ThreadContext.StoredContext) {
+        storedContext = threadContext.newStoredContext(true)
+        oldState.restore()
     }
 }
 
