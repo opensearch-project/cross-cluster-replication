@@ -414,6 +414,24 @@ class StaleTaskUtilsTests : OpenSearchTestCase() {
         assertThat(client.threadPool().threadContext.getTransient<String>(IDENTITY)).isEqualTo("caller")
     }
 
+    fun testRemoveAllTasksForIndex_sendsOnlyTheFirstRemovalAsTheCallerWhenAsked() = runBlocking {
+        val tasks = PersistentTasksCustomMetadata.builder()
+        for (id in listOf("replication:index:$followerIndex", "replication:[$followerIndex][0]")) {
+            tasks.addTask<PersistentTaskParams>(id, IndexReplicationExecutor.TASK_NAME,
+                IndexReplicationParams("remote", Index(followerIndex, "_na_"), followerIndex),
+                PersistentTasksCustomMetadata.INITIAL_ASSIGNMENT)
+        }
+        setClusterStateWithTasks(tasks.build())
+
+        val client = StaleTaskTestClient("firstAsCaller")
+        client.threadPool().threadContext.putTransient(IDENTITY, "caller")
+        StaleTaskUtils.removeAllTasksForIndex(clusterService, client, followerIndex, firstCallAsCaller = true)
+
+        // As when this was the first wrapped call of the coroutine: only that call carried the caller's context.
+        assertThat(client.identities).containsExactly(
+            "${RemovePersistentTaskAction.NAME} as caller", "${RemovePersistentTaskAction.NAME} as null")
+    }
+
     //Helpers
 
     private fun buildPersistentTask(

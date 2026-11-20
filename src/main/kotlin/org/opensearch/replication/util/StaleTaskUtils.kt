@@ -85,8 +85,10 @@ object StaleTaskUtils {
     suspend fun removeStaleTasksForIndex(
         clusterService: ClusterService,
         client: Client,
-        indexName: String
+        indexName: String,
+        firstCallAsCaller: Boolean = false
     ): Int {
+        val calls = CallOrder(firstCallAsCaller)
         log.info("Starting stale task cleanup for index $indexName")
 
         val replicationTasks = findReplicationTasksForIndex(clusterService, indexName)
@@ -109,7 +111,7 @@ object StaleTaskUtils {
 
         // Remove all unassigned tasks immediately
         tasksByNode[null]?.forEach { task ->
-            if (removeTask(client, task, indexName)) removed++
+            if (removeTask(client, task, indexName, calls)) removed++
         }
 
         // Process assigned tasks per node
@@ -120,13 +122,13 @@ object StaleTaskUtils {
             if (!validNodeIds.contains(nodeId)) {
                 log.info("Node $nodeId is no longer in the cluster, removing its tasks")
                 tasks.forEach { task ->
-                    if (removeTask(client, task, indexName)) removed++
+                    if (removeTask(client, task, indexName, calls)) removed++
                 }
                 continue
             }
 
             // Node is valid — check task manager to see if tasks are actually running
-            val runningDescriptions = getRunningTaskDescriptions(client, nodeId)
+            val runningDescriptions = getRunningTaskDescriptions(client, nodeId, calls)
             if (runningDescriptions == null) {
                 // The task manager on this node could not be queried (transient failure, timeout,
                 // disconnect). Fail closed: never remove a task we cannot confirm is stale, otherwise
@@ -137,7 +139,7 @@ object StaleTaskUtils {
             for (task in tasks) {
                 if (!isTaskRunningOnNode(task, runningDescriptions)) {
                     log.info("Task ${task.id} is assigned to node $nodeId but not running in task manager")
-                    if (removeTask(client, task, indexName)) removed++
+                    if (removeTask(client, task, indexName, calls)) removed++
                 }
             }
         }
@@ -155,8 +157,10 @@ object StaleTaskUtils {
     suspend fun removeAllTasksForIndex(
         clusterService: ClusterService,
         client: Client,
-        indexName: String
+        indexName: String,
+        firstCallAsCaller: Boolean = false
     ): Int {
+        val calls = CallOrder(firstCallAsCaller)
         log.info("Removing all replication tasks for index $indexName")
 
         val replicationTasks = findReplicationTasksForIndex(clusterService, indexName)
@@ -169,7 +173,7 @@ object StaleTaskUtils {
 
         var removed = 0
         replicationTasks.forEach { task ->
-            if (removeTask(client, task, indexName)) removed++
+            if (removeTask(client, task, indexName, calls)) removed++
         }
 
         log.info("Removed $removed task(s) for index $indexName")
@@ -180,12 +184,13 @@ object StaleTaskUtils {
     private suspend fun removeTask(
         client: Client,
         task: PersistentTasksCustomMetadata.PersistentTask<*>,
-        indexName: String
+        indexName: String,
+        calls: CallOrder
     ): Boolean {
         return try {
             log.info("Removing task: ${task.id} from cluster state")
             val removeRequest = RemovePersistentTaskAction.Request(task.id)
-            client.suspendExecute(RemovePersistentTaskAction.INSTANCE, removeRequest, defaultContext = true)
+            client.suspendExecute(RemovePersistentTaskAction.INSTANCE, removeRequest, defaultContext = calls.next())
             log.info("Removed stale task ${task.id} for index $indexName")
             true
         } catch (e: ResourceNotFoundException) {
@@ -205,14 +210,14 @@ object StaleTaskUtils {
     //  Queries the task manager on a specific node to get descriptions of running replication tasks.
     //  Returns null when the query fails, so callers can distinguish "no running tasks" from
     //  "could not determine" and avoid removing tasks that may still be running.
-    private suspend fun getRunningTaskDescriptions(client: Client, nodeId: String): Set<String>? {
+    private suspend fun getRunningTaskDescriptions(client: Client, nodeId: String, calls: CallOrder): Set<String>? {
         return try {
             val listTasksRequest = ListTasksRequest()
                 .setActions("cluster:indices/admin/replication*", "cluster:indices/shards/replication*")
                 .setNodes(nodeId)
                 .setDetailed(true)
 
-            val response = client.suspendExecute(ListTasksAction.INSTANCE, listTasksRequest, defaultContext = true)
+            val response = client.suspendExecute(ListTasksAction.INSTANCE, listTasksRequest, defaultContext = calls.next())
             response.tasks.mapNotNull { it.description }.toSet()
         } catch (e: Exception) {
             log.error("Failed to fetch running tasks from node $nodeId: ${e.message}")
@@ -252,5 +257,18 @@ object StaleTaskUtils {
             current = current.cause
         }
         return false
+    }
+
+    /**
+     * Decides which context each request of one cleanup runs in. The first request runs in the caller's context
+     * when [firstCallAsCaller] is set, and every other request in a default context.
+     */
+    private class CallOrder(private var firstCallAsCaller: Boolean) {
+        /** Returns the `defaultContext` value for the next request. */
+        fun next(): Boolean {
+            val default = !firstCallAsCaller
+            firstCallAsCaller = false
+            return default
+        }
     }
 }
