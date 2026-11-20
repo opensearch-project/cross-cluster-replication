@@ -20,7 +20,6 @@ import org.opensearch.replication.util.completeWith
 import org.opensearch.replication.util.coroutineContext
 import org.opensearch.replication.util.persistentTasksService
 import org.opensearch.replication.util.removeTask
-import org.opensearch.replication.util.inDefaultContext
 import org.opensearch.replication.util.startTask
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.GlobalScope
@@ -108,11 +107,9 @@ class TransportAutoFollowClusterManagerNodeAction @Inject constructor(transportS
 
     private suspend fun startAutoFollowTask(clusterAlias: String, patternName: String) {
         try {
-            val response = threadPool.inDefaultContext {
-                persistentTasksService.startTask("autofollow:$clusterAlias:$patternName",
-                        AutoFollowExecutor.TASK_NAME,
-                        AutoFollowParams(clusterAlias, patternName))
-            }
+            val response = persistentTasksService.startTask("autofollow:$clusterAlias:$patternName",
+                    AutoFollowExecutor.TASK_NAME,
+                    AutoFollowParams(clusterAlias, patternName))
             if (!response.isAssigned) {
                 log.warn("""Failed to assign auto follow task for cluster $clusterAlias:$patternName to any node. Check if any
                     |cluster blocks are active.""".trimMargin())
@@ -129,7 +126,7 @@ class TransportAutoFollowClusterManagerNodeAction @Inject constructor(transportS
 
     private suspend fun stopAutoFollowTask(clusterAlias: String, patternName: String) {
         try {
-            threadPool.inDefaultContext { persistentTasksService.removeTask("autofollow:$clusterAlias:$patternName") }
+            persistentTasksService.removeTask("autofollow:$clusterAlias:$patternName")
         } catch(e: ResourceNotFoundException) {
             // Task already removed. Removal must be idempotent (e.g. a retried REMOVE), so treat as success
             // instead of failing the request.

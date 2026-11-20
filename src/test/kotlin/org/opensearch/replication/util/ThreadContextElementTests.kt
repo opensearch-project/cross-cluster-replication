@@ -11,6 +11,9 @@ package org.opensearch.replication.util
 import com.carrotsearch.randomizedtesting.annotations.ThreadLeakScope
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.GlobalScope
+import kotlinx.coroutines.NonCancellable
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
@@ -151,15 +154,39 @@ class ThreadContextElementTests : OpenSearchTestCase() {
         assertEquals(listOf("between", "between"), seen)
     }
 
-    fun testInDefaultContextRunsWithoutTheCaller() {
+    fun testAChildLaunchedAfterACallThatDoesNotSuspendSeesWhatWasPutBefore() {
         threadPool.threadContext.putTransient(IDENTITY, CALLER)
         val seen = runBlocking {
             withContext(threadPool.coroutineContext(ThreadPool.Names.GENERIC)) {
-                val inside = threadPool.inDefaultContext { client.suspending(::respondOnAnotherThread)("default") }
-                listOf(inside, identity())
+                threadPool.threadContext.putTransient(MARK, "m")
+                client.suspending(::respondOnTheSameThread)("sync")
+                val child = CompletableDeferred<String?>()
+                launch { child.complete(threadPool.threadContext.getTransient(MARK)) }
+                listOf(threadPool.threadContext.getTransient(MARK), child.await())
             }
         }
-        assertEquals(listOf(null, CALLER), seen)
+        assertEquals(listOf("m", "m"), seen)
+    }
+
+    fun testANestedWithContextSeesWhatWasPutBefore() {
+        val seen = runBlocking {
+            withContext(threadPool.coroutineContext(ThreadPool.Names.GENERIC)) {
+                threadPool.threadContext.putTransient(MARK, "m")
+                withContext(NonCancellable) { threadPool.threadContext.getTransient<String>(MARK) }
+            }
+        }
+        assertEquals("m", seen)
+    }
+
+    fun testAnUnconfinedCoroutineDoesNotKeepTheContextACallWasSentIn() {
+        threadPool.threadContext.putTransient(IDENTITY, CALLER)
+        val out = CompletableDeferred<List<String?>>()
+        GlobalScope.launch(Dispatchers.Unconfined + threadPool.coroutineContext()) {
+            client.suspending(::markAndRespondLikeTransport, defaultContext = true)("x")
+            out.complete(listOf(identity(), threadPool.threadContext.getTransient(MARK)))
+        }
+        assertEquals(listOf(CALLER, null), runBlocking { out.await() })
+        assertEquals("the launching thread", CALLER, identity())
     }
 
     fun testACallerThreadWithoutAnElementKeepsItsContext() {
@@ -174,6 +201,17 @@ class ThreadContextElementTests : OpenSearchTestCase() {
     /** Answers with the identity seen when the call is made, from another thread, so the coroutine really suspends. */
     private fun failOnAnotherThread(label: String, listener: ActionListener<String?>) {
         threadPool.generic().execute { listener.onFailure(IllegalStateException(label)) }
+    }
+
+    private fun respondOnTheSameThread(label: String, listener: ActionListener<String?>) {
+        listener.onResponse(identity())
+    }
+
+    // Like the transport layer: the response is delivered in the context the request was sent in.
+    private fun markAndRespondLikeTransport(label: String, listener: ActionListener<String?>) {
+        threadPool.threadContext.putTransient(MARK, "sent")
+        val sentIn = threadPool.threadContext.newRestorableContext(false)
+        threadPool.generic().execute { sentIn.get().use { listener.onResponse(null) } }
     }
 
     @Suppress("UNUSED_PARAMETER")

@@ -125,10 +125,8 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
                 ValidationUtil.validateAnalyzerSettings(environment, leaderSettings, replMetadata.settings)
 
                 replicationMetadataManager.updateIndexReplicationState(request.indexName, ReplicationOverallState.RUNNING)
-                val task = threadPool.inDefaultContext {
-                    persistentTasksService.startTask("replication:index:${request.indexName}",
-                            IndexReplicationExecutor.TASK_NAME, params)
-                }
+                val task = persistentTasksService.startTask("replication:index:${request.indexName}",
+                        IndexReplicationExecutor.TASK_NAME, params)
 
                 if (!task.isAssigned) {
                     log.error("Failed to assign task")

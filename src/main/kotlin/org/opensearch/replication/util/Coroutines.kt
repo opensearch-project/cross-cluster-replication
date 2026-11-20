@@ -244,15 +244,6 @@ class BatchedCoroutineAckListener(
     override fun ackTimeout(): TimeValue = ackTimeoutValue
 }
 
-/**
- * Runs [block] in a default context, the way a wrapped call with `defaultContext = true` runs its request.
- *
- * @param block the code to run, typically one persistent task request
- * @return the result of [block]
- */
-suspend fun <T> ThreadPool.inDefaultContext(block: suspend () -> T): T =
-    withContext(coroutineContext(null, "default", false, true)) { block() }
-
 suspend fun <T : PersistentTaskParams>
     PersistentTasksService.startTask(taskId: String, taskName: String, params : T): PersistentTask<T> {
     return suspendCoroutine { cont -> this.sendStartRequest(taskId, taskName, params, CoroutineActionListener(cont)) }
@@ -303,32 +294,47 @@ inline fun <T> ActionListener<T>.completeWith(block : () -> T) {
 class OpenSearchThreadContextElement private constructor(
     private val threadContext: ThreadContext,
     @Volatile private var context: ThreadContext.StoredContext
-) : CopyableThreadContextElement<ThreadContext.StoredContext> {
+) : CopyableThreadContextElement<OpenSearchThreadContextElement.State> {
 
     constructor(threadContext: ThreadContext) : this(threadContext, threadContext.newStoredContext(true))
 
     companion object Key : CoroutineContext.Key<OpenSearchThreadContextElement>
 
-    // The thread this element's coroutine is running on, if any.
+    /**
+     * What a resume changed on the thread, so the matching suspend can undo exactly that.
+     *
+     * @property threadOwn the thread's own context, or null when the coroutine was already installed on the thread
+     * @property previousRunningOn the thread the coroutine was marked as running on before this resume
+     */
+    class State(val threadOwn: ThreadContext.StoredContext?, val previousRunningOn: Thread?)
+
+    // The thread this element's coroutine is installed on, if any.
     @Volatile private var runningOn: Thread? = null
 
     override val key: CoroutineContext.Key<*>
         get() = Key
 
-    override fun updateThreadContext(context: CoroutineContext): ThreadContext.StoredContext {
+    override fun updateThreadContext(context: CoroutineContext): State {
+        val current = Thread.currentThread()
+        if (runningOn === current) {
+            // A nested withContext on the same thread: the coroutine's context is already installed.
+            return State(null, current)
+        }
+        val previous = runningOn
         val threadOwn = threadContext.stashContext()
         this.context.restore()
-        runningOn = Thread.currentThread()
-        return threadOwn
+        runningOn = current
+        return State(threadOwn, previous)
     }
 
-    override fun restoreThreadContext(context: CoroutineContext, oldState: ThreadContext.StoredContext) {
+    override fun restoreThreadContext(context: CoroutineContext, oldState: State) {
+        val threadOwn = oldState.threadOwn ?: return
         this.context = threadContext.newStoredContext(true)
-        runningOn = null
-        oldState.restore()
+        runningOn = oldState.previousRunningOn
+        threadOwn.restore()
     }
 
-    override fun copyForChildCoroutine(): CopyableThreadContextElement<ThreadContext.StoredContext> {
+    override fun copyForChildCoroutine(): CopyableThreadContextElement<State> {
         // A child launched from inside the running coroutine starts from its current context; one launched from
         // outside starts from the context the parent last saved.
         val start = if (runningOn === Thread.currentThread()) threadContext.newStoredContext(true) else context

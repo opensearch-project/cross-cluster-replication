@@ -19,7 +19,6 @@ import org.opensearch.replication.task.index.IndexReplicationParams
 import org.opensearch.replication.task.index.IndexReplicationState
 import org.opensearch.replication.util.StaleTaskUtils
 import org.opensearch.replication.util.coroutineContext
-import org.opensearch.replication.util.inDefaultContext
 import org.opensearch.replication.util.startTask
 import org.opensearch.replication.util.suspending
 import org.opensearch.replication.util.waitForTaskCondition
@@ -126,10 +125,8 @@ class TransportReplicateIndexClusterManagerNodeAction @Inject constructor(transp
                         replicateIndexReq.useRoles?.getOrDefault(ReplicateIndexRequest.LEADER_CLUSTER_ROLE, null), replicateIndexReq.settings)
 
                 log.debug("Starting index replication task in persistent task service with name: replication:index:${replicateIndexReq.followerIndex}")
-                val task = threadPool.inDefaultContext {
-                    persistentTasksService.startTask("replication:index:${replicateIndexReq.followerIndex}",
-                            IndexReplicationExecutor.TASK_NAME, params)
-                }
+                val task = persistentTasksService.startTask("replication:index:${replicateIndexReq.followerIndex}",
+                        IndexReplicationExecutor.TASK_NAME, params)
 
                 if (!task.isAssigned) {
                     log.error("Failed to assign task")
