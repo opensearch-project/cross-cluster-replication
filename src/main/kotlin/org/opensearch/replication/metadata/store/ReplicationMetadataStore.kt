@@ -35,7 +35,6 @@ import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.cluster.service.ClusterService
 import org.opensearch.common.lifecycle.AbstractLifecycleComponent
 import org.opensearch.common.settings.Settings
-import org.opensearch.common.util.concurrent.ThreadContext
 import org.opensearch.common.xcontent.XContentType
 import org.opensearch.common.xcontent.XContentFactory
 import org.opensearch.common.xcontent.XContentHelper
@@ -45,7 +44,12 @@ import org.opensearch.core.xcontent.ToXContent
 import org.opensearch.core.xcontent.XContentParser
 import org.opensearch.replication.util.suspendExecuteWithRetries
 
-class ReplicationMetadataStore constructor(val client: Client, val clusterService: ClusterService,
+/**
+ * Reads and writes the replication config system index. Every request on that index, including the health checks,
+ * goes through [pluginClient], so it runs as the plugin's own subject rather than as the calling user.
+ */
+class ReplicationMetadataStore constructor(val pluginClient: Client,
+                               val clusterService: ClusterService,
                                val namedXContentRegistry: NamedXContentRegistry): AbstractLifecycleComponent() {
 
     companion object {
@@ -108,9 +112,9 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
 
         val id = getId(addReq.replicationMetadata.metadataType, addReq.replicationMetadata.connectionName,
                 addReq.replicationMetadata.followerContext.resource)
-        val indexReqBuilder = client.prepareIndex(REPLICATION_CONFIG_SYSTEM_INDEX).setId(id)
+        val indexReqBuilder = pluginClient.prepareIndex(REPLICATION_CONFIG_SYSTEM_INDEX).setId(id)
                 .setSource(addReq.replicationMetadata.toXContent(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS))
-        return client.suspending(indexReqBuilder::execute, defaultContext = true)("replication")
+        return pluginClient.suspending(indexReqBuilder::execute)("replication")
     }
 
     private suspend fun checkAndUpdateMapping() {
@@ -125,7 +129,7 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
         if(REPLICATION_STORE_MAPPING_VERSION > currentSchemaVersion) {
             val putMappingReq = PutMappingRequest(REPLICATION_CONFIG_SYSTEM_INDEX)
                     .source(REPLICATION_CONFIG_SYSTEM_INDEX_MAPPING, XContentType.JSON)
-            val putMappingRes = client.suspending(client.admin().indices()::putMapping, defaultContext = true)(putMappingReq)
+            val putMappingRes = pluginClient.suspending(pluginClient.admin().indices()::putMapping)(putMappingReq)
             if(!putMappingRes.isAcknowledged) {
                 log.error("Mapping update failed for replication store - $REPLICATION_CONFIG_SYSTEM_INDEX")
             }
@@ -150,7 +154,7 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
             getReq.preference(preference)
         }
 
-        val getRes = client.suspending(client::get, defaultContext = true)(getReq)
+        val getRes = pluginClient.suspending(pluginClient::get)(getReq)
         if(getRes.sourceAsBytesRef == null) {
             throw ResourceNotFoundException("Metadata for $id doesn't exist")
         }
@@ -169,7 +173,7 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
         }
 
         val clusterHealthReq = ClusterHealthRequest(REPLICATION_CONFIG_SYSTEM_INDEX).waitForYellowStatus()
-        val clusterHealthRes = client.admin().cluster().health(clusterHealthReq).actionGet(timeout)
+        val clusterHealthRes = pluginClient.admin().cluster().health(clusterHealthReq).actionGet(timeout)
         assert(clusterHealthRes.status <= ClusterHealthStatus.YELLOW) { "Replication metadata store is unhealthy" }
 
         val getReq = GetRequest(REPLICATION_CONFIG_SYSTEM_INDEX, id)
@@ -180,20 +184,13 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
             getReq.preference(preference)
         }
 
-        var storedContext: ThreadContext.StoredContext? = null
-        try {
-            storedContext = client.threadPool().threadContext.stashContext()
-            val getRes = client.get(getReq).actionGet(timeout)
-            if(getRes.sourceAsBytesRef == null) {
-                throw ResourceNotFoundException("Metadata for $id doesn't exist")
-            }
-            val parser = XContentHelper.createParser(namedXContentRegistry, LoggingDeprecationHandler.INSTANCE,
-                    getRes.sourceAsBytesRef, XContentType.JSON)
-            return GetReplicationMetadataResponse(ReplicationMetadata.fromXContent(parser), getRes.seqNo, getRes.primaryTerm)
-        } finally {
-            storedContext?.close()
+        val getRes = pluginClient.get(getReq).actionGet(timeout)
+        if(getRes.sourceAsBytesRef == null) {
+            throw ResourceNotFoundException("Metadata for $id doesn't exist")
         }
-
+        val parser = XContentHelper.createParser(namedXContentRegistry, LoggingDeprecationHandler.INSTANCE,
+                getRes.sourceAsBytesRef, XContentType.JSON)
+        return GetReplicationMetadataResponse(ReplicationMetadata.fromXContent(parser), getRes.seqNo, getRes.primaryTerm)
     }
 
     /**
@@ -212,7 +209,7 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
             multiGetReq.add(MultiGetRequest.Item(REPLICATION_CONFIG_SYSTEM_INDEX, id))
         }
 
-        val multiGetRes = client.suspending(client::multiGet, defaultContext = true)(multiGetReq)
+        val multiGetRes = pluginClient.suspending(pluginClient::multiGet)(multiGetReq)
         val result = mutableMapOf<String, ReplicationMetadata>()
         for ((i, response) in multiGetRes.responses.withIndex()) {
             if (response.isFailed || response.response?.sourceAsBytesRef == null) continue
@@ -253,7 +250,7 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
         checkAndWaitForStoreHealth()
 
         val delReq = DeleteRequest(REPLICATION_CONFIG_SYSTEM_INDEX, id)
-        return client.suspending(client::delete, defaultContext = true)(delReq)
+        return pluginClient.suspending(pluginClient::delete)(delReq)
     }
 
     /**
@@ -272,7 +269,7 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
             bulkReq.add(DeleteRequest(REPLICATION_CONFIG_SYSTEM_INDEX, id))
         }
 
-        val bulkRes = client.suspending(client::bulk, defaultContext = true)(bulkReq)
+        val bulkRes = pluginClient.suspending(pluginClient::bulk)(bulkReq)
         val succeeded = mutableSetOf<String>()
         for ((i, item) in bulkRes.items.withIndex()) {
             if (!item.isFailed) succeeded.add(indices[i])
@@ -289,11 +286,11 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
         checkAndWaitForStoreHealth()
         checkAndUpdateMapping()
 
-        val indexReqBuilder = client.prepareIndex(REPLICATION_CONFIG_SYSTEM_INDEX).setId(id)
+        val indexReqBuilder = pluginClient.prepareIndex(REPLICATION_CONFIG_SYSTEM_INDEX).setId(id)
                 .setSource(updateMetadataReq.replicationMetadata.toXContent(XContentFactory.jsonBuilder(), ToXContent.EMPTY_PARAMS))
                 .setIfSeqNo(updateMetadataReq.ifSeqno)
                 .setIfPrimaryTerm(updateMetadataReq.ifPrimaryTerm)
-        return client.suspending(indexReqBuilder::execute, defaultContext = true)("replication")
+        return pluginClient.suspending(indexReqBuilder::execute)("replication")
     }
 
     private fun getId(metadataType: String, connectionName: String?, resourceName: String): String {
@@ -308,7 +305,7 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
     private suspend fun createIndex(): CreateIndexResponse {
         val createIndexReq = CreateIndexRequest(REPLICATION_CONFIG_SYSTEM_INDEX, configStoreSettings())
                 .mapping(REPLICATION_CONFIG_SYSTEM_INDEX_MAPPING, XContentType.JSON)
-        return client.suspending(client.admin().indices()::create, defaultContext = true)(createIndexReq)
+        return pluginClient.suspending(pluginClient.admin().indices()::create)(createIndexReq)
     }
 
     private fun configStoreExists(): Boolean {
@@ -340,7 +337,6 @@ class ReplicationMetadataStore constructor(val client: Client, val clusterServic
         }
         val clusterHealthReq = ClusterHealthRequest(REPLICATION_CONFIG_SYSTEM_INDEX).waitForYellowStatus()
         // This should ensure that security plugin and shards are active during boot-up before triggering the requests
-        client.suspendExecuteWithRetries(null, ClusterHealthAction.INSTANCE,
-                clusterHealthReq, log=log, defaultContext = true)
+        pluginClient.suspendExecuteWithRetries(null, ClusterHealthAction.INSTANCE, clusterHealthReq, log=log)
     }
 }
