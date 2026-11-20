@@ -112,7 +112,7 @@ open class TransportBulkReplicationAction(
     override fun doExecute(task: Task, request: BulkReplicationRequest, listener: ActionListener<BulkReplicationResponse>) {
         log.info("Received bulk ${operationType.label} request for pattern=${request.pattern}, excludeIndices=${request.excludeIndices.size}")
 
-        launch(Dispatchers.Unconfined) {
+        launch(Dispatchers.Unconfined + threadPool.coroutineContext()) {
             try {
                 val (validIndices, preFailures) = resolveIndices(request)
                 log.info("Index resolution for bulk ${operationType.label}: valid=${validIndices.size}, preFailures=${preFailures.size}")
@@ -294,6 +294,11 @@ open class TransportBulkReplicationAction(
      * has been set. If clearing the flag itself fails, it is logged as an error because
      * it will require manual intervention to unblock the cluster.
      */
+    /** Sets the "a bulk task is running" flag, in a default context like [releaseLock]. */
+    internal suspend fun claimLock(claimState: BulkTaskState) {
+        client.suspendExecute(UpdateBulkTaskStateAction.INSTANCE, UpdateBulkTaskStateRequest(claimState), defaultContext = true)
+    }
+
     internal suspend fun releaseLock() {
         for (attempt in 1..3) {
             try {
@@ -338,7 +343,7 @@ open class TransportBulkReplicationAction(
             numCancelled = 0,
             failedIndices = preFailedIndices
         )
-        client.suspendExecute(UpdateBulkTaskStateAction.INSTANCE, UpdateBulkTaskStateRequest(claimState), defaultContext = true)
+        claimLock(claimState)
 
         val bulkTask = try {
             val taskAwareRequest = object : TaskAwareRequest {

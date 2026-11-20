@@ -303,7 +303,7 @@ class BulkReplicationTask(
             } catch (_: Exception) { "Replication task failed" }
     }
 
-    private suspend fun updateClusterState() {
+    internal suspend fun updateClusterState() {
         try {
             client.suspendExecute(UpdateBulkTaskStateAction.INSTANCE, UpdateBulkTaskStateRequest(
                 BulkTaskState(bulkTaskId, operationType.label, request.pattern, startTime,

@@ -64,8 +64,13 @@ class TransportUpdateAutoFollowPatternAction @Inject constructor(transportServic
                     }
                 }
                 val clusterManagerNodeReq = AutoFollowClusterManagerNodeRequest(user, request)
-                client.suspendExecute(AutoFollowClusterManagerNodeAction.INSTANCE, clusterManagerNodeReq)
+                forwardToClusterManager(clusterManagerNodeReq, afterSetupChecks = request.action == UpdateAutoFollowPatternRequest.Action.ADD)
             }
         }
     }
+
+    // After the setup checks the request goes in a default context, as it did when that call left the coroutine
+    // without a user; a delete, which runs no setup checks, goes as the caller.
+    internal suspend fun forwardToClusterManager(request: AutoFollowClusterManagerNodeRequest, afterSetupChecks: Boolean): AcknowledgedResponse =
+        client.suspendExecute(AutoFollowClusterManagerNodeAction.INSTANCE, request, defaultContext = afterSetupChecks)
 }

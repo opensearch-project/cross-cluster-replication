@@ -222,7 +222,7 @@ class TransportResumeIndexReplicationAction @Inject constructor(transportService
         return false
     }
 
-    private suspend fun getLeaderIndexMetadata(leaderAlias: String, leaderIndex: String): IndexMetadata {
+    internal suspend fun getLeaderIndexMetadata(leaderAlias: String, leaderIndex: String): IndexMetadata {
         val leaderClusterClient = client.getRemoteClusterClient(leaderAlias)
         val clusterStateRequest = leaderClusterClient.admin().cluster().prepareState()
                 .clear()

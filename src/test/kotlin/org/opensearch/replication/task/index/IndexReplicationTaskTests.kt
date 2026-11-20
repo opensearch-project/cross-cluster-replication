@@ -11,6 +11,14 @@
 
 package org.opensearch.replication.task.index
 
+import org.opensearch.replication.task.CrossClusterReplicationTask
+
+import org.opensearch.threadpool.ThreadPool
+
+import kotlinx.coroutines.Dispatchers
+
+import kotlinx.coroutines.CoroutineScope
+
 import com.carrotsearch.randomizedtesting.annotations.ThreadLeakScope
 import com.nhaarman.mockitokotlin2.any
 import com.nhaarman.mockitokotlin2.doAnswer
@@ -332,7 +340,7 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
         assertThat(replicationTask.isTrackingTaskForIndex()).isFalse
     }
 
-    private fun createIndexReplicationTask() : IndexReplicationTask {
+    private fun createIndexReplicationTask(beforeCreate: (ThreadPool) -> Unit = {}) : IndexReplicationTask {
         var threadPool = TestThreadPool("IndexReplicationTask")
         //Hack Alert : Though it is meant to force rejection , this is to make overallTaskScope not null
         threadPool.startForcingRejections()
@@ -362,11 +370,26 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
         replicationSettings.metadataSyncInterval = TimeValue(100, TimeUnit.MILLISECONDS)
         replicationSettings.leaderTranslogGenerationThresholdSize = leaderTranslogGenerationThresholdSize
         val cso = ClusterStateObserver(clusterService, logger, threadPool.threadContext)
+        beforeCreate(threadPool)
         val indexReplicationTask = IndexReplicationTask(1, "type", "action", "description" , EMPTY_TASK_ID,
                 ReplicationPlugin.REPLICATION_EXECUTOR_NAME_FOLLOWER, clusterService , threadPool, spyClient, IndexReplicationParams(connectionName, Index(followerIndex, "0"), followerIndex),
                 persist, replicationMetadataManager, replicationSettings, settingsModule,cso)
 
         return indexReplicationTask
+    }
+
+    fun testTaskCoroutinesDoNotRunInTheContextOfTheThreadThatCreatedTheTask() {
+        var taskThreadPool: ThreadPool? = null
+        val task = createIndexReplicationTask { pool ->
+            taskThreadPool = pool
+            pool.threadContext.putTransient("identity", "creator")
+        }
+        val scopeField = CrossClusterReplicationTask::class.java.getDeclaredField("overallTaskScope")
+        scopeField.isAccessible = true
+        val scope = scopeField.get(task) as CoroutineScope
+        var seen: String? = "unset"
+        runBlocking { scope.launch(Dispatchers.Unconfined) { seen = taskThreadPool!!.threadContext.getTransient("identity") }.join() }
+        assertNull(seen)
     }
 
     fun testConditionallyOpenIndex() = runBlocking {
