@@ -25,6 +25,7 @@ import org.opensearch.Version
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.ClusterStateObserver
 import org.opensearch.cluster.RestoreInProgress
+import org.opensearch.cluster.metadata.AliasMetadata
 import org.opensearch.cluster.metadata.IndexMetadata
 import org.opensearch.cluster.metadata.Metadata
 import org.opensearch.cluster.node.DiscoveryNode
@@ -525,5 +526,12 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
                 IndexMetadata.SETTING_NUMBER_OF_REPLICAS, setting, desiredSettings, followerSettings
             )
         ).isTrue()
+    }
+
+    fun testAliasesAreInSyncOnceFollowerWriteIndexIsStripped() {
+        val leaderAliases = listOf(AliasMetadata.builder("alias1").writeIndex(true).build())
+        val followerAliases = listOf(AliasMetadata.builder("alias1").writeIndex(false).build())
+
+        assertThat(IndexReplicationTask.desiredFollowerAliases(leaderAliases)).isEqualTo(followerAliases)
     }
 }
