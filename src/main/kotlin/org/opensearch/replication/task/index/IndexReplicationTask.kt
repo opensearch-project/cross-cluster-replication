@@ -46,7 +46,9 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import org.opensearch.ExceptionsHelper
 import org.opensearch.OpenSearchException
+import org.opensearch.ResourceAlreadyExistsException
 import org.opensearch.OpenSearchTimeoutException
 import org.opensearch.core.action.ActionListener
 import org.opensearch.action.admin.indices.alias.IndicesAliasesRequest
@@ -776,10 +778,22 @@ open class IndexReplicationTask(id: Long, type: String, action: String, descript
             // If pause completed before and this co-routine was cancelled
             throw e
         } catch (e: Exception) {
-            log.error("Encountered exception while auto-pausing $followerIndexName", e)
-            return FailedState(state.failedShards,
-                "Pause failed with \"${e.message}\". Original failure for initiating pause - ${state.errorMsg}")
+            if (ExceptionsHelper.unwrapCause(e) is ResourceAlreadyExistsException) {
+                // An earlier auto-pause, a user pause or a retried request already paused the index. The cluster
+                // manager has PAUSED while this node can still see the failed shard tasks in its older cluster state.
+                // The pause we wanted is in place, so this is not a failure.
+                log.info("Replication for $followerIndexName is already paused, nothing more to do for auto-pause")
+            } else {
+                log.error("Encountered exception while auto-pausing $followerIndexName", e)
+                return FailedState(state.failedShards,
+                    "Pause failed with \"${e.message}\". Original failure for initiating pause - ${state.errorMsg}")
+            }
         }
+        // The pause is in place on the cluster manager. Normally the PAUSED cluster state reaches clusterChanged() and
+        // cancels this task, but this node may not have applied it yet (and the listener is only registered when the
+        // task starts from INIT). End the task here instead of polling the same failed shard tasks and pausing again.
+        cancelTask("Index replication task was auto-paused.")
+        delay(SLEEP_TIME_BETWEEN_POLL_MS)
         return MonitoringState
     }
 

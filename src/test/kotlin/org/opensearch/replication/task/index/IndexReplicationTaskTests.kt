@@ -21,7 +21,16 @@ import kotlinx.coroutines.runBlocking
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.Before
 import org.mockito.Mockito
+import org.opensearch.OpenSearchException
+import org.opensearch.ResourceAlreadyExistsException
 import org.opensearch.Version
+import org.opensearch.action.ActionRequest
+import org.opensearch.action.ActionType
+import org.opensearch.action.support.clustermanager.AcknowledgedResponse
+import org.opensearch.core.action.ActionListener
+import org.opensearch.core.action.ActionResponse
+import org.opensearch.replication.action.pause.PauseIndexReplicationAction
+import org.opensearch.replication.action.pause.PauseIndexReplicationRequest
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.ClusterStateObserver
 import org.opensearch.cluster.RestoreInProgress
@@ -332,13 +341,61 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
         assertThat(replicationTask.isTrackingTaskForIndex()).isFalse
     }
 
-    private fun createIndexReplicationTask() : IndexReplicationTask {
+    /**
+     * Several shard tasks fail together. The first auto-pause is accepted by the cluster manager, but this node has
+     * not applied the PAUSED cluster state yet, so the index task still sees the failed shard tasks and pauses again.
+     * The second pause answers "already paused". That must not move the replication to FAILED.
+     */
+    fun testRepeatedAutoPauseAfterShardFailuresDoesNotFailReplication() = runBlocking {
+        val client = PauseRacingClient("testName")
+        val pauseRequests = client.pauseRequests
+        val replicationTask: IndexReplicationTask = spy(createIndexReplicationTask(client))
+        replicationTask.setPersistent(Mockito.mock(TaskManager::class.java))
+        val rc = ReplicationContext(followerIndex)
+        replicationTask.setReplicationMetadata(ReplicationMetadata(connectionName, ReplicationStoreMetadataType.INDEX.name,
+                ReplicationOverallState.RUNNING.name, "reason", rc, rc, Settings.EMPTY))
+
+        // Two shard tasks of the follower index are in FailedState in this node's (stale) cluster state.
+        val tasks = PersistentTasksCustomMetadata.builder()
+        for (shard in 0..1) {
+            val sId = ShardId(Index(followerIndex, "_na_"), shard)
+            val taskId = "replication:$shard"
+            tasks.addTask<PersistentTaskParams>(taskId, ShardReplicationExecutor.TASK_NAME, ShardReplicationParams(remoteCluster, sId, sId),
+                    PersistentTasksCustomMetadata.Assignment("other_node_", "test assignment on other node"))
+            tasks.updateTaskState(taskId, org.opensearch.replication.task.shard.FailedState(OpenSearchException("shard $shard failed")))
+        }
+        val metadata = Metadata.builder()
+                .put(IndexMetadata.builder(followerIndex).settings(settings(Version.CURRENT)).numberOfShards(2).numberOfReplicas(0))
+                .putCustom(PersistentTasksCustomMetadata.TYPE, tasks.build())
+                .build()
+        val routingTable = RoutingTable.builder().addAsNew(metadata.index(followerIndex)).build()
+        setState(clusterService, ClusterState.builder(clusterService.state()).metadata(metadata).routingTable(routingTable).build())
+
+        currentTaskState = FollowingState(emptyMap())
+        val job = this.launch {
+            replicationTask.execute(this, FollowingState(emptyMap()))
+        }
+
+        // Wait until the task has auto-paused at least twice, or has given up and persisted a FailedState.
+        var attempts = 0
+        while (pauseRequests.size < 2 && currentTaskState !is FailedState && attempts++ < 150) {
+            delay(100)
+        }
+        delay(500)
+        job.cancel()
+
+        assertThat(pauseRequests.size).describedAs("auto-pause requests").isGreaterThanOrEqualTo(2)
+        assertThat(pauseRequests[0].reason).startsWith(IndexReplicationTask.AUTOPAUSED_REASON_PREFIX)
+        assertThat(currentTaskState).describedAs("index task state after repeated auto-pause").isNotInstanceOf(FailedState::class.java)
+    }
+
+    private fun createIndexReplicationTask(client: NoOpClient = NoOpClient("testName")) : IndexReplicationTask {
         var threadPool = TestThreadPool("IndexReplicationTask")
         //Hack Alert : Though it is meant to force rejection , this is to make overallTaskScope not null
         threadPool.startForcingRejections()
         clusterService = ClusterServiceUtils.createClusterService(threadPool)
         val settingsModule = Mockito.mock(SettingsModule::class.java)
-        val spyClient = Mockito.spy<NoOpClient>(NoOpClient("testName"))
+        val spyClient = Mockito.spy<NoOpClient>(client)
 
         val replicationMetadataManager = ReplicationMetadataManager(clusterService, spyClient,
                 ReplicationMetadataStore(spyClient, clusterService, NamedXContentRegistry.EMPTY))
@@ -525,5 +582,27 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
                 IndexMetadata.SETTING_NUMBER_OF_REPLICAS, setting, desiredSettings, followerSettings
             )
         ).isTrue()
+    }
+}
+
+/**
+ * Accepts the first pause request and answers every later one with "already paused", the way the cluster manager
+ * does once the first pause has been applied there.
+ */
+open class PauseRacingClient(testName: String) : NoOpClient(testName) {
+    val pauseRequests: MutableList<PauseIndexReplicationRequest> = Collections.synchronizedList(ArrayList())
+
+    override fun <Request : ActionRequest, Response : ActionResponse> doExecute(
+            action: ActionType<Response>?, request: Request?, listener: ActionListener<Response>) {
+        if (action == PauseIndexReplicationAction.INSTANCE) {
+            pauseRequests.add(request as PauseIndexReplicationRequest)
+            if (pauseRequests.size == 1) {
+                listener.onResponse(AcknowledgedResponse(true) as Response)
+            } else {
+                listener.onFailure(ResourceAlreadyExistsException("Index ${request.indexName} is already paused"))
+            }
+        } else {
+            super.doExecute(action, request, listener)
+        }
     }
 }
