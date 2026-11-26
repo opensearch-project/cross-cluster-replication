@@ -1,0 +1,8 @@
+# Actions the plugin subject sends that the security plugin classifies as cluster permissions rather than index
+# permissions. Index actions on .replication-metadata-store need no entry here, because a plugin subject is granted
+# those on the system index it registers.
+cluster_permissions:
+  # The store waits for its index to reach yellow before each read or write.
+  - "cluster:monitor/health"
+  # Reading the metadata of several follower indices in one request.
+  - "indices:data/read/mget"

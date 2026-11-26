@@ -119,13 +119,18 @@ class TransportReplicateIndexAction @Inject constructor(transportService: Transp
                 // permissions evaluation to trigger replication is based on the current security context set
                 val internalReq = ReplicateIndexClusterManagerNodeRequest(user, request)
                 log.debug("Starting replication index action on current master node")
-                client.suspendExecute(ReplicateIndexClusterManagerNodeAction.INSTANCE, internalReq)
+                startOnClusterManager(internalReq)
                 log.debug("Response of start replication action is returned")
                 ReplicateIndexResponse(true)
             }
         }
     }
 
+
+    // Sent in a default context, as it was after the leader reads above left the coroutine without a user.
+    internal suspend fun startOnClusterManager(internalReq: ReplicateIndexClusterManagerNodeRequest) {
+        client.suspendExecute(ReplicateIndexClusterManagerNodeAction.INSTANCE, internalReq, defaultContext = true)
+    }
 
     private suspend fun getLeaderClusterState(leaderAlias: String, leaderIndex: String): ClusterState {
         val remoteClusterClient = client.getRemoteClusterClient(leaderAlias)
