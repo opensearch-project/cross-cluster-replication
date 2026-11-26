@@ -12,7 +12,6 @@
 package org.opensearch.replication.util
 
 import org.opensearch.replication.repository.RemoteClusterRepository
-import org.opensearch.replication.metadata.store.ReplicationContext
 import org.opensearch.replication.metadata.store.ReplicationMetadata
 import org.opensearch.commons.authuser.User
 import kotlinx.coroutines.delay
@@ -66,17 +65,6 @@ fun <T: ActionResponse>Client.execute(replMetadata: ReplicationMetadata, actionT
         storedContext = threadPool().threadContext.stashContext()
         SecurityContext.setBasedOnActions(replMetadata, actionType.name(), threadPool().threadContext)
         return execute(actionType, actionRequest).actionGet(timeout)
-    } finally {
-        storedContext?.restore()
-    }
-}
-
-fun <T>Client.executeBlockUnderSecurityContext(replContext: ReplicationContext, block: () -> T): T {
-    var storedContext: ThreadContext.StoredContext? = null
-    try {
-        storedContext = threadPool().threadContext.stashContext()
-        SecurityContext.asRolesInjection(this.threadPool().threadContext, replContext.user?.toInjectedRoles())
-        return block()
     } finally {
         storedContext?.restore()
     }
