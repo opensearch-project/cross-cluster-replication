@@ -15,13 +15,24 @@ import com.carrotsearch.randomizedtesting.annotations.ThreadLeakScope
 import com.nhaarman.mockitokotlin2.any
 import com.nhaarman.mockitokotlin2.doAnswer
 import com.nhaarman.mockitokotlin2.spy
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.isActive
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.assertj.core.api.Assertions.assertThat
 import org.junit.Before
 import org.mockito.Mockito
+import org.opensearch.OpenSearchException
+import org.opensearch.ResourceAlreadyExistsException
 import org.opensearch.Version
+import org.opensearch.action.ActionRequest
+import org.opensearch.action.ActionType
+import org.opensearch.action.support.clustermanager.AcknowledgedResponse
+import org.opensearch.core.action.ActionListener
+import org.opensearch.core.action.ActionResponse
+import org.opensearch.replication.action.pause.PauseIndexReplicationAction
+import org.opensearch.replication.action.pause.PauseIndexReplicationRequest
 import org.opensearch.cluster.ClusterState
 import org.opensearch.cluster.ClusterStateObserver
 import org.opensearch.cluster.RestoreInProgress
@@ -54,6 +65,7 @@ import org.opensearch.replication.metadata.store.ReplicationMetadataStore
 import org.opensearch.replication.metadata.store.ReplicationMetadataStore.Companion.REPLICATION_CONFIG_SYSTEM_INDEX
 import org.opensearch.replication.metadata.store.ReplicationStoreMetadataType
 import org.opensearch.replication.repository.REMOTE_REPOSITORY_PREFIX
+import org.opensearch.replication.task.CrossClusterReplicationTask
 import org.opensearch.replication.task.shard.ShardReplicationExecutor
 import org.opensearch.replication.task.shard.ShardReplicationParams
 import org.opensearch.snapshots.Snapshot
@@ -64,6 +76,7 @@ import org.opensearch.test.ClusterServiceUtils
 import org.opensearch.test.ClusterServiceUtils.setState
 import org.opensearch.test.OpenSearchTestCase
 import org.opensearch.threadpool.TestThreadPool
+import org.opensearch.transport.RemoteTransportException
 import java.util.*
 import java.util.concurrent.TimeUnit
 
@@ -332,13 +345,109 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
         assertThat(replicationTask.isTrackingTaskForIndex()).isFalse
     }
 
-    private fun createIndexReplicationTask() : IndexReplicationTask {
+    /**
+     * Several shard tasks fail together. The first auto-pause is accepted by the cluster manager, but this node has
+     * not applied the PAUSED cluster state yet, so the index task still sees the failed shard tasks and pauses again.
+     * The second pause answers "already paused". That must not move the replication to FAILED.
+     */
+    fun testRepeatedAutoPauseAfterShardFailuresDoesNotFailReplication() = runBlocking {
+        val client = PauseClient("testName") { attempt, request ->
+            if (attempt == 1) null else ResourceAlreadyExistsException("Index ${request.indexName} is already paused")
+        }
+        val replicationTask = runAutoPause(client, expectedPauses = 2)
+
+        assertThat(client.pauseRequests.size).describedAs("auto-pause requests").isGreaterThanOrEqualTo(2)
+        assertThat(client.pauseRequests[0].reason).startsWith(IndexReplicationTask.AUTOPAUSED_REASON_PREFIX)
+        assertThat(currentTaskState).describedAs("index task state after repeated auto-pause").isNotInstanceOf(FailedState::class.java)
+        assertThat(isTaskScopeActive(replicationTask)).describedAs("index task scope after auto-pause").isFalse()
+    }
+
+    /**
+     * The "already paused" answer comes back from the cluster manager wrapped in a transport exception. It must still
+     * count as a completed auto-pause: no FAILED state, and the index task ends.
+     */
+    fun testAutoPauseAnsweredWithWrappedAlreadyPausedDoesNotFailReplication() = runBlocking {
+        val client = PauseClient("testName") { _, request ->
+            RemoteTransportException("[cluster-manager][cluster:admin/plugins/replication/index/pause]",
+                    ResourceAlreadyExistsException("Index ${request.indexName} is already paused"))
+        }
+        val replicationTask = runAutoPause(client, expectedPauses = 1)
+
+        assertThat(client.pauseRequests).describedAs("auto-pause requests").isNotEmpty
+        assertThat(currentTaskState).describedAs("index task state after already-paused answer").isNotInstanceOf(FailedState::class.java)
+        assertThat(isTaskScopeActive(replicationTask)).describedAs("index task scope after auto-pause").isFalse()
+    }
+
+    /**
+     * A pause that fails for any reason other than "already paused" leaves the index unpaused, so the index task must
+     * still report the failure and keep the original shard failure in the message.
+     */
+    fun testAutoPauseFailureOtherThanAlreadyPausedFailsReplication() = runBlocking {
+        val client = PauseClient("testName") { _, _ -> IllegalStateException("Cannot pause when in FAILED state") }
+        val replicationTask = runAutoPause(client, expectedPauses = 1)
+
+        assertThat(client.pauseRequests).describedAs("auto-pause requests").isNotEmpty
+        assertThat(currentTaskState).describedAs("index task state after a failed pause").isInstanceOf(FailedState::class.java)
+        val errorMsg = (currentTaskState as FailedState).errorMsg
+        assertThat(errorMsg).startsWith("Pause failed with \"Cannot pause when in FAILED state\"")
+        assertThat(errorMsg).contains("shard 0 failed").contains("shard 1 failed")
+        assertThat(isTaskScopeActive(replicationTask)).describedAs("index task scope after a failed pause").isTrue()
+    }
+
+    /**
+     * Puts two shard tasks of the follower index in FailedState in this node's cluster state, runs the index task from
+     * FOLLOWING, and waits until it has sent [expectedPauses] pause requests or persisted a FailedState.
+     */
+    private suspend fun CoroutineScope.runAutoPause(client: PauseClient, expectedPauses: Int): IndexReplicationTask {
+        val replicationTask: IndexReplicationTask = spy(createIndexReplicationTask(client))
+        replicationTask.setPersistent(Mockito.mock(TaskManager::class.java))
+        val rc = ReplicationContext(followerIndex)
+        replicationTask.setReplicationMetadata(ReplicationMetadata(connectionName, ReplicationStoreMetadataType.INDEX.name,
+                ReplicationOverallState.RUNNING.name, "reason", rc, rc, Settings.EMPTY))
+
+        val tasks = PersistentTasksCustomMetadata.builder()
+        for (shard in 0..1) {
+            val sId = ShardId(Index(followerIndex, "_na_"), shard)
+            val taskId = "replication:$shard"
+            tasks.addTask<PersistentTaskParams>(taskId, ShardReplicationExecutor.TASK_NAME, ShardReplicationParams(remoteCluster, sId, sId),
+                    PersistentTasksCustomMetadata.Assignment("other_node_", "test assignment on other node"))
+            tasks.updateTaskState(taskId, org.opensearch.replication.task.shard.FailedState(OpenSearchException("shard $shard failed")))
+        }
+        val metadata = Metadata.builder()
+                .put(IndexMetadata.builder(followerIndex).settings(settings(Version.CURRENT)).numberOfShards(2).numberOfReplicas(0))
+                .putCustom(PersistentTasksCustomMetadata.TYPE, tasks.build())
+                .build()
+        val routingTable = RoutingTable.builder().addAsNew(metadata.index(followerIndex)).build()
+        setState(clusterService, ClusterState.builder(clusterService.state()).metadata(metadata).routingTable(routingTable).build())
+
+        currentTaskState = FollowingState(emptyMap())
+        val job = launch {
+            replicationTask.execute(this, FollowingState(emptyMap()))
+        }
+
+        var attempts = 0
+        while (client.pauseRequests.size < expectedPauses && currentTaskState !is FailedState && attempts++ < 150) {
+            delay(100)
+        }
+        delay(500)
+        job.cancel()
+        return replicationTask
+    }
+
+    // The task's own coroutine scope is what cancelTask() cancels; it is private to CrossClusterReplicationTask.
+    private fun isTaskScopeActive(task: IndexReplicationTask): Boolean {
+        val field = CrossClusterReplicationTask::class.java.getDeclaredField("overallTaskScope")
+        field.isAccessible = true
+        return (field.get(task) as CoroutineScope).isActive
+    }
+
+    private fun createIndexReplicationTask(client: NoOpClient = NoOpClient("testName")) : IndexReplicationTask {
         var threadPool = TestThreadPool("IndexReplicationTask")
         //Hack Alert : Though it is meant to force rejection , this is to make overallTaskScope not null
         threadPool.startForcingRejections()
         clusterService = ClusterServiceUtils.createClusterService(threadPool)
         val settingsModule = Mockito.mock(SettingsModule::class.java)
-        val spyClient = Mockito.spy<NoOpClient>(NoOpClient("testName"))
+        val spyClient = Mockito.spy<NoOpClient>(client)
 
         val replicationMetadataManager = ReplicationMetadataManager(clusterService, spyClient,
                 ReplicationMetadataStore(spyClient, clusterService, NamedXContentRegistry.EMPTY))
@@ -525,5 +634,29 @@ class IndexReplicationTaskTests : OpenSearchTestCase()  {
                 IndexMetadata.SETTING_NUMBER_OF_REPLICAS, setting, desiredSettings, followerSettings
             )
         ).isTrue()
+    }
+}
+
+/**
+ * Answers each pause request with [failureFor]: null accepts the pause, an exception rejects it. Attempts count from 1.
+ */
+open class PauseClient(testName: String,
+                       private val failureFor: (Int, PauseIndexReplicationRequest) -> Exception?) : NoOpClient(testName) {
+    val pauseRequests: MutableList<PauseIndexReplicationRequest> = Collections.synchronizedList(ArrayList())
+
+    override fun <Request : ActionRequest, Response : ActionResponse> doExecute(
+            action: ActionType<Response>?, request: Request?, listener: ActionListener<Response>) {
+        if (action == PauseIndexReplicationAction.INSTANCE) {
+            val pauseRequest = request as PauseIndexReplicationRequest
+            pauseRequests.add(pauseRequest)
+            val failure = failureFor(pauseRequests.size, pauseRequest)
+            if (failure == null) {
+                listener.onResponse(AcknowledgedResponse(true) as Response)
+            } else {
+                listener.onFailure(failure)
+            }
+        } else {
+            super.doExecute(action, request, listener)
+        }
     }
 }
